@@ -1,10 +1,12 @@
 # Plan (CTO)
 
 ## Architecture
-- `app/` Tauri 2 app. Rust core (`app/src-tauri`): auth (codex ~/.codex/auth.json or OpenAI API key), realtime WS client,
-  audio capture/playback (cpal), VAD/turn detection, screenshot (X11), input injection (xdotool/enigo), bash runner,
+- `app/` Flutter (Dart) app — Linux first, later Android/macOS/iOS from same codebase. NO Rust, NO TypeScript, NO Tauri.
+  Core (`app/lib/core`): auth (codex ~/.codex/auth.json or OpenAI API key), realtime WS client,
+  audio capture/playback, turn detection, screenshot (X11), input injection (xdotool), bash runner,
   file read/edit with user confirmation, sub-model delegation (Responses API), background context compression (gpt-6-luna).
-- Web UI (`app/src`): transcript history (text, images, audio clips), context-size meter, settings, confirm dialogs,
+  Platform specifics behind interfaces in `app/lib/platform/` so mobile ports swap implementations.
+- UI (`app/lib/ui`): transcript history (text, images, audio clips), context-size meter, settings, confirm dialogs,
   media popup windows (image/audio/video/text viewer).
 - `research/` protocol probes and TTS test fixtures.
 
