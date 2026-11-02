@@ -10,6 +10,7 @@ import '../context/context_manager.dart';
 import '../models/message.dart';
 import '../settings/settings.dart';
 import '../storage/history_store.dart';
+import '../voice/context_sync.dart';
 import '../voice/voice_backend.dart';
 import 'vad.dart';
 
@@ -549,6 +550,36 @@ class TurnPipeline extends ChangeNotifier {
     );
     _compactionEvents.add(c);
     _persistNow();
+    _applyCompactionToSession(c);
+  }
+
+  /// Replaces the compacted turns in the live session too. The backend
+  /// defers this to the next moment with no active response, so it never
+  /// interrupts playback or a reply.
+  void _applyCompactionToSession(ContextCompacted c) {
+    final Object? b = _backend;
+    if (b is! LiveContextSync) return;
+    b
+        .applySummary(c.summary)
+        .then((r) {
+          lastContextApply = r;
+          debugPrint('compaction applied to live session: $r');
+          if (r.method == ContextApplyMethod.reconnected) {
+            notice('Voice session restarted with the compacted context.');
+          }
+        })
+        .catchError((Object e) {
+          debugPrint('applying compaction to the live session failed: $e');
+        });
+  }
+
+  /// Result of the last [LiveContextSync.applySummary] (diagnostics/tests).
+  ContextApplyResult? lastContextApply;
+
+  /// Shows an informational line in the conversation (e.g. backend fallback).
+  void notice(String text) {
+    if (_disposed) return;
+    _addSystem(text, meta: {'type': 'notice'});
   }
 
   // ------------------------------------------------------------ helpers

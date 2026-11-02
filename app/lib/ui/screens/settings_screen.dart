@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../core/app_controller.dart';
 import '../../core/auth/auth.dart';
 import '../../core/settings/settings.dart';
+import '../../core/voice/backend_factory.dart';
 import '../theme.dart';
 import '../widgets/context_meter.dart';
 import '../widgets/glass.dart';
@@ -54,17 +55,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final wide = MediaQuery.sizeOf(context).width >= 900;
     final sections = [
       _section('Connection', Icons.cloud_outlined, [
-        _label('Authentication'),
-        SegmentedButton<AuthMode>(
-          showSelectedIcon: false,
-          segments: [for (final m in AuthMode.values) ButtonSegment(value: m, label: Text(m.label))],
-          selected: {_s.authMode},
-          onSelectionChanged: (v) => _apply(_s.copyWith(authMode: v.first)),
+        _label('Voice backend'),
+        RadioGroup<BackendMode>(
+          groupValue: _s.backendMode,
+          onChanged: (v) => _apply(_s.copyWith(backendMode: v)),
+          child: Column(
+            children: [
+              for (final m in BackendMode.values)
+                RadioListTile<BackendMode>(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  value: m,
+                  title: Text(m.label, style: body(14)),
+                  subtitle: Text(_backendHint(m), style: body(12, color: WoiColors.textDim)),
+                ),
+            ],
+          ),
         ),
         const SizedBox(height: 12),
         if (_s.authMode == AuthMode.codex) _codexStatus() else _apiKeyField(),
         const SizedBox(height: 18),
-        _dropdown('Voice model', _s.voiceModel, kVoiceModels, (v) => _apply(_s.copyWith(voiceModel: v))),
+        if (_s.backendMode == BackendMode.gptLive) ...[
+          _dropdown('gpt-live model', _s.voiceModel, kVoiceModels, (v) => _apply(_s.copyWith(voiceModel: v))),
+          const SizedBox(height: 14),
+        ],
+        _dropdown(
+          _s.backendMode == BackendMode.gptLive ? 'Realtime model (fallback)' : 'Realtime model',
+          _s.realtimeModel,
+          kRealtimeModels,
+          (v) => _apply(_s.copyWith(realtimeModel: v)),
+        ),
         const SizedBox(height: 14),
         _dropdown('Voice', _s.voice, kVoices, (v) => _apply(_s.copyWith(voice: v))),
       ]),
@@ -249,6 +269,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
       onChanged: (v) => v == null ? null : onChanged(v),
     );
   }
+
+  String _backendHint(BackendMode m) => switch (m) {
+    BackendMode.gptLive =>
+      GptLiveHook.isRegistered
+          ? 'Lowest latency. Codex login.'
+          : 'Lowest latency. Codex login. Not in this build yet: falls back to Direct realtime.',
+    BackendMode.direct => 'WebSocket realtime with tools, images and token usage. Codex login.',
+    BackendMode.apiKey => 'WebSocket realtime billed to your OpenAI API key.',
+  };
 
   Widget _textField(String label, TextEditingController c, String hint, ValueChanged<String> onChanged) => TextField(
     controller: c,

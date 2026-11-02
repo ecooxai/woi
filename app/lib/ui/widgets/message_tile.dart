@@ -475,6 +475,7 @@ class _SystemNote extends StatelessWidget {
     final (color, icon) = switch (type) {
       'compaction' => (WoiColors.violet, Icons.compress),
       'error' => (WoiColors.red, Icons.warning_amber_rounded),
+      'notice' => (WoiColors.amber, Icons.info_outline),
       'screenshot' => (WoiColors.cyan, Icons.screenshot_monitor),
       _ => (WoiColors.textDim, Icons.info_outline),
     };

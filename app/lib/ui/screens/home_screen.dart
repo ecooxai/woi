@@ -223,7 +223,7 @@ class _HomeScreenState extends State<HomeScreen> {
         Tooltip(
           message: [
             if (backendName.isNotEmpty) 'Backend: $backendName',
-            '${c.settings.voiceModel} · ${c.settings.voice}',
+            '${c.activeVoiceModel} · ${c.settings.voice}',
             ?pipeline.statusDetail,
           ].join('\n'),
           child: Pill(
@@ -334,7 +334,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     dense: true,
                   ),
                   Pill(
-                    label: s.voiceModel,
+                    label: c.activeVoiceModel,
                     icon: Icons.record_voice_over_outlined,
                     color: WoiColors.violet,
                     dense: true,

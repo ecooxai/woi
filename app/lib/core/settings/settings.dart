@@ -12,14 +12,32 @@ enum MicMode {
   final String label;
 }
 
-const kVoiceModels = ['gpt-live-1.1', 'gpt-live-1'];
+/// Which voice backend the app talks to.
+enum BackendMode {
+  gptLive('gpt-live (WebRTC)'),
+  direct('Direct realtime (gpt-realtime-1.5)'),
+  apiKey('OpenAI API key');
+
+  const BackendMode(this.label);
+  final String label;
+
+  /// Credentials this mode authenticates with.
+  AuthMode get authMode => this == BackendMode.apiKey ? AuthMode.apiKey : AuthMode.codex;
+}
+
+/// gpt-live models (WebRTC path, research/REALTIME_API.md §3).
+const kVoiceModels = ['gpt-live-1.1', 'gpt-live-1', 'gpt-live-1-codex'];
+
+/// Models that work on wss://api.openai.com/v1/realtime (§2.1).
+const kRealtimeModels = ['gpt-realtime-1.5', 'gpt-realtime', 'gpt-realtime-2', 'gpt-realtime-mini'];
 const kVoices = ['marin', 'cedar', 'alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse'];
 
 class AppSettings {
   const AppSettings({
-    this.authMode = AuthMode.codex,
+    this.backendMode = BackendMode.gptLive,
     this.apiKey = '',
     this.voiceModel = 'gpt-live-1.1',
+    this.realtimeModel = 'gpt-realtime-1.5',
     this.voice = 'marin',
     this.compressionThreshold = 10000,
     this.compressionModel = 'gpt-6-luna',
@@ -31,9 +49,14 @@ class AppSettings {
     this.imageTokenCost = 765,
   });
 
-  final AuthMode authMode;
+  final BackendMode backendMode;
   final String apiKey;
+
+  /// gpt-live model (gpt-live mode).
   final String voiceModel;
+
+  /// Realtime WebSocket model (direct and API-key modes, and the gpt-live fallback).
+  final String realtimeModel;
   final String voice;
   final int compressionThreshold;
   final String compressionModel;
@@ -46,10 +69,13 @@ class AppSettings {
   /// Heuristic context cost of one screenshot, in tokens.
   final int imageTokenCost;
 
+  AuthMode get authMode => backendMode.authMode;
+
   AppSettings copyWith({
-    AuthMode? authMode,
+    BackendMode? backendMode,
     String? apiKey,
     String? voiceModel,
+    String? realtimeModel,
     String? voice,
     int? compressionThreshold,
     String? compressionModel,
@@ -60,9 +86,10 @@ class AppSettings {
     MicMode? micMode,
     int? imageTokenCost,
   }) => AppSettings(
-    authMode: authMode ?? this.authMode,
+    backendMode: backendMode ?? this.backendMode,
     apiKey: apiKey ?? this.apiKey,
     voiceModel: voiceModel ?? this.voiceModel,
+    realtimeModel: realtimeModel ?? this.realtimeModel,
     voice: voice ?? this.voice,
     compressionThreshold: compressionThreshold ?? this.compressionThreshold,
     compressionModel: compressionModel ?? this.compressionModel,
@@ -76,12 +103,17 @@ class AppSettings {
 
   /// Whether a change requires reconnecting the live session.
   bool sessionDiffers(AppSettings o) =>
-      o.authMode != authMode || o.apiKey != apiKey || o.voiceModel != voiceModel || o.voice != voice;
+      o.backendMode != backendMode ||
+      o.apiKey != apiKey ||
+      o.voiceModel != voiceModel ||
+      o.realtimeModel != realtimeModel ||
+      o.voice != voice;
 
   Map<String, Object?> toJson() => {
-    'authMode': authMode.name,
+    'backendMode': backendMode.name,
     'apiKey': apiKey,
     'voiceModel': voiceModel,
+    'realtimeModel': realtimeModel,
     'voice': voice,
     'compressionThreshold': compressionThreshold,
     'compressionModel': compressionModel,
@@ -103,9 +135,13 @@ class AppSettings {
 
     bool b(String k, bool def) => j[k] is bool ? j[k] as bool : def;
     return AppSettings(
-      authMode: AuthMode.values.asNameMap()[j['authMode']] ?? d.authMode,
+      backendMode:
+          BackendMode.values.asNameMap()[j['backendMode']] ??
+          // Settings written before backend modes existed.
+          (j['authMode'] == AuthMode.apiKey.name ? BackendMode.apiKey : d.backendMode),
       apiKey: j['apiKey'] as String? ?? '',
       voiceModel: s('voiceModel', d.voiceModel),
+      realtimeModel: s('realtimeModel', d.realtimeModel),
       voice: s('voice', d.voice),
       compressionThreshold: i('compressionThreshold', d.compressionThreshold).clamp(1000, 1000000),
       compressionModel: s('compressionModel', d.compressionModel),
