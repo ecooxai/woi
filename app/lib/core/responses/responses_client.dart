@@ -132,6 +132,7 @@ class ResponsesClient {
     Uri? apiKeyEndpoint,
     HttpClient Function()? httpClient,
     this.timeout = const Duration(minutes: 5),
+    this.reuseConnections = false,
   }) : codexEndpoint = codexEndpoint ?? kCodexResponsesUrl,
        apiKeyEndpoint = apiKeyEndpoint ?? kOpenAiResponsesUrl,
        _httpClient = httpClient ?? HttpClient.new;
@@ -142,6 +143,29 @@ class ResponsesClient {
   final HttpClient Function() _httpClient;
   final Duration timeout;
 
+  /// Keep one HttpClient (and its TLS connection) alive across requests;
+  /// saves the handshake on latency-critical paths (gpt-live delegation).
+  /// Call [close] when done.
+  final bool reuseConnections;
+  HttpClient? _shared;
+
+  HttpClient _client() =>
+      reuseConnections ? (_shared ??= _httpClient()..idleTimeout = const Duration(minutes: 2)) : _httpClient();
+
+  /// Opens the (reused) connection ahead of the first request. Best effort.
+  Future<void> warmUp() async {
+    if (!reuseConnections) return;
+    try {
+      final req = await _client().openUrl('HEAD', codexEndpoint).timeout(const Duration(seconds: 5));
+      await (await req.close().timeout(const Duration(seconds: 5))).drain<void>();
+    } catch (_) {}
+  }
+
+  void close() {
+    _shared?.close(force: true);
+    _shared = null;
+  }
+
   /// Runs one request and collects the streamed result.
   Future<ResponsesResult> create({
     required String model,
@@ -150,6 +174,8 @@ class ResponsesClient {
     List<Map<String, Object?>>? tools,
     Map<String, Object?>? reasoning,
     void Function(String delta)? onTextDelta,
+    void Function(FunctionCallItem call)? onFunctionCall,
+    bool parallelToolCalls = false,
   }) async {
     final creds = await credentials();
     if (creds == null) throw ResponsesException('Not signed in (no Codex login or API key)');
@@ -157,13 +183,13 @@ class ResponsesClient {
       'model': model,
       'instructions': ?instructions,
       'input': input,
-      if (tools != null && tools.isNotEmpty) ...{'tools': tools, 'tool_choice': 'auto', 'parallel_tool_calls': false},
+      if (tools != null && tools.isNotEmpty) ...{'tools': tools, 'tool_choice': 'auto', 'parallel_tool_calls': parallelToolCalls},
       'reasoning': ?reasoning,
       'stream': true,
       'store': false,
     };
     final url = creds.mode == AuthMode.apiKey ? apiKeyEndpoint : codexEndpoint;
-    final client = _httpClient();
+    final client = _client();
     final sw = Stopwatch()..start();
     try {
       final req = await client.postUrl(url).timeout(const Duration(seconds: 30));
@@ -199,7 +225,7 @@ class ResponsesClient {
           code: code,
         );
       }
-      return await _collect(res.transform(const SseParser()), sw, quota, onTextDelta).timeout(timeout);
+      return await _collect(res.transform(const SseParser()), sw, quota, onTextDelta, onFunctionCall).timeout(timeout);
     } on ResponsesException {
       rethrow;
     } on TimeoutException {
@@ -207,7 +233,7 @@ class ResponsesClient {
     } catch (e) {
       throw ResponsesException(redactSecrets('$e'));
     } finally {
-      client.close(force: true);
+      if (!reuseConnections) client.close(force: true);
     }
   }
 
@@ -215,8 +241,9 @@ class ResponsesClient {
     Stream<SseEvent> events,
     Stopwatch sw,
     Map<String, String> quota,
-    void Function(String)? onTextDelta,
-  ) async {
+    void Function(String)? onTextDelta, [
+    void Function(FunctionCallItem)? onFunctionCall,
+  ]) async {
     final text = StringBuffer();
     final calls = <FunctionCallItem>[];
     final seenCalls = <String>{};
@@ -248,13 +275,13 @@ class ResponsesClient {
             final id = item!['call_id'] as String? ?? '';
             firstToken ??= sw.elapsed;
             if (seenCalls.add(id)) {
-              calls.add(
-                FunctionCallItem(
-                  callId: id,
-                  name: item['name'] as String? ?? '',
-                  arguments: item['arguments'] as String? ?? '{}',
-                ),
+              final call = FunctionCallItem(
+                callId: id,
+                name: item['name'] as String? ?? '',
+                arguments: item['arguments'] as String? ?? '{}',
               );
+              calls.add(call);
+              onFunctionCall?.call(call);
             }
           }
         case 'response.completed' || 'response.incomplete' || 'response.failed':
