@@ -107,12 +107,23 @@ class TurnPipeline extends ChangeNotifier {
   VoiceBackend? get backend => _backend;
 
   ValueListenable<double>? get micLevel => _mic?.level;
-  ValueListenable<double>? get outputLevel => _player?.level;
+  ValueListenable<double>? get outputLevel => _out?.level;
+
+  /// Backend that captures/plays audio itself (WebRTC); null for PCM backends.
+  ManagedAudioBackend? get _managed {
+    final b = _backend;
+    return b is ManagedAudioBackend ? b as ManagedAudioBackend : null;
+  }
+
+  /// Where assistant audio goes: the managed backend's level tracker (audio
+  /// already audible via WebRTC) or the platform player.
+  PcmPlayer? get _out => _managed?.managedPlayer ?? _player;
+  bool _micManaged = false;
 
   /// Bumps when the mic or player (and so the level listenables) change.
   ValueListenable<int> get levelSourcesChanged => _levelsChanged;
 
-  bool get _assistantAudible => _player?.isPlaying ?? false;
+  bool get _assistantAudible => _out?.isPlaying ?? false;
 
   AssistantPhase get phase {
     if (_status != SessionStatus.connected) return AssistantPhase.offline;
@@ -144,6 +155,7 @@ class TurnPipeline extends ChangeNotifier {
   }
 
   Future<void> connect() async {
+    if (_micManaged) await _closeMic();
     await _disconnectBackend();
     _status = SessionStatus.connecting;
     statusDetail = null;
@@ -161,6 +173,12 @@ class TurnPipeline extends ChangeNotifier {
       await b.connect(cfg);
       if (!identical(_backend, b)) return;
       _status = SessionStatus.connected;
+      if (b is ManagedAudioBackend) {
+        // The backend owns the mic: swap the platform capture for its stream.
+        await _closeMic();
+        if (_micMode != MicMode.muted) await _openMic();
+        _levelsChanged.value++;
+      }
     } catch (e) {
       _status = SessionStatus.error;
       statusDetail = '$e';
@@ -194,7 +212,7 @@ class TurnPipeline extends ChangeNotifier {
     _awaitingResponse = false;
     _discardUntilDone = false;
     _localVad.reset();
-    _player?.stop();
+    _out?.stop();
   }
 
   /// Switches to another conversation; reconnects so the model gets its
@@ -217,6 +235,7 @@ class TurnPipeline extends ChangeNotifier {
       if (_userSpeaking) _onSpeechStopped();
     } else {
       await _openMic();
+      _managed?.setInputEnabled(_forwarding);
     }
     _changed();
   }
@@ -224,7 +243,10 @@ class TurnPipeline extends ChangeNotifier {
   Future<void> _openMic() async {
     if (_mic != null) return;
     try {
-      final mic = await audio.openMic();
+      final managed = _managed;
+      final mic = managed != null ? await managed.openManagedMic() : await audio.openMic();
+      _micManaged = managed != null;
+      managed?.setInputEnabled(_forwarding);
       _mic = mic;
       _micSub = mic.chunks.listen(_onMicChunk);
       _levelsChanged.value++;
@@ -238,6 +260,7 @@ class TurnPipeline extends ChangeNotifier {
     _micSub = null;
     final m = _mic;
     _mic = null;
+    _micManaged = false;
     await m?.close();
     _levelsChanged.value++;
   }
@@ -247,7 +270,7 @@ class TurnPipeline extends ChangeNotifier {
   void _onMicChunk(Uint8List chunk) {
     final b = _backend;
     if (b == null || _status != SessionStatus.connected || !_forwarding) return;
-    b.sendAudio(chunk);
+    if (!_micManaged) b.sendAudio(chunk);
     if (_userSpeaking) {
       _utterancePcm.add(chunk);
     } else {
@@ -269,6 +292,7 @@ class TurnPipeline extends ChangeNotifier {
   void pttDown() {
     if (_micMode != MicMode.pushToTalk || _pttHeld) return;
     _pttHeld = true;
+    _managed?.setInputEnabled(true);
     // Holding the talk button is an explicit interruption.
     _bargeIn();
     if (!(_backend?.hasServerVad ?? true)) _onSpeechStarted();
@@ -279,6 +303,7 @@ class TurnPipeline extends ChangeNotifier {
   void pttUp() {
     if (!_pttHeld) return;
     _pttHeld = false;
+    _managed?.setInputEnabled(false);
     final b = _backend;
     if (b != null && _status == SessionStatus.connected) {
       // Trailing silence lets server VAD close the turn promptly.
@@ -294,7 +319,7 @@ class TurnPipeline extends ChangeNotifier {
     final speaking = _assistantAudible || _assistantMsg != null;
     if (!speaking) return;
     bargeIns++;
-    _player?.stop();
+    _out?.stop();
     if (_assistantMsg != null) {
       _backend?.cancelResponse();
       _discardUntilDone = true;
@@ -453,7 +478,7 @@ class TurnPipeline extends ChangeNotifier {
         if (_discardUntilDone || _userSpeaking) return;
         _assistant();
         _awaitingResponse = false;
-        _player?.write(pcm16);
+        _out?.write(pcm16);
         _assistantPcm.add(pcm16);
       case ToolCall(:final callId, :final name, :final argsJson):
         _runTool(callId, name, argsJson);

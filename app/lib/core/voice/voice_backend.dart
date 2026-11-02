@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import '../../platform/audio_io.dart';
 import '../auth/auth.dart';
 
 /// Audio format used everywhere between the app and the voice backend:
@@ -137,4 +138,21 @@ abstract class VoiceBackend {
   void cancelResponse();
 
   Future<void> close();
+}
+
+/// Optional capability of a [VoiceBackend] that owns the audio devices itself
+/// (e.g. WebRTC capturing the mic and playing the reply with built-in echo
+/// cancellation). The pipeline must then not open its own mic or play
+/// [AssistantAudioDelta] on a platform player: it uses [openManagedMic] (for
+/// levels and utterance clips) and [managedPlayer] (whose `write` only feeds
+/// levels / `isPlaying`; the audio is already audible). [VoiceBackend.sendAudio]
+/// is ignored by such backends.
+abstract interface class ManagedAudioBackend {
+  /// What the backend actually captures (PCM16 24 kHz mono) plus its level.
+  Future<MicStream> openManagedMic();
+
+  PcmPlayer get managedPlayer;
+
+  /// Gates the outgoing mic (push-to-talk / mute).
+  void setInputEnabled(bool enabled);
 }
