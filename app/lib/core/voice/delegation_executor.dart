@@ -269,7 +269,10 @@ class DelegationExecutor {
 
       // Observation step: feed results (and a fresh screenshot) back.
       for (final c in turn.calls) {
-        final run = report.tools.lastWhere((t) => t.name == c.name, orElse: () => DelegationToolRun(c.name, '', sw.elapsed));
+        final run = report.tools.lastWhere(
+          (t) => t.name == c.name,
+          orElse: () => DelegationToolRun(c.name, '', sw.elapsed),
+        );
         input
           ..add({'type': 'function_call', 'call_id': c.callId, 'name': c.name, 'arguments': c.arguments})
           ..add({'type': 'function_call_output', 'call_id': c.callId, 'output': run.resultJson ?? '{"ok":false}'});
@@ -319,7 +322,8 @@ class DelegationExecutor {
   static String _compactArgs(String json) {
     try {
       final j = jsonDecode(json);
-      if (j is Map) return j.entries.map((e) => '${e.key}=${e.value is String ? jsonEncode(e.value) : e.value}').join(', ');
+      if (j is Map)
+        return j.entries.map((e) => '${e.key}=${e.value is String ? jsonEncode(e.value) : e.value}').join(', ');
     } catch (_) {}
     return json;
   }

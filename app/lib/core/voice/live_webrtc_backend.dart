@@ -20,8 +20,31 @@ const kLiveModels = ['gpt-live-1.1', 'gpt-live-1', 'gpt-live-1-codex'];
 /// v3 voices accepted by gpt-live (§3.1). Realtime voices (marin, alloy...)
 /// make the call die silently, so anything else maps to [kLiveDefaultVoice].
 const kLiveVoices = [
-  'cove', 'juniper', 'maple', 'spruce', 'ember', 'vale', 'breeze', 'arbor', 'sol', 'aube', 'bubbie', 'haetsal', //
-  'hanul', 'himari', 'leher', 'miko', 'neer', 'porto', 'rindo', 'rio', 'rivage', 'selva', 'sonna', 'tinta', 'viola',
+  'cove',
+  'juniper',
+  'maple',
+  'spruce',
+  'ember',
+  'vale',
+  'breeze',
+  'arbor',
+  'sol',
+  'aube',
+  'bubbie',
+  'haetsal', //
+  'hanul',
+  'himari',
+  'leher',
+  'miko',
+  'neer',
+  'porto',
+  'rindo',
+  'rio',
+  'rivage',
+  'selva',
+  'sonna',
+  'tinta',
+  'viola',
 ];
 const kLiveDefaultVoice = 'cove';
 
@@ -114,7 +137,7 @@ class LiveWebRtcBackend implements VoiceBackend, ManagedAudioBackend {
   final RealtimeConnector _connectSideband;
   final LiveCallCreator _createCall;
 
-  /// Builds the Responses client for delegations (default: [CodexResponsesModel]).
+  /// Builds the Responses client for delegations (default: [ResponsesDelegationModel]).
   final DelegationModel Function(Credentials? creds)? delegationModelFactory;
 
   /// Fresh credentials per delegation request (token refresh); defaults to
@@ -277,7 +300,8 @@ class LiveWebRtcBackend implements VoiceBackend, ManagedAudioBackend {
     timings.sessionStarted = total.elapsed;
     rtc.setMicEnabled(_inputEnabled);
 
-    final dm = delegationModelFactory?.call(creds) ?? ResponsesDelegationModel(credentialsProvider ?? () async => creds);
+    final dm =
+        delegationModelFactory?.call(creds) ?? ResponsesDelegationModel(credentialsProvider ?? () async => creds);
     _delegationModel = dm;
     if (dm is ResponsesDelegationModel) unawaited(dm.warmUp());
     _executor = DelegationExecutor(
