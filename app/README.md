@@ -1,17 +1,100 @@
-# woi
+# Woi
 
-A new Flutter project.
+A voice-first desktop assistant (Flutter, Linux X11 first). See `../research/REALTIME_API.md`
+for the API findings these notes build on.
 
-## Getting Started
+```sh
+flutter run -d linux                              # dev
+flutter build linux --release                     # release bundle
+flutter analyze && flutter test                   # unit tests (no network)
+WOI_LIVE=1 flutter test --tags live test/live     # real OpenAI end-to-end tests
+```
 
-This project is a starting point for a Flutter application.
+## Voice backends
 
-A few resources to get you started if this is your first Flutter project:
+Pick the backend under **Settings → Voice backend**. `lib/core/voice/backend_factory.dart`
+(`createVoiceBackend`) builds it, and `AppController` calls the factory on every (re)connect.
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+| Mode | Backend | Auth |
+|---|---|---|
+| **gpt-live (WebRTC)**, the default | Whatever is registered with `GptLiveHook` (the WebRTC backend, `live_*.dart`). If nothing is registered, Woi falls back to Direct realtime and shows an amber notice in the conversation. | ChatGPT login |
+| **Direct realtime (gpt-realtime-1.5)** | `RealtimeWsBackend` on `wss://api.openai.com/v1/realtime`. The model is configurable. | ChatGPT login |
+| **OpenAI API key** | `RealtimeWsBackend` | API key from settings, or `OPENAI_API_KEY` |
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+### Auth (`lib/core/auth/auth.dart`)
+- `CodexAuthManager` reads `~/.codex/auth.json` and sends the Codex headers: `Authorization`,
+  `chatgpt-account-id`, `originator: codex_cli_rs`, `version`, and `User-Agent`. For gpt-live
+  it also sends `openai-alpha: quicksilver=v2`.
+- When the access token is within 5 minutes of expiry, it re-reads the file and refreshes
+  through `auth.openai.com/oauth/token`.
+- Refresh tokens rotate and the file is shared with Codex CLI, so the new tokens are written
+  back the same way Codex does it: tmp file, chmod 600, then rename, with `last_refresh` in UTC.
+- Concurrent callers share a single refresh.
+- Tokens are never logged. Every error string goes through `redactSecrets`.
+
+### RealtimeWsBackend (`lib/core/voice/realtime_ws_backend.dart`)
+- `session.update` sets up:
+  - the tool registry specs
+  - server VAD: threshold 0.5, prefix padding 300 ms, silence 500 ms, `interrupt_response`
+  - transcription with `gpt-4o-mini-transcribe`
+  - PCM16 at 24 kHz in both directions
+- Screenshots are sent as `input_image` items.
+- Function calls: the backend sends the `function_call_output` items, then a single
+  `response.create` once every pending call has been answered.
+- `response.done` usage becomes `Usage` events.
+- **Interruption.** The server generates audio 3–10x faster than real time, so
+  `PlaybackTracker` models what the user has actually heard. On `speech_started` (or
+  `cancelResponse`) the backend does the following:
+  - local playback stops at once
+  - the rest of the response is suppressed
+  - `conversation.item.truncate` is sent with the played milliseconds, *after* the
+    cancelled `response.done`
+  - `response_cancel_not_active` errors are ignored
+  - no response is created while another one is active, tool calls are pending, the user
+    is talking, or compaction is in progress
+- **Reconnect.** After an unexpected close, the backend retries with exponential backoff
+  (5 tries) and restores the summary plus a text mirror of the recent turns. Tool results
+  for calls from the old socket are passed in as context.
+- **Compaction** (`LiveContextSync.applySummary`). Runs between responses and never
+  interrupts playback:
+  - adds a system item holding the summary, placed before the last 2 user turns
+    (`previous_item_id`, or `root`)
+  - waits for `item.added`
+  - deletes the older items with `conversation.item.delete`
+  - never separates a `function_call` from its output
+  - if anything fails, reconnects with the summary instead
+
+  The pipeline's "Context compacted: X → Y tokens" banner fires when the compressor
+  finishes.
+
+### Responses API (`lib/core/responses/responses_client.dart`)
+- ChatGPT login: `chatgpt.com/backend-api/codex/responses`. API key: `api.openai.com/v1/responses`.
+- Requests always use `stream: true` and `store: false`, with the full history resent on
+  each call.
+- The SSE parser works on raw bytes and doesn't check Content-Type, because the ChatGPT
+  endpoint doesn't send one.
+- `ResponsesCompressor` (`gpt-6-luna`) produces Facts / Tasks / Files / Decisions / Screen
+  lines and turns the latest screenshots into text.
+- `ResponsesDelegate` (`gpt-6.1-sol`) runs a tool loop over the same `ToolRegistry`, so
+  writes and commands still go through the confirmation dialogs. Its final answer is short
+  enough to be spoken.
+
+### Tests
+- `test/realtime_ws_backend_test.dart` uses a fake WebSocket to cover:
+  - handshake and headers
+  - event parsing
+  - the tool round trip
+  - truncate/cancel ordering
+  - reconnect
+  - compaction and its reconnect fallback
+- `test/auth_test.dart`: refresh against a local server, the atomic 0600 write, and redaction.
+- `test/responses_test.dart`: SSE parsing, the client, delegate and compressor against a
+  local server, and the factory.
+- `test/live/realtime_live_test.dart` (tag `live`):
+  - streams every `research/fixtures/*.wav` at real-time pace through the real pipeline,
+    backend and registry, with fake clicks, typing, shell and viewer and auto-approved
+    confirmations
+  - a barge-in/truncate test
+  - live compaction tests
+  - real compressor and delegate calls
+  - prints latencies; set `WOI_REALTIME_MODEL` to try another model
