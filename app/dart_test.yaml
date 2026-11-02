@@ -1,0 +1,4 @@
+tags:
+  # Real OpenAI calls; skipped unless WOI_LIVE=1 (see test/live/).
+  live:
+    timeout: 3x
