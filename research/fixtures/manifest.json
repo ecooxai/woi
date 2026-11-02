@@ -1,0 +1,224 @@
+{
+  "format": {
+    "container": "wav",
+    "sample_rate": 24000,
+    "channels": 1,
+    "sample_format": "s16le"
+  },
+  "generated_by": "research/make_fixtures.py (TTS + verification via gpt-realtime-1.5 over ChatGPT auth)",
+  "intent_toolset": [
+    "click_screen",
+    "type_text",
+    "run_command",
+    "read_file",
+    "edit_file",
+    "take_screenshot",
+    "delegate_task",
+    "play_media",
+    "stop"
+  ],
+  "fixtures": [
+    {
+      "file": "01_hello.wav",
+      "text": "Hello, how are you?",
+      "expected_intent": "chat",
+      "expected_tool": null,
+      "expected_args": null,
+      "tts_model": "gpt-realtime-1.5",
+      "voice": "marin",
+      "tts_transcript": "Hello, how are you?",
+      "duration_s": 2.17,
+      "verified_transcript": "Hello, how are you?",
+      "similarity": 1.0,
+      "verified": true,
+      "observed_tool": null,
+      "observed_args": null,
+      "observed_tool_matches": true
+    },
+    {
+      "file": "02_click_center.wav",
+      "text": "Click on the center of the screen",
+      "expected_intent": "click",
+      "expected_tool": "click_screen",
+      "expected_args": {
+        "x": 960,
+        "y": 540
+      },
+      "tts_model": "gpt-realtime-1.5",
+      "voice": "cedar",
+      "tts_transcript": "Click on the center of the screen",
+      "duration_s": 2.53,
+      "verified_transcript": "Click on the center of the screen.",
+      "similarity": 1.0,
+      "verified": true,
+      "observed_tool": "click_screen",
+      "observed_args": {
+        "x": 960,
+        "y": 540
+      },
+      "observed_tool_matches": true
+    },
+    {
+      "file": "03_type_hello_world.wav",
+      "text": "Type hello world",
+      "expected_intent": "type_text",
+      "expected_tool": "type_text",
+      "expected_args": {
+        "text": "hello world"
+      },
+      "tts_model": "gpt-realtime-1.5",
+      "voice": "marin",
+      "tts_transcript": "Type hello world",
+      "duration_s": 2.59,
+      "verified_transcript": "Type \"Hello, World!\"",
+      "similarity": 1.0,
+      "verified": true,
+      "observed_tool": "type_text",
+      "observed_args": {
+        "text": "Hello, world"
+      },
+      "observed_tool_matches": true
+    },
+    {
+      "file": "04_run_ls_home.wav",
+      "text": "Run the command ls in my home folder",
+      "expected_intent": "run_command",
+      "expected_tool": "run_command",
+      "expected_args": {
+        "command": "ls ~"
+      },
+      "tts_model": "gpt-realtime-1.5",
+      "voice": "cedar",
+      "tts_transcript": "Run the command ls in my home folder",
+      "duration_s": 3.67,
+      "verified_transcript": "Run the command ls in my home folder.",
+      "similarity": 1.0,
+      "verified": true,
+      "observed_tool": "run_command",
+      "observed_args": {
+        "command": "ls ~"
+      },
+      "observed_tool_matches": true
+    },
+    {
+      "file": "05_show_readme.wav",
+      "text": "Show me the file README.md",
+      "expected_intent": "read_file",
+      "expected_tool": "read_file",
+      "expected_args": {
+        "path": "README.md"
+      },
+      "tts_model": "gpt-realtime-1.5",
+      "voice": "marin",
+      "tts_transcript": "Show me the file readme dot m d",
+      "duration_s": 3.15,
+      "verified_transcript": "Show me the file README.md.",
+      "similarity": 1.0,
+      "verified": true,
+      "observed_tool": "read_file",
+      "observed_args": {
+        "path": "README.md"
+      },
+      "observed_tool_matches": true
+    },
+    {
+      "file": "06_edit_notes.wav",
+      "text": "Edit the file notes.txt and add a line saying buy milk",
+      "expected_intent": "edit_file",
+      "expected_tool": "edit_file",
+      "expected_args": {
+        "path": "notes.txt",
+        "append": "buy milk"
+      },
+      "tts_model": "gpt-realtime-1.5",
+      "voice": "cedar",
+      "tts_transcript": "Edit the file notes.t x t and add a line saying buy milk",
+      "duration_s": 5.37,
+      "verified_transcript": "Edit the file notes.txt and add a line saying, buy milk.",
+      "similarity": 1.0,
+      "verified": true,
+      "observed_tool": "edit_file",
+      "observed_args": {
+        "path": "notes.txt",
+        "append": "Buy milk"
+      },
+      "observed_tool_matches": true
+    },
+    {
+      "file": "07_whats_on_screen.wav",
+      "text": "What is on my screen right now?",
+      "expected_intent": "look_at_screen",
+      "expected_tool": "take_screenshot",
+      "expected_args": {},
+      "tts_model": "gpt-realtime-1.5",
+      "voice": "marin",
+      "tts_transcript": "What is on my screen right now?",
+      "duration_s": 2.51,
+      "verified_transcript": "What is on my screen right now?",
+      "similarity": 1.0,
+      "verified": true,
+      "observed_tool": "take_screenshot",
+      "observed_args": {},
+      "observed_tool_matches": true
+    },
+    {
+      "file": "08_complex_task.wav",
+      "text": "This is a complex task: write a Python script that finds duplicate files in a folder and explain it",
+      "expected_intent": "delegate_complex",
+      "expected_tool": "delegate_task",
+      "expected_args": {
+        "task": "write a Python script that finds duplicate files in a folder and explain it"
+      },
+      "tts_model": "gpt-realtime-1.5",
+      "voice": "cedar",
+      "tts_transcript": "This is a complex task: write a Python script that finds duplicate files in a folder and explain it",
+      "duration_s": 6.97,
+      "verified_transcript": "This is a complex task. Write a Python script that finds duplicate files in a folder and explain it.",
+      "similarity": 1.0,
+      "verified": true,
+      "observed_tool": "delegate_task",
+      "observed_args": {
+        "task": "Write a Python script that finds duplicate files in a folder by comparing file hashes or sizes, and provide an explanation of how the script works."
+      },
+      "observed_tool_matches": true
+    },
+    {
+      "file": "09_play_video.wav",
+      "text": "Play the video demo.mp4",
+      "expected_intent": "play_media",
+      "expected_tool": "play_media",
+      "expected_args": {
+        "path": "demo.mp4"
+      },
+      "tts_model": "gpt-realtime-1.5",
+      "voice": "marin",
+      "tts_transcript": "Play the video demo dot m p four",
+      "duration_s": 3.27,
+      "verified_transcript": "Play the video demo.mp4.",
+      "similarity": 1.0,
+      "verified": true,
+      "observed_tool": "play_media",
+      "observed_args": {
+        "path": "demo.mp4"
+      },
+      "observed_tool_matches": true
+    },
+    {
+      "file": "10_stop.wav",
+      "text": "Stop",
+      "expected_intent": "stop",
+      "expected_tool": "stop",
+      "expected_args": {},
+      "tts_model": "gpt-realtime-1.5",
+      "voice": "cedar",
+      "tts_transcript": "Stop",
+      "duration_s": 1.37,
+      "verified_transcript": "Stop.",
+      "similarity": 1.0,
+      "verified": true,
+      "observed_tool": "stop",
+      "observed_args": {},
+      "observed_tool_matches": true
+    }
+  ]
+}
