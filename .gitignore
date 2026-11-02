@@ -4,3 +4,6 @@ dist/
 *.log
 .env
 research/out/
+research/__pycache__/
+research/.venv/
+**/__pycache__/
