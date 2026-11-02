@@ -16,3 +16,12 @@
 3. Integration: voice loop + tools.
 4. Context compression + delegation.
 5. UI polish, E2E tests with TTS fixtures.
+
+## Decisions log
+- 2026-11-02: gpt-live-* only reachable via WebRTC (AVAS) + sideband WS; no client tools/images → actions via
+  delegation.created → client DelegationExecutor (gpt-6-luna + tools + screenshot, escalate to gpt-6.1-sol).
+- Direct mode: /v1/realtime WS with gpt-realtime-1.5 (native tools + images) — also the OpenAI-API-key path.
+- Default backend: gpt-live-1.1 (user requirement); Direct mode selectable for lowest tool latency.
+
+## Iteration log
+- Iter 0 (scaffold + research): UI, platform layer, tools, mock backend; protocol verified; 10 TTS fixtures. Score 22/100.
