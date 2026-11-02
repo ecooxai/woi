@@ -23,6 +23,7 @@ const _benignErrors = {
   // response is usually complete already (REALTIME_API.md §2.6).
   'response_cancel_not_active',
   'item_truncate_invalid_item_id',
+  'item_delete_invalid_item_id',
 };
 
 /// Path A: OpenAI Realtime over WebSocket (`wss://api.openai.com/v1/realtime`),
@@ -483,12 +484,15 @@ class RealtimeWsBackend implements VoiceBackend, LiveContextSync {
     } catch (e, st) {
       _log('event handling failed for ${ev['type']}: $e\n$st');
     }
-    if (_waiters.isNotEmpty) {
-      for (final w in List.of(_waiters)) {
-        if (w.$1(ev)) {
-          _waiters.remove(w);
-          if (!w.$2.isCompleted) w.$2.complete(ev);
-        }
+    _onMessageWaiters(ev);
+  }
+
+  void _onMessageWaiters(Map<String, Object?> ev) {
+    if (_waiters.isEmpty) return;
+    for (final w in List.of(_waiters)) {
+      if (w.$1(ev)) {
+        _waiters.remove(w);
+        if (!w.$2.isCompleted) w.$2.complete(ev);
       }
     }
   }
@@ -635,8 +639,22 @@ class RealtimeWsBackend implements VoiceBackend, LiveContextSync {
       hs.completeError(RealtimeException(redactSecrets(message), code: code));
       return;
     }
+    if (code == 'item_delete_invalid_item_id') {
+      // Already gone: as good as deleted (message names the id).
+      final id = RegExp(r"id '([^']+)'").firstMatch(message)?.group(1);
+      if (id != null) {
+        _items.removeWhere((i) => i.id == id);
+        _onMessageWaiters({'type': 'conversation.item.deleted', 'item_id': id});
+      }
+      return;
+    }
     if (_applyingSummary && code != null && !_benignErrors.contains(code)) {
       _applyErrors.add('$code: $message');
+      // Fail the pending confirmations now instead of waiting for timeouts.
+      for (final w in List.of(_waiters)) {
+        if (!w.$2.isCompleted) w.$2.completeError(RealtimeException('$code: $message', code: code));
+      }
+      _waiters.clear();
       return;
     }
     switch (code) {
@@ -676,12 +694,14 @@ class RealtimeWsBackend implements VoiceBackend, LiveContextSync {
     final id = item?['id'] as String?;
     if (item == null || id == null || _itemById(id) != null) return;
     final it = _Item(id)..update(item);
+    // Verified: the server reports the preceding item, and null only for an
+    // item at the very beginning (first item or previous_item_id "root").
     final prev = ev['previous_item_id'] as String?;
     final idx = prev == null ? -1 : _items.indexWhere((i) => i.id == prev);
-    if (prev != null && idx >= 0) {
+    if (prev == null) {
+      _items.insert(0, it);
+    } else if (idx >= 0) {
       _items.insert(idx + 1, it);
-    } else if (prev == null && ev.containsKey('previous_item_id') && _items.isNotEmpty) {
-      _items.insert(0, it); // explicit null = first item
     } else {
       _items.add(it);
     }
@@ -798,10 +818,10 @@ class RealtimeWsBackend implements VoiceBackend, LiveContextSync {
         const Duration(seconds: 5),
       );
       // Insert the summary right before the first kept item.
-      final prevId = cut > 0 ? _items[cut - 1].id : null;
+      final prevId = cut > 0 ? _items[cut - 1].id : 'root';
       _send({
         'type': 'conversation.item.create',
-        'previous_item_id': ?prevId,
+        'previous_item_id': prevId,
         'item': _systemItem(newId, _summaryText(summary)),
       });
       try {
