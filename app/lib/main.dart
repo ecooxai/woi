@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
+import 'core/voice/live_register.dart';
 import 'platform/linux/linux_audio_io.dart';
 import 'platform/linux/linux_media_viewer.dart';
 import 'platform/media_viewer.dart';
@@ -18,5 +19,6 @@ void main(List<String> args) {
     runApp(ViewerApp(item: item, audio: LinuxAudioIO()));
     return;
   }
+  registerGptLive();
   runApp(const WoiApp());
 }

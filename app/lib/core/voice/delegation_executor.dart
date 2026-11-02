@@ -322,8 +322,9 @@ class DelegationExecutor {
   static String _compactArgs(String json) {
     try {
       final j = jsonDecode(json);
-      if (j is Map)
+      if (j is Map) {
         return j.entries.map((e) => '${e.key}=${e.value is String ? jsonEncode(e.value) : e.value}').join(', ');
+      }
     } catch (_) {}
     return json;
   }
