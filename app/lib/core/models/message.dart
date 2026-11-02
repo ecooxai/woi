@@ -21,21 +21,15 @@ class ImageAttachment {
   final int originalWidth;
   final int originalHeight;
 
-  Map<String, Object?> toJson() => {
-        'path': path,
-        'w': width,
-        'h': height,
-        'ow': originalWidth,
-        'oh': originalHeight,
-      };
+  Map<String, Object?> toJson() => {'path': path, 'w': width, 'h': height, 'ow': originalWidth, 'oh': originalHeight};
 
   factory ImageAttachment.fromJson(Map<String, Object?> j) => ImageAttachment(
-        path: j['path'] as String,
-        width: (j['w'] as num?)?.toInt() ?? 0,
-        height: (j['h'] as num?)?.toInt() ?? 0,
-        originalWidth: (j['ow'] as num?)?.toInt() ?? 0,
-        originalHeight: (j['oh'] as num?)?.toInt() ?? 0,
-      );
+    path: j['path'] as String,
+    width: (j['w'] as num?)?.toInt() ?? 0,
+    height: (j['h'] as num?)?.toInt() ?? 0,
+    originalWidth: (j['ow'] as num?)?.toInt() ?? 0,
+    originalHeight: (j['oh'] as num?)?.toInt() ?? 0,
+  );
 }
 
 class AudioClip {
@@ -44,10 +38,8 @@ class AudioClip {
   final int durationMs;
 
   Map<String, Object?> toJson() => {'path': path, 'ms': durationMs};
-  factory AudioClip.fromJson(Map<String, Object?> j) => AudioClip(
-        path: j['path'] as String,
-        durationMs: (j['ms'] as num?)?.toInt() ?? 0,
-      );
+  factory AudioClip.fromJson(Map<String, Object?> j) =>
+      AudioClip(path: j['path'] as String, durationMs: (j['ms'] as num?)?.toInt() ?? 0);
 }
 
 class ToolCallInfo {
@@ -70,24 +62,24 @@ class ToolCallInfo {
   DateTime? finishedAt;
 
   Map<String, Object?> toJson() => {
-        'callId': callId,
-        'name': name,
-        'args': argsJson,
-        'status': status.name,
-        if (resultJson != null) 'result': resultJson,
-        'startedAt': startedAt.toIso8601String(),
-        if (finishedAt != null) 'finishedAt': finishedAt!.toIso8601String(),
-      };
+    'callId': callId,
+    'name': name,
+    'args': argsJson,
+    'status': status.name,
+    if (resultJson != null) 'result': resultJson,
+    'startedAt': startedAt.toIso8601String(),
+    if (finishedAt != null) 'finishedAt': finishedAt!.toIso8601String(),
+  };
 
   factory ToolCallInfo.fromJson(Map<String, Object?> j) => ToolCallInfo(
-        callId: j['callId'] as String,
-        name: j['name'] as String,
-        argsJson: j['args'] as String? ?? '{}',
-        status: ToolStatus.values.asNameMap()[j['status']] ?? ToolStatus.error,
-        resultJson: j['result'] as String?,
-        startedAt: DateTime.tryParse(j['startedAt'] as String? ?? ''),
-        finishedAt: DateTime.tryParse(j['finishedAt'] as String? ?? ''),
-      );
+    callId: j['callId'] as String,
+    name: j['name'] as String,
+    argsJson: j['args'] as String? ?? '{}',
+    status: ToolStatus.values.asNameMap()[j['status']] ?? ToolStatus.error,
+    resultJson: j['result'] as String?,
+    startedAt: DateTime.tryParse(j['startedAt'] as String? ?? ''),
+    finishedAt: DateTime.tryParse(j['finishedAt'] as String? ?? ''),
+  );
 }
 
 final _rng = Random();
@@ -113,9 +105,9 @@ class Message {
     this.compacted = false,
     this.streaming = false,
     Map<String, Object?>? meta,
-  })  : id = id ?? newId('m'),
-        createdAt = createdAt ?? DateTime.now(),
-        meta = meta ?? {};
+  }) : id = id ?? newId('m'),
+       createdAt = createdAt ?? DateTime.now(),
+       meta = meta ?? {};
 
   final String id;
   final MessageKind kind;
@@ -138,38 +130,30 @@ class Message {
   final Map<String, Object?> meta;
 
   Map<String, Object?> toJson() => {
-        'id': id,
-        'kind': kind.name,
-        'createdAt': createdAt.toIso8601String(),
-        if (text.isNotEmpty) 'text': text,
-        if (image != null) 'image': image!.toJson(),
-        if (audio != null) 'audio': audio!.toJson(),
-        if (tool != null) 'tool': tool!.toJson(),
-        if (interrupted) 'interrupted': true,
-        if (compacted) 'compacted': true,
-        if (meta.isNotEmpty) 'meta': meta,
-      };
+    'id': id,
+    'kind': kind.name,
+    'createdAt': createdAt.toIso8601String(),
+    if (text.isNotEmpty) 'text': text,
+    if (image != null) 'image': image!.toJson(),
+    if (audio != null) 'audio': audio!.toJson(),
+    if (tool != null) 'tool': tool!.toJson(),
+    if (interrupted) 'interrupted': true,
+    if (compacted) 'compacted': true,
+    if (meta.isNotEmpty) 'meta': meta,
+  };
 
   factory Message.fromJson(Map<String, Object?> j) => Message(
-        id: j['id'] as String?,
-        kind: MessageKind.values.asNameMap()[j['kind']] ?? MessageKind.system,
-        text: j['text'] as String? ?? '',
-        image: j['image'] is Map
-            ? ImageAttachment.fromJson((j['image'] as Map).cast<String, Object?>())
-            : null,
-        audio: j['audio'] is Map
-            ? AudioClip.fromJson((j['audio'] as Map).cast<String, Object?>())
-            : null,
-        tool: j['tool'] is Map
-            ? ToolCallInfo.fromJson((j['tool'] as Map).cast<String, Object?>())
-            : null,
-        createdAt: DateTime.tryParse(j['createdAt'] as String? ?? ''),
-        interrupted: j['interrupted'] == true,
-        compacted: j['compacted'] == true,
-        meta: j['meta'] is Map
-            ? (j['meta'] as Map).cast<String, Object?>()
-            : null,
-      );
+    id: j['id'] as String?,
+    kind: MessageKind.values.asNameMap()[j['kind']] ?? MessageKind.system,
+    text: j['text'] as String? ?? '',
+    image: j['image'] is Map ? ImageAttachment.fromJson((j['image'] as Map).cast<String, Object?>()) : null,
+    audio: j['audio'] is Map ? AudioClip.fromJson((j['audio'] as Map).cast<String, Object?>()) : null,
+    tool: j['tool'] is Map ? ToolCallInfo.fromJson((j['tool'] as Map).cast<String, Object?>()) : null,
+    createdAt: DateTime.tryParse(j['createdAt'] as String? ?? ''),
+    interrupted: j['interrupted'] == true,
+    compacted: j['compacted'] == true,
+    meta: j['meta'] is Map ? (j['meta'] as Map).cast<String, Object?>() : null,
+  );
 }
 
 class Conversation {
@@ -180,10 +164,10 @@ class Conversation {
     DateTime? updatedAt,
     List<Message>? messages,
     this.summary,
-  })  : id = id ?? newId('c'),
-        createdAt = createdAt ?? DateTime.now(),
-        updatedAt = updatedAt ?? DateTime.now(),
-        messages = messages ?? [];
+  }) : id = id ?? newId('c'),
+       createdAt = createdAt ?? DateTime.now(),
+       updatedAt = updatedAt ?? DateTime.now(),
+       messages = messages ?? [];
 
   final String id;
   String title;
@@ -221,27 +205,27 @@ class Conversation {
   }
 
   Map<String, Object?> toJson() => {
-        'version': 1,
-        'id': id,
-        'title': title,
-        'createdAt': createdAt.toIso8601String(),
-        'updatedAt': updatedAt.toIso8601String(),
-        if (summary != null) 'summary': summary,
-        'messages': [
-          for (final m in messages)
-            if (!(m.streaming && m.text.isEmpty && m.tool == null)) m.toJson()
-        ],
-      };
+    'version': 1,
+    'id': id,
+    'title': title,
+    'createdAt': createdAt.toIso8601String(),
+    'updatedAt': updatedAt.toIso8601String(),
+    if (summary != null) 'summary': summary,
+    'messages': [
+      for (final m in messages)
+        if (!(m.streaming && m.text.isEmpty && m.tool == null)) m.toJson(),
+    ],
+  };
 
   factory Conversation.fromJson(Map<String, Object?> j) => Conversation(
-        id: j['id'] as String?,
-        title: j['title'] as String? ?? '',
-        createdAt: DateTime.tryParse(j['createdAt'] as String? ?? ''),
-        updatedAt: DateTime.tryParse(j['updatedAt'] as String? ?? ''),
-        summary: j['summary'] as String?,
-        messages: [
-          for (final m in (j['messages'] as List? ?? const []))
-            if (m is Map) Message.fromJson(m.cast<String, Object?>())
-        ],
-      );
+    id: j['id'] as String?,
+    title: j['title'] as String? ?? '',
+    createdAt: DateTime.tryParse(j['createdAt'] as String? ?? ''),
+    updatedAt: DateTime.tryParse(j['updatedAt'] as String? ?? ''),
+    summary: j['summary'] as String?,
+    messages: [
+      for (final m in (j['messages'] as List? ?? const []))
+        if (m is Map) Message.fromJson(m.cast<String, Object?>()),
+    ],
+  );
 }

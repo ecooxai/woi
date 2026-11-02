@@ -13,24 +13,21 @@ class LinuxInputControl implements InputControl {
   }
 
   static String _button(MouseButton b) => switch (b) {
-        MouseButton.left => '1',
-        MouseButton.middle => '2',
-        MouseButton.right => '3',
-      };
+    MouseButton.left => '1',
+    MouseButton.middle => '2',
+    MouseButton.right => '3',
+  };
 
   @override
-  Future<void> moveMouse(int x, int y) =>
-      _run(['mousemove', '--sync', '$x', '$y']);
+  Future<void> moveMouse(int x, int y) => _run(['mousemove', '--sync', '$x', '$y']);
 
   @override
   Future<void> click(int x, int y, {MouseButton button = MouseButton.left}) =>
       _run(['mousemove', '--sync', '$x', '$y', 'click', _button(button)]);
 
   @override
-  Future<void> doubleClick(int x, int y,
-          {MouseButton button = MouseButton.left}) =>
-      _run(['mousemove', '--sync', '$x', '$y', 'click', '--repeat', '2',
-          '--delay', '80', _button(button)]);
+  Future<void> doubleClick(int x, int y, {MouseButton button = MouseButton.left}) =>
+      _run(['mousemove', '--sync', '$x', '$y', 'click', '--repeat', '2', '--delay', '80', _button(button)]);
 
   @override
   Future<void> typeText(String text) async {
@@ -40,12 +37,7 @@ class LinuxInputControl implements InputControl {
 
   @override
   Future<void> keyCombo(String combo) async {
-    final keys = combo
-        .trim()
-        .split(RegExp(r'\s+'))
-        .where((s) => s.isNotEmpty)
-        .map(normalizeKeyCombo)
-        .toList();
+    final keys = combo.trim().split(RegExp(r'\s+')).where((s) => s.isNotEmpty).map(normalizeKeyCombo).toList();
     if (keys.isEmpty) return;
     await _run(['key', '--clearmodifiers', ...keys]);
   }
@@ -101,13 +93,17 @@ const _keyAliases = {
 
 /// Converts friendly names ("Ctrl+Shift+Enter") to xdotool keysyms.
 String normalizeKeyCombo(String combo) {
-  return combo.split('+').where((s) => s.isNotEmpty).map((k) {
-    final lower = k.toLowerCase();
-    final alias = _keyAliases[lower];
-    if (alias != null) return alias;
-    if (RegExp(r'^f([1-9]|1[0-9]|2[0-4])$').hasMatch(lower)) {
-      return lower.toUpperCase();
-    }
-    return k.length == 1 ? k.toLowerCase() : k;
-  }).join('+');
+  return combo
+      .split('+')
+      .where((s) => s.isNotEmpty)
+      .map((k) {
+        final lower = k.toLowerCase();
+        final alias = _keyAliases[lower];
+        if (alias != null) return alias;
+        if (RegExp(r'^f([1-9]|1[0-9]|2[0-4])$').hasMatch(lower)) {
+          return lower.toUpperCase();
+        }
+        return k.length == 1 ? k.toLowerCase() : k;
+      })
+      .join('+');
 }

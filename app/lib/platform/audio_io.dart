@@ -1,4 +1,3 @@
-
 import 'package:flutter/foundation.dart';
 
 /// Microphone capture: PCM16, 24 kHz, mono.

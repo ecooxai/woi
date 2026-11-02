@@ -33,15 +33,13 @@ Uint8List encodeWav(Uint8List pcm16, {int sampleRate = kVoiceSampleRate}) {
   return out;
 }
 
-Future<void> writeWav(String path, Uint8List pcm16,
-    {int sampleRate = kVoiceSampleRate}) async {
+Future<void> writeWav(String path, Uint8List pcm16, {int sampleRate = kVoiceSampleRate}) async {
   final f = File(path);
   await f.parent.create(recursive: true);
   await f.writeAsBytes(encodeWav(pcm16, sampleRate: sampleRate), flush: true);
 }
 
-int pcmDurationMs(int byteCount, {int sampleRate = kVoiceSampleRate}) =>
-    (byteCount * 1000) ~/ (sampleRate * 2);
+int pcmDurationMs(int byteCount, {int sampleRate = kVoiceSampleRate}) => (byteCount * 1000) ~/ (sampleRate * 2);
 
 /// RMS level of a PCM16 chunk, normalised to 0..1.
 double pcm16Rms(Uint8List pcm) {

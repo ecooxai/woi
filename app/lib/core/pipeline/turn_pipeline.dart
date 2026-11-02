@@ -122,7 +122,10 @@ class TurnPipeline extends ChangeNotifier {
     return _micMode == MicMode.muted ? AssistantPhase.idle : AssistantPhase.listening;
   }
 
+  bool _disposed = false;
+
   void _changed() {
+    if (_disposed) return;
     _lastPhase = phase;
     notifyListeners();
   }
@@ -146,9 +149,12 @@ class TurnPipeline extends ChangeNotifier {
     _changed();
     final b = backendFactory();
     _backend = b;
-    _eventSub = b.events.listen(_onEvent, onError: (Object e) {
-      _addSystem('Voice backend error: $e', meta: {'type': 'error'});
-    });
+    _eventSub = b.events.listen(
+      _onEvent,
+      onError: (Object e) {
+        _addSystem('Voice backend error: $e', meta: {'type': 'error'});
+      },
+    );
     try {
       final cfg = await sessionConfig(_conv);
       await b.connect(cfg);
@@ -235,8 +241,7 @@ class TurnPipeline extends ChangeNotifier {
     _levelsChanged.value++;
   }
 
-  bool get _forwarding =>
-      _micMode == MicMode.handsFree || (_micMode == MicMode.pushToTalk && _pttHeld);
+  bool get _forwarding => _micMode == MicMode.handsFree || (_micMode == MicMode.pushToTalk && _pttHeld);
 
   void _onMicChunk(Uint8List chunk) {
     final b = _backend;
@@ -332,14 +337,17 @@ class TurnPipeline extends ChangeNotifier {
     }
     final pcm = _utterancePcm.takeBytes();
     if (msg != null && pcm.isNotEmpty) {
-      store.saveAudio(msg.id, pcm).then((clip) {
-        msg.audio = clip;
-        _persistSoon();
-        context.onConversationChanged();
-        _changed();
-      }).catchError((Object e) {
-        debugPrint('saving utterance failed: $e');
-      });
+      store
+          .saveAudio(msg.id, pcm)
+          .then((clip) {
+            msg.audio = clip;
+            _persistSoon();
+            context.onConversationChanged();
+            _changed();
+          })
+          .catchError((Object e) {
+            debugPrint('saving utterance failed: $e');
+          });
     }
     _changed();
   }
@@ -347,8 +355,7 @@ class TurnPipeline extends ChangeNotifier {
   Future<void> _captureFor(Message msg) async {
     try {
       final shot = await screen.capture(maxWidth: options().maxScreenshotWidth);
-      await attachScreenshot(shot,
-          note: 'Screen when the user spoke.', to: msg);
+      await attachScreenshot(shot, note: 'Screen when the user spoke.', to: msg);
     } catch (e) {
       _addSystem('Screenshot failed: $e', meta: {'type': 'error'});
     }
@@ -358,8 +365,7 @@ class TurnPipeline extends ChangeNotifier {
   /// it to the model.
   Future<void> attachScreenshot(Screenshot shot, {required String note, Message? to}) async {
     onScreenshotCaptured?.call(shot);
-    final target = to ??
-        _addMessage(Message(kind: MessageKind.system, text: note, meta: {'type': 'screenshot'}));
+    final target = to ?? _addMessage(Message(kind: MessageKind.system, text: note, meta: {'type': 'screenshot'}));
     final path = await store.saveImage(target.id, shot.png);
     target.image = ImageAttachment(
       path: path,
@@ -368,10 +374,13 @@ class TurnPipeline extends ChangeNotifier {
       originalWidth: shot.originalWidth,
       originalHeight: shot.originalHeight,
     );
-    _backend?.sendImage(shot.png,
-        note: '$note Image is ${shot.width}x${shot.height} of a '
-            '${shot.originalWidth}x${shot.originalHeight} screen; '
-            'click_screen uses image pixel coordinates.');
+    _backend?.sendImage(
+      shot.png,
+      note:
+          '$note Image is ${shot.width}x${shot.height} of a '
+          '${shot.originalWidth}x${shot.originalHeight} screen; '
+          'click_screen uses image pixel coordinates.',
+    );
     screenshotsSent++;
     context.onConversationChanged();
     _persistSoon();
@@ -475,8 +484,7 @@ class TurnPipeline extends ChangeNotifier {
     return _addMessage(m);
   }
 
-  Message _assistant() =>
-      _assistantMsg ??= _addMessage(Message(kind: MessageKind.assistant, streaming: true));
+  Message _assistant() => _assistantMsg ??= _addMessage(Message(kind: MessageKind.assistant, streaming: true));
 
   void _finishAssistant({bool interrupted = false}) {
     final m = _assistantMsg;
@@ -488,13 +496,16 @@ class TurnPipeline extends ChangeNotifier {
     if (m.text.isEmpty && pcm.isEmpty) {
       _conv.messages.remove(m);
     } else if (pcm.isNotEmpty) {
-      store.saveAudio(m.id, pcm).then((clip) {
-        m.audio = clip;
-        _persistSoon();
-        _changed();
-      }).catchError((Object e) {
-        debugPrint('saving reply audio failed: $e');
-      });
+      store
+          .saveAudio(m.id, pcm)
+          .then((clip) {
+            m.audio = clip;
+            _persistSoon();
+            _changed();
+          })
+          .catchError((Object e) {
+            debugPrint('saving reply audio failed: $e');
+          });
     }
     context.onConversationChanged();
     _persistSoon();
@@ -507,14 +518,20 @@ class TurnPipeline extends ChangeNotifier {
     _awaitingResponse = true;
     _changed();
     final b = _backend;
-    final outcome = await tools.dispatch(name, argsJson, callId: callId, onStatus: (s) {
-      info.status = s;
-      _changed();
-    });
+    final outcome = await tools.dispatch(
+      name,
+      argsJson,
+      callId: callId,
+      onStatus: (s) {
+        info.status = s;
+        _changed();
+      },
+    );
     info.status = outcome.status;
     info.resultJson = outcome.json;
     info.finishedAt = DateTime.now();
     _toolsRunning--;
+    if (_disposed) return;
     if (identical(b, _backend)) b?.sendToolResult(callId, outcome.json);
     context.onConversationChanged();
     await _persistNow();
@@ -524,6 +541,7 @@ class TurnPipeline extends ChangeNotifier {
   // ------------------------------------------------------------ context
 
   void _onCompacted(ContextCompacted c) {
+    if (_disposed) return;
     _addSystem(
       'Context compacted: ${c.tokensBefore} → ${c.tokensAfter} tokens '
       '(${c.compactedMessages} messages summarised)',
@@ -551,7 +569,8 @@ class TurnPipeline extends ChangeNotifier {
   }
 
   void _persistSoon() => store.saveSoon(_conv);
-  Future<void> _persistNow() => store.save(_conv);
+  Future<void> _persistNow() =>
+      store.save(_conv).catchError((Object e) => debugPrint('saving conversation failed: $e'));
 
   /// Stops audio, closes the session and flushes history.
   Future<void> shutdown() async {
@@ -564,6 +583,7 @@ class TurnPipeline extends ChangeNotifier {
     await store.flush(_conv);
     await _compactionEvents.close();
     _levelsChanged.dispose();
+    _disposed = true;
     dispose();
   }
 }

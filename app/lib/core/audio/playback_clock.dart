@@ -9,10 +9,8 @@ import 'wav.dart';
 /// Tracks what part of a streamed PCM queue is audible "now", so the UI can
 /// show the output level in sync and the pipeline knows when speech ends.
 class PlaybackClock {
-  PlaybackClock({
-    this.outputLatency = const Duration(milliseconds: 60),
-    DateTime Function()? now,
-  }) : _now = now ?? DateTime.now;
+  PlaybackClock({this.outputLatency = const Duration(milliseconds: 60), DateTime Function()? now})
+    : _now = now ?? DateTime.now;
 
   final Duration outputLatency;
   final DateTime Function() _now;
@@ -34,8 +32,7 @@ class PlaybackClock {
     final now = _now();
     var start = _endAt;
     if (start == null || start.isBefore(now)) start = now.add(outputLatency);
-    final dur = Duration(
-        microseconds: pcm.length * 1000000 ~/ kVoiceBytesPerSecond);
+    final dur = Duration(microseconds: pcm.length * 1000000 ~/ kVoiceBytesPerSecond);
     final end = start.add(dur);
     _segments.add((start, end, rmsToMeter(pcm16Rms(pcm))));
     _endAt = end;

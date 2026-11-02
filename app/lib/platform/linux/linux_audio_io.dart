@@ -22,13 +22,14 @@ class LinuxAudioIO implements AudioIO {
   (String, List<String>) _captureCommand() {
     final pw = which('pw-record');
     if (pw != null) {
-      return (pw, ['--raw', '--rate', _rate, '--channels', '1', '--format', 's16',
-          '--latency', '${captureLatencyMs}ms', '-']);
+      return (
+        pw,
+        ['--raw', '--rate', _rate, '--channels', '1', '--format', 's16', '--latency', '${captureLatencyMs}ms', '-'],
+      );
     }
     final pa = which('parecord');
     if (pa != null) {
-      return (pa, ['--raw', '--rate=$_rate', '--channels=1', '--format=s16le',
-          '--latency-msec=$captureLatencyMs']);
+      return (pa, ['--raw', '--rate=$_rate', '--channels=1', '--format=s16le', '--latency-msec=$captureLatencyMs']);
     }
     throw MissingTool(['pw-record', 'parecord']);
   }
@@ -36,13 +37,17 @@ class LinuxAudioIO implements AudioIO {
   (String, List<String>) _playbackCommand() {
     final pw = which('pw-play');
     if (pw != null) {
-      return (pw, ['--raw', '--rate', _rate, '--channels', '1', '--format', 's16',
-          '--latency', '${playbackLatencyMs}ms', '-']);
+      return (
+        pw,
+        ['--raw', '--rate', _rate, '--channels', '1', '--format', 's16', '--latency', '${playbackLatencyMs}ms', '-'],
+      );
     }
     final pa = which('pacat');
     if (pa != null) {
-      return (pa, ['--playback', '--raw', '--rate=$_rate', '--channels=1',
-          '--format=s16le', '--latency-msec=$playbackLatencyMs']);
+      return (
+        pa,
+        ['--playback', '--raw', '--rate=$_rate', '--channels=1', '--format=s16le', '--latency-msec=$playbackLatencyMs'],
+      );
     }
     throw MissingTool(['pw-play', 'pacat']);
   }
@@ -123,8 +128,7 @@ class _LinuxMic implements MicStream {
 
 class _LinuxPcmPlayer implements PcmPlayer {
   _LinuxPcmPlayer(this._command, int latencyMs)
-      : _clock = PlaybackClock(
-            outputLatency: Duration(milliseconds: latencyMs + 20));
+    : _clock = PlaybackClock(outputLatency: Duration(milliseconds: latencyMs + 20));
 
   final (String, List<String>) Function() _command;
   final PlaybackClock _clock;
@@ -148,9 +152,11 @@ class _LinuxPcmPlayer implements PcmPlayer {
       p.stdout.drain<void>();
       p.stderr.drain<void>();
       p.stdin.done.catchError((_) {});
-      unawaited(p.exitCode.then((_) {
-        if (identical(_proc, p)) _proc = null;
-      }));
+      unawaited(
+        p.exitCode.then((_) {
+          if (identical(_proc, p)) _proc = null;
+        }),
+      );
       _spawning = null;
       if (gen != _generation || _closed) {
         p.kill(ProcessSignal.sigkill);

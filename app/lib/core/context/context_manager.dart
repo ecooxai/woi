@@ -78,8 +78,7 @@ class ContextManager extends ChangeNotifier {
     }
     final tool = m.tool;
     if (tool != null) {
-      t += ((tool.argsJson.length + (tool.resultJson?.length ?? 0)) / 4).ceil() +
-          8;
+      t += ((tool.argsJson.length + (tool.resultJson?.length ?? 0)) / 4).ceil() + 8;
     }
     return t;
   }
@@ -127,12 +126,12 @@ class ContextManager extends ChangeNotifier {
     if (c == null) return const [];
     final live = <Message>[
       for (final m in c.messages)
-        if (!m.compacted && m.kind != MessageKind.system) m
+        if (!m.compacted && m.kind != MessageKind.system) m,
     ];
     if (live.length <= keepRecent) return const [];
     return [
       for (final m in live.sublist(0, live.length - keepRecent))
-        if (!m.streaming) m
+        if (!m.streaming) m,
     ];
   }
 
@@ -151,14 +150,15 @@ class ContextManager extends ChangeNotifier {
     _compressing = true;
     notifyListeners();
     final conv = _conv!;
-    return _run(conv, batch, before);
+    return _run(conv, batch);
   }
 
-  Future<void> _run(Conversation conv, List<Message> batch, int before) async {
+  Future<void> _run(Conversation conv, List<Message> batch) async {
     try {
-      final result = await compressor.compress(batch,
-          model: compressionModel, previousSummary: conv.summary);
+      final result = await compressor.compress(batch, model: compressionModel, previousSummary: conv.summary);
       if (!identical(conv, _conv)) return; // conversation switched meanwhile
+      // Re-measure: messages may have been added while compressing.
+      final beforeApply = estimatedTokens;
       // Messages already included in the backend's usage figure must be
       // subtracted via the offset; later ones simply stop being counted.
       var removed = 0;
@@ -177,12 +177,14 @@ class ContextManager extends ChangeNotifier {
       _lastCompaction = DateTime.now();
       lastError = null;
       final after = estimatedTokens;
-      _compactions.add(ContextCompacted(
-        tokensBefore: before,
-        tokensAfter: after,
-        compactedMessages: batch.length,
-        summary: result.summary,
-      ));
+      _compactions.add(
+        ContextCompacted(
+          tokensBefore: beforeApply,
+          tokensAfter: after,
+          compactedMessages: batch.length,
+          summary: result.summary,
+        ),
+      );
     } catch (e) {
       lastError = e;
       _lastCompaction = DateTime.now();

@@ -13,11 +13,7 @@ class CompressionResult {
 /// Summarises older conversation into a compact form (e.g. with
 /// gpt-6-luna through the Responses API). Must not touch the live session.
 abstract class Compressor {
-  Future<CompressionResult> compress(
-    List<Message> messages, {
-    required String model,
-    String? previousSummary,
-  });
+  Future<CompressionResult> compress(List<Message> messages, {required String model, String? previousSummary});
 }
 
 /// Offline placeholder: extractive summary (first sentence of every turn).
@@ -26,8 +22,7 @@ class StubCompressor implements Compressor {
   final Duration latency;
 
   @override
-  Future<CompressionResult> compress(List<Message> messages,
-      {required String model, String? previousSummary}) async {
+  Future<CompressionResult> compress(List<Message> messages, {required String model, String? previousSummary}) async {
     await Future<void>.delayed(latency);
     final sb = StringBuffer();
     if (previousSummary != null && previousSummary.isNotEmpty) {
@@ -50,8 +45,7 @@ class StubCompressor implements Compressor {
       if (line.trim().isNotEmpty) sb.writeln('- $line');
     }
     final summary = sb.toString().trim();
-    return CompressionResult(
-        summary: summary, tokensAfter: (summary.length / 4).ceil());
+    return CompressionResult(summary: summary, tokensAfter: (summary.length / 4).ceil());
   }
 
   static String _first(String s) {

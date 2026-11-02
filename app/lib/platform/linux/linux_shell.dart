@@ -23,12 +23,18 @@ class LinuxShell implements Shell {
     final setsid = which('setsid');
     final bash = which('bash') ?? '/bin/bash';
     final proc = setsid != null
-        ? await Process.start(setsid, ['--wait', bash, '-c', command],
+        ? await Process.start(
+            setsid,
+            ['--wait', bash, '-c', command],
             workingDirectory: workingDirectory ?? defaultWorkingDirectory,
-            environment: x11Env())
-        : await Process.start(bash, ['-c', command],
+            environment: x11Env(),
+          )
+        : await Process.start(
+            bash,
+            ['-c', command],
             workingDirectory: workingDirectory ?? defaultWorkingDirectory,
-            environment: x11Env());
+            environment: x11Env(),
+          );
     // Nothing to feed on stdin; close so commands reading it don't hang.
     unawaited(proc.stdin.close().catchError((_) {}));
 
@@ -51,11 +57,9 @@ class LinuxShell implements Shell {
     } on TimeoutException {
       timedOut = true;
       _killTree(proc.pid, setsid != null);
-      exitCode = await proc.exitCode
-          .timeout(const Duration(seconds: 3), onTimeout: () => -9);
+      exitCode = await proc.exitCode.timeout(const Duration(seconds: 3), onTimeout: () => -9);
     }
-    await Future.wait([outDone, errDone])
-        .timeout(const Duration(seconds: 2), onTimeout: () => const []);
+    await Future.wait([outDone, errDone]).timeout(const Duration(seconds: 2), onTimeout: () => const []);
     sw.stop();
 
     final (so, t1) = truncateMiddle(out.toString(), maxOutputChars);

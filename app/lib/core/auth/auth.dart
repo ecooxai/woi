@@ -13,11 +13,7 @@ enum AuthMode {
 
 /// Credentials handed to a backend. Never log or display [bearerToken].
 class Credentials {
-  const Credentials({
-    required this.mode,
-    required this.bearerToken,
-    this.accountId,
-  });
+  const Credentials({required this.mode, required this.bearerToken, this.accountId});
 
   final AuthMode mode;
   final String bearerToken;
@@ -26,13 +22,7 @@ class Credentials {
 
 /// Read-only view of `~/.codex/auth.json` (written by the Codex CLI login).
 class CodexAuthInfo {
-  const CodexAuthInfo({
-    required this.path,
-    this.accessToken,
-    this.accountId,
-    this.lastRefresh,
-    this.error,
-  });
+  const CodexAuthInfo({required this.path, this.accessToken, this.accountId, this.lastRefresh, this.error});
 
   final String path;
   final String? accessToken;
@@ -49,9 +39,7 @@ class CodexAuthInfo {
     final acct = accountId == null || accountId!.length < 6
         ? ''
         : ' · account …${accountId!.substring(accountId!.length - 6)}';
-    final when = lastRefresh == null
-        ? ''
-        : ' · refreshed ${lastRefresh!.toLocal().toString().split('.').first}';
+    final when = lastRefresh == null ? '' : ' · refreshed ${lastRefresh!.toLocal().toString().split('.').first}';
     return 'Codex login found$acct$when';
   }
 
@@ -92,21 +80,15 @@ class CodexAuthInfo {
 }
 
 /// Resolves [Credentials] for the selected [AuthMode].
-Future<Credentials?> resolveCredentials(AuthMode mode, String apiKey,
-    {String? codexPath}) async {
+Future<Credentials?> resolveCredentials(AuthMode mode, String apiKey, {String? codexPath}) async {
   switch (mode) {
     case AuthMode.apiKey:
-      final key = apiKey.trim();
-      return key.isEmpty
-          ? null
-          : Credentials(mode: AuthMode.apiKey, bearerToken: key);
+      var key = apiKey.trim();
+      if (key.isEmpty) key = (Platform.environment['OPENAI_API_KEY'] ?? '').trim();
+      return key.isEmpty ? null : Credentials(mode: AuthMode.apiKey, bearerToken: key);
     case AuthMode.codex:
       final info = await CodexAuthInfo.load(path: codexPath);
       if (!info.isAvailable) return null;
-      return Credentials(
-        mode: AuthMode.codex,
-        bearerToken: info.accessToken!,
-        accountId: info.accountId,
-      );
+      return Credentials(mode: AuthMode.codex, bearerToken: info.accessToken!, accountId: info.accountId);
   }
 }

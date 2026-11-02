@@ -16,13 +16,13 @@ class ShellResult {
   final bool truncated;
 
   Map<String, Object?> toJson() => {
-        'exit_code': exitCode,
-        if (stdout.isNotEmpty) 'stdout': stdout,
-        if (stderr.isNotEmpty) 'stderr': stderr,
-        if (timedOut) 'timed_out': true,
-        if (truncated) 'truncated': true,
-        'ms': elapsed.inMilliseconds,
-      };
+    'exit_code': exitCode,
+    if (stdout.isNotEmpty) 'stdout': stdout,
+    if (stderr.isNotEmpty) 'stderr': stderr,
+    if (timedOut) 'timed_out': true,
+    if (truncated) 'truncated': true,
+    'ms': elapsed.inMilliseconds,
+  };
 }
 
 abstract class Shell {
@@ -43,6 +43,6 @@ abstract class Shell {
   return (
     '${s.substring(0, head)}\n…[$cut chars truncated]…\n'
         '${s.substring(s.length - tail)}',
-    true
+    true,
   );
 }

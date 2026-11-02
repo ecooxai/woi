@@ -36,14 +36,12 @@ class ToolEnvironment {
 
 const _maxDirEntries = 300;
 
-ToolSpec _spec(String name, String description, Map<String, Object?> props,
-        [List<String> required = const []]) =>
-    ToolSpec(name: name, description: description, parameters: {
-      'type': 'object',
-      'properties': props,
-      'required': required,
-      'additionalProperties': false,
-    });
+ToolSpec _spec(String name, String description, Map<String, Object?> props, [List<String> required = const []]) =>
+    ToolSpec(
+      name: name,
+      description: description,
+      parameters: {'type': 'object', 'properties': props, 'required': required, 'additionalProperties': false},
+    );
 
 List<ToolDefinition> builtinTools(ToolEnvironment env) {
   final p = env.platform;
@@ -87,7 +85,10 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
         {
           'x': {'type': 'integer', 'description': 'X in screenshot pixels'},
           'y': {'type': 'integer', 'description': 'Y in screenshot pixels'},
-          'button': {'type': 'string', 'enum': ['left', 'right', 'middle']},
+          'button': {
+            'type': 'string',
+            'enum': ['left', 'right', 'middle'],
+          },
           'double': {'type': 'boolean', 'description': 'Double-click'},
         },
         ['x', 'y'],
@@ -97,19 +98,27 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
         final shot = env.lastScreenshot;
         final pt = shot?.toScreen(x, y);
         final sx = pt?.x ?? x, sy = pt?.y ?? y;
-        final button = MouseButton.values.asNameMap()[args.str('button', 'left')] ??
-            MouseButton.left;
+        final button = MouseButton.values.asNameMap()[args.str('button', 'left')] ?? MouseButton.left;
         if (args.boolean('double')) {
           await p.input.doubleClick(sx, sy, button: button);
         } else {
           await p.input.click(sx, sy, button: button);
         }
-        return {'ok': true, 'screen_xy': [sx, sy]};
+        return {
+          'ok': true,
+          'screen_xy': [sx, sy],
+        };
       },
     ),
     ToolDefinition(
-      spec: _spec('type_text', 'Type text into the focused window.',
-          {'text': {'type': 'string'}}, ['text']),
+      spec: _spec(
+        'type_text',
+        'Type text into the focused window.',
+        {
+          'text': {'type': 'string'},
+        },
+        ['text'],
+      ),
       handler: (args, call) async {
         final text = args.str('text');
         await p.input.typeText(text);
@@ -121,7 +130,9 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
         'key_combo',
         'Press a key combination, e.g. "ctrl+shift+t", "enter", or a sequence '
             'separated by spaces like "ctrl+a ctrl+c".',
-        {'keys': {'type': 'string'}},
+        {
+          'keys': {'type': 'string'},
+        },
         ['keys'],
       ),
       handler: (args, call) async {
@@ -174,10 +185,12 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
         final path = args.str('path');
         final full = p.files.resolve(path);
         if (!await File(full).exists()) throw ToolFailure('no such file: $full');
-        final r = await p.files.read(path,
-            maxBytes: 32 * 1024,
-            offsetLine: args.intOrNull('offset'),
-            limitLines: args.intOrNull('limit'));
+        final r = await p.files.read(
+          path,
+          maxBytes: 32 * 1024,
+          offsetLine: args.intOrNull('offset'),
+          limitLines: args.intOrNull('limit'),
+        );
         if (r.isBinary) {
           return {'ok': false, 'path': r.path, 'binary': true, 'bytes': r.totalBytes};
         }
@@ -218,12 +231,14 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
       spec: _spec(
         'write_file',
         'Create or overwrite a text file. The user sees a diff and must approve.',
-        {'path': {'type': 'string'}, 'content': {'type': 'string'}},
+        {
+          'path': {'type': 'string'},
+          'content': {'type': 'string'},
+        },
         ['path', 'content'],
       ),
       handler: (args, call) async {
-        final o = await p.files.write(args.str('path'), args.str('content'),
-            approve: (r) => approveWrite(r, call));
+        final o = await p.files.write(args.str('path'), args.str('content'), approve: (r) => approveWrite(r, call));
         return writeResult(o);
       },
     ),
@@ -264,15 +279,17 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
         'Open a file for the user in a viewer popup (image, audio, video, or text/code).',
         {
           'path': {'type': 'string'},
-          'kind': {'type': 'string', 'enum': ['image', 'audio', 'video', 'text']},
+          'kind': {
+            'type': 'string',
+            'enum': ['image', 'audio', 'video', 'text'],
+          },
         },
         ['path'],
       ),
       handler: (args, call) async {
         final full = p.files.resolve(args.str('path'));
         if (!await File(full).exists()) throw ToolFailure('no such file: $full');
-        final kind = MediaKind.values.asNameMap()[args.strOrNull('kind')] ??
-            MediaItem.kindForPath(full);
+        final kind = MediaKind.values.asNameMap()[args.strOrNull('kind')] ?? MediaItem.kindForPath(full);
         final surface = await p.viewer.show(MediaItem(kind: kind, path: full));
         return {'ok': true, 'shown_in': surface.name, 'kind': kind.name};
       },
@@ -289,8 +306,11 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
         ['task'],
       ),
       handler: (args, call) async {
-        final r = await env.delegate.runTask(args.str('task'),
-            model: env.settings().delegateModel, context: args.strOrNull('context'));
+        final r = await env.delegate.runTask(
+          args.str('task'),
+          model: env.settings().delegateModel,
+          context: args.strOrNull('context'),
+        );
         return r.toJson();
       },
     ),

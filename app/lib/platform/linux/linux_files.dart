@@ -32,8 +32,7 @@ class LocalFiles implements Files {
   }
 
   @override
-  Future<FileReadResult> read(String path,
-      {int maxBytes = 64 * 1024, int? offsetLine, int? limitLines}) async {
+  Future<FileReadResult> read(String path, {int maxBytes = 64 * 1024, int? offsetLine, int? limitLines}) async {
     final full = resolve(path);
     final file = File(full);
     final total = await file.length();
@@ -47,9 +46,7 @@ class LocalFiles implements Files {
       await raf.close();
     }
     if (_looksBinary(head)) {
-      return FileReadResult(
-          path: full, content: '', totalBytes: total, totalLines: 0,
-          isBinary: true);
+      return FileReadResult(path: full, content: '', totalBytes: total, totalLines: 0, isBinary: true);
     }
     var text = const Utf8Decoder(allowMalformed: true).convert(head);
     var truncated = head.length < total;
@@ -58,9 +55,7 @@ class LocalFiles implements Files {
     var start = 1;
     if (offsetLine != null || limitLines != null) {
       start = (offsetLine ?? 1).clamp(1, lines.length);
-      final end = limitLines == null
-          ? lines.length
-          : (start - 1 + limitLines).clamp(start - 1, lines.length);
+      final end = limitLines == null ? lines.length : (start - 1 + limitLines).clamp(start - 1, lines.length);
       truncated = truncated || end < lines.length || start > 1;
       lines = lines.sublist(start - 1, end);
       text = lines.join('\n');
@@ -90,17 +85,19 @@ class LocalFiles implements Files {
       try {
         st = await e.stat();
       } catch (_) {}
-      out.add(DirEntry(
-        name: name,
-        type: switch (e) {
-          Link() => EntryType.link,
-          Directory() => EntryType.directory,
-          File() => EntryType.file,
-          _ => EntryType.other,
-        },
-        size: st?.size ?? 0,
-        modified: st?.modified,
-      ));
+      out.add(
+        DirEntry(
+          name: name,
+          type: switch (e) {
+            Link() => EntryType.link,
+            Directory() => EntryType.directory,
+            File() => EntryType.file,
+            _ => EntryType.other,
+          },
+          size: st?.size ?? 0,
+          modified: st?.modified,
+        ),
+      );
     }
     out.sort((a, b) {
       final ad = a.type == EntryType.directory ? 0 : 1;
@@ -111,8 +108,7 @@ class LocalFiles implements Files {
   }
 
   @override
-  Future<WriteOutcome> write(String path, String content,
-      {required WriteApprover approve, String? reason}) async {
+  Future<WriteOutcome> write(String path, String content, {required WriteApprover approve, String? reason}) async {
     final full = resolve(path);
     final file = File(full);
     String? old;
@@ -120,19 +116,14 @@ class LocalFiles implements Files {
       try {
         old = await file.readAsString();
       } catch (_) {
-        old = const Utf8Decoder(allowMalformed: true)
-            .convert(await file.readAsBytes());
+        old = const Utf8Decoder(allowMalformed: true).convert(await file.readAsBytes());
       }
     }
     final diff = diffLines(old ?? '', content);
-    final request = FileWriteRequest(
-        path: full, oldContent: old, newContent: content, diff: diff,
-        reason: reason);
+    final request = FileWriteRequest(path: full, oldContent: old, newContent: content, diff: diff, reason: reason);
     final ok = await approve(request);
     if (!ok) {
-      return WriteOutcome(
-          path: full, approved: false, written: false,
-          added: diff.added, removed: diff.removed);
+      return WriteOutcome(path: full, approved: false, written: false, added: diff.added, removed: diff.removed);
     }
     try {
       await file.parent.create(recursive: true);
@@ -141,12 +132,15 @@ class LocalFiles implements Files {
       await tmp.writeAsString(content, flush: true);
       await tmp.rename(full);
       return WriteOutcome(
-          path: full, approved: true, written: true,
-          bytes: utf8.encode(content).length,
-          added: diff.added, removed: diff.removed);
+        path: full,
+        approved: true,
+        written: true,
+        bytes: utf8.encode(content).length,
+        added: diff.added,
+        removed: diff.removed,
+      );
     } catch (e) {
-      return WriteOutcome(
-          path: full, approved: true, written: false, error: '$e');
+      return WriteOutcome(path: full, approved: true, written: false, error: '$e');
     }
   }
 }

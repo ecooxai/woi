@@ -36,9 +36,9 @@ class AppController extends ChangeNotifier {
     VoiceBackend Function()? backendFactory,
     Compressor? compressor,
     DelegateBackend? delegate,
-  })  : _backendFactory = backendFactory ?? (() => MockVoiceBackend()),
-        compressor = compressor ?? StubCompressor(),
-        delegate = delegate ?? StubDelegateBackend();
+  }) : _backendFactory = backendFactory ?? (() => MockVoiceBackend()),
+       compressor = compressor ?? StubCompressor(),
+       delegate = delegate ?? StubDelegateBackend();
 
   final PlatformServices platform;
   final ConfirmationService confirmations;
@@ -108,19 +108,19 @@ class AppController extends ChangeNotifier {
   }
 
   PipelineOptions _pipelineOptions() => PipelineOptions(
-        autoScreenshot: _settings.autoScreenshot,
-        screenshotDelay: Duration(milliseconds: _settings.screenshotDelayMs),
-        micMode: _settings.micMode,
-      );
+    autoScreenshot: _settings.autoScreenshot,
+    screenshotDelay: Duration(milliseconds: _settings.screenshotDelayMs),
+    micMode: _settings.micMode,
+  );
 
   Future<SessionConfig> _sessionConfig(Conversation c) async => SessionConfig(
-        model: _settings.voiceModel,
-        voice: _settings.voice,
-        instructions: kAssistantInstructions,
-        tools: tools.specs,
-        credentials: await resolveCredentials(_settings.authMode, _settings.apiKey),
-        priorContext: c.summary,
-      );
+    model: _settings.voiceModel,
+    voice: _settings.voice,
+    instructions: kAssistantInstructions,
+    tools: tools.specs,
+    credentials: await resolveCredentials(_settings.authMode, _settings.apiKey),
+    priorContext: c.summary,
+  );
 
   Future<void> updateSettings(AppSettings next) async {
     final prev = _settings;

@@ -12,14 +12,12 @@ class LinuxScreenCapture implements ScreenCapture {
 
   Future<(int, int)> _displayGeometry() async {
     final now = DateTime.now();
-    if (_cachedGeometry != null &&
-        now.difference(_geometryAt) < const Duration(seconds: 10)) {
+    if (_cachedGeometry != null && now.difference(_geometryAt) < const Duration(seconds: 10)) {
       return _cachedGeometry!;
     }
     final xdo = which('xdotool');
     if (xdo != null) {
-      final r = await runChecked(xdo, ['getdisplaygeometry'],
-          environment: x11Env());
+      final r = await runChecked(xdo, ['getdisplaygeometry'], environment: x11Env());
       final parts = '${r.stdout}'.trim().split(RegExp(r'\s+'));
       if (parts.length == 2) {
         _cachedGeometry = (int.parse(parts[0]), int.parse(parts[1]));
@@ -49,15 +47,24 @@ class LinuxScreenCapture implements ScreenCapture {
       final r = await runChecked(
         ffmpeg,
         [
-          '-loglevel', 'error',
-          '-f', 'x11grab',
-          '-video_size', '${ow}x$oh',
-          '-i', '${x11Display()}+0,0',
-          '-frames:v', '1',
-          '-vf', "scale='min($maxWidth,iw)':-2:flags=bicubic",
-          '-compression_level', '1',
-          '-f', 'image2pipe',
-          '-c:v', 'png',
+          '-loglevel',
+          'error',
+          '-f',
+          'x11grab',
+          '-video_size',
+          '${ow}x$oh',
+          '-i',
+          '${x11Display()}+0,0',
+          '-frames:v',
+          '1',
+          '-vf',
+          "scale='min($maxWidth,iw)':-2:flags=bicubic",
+          '-compression_level',
+          '1',
+          '-f',
+          'image2pipe',
+          '-c:v',
+          'png',
           '-',
         ],
         environment: x11Env(),
@@ -79,12 +86,6 @@ class LinuxScreenCapture implements ScreenCapture {
     if (size == null) {
       throw const FileSystemException('Screenshot tool returned invalid PNG');
     }
-    return Screenshot(
-      png: png,
-      width: size.$1,
-      height: size.$2,
-      originalWidth: ow,
-      originalHeight: oh,
-    );
+    return Screenshot(png: png, width: size.$1, height: size.$2, originalWidth: ow, originalHeight: oh);
   }
 }

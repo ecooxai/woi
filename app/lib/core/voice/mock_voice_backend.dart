@@ -4,6 +4,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import '../audio/wav.dart';
+import '../pipeline/vad.dart';
 import 'voice_backend.dart';
 
 /// Offline stand-in for the realtime API.
@@ -36,10 +37,8 @@ class MockVoiceBackend implements VoiceBackend {
   SessionConfig? _config;
   bool _connected = false;
 
-  // VAD state
-  bool _inSpeech = false;
-  int _speechMs = 0;
-  int _silenceMs = 0;
+  // VAD state (adaptive noise floor, like a server-side detector)
+  late final EnergyVad _vad = EnergyVad(minThreshold: vadThreshold, startMs: minSpeechMs, stopMs: silenceToStopMs);
   int _utteranceMs = 0;
 
   // Conversation state
@@ -70,7 +69,8 @@ class MockVoiceBackend implements VoiceBackend {
     await Future<void>.delayed(const Duration(milliseconds: 50));
     _config = config;
     _connected = true;
-    _contextTokens = (config.instructions.length / 4).ceil() +
+    _contextTokens =
+        (config.instructions.length / 4).ceil() +
         config.tools.fold<int>(0, (a, t) => a + (jsonEncode(t.toJson()).length / 4).ceil()) +
         ((config.priorContext?.length ?? 0) / 4).ceil();
   }
@@ -79,29 +79,23 @@ class MockVoiceBackend implements VoiceBackend {
   void sendAudio(Uint8List pcm16) {
     if (!_connected || !serverVad) return;
     final ms = pcmDurationMs(pcm16.length);
-    final loud = pcm16Rms(pcm16) >= vadThreshold;
-    if (!_inSpeech) {
-      _speechMs = loud ? _speechMs + ms : 0;
-      if (_speechMs >= minSpeechMs) {
-        _inSpeech = true;
-        _silenceMs = 0;
-        _utteranceMs = _speechMs;
+    // Crude echo guard: our own synthesized reply comes back through the mic.
+    _vad.sensitivityScale = _responding ? 2.5 : 1.0;
+    final ev = _vad.process(pcm16);
+    if (_vad.speaking || ev == VadEvent.speechStopped) _utteranceMs += ms;
+    switch (ev) {
+      case VadEvent.speechStarted:
+        _utteranceMs = minSpeechMs;
         _emit(const SpeechStarted());
-      }
-    } else {
-      _utteranceMs += ms;
-      _silenceMs = loud ? 0 : _silenceMs + ms;
-      if (_silenceMs >= silenceToStopMs) {
-        _inSpeech = false;
-        _speechMs = 0;
-        final spoken = (_utteranceMs - _silenceMs) / 1000;
+      case VadEvent.speechStopped:
+        final spoken = max(0, _utteranceMs - silenceToStopMs) / 1000;
         _emit(const SpeechStopped());
         _contextTokens += (spoken * 10).round();
         final t = '[${spoken.toStringAsFixed(1)} s of speech]';
         _emit(UserTranscriptDelta(t));
         _emit(UserTranscriptDone(t));
         unawaited(_respond(null, spokenSeconds: spoken));
-      }
+      case null:
     }
   }
 
@@ -145,8 +139,7 @@ class MockVoiceBackend implements VoiceBackend {
     await _events.close();
   }
 
-  bool _has(String tool) =>
-      _config?.tools.any((t) => t.name == tool) ?? false;
+  bool _has(String tool) => _config?.tools.any((t) => t.name == tool) ?? false;
 
   (String, Map<String, Object?>)? _plan(String text) {
     final t = text.trim();
@@ -176,13 +169,10 @@ class MockVoiceBackend implements VoiceBackend {
     if ((m = RegExp(r'^click\s+(\d+)[\s,]+(\d+)', caseSensitive: false).firstMatch(t)) != null) {
       return ('click_screen', {'x': int.parse(m![1]!), 'y': int.parse(m[2]!)});
     }
-    if ((m = RegExp(r'^write\s+(\S+)\s*:\s?(.*)$', caseSensitive: false, dotAll: true)
-            .firstMatch(t)) !=
-        null) {
+    if ((m = RegExp(r'^write\s+(\S+)\s*:\s?(.*)$', caseSensitive: false, dotAll: true).firstMatch(t)) != null) {
       return ('write_file', {'path': m![1]!, 'content': m[2]!});
     }
-    if ((m = RegExp(r'^delegate\s+(.+)$', caseSensitive: false, dotAll: true).firstMatch(t)) !=
-        null) {
+    if ((m = RegExp(r'^delegate\s+(.+)$', caseSensitive: false, dotAll: true).firstMatch(t)) != null) {
       return ('delegate_task', {'task': m![1]!.trim()});
     }
     return null;
@@ -206,16 +196,19 @@ class MockVoiceBackend implements VoiceBackend {
     }
     final String reply;
     if (text == null) {
-      reply = 'I heard about ${spokenSeconds.toStringAsFixed(1)} seconds of speech'
+      reply =
+          'I heard about ${spokenSeconds.toStringAsFixed(1)} seconds of speech'
           '${img != null ? ' and got a ${img.$1} by ${img.$2} screenshot of your screen' : ''}. '
           'This is the offline mock backend, so I cannot transcribe yet, '
           'but the voice loop is working end to end.';
     } else if (RegExp(r'^(hi|hello|hey)\b', caseSensitive: false).hasMatch(text.trim())) {
-      reply = 'Hey! I am Woi, running on the mock backend. Try "take a screenshot", '
+      reply =
+          'Hey! I am Woi, running on the mock backend. Try "take a screenshot", '
           '"run uname -a" or "list ~".';
     } else {
       final echo = text.length > 120 ? '${text.substring(0, 117)}…' : text;
-      reply = 'You said: "$echo". I am the mock backend, so I can only echo, '
+      reply =
+          'You said: "$echo". I am the mock backend, so I can only echo, '
           'but commands like "run uptime", "read ~/.bashrc" or "show <file>" '
           'trigger real tools.';
     }
@@ -223,15 +216,15 @@ class MockVoiceBackend implements VoiceBackend {
   }
 
   String _preamble(String tool) => switch (tool) {
-        'take_screenshot' => 'Taking a look at your screen.',
-        'run_bash' => 'Running that command.',
-        'list_dir' => 'Listing that folder.',
-        'read_file' => 'Reading the file.',
-        'show_file' => 'Opening it for you.',
-        'write_file' => 'I will write that file once you approve.',
-        'delegate_task' => 'Handing that to the bigger model.',
-        _ => 'On it.',
-      };
+    'take_screenshot' => 'Taking a look at your screen.',
+    'run_bash' => 'Running that command.',
+    'list_dir' => 'Listing that folder.',
+    'read_file' => 'Reading the file.',
+    'show_file' => 'Opening it for you.',
+    'write_file' => 'I will write that file once you approve.',
+    'delegate_task' => 'Handing that to the bigger model.',
+    _ => 'On it.',
+  };
 
   String _describeToolResult(String name, String json) {
     Map<String, Object?> r;
@@ -248,8 +241,9 @@ class MockVoiceBackend implements VoiceBackend {
     }
 
     return switch (name) {
-      'run_bash' => 'Exit code ${r['exit_code']}. '
-          '${clip(r['stdout']).isEmpty ? 'No output.' : 'Output: ${clip(r['stdout'])}'}',
+      'run_bash' =>
+        'Exit code ${r['exit_code']}. '
+            '${clip(r['stdout']).isEmpty ? 'No output.' : 'Output: ${clip(r['stdout'])}'}',
       'take_screenshot' => 'Got a ${r['image']} screenshot of your ${r['screen']} screen.',
       'list_dir' => 'That folder has ${(r['entries'] as List?)?.length ?? 0} entries.',
       'read_file' => 'The file starts with: ${clip(r['content'], 120)}',
@@ -286,8 +280,7 @@ class MockVoiceBackend implements VoiceBackend {
       return false;
     }
     _emit(AssistantTranscriptDone(out));
-    _emit(Usage(_contextTokens - (out.length / 4).ceil(), (out.length / 4).ceil(),
-        _contextTokens));
+    _emit(Usage(_contextTokens - (out.length / 4).ceil(), (out.length / 4).ceil(), _contextTokens));
     if (done) {
       _emit(const ResponseDone());
       _responding = false;
@@ -308,9 +301,8 @@ class MockVoiceBackend implements VoiceBackend {
       final t = i / rate;
       final env = sin(pi * i / voiced);
       final vib = 1 + 0.01 * sin(2 * pi * 5 * t);
-      final s = 0.55 * sin(2 * pi * f0 * vib * t) +
-          0.25 * sin(2 * pi * 2 * f0 * vib * t) +
-          0.12 * sin(2 * pi * 3.1 * f0 * t);
+      final s =
+          0.55 * sin(2 * pi * f0 * vib * t) + 0.25 * sin(2 * pi * 2 * f0 * vib * t) + 0.12 * sin(2 * pi * 3.1 * f0 * t);
       out.setInt16(i * 2, (s * env * 0.16 * 32767).round(), Endian.little);
     }
     return out.buffer.asUint8List();

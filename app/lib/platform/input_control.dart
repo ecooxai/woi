@@ -6,8 +6,7 @@ enum MouseButton { left, middle, right }
 abstract class InputControl {
   Future<void> moveMouse(int x, int y);
   Future<void> click(int x, int y, {MouseButton button = MouseButton.left});
-  Future<void> doubleClick(int x, int y,
-      {MouseButton button = MouseButton.left});
+  Future<void> doubleClick(int x, int y, {MouseButton button = MouseButton.left});
   Future<void> typeText(String text);
 
   /// One or more combos separated by spaces, e.g. `ctrl+shift+t` or

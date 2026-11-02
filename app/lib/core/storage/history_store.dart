@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
 import '../../platform/app_paths.dart';
@@ -48,12 +48,11 @@ class HistoryStore {
   }
 
   /// Coalesces bursts of updates (streaming deltas) into one write.
-  void saveSoon(Conversation c,
-      {Duration delay = const Duration(milliseconds: 600)}) {
+  void saveSoon(Conversation c, {Duration delay = const Duration(milliseconds: 600)}) {
     _pendingSaves[c.id]?.cancel();
     _pendingSaves[c.id] = Timer(delay, () {
       _pendingSaves.remove(c.id);
-      save(c);
+      save(c).catchError((Object e) => debugPrint('saving ${c.id} failed: $e'));
     });
   }
 
@@ -81,15 +80,14 @@ class HistoryStore {
       try {
         final j = jsonDecode(await e.readAsString());
         if (j is! Map) continue;
-        out.add(ConversationSummary(
-          id: j['id'] as String,
-          title: (j['title'] as String?)?.isNotEmpty == true
-              ? j['title'] as String
-              : 'Untitled conversation',
-          updatedAt: DateTime.tryParse(j['updatedAt'] as String? ?? '') ??
-              (await e.lastModified()),
-          messageCount: (j['messages'] as List?)?.length ?? 0,
-        ));
+        out.add(
+          ConversationSummary(
+            id: j['id'] as String,
+            title: (j['title'] as String?)?.isNotEmpty == true ? j['title'] as String : 'Untitled conversation',
+            updatedAt: DateTime.tryParse(j['updatedAt'] as String? ?? '') ?? (await e.lastModified()),
+            messageCount: (j['messages'] as List?)?.length ?? 0,
+          ),
+        );
       } catch (_) {}
     }
     out.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));

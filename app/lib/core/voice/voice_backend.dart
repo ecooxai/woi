@@ -9,11 +9,7 @@ const int kVoiceBytesPerSecond = kVoiceSampleRate * 2;
 
 /// A function the model may call. [parameters] is a JSON-schema object.
 class ToolSpec {
-  const ToolSpec({
-    required this.name,
-    required this.description,
-    required this.parameters,
-  });
+  const ToolSpec({required this.name, required this.description, required this.parameters});
 
   final String name;
   final String description;
@@ -21,11 +17,11 @@ class ToolSpec {
 
   /// OpenAI-realtime style `session.tools[]` entry.
   Map<String, Object?> toJson() => {
-        'type': 'function',
-        'name': name,
-        'description': description,
-        'parameters': parameters,
-      };
+    'type': 'function',
+    'name': name,
+    'description': description,
+    'parameters': parameters,
+  };
 }
 
 /// Everything a backend needs to open a live session.

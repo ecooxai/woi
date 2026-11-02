@@ -30,8 +30,7 @@ class ToolInvocation {
   final void Function(ToolStatus status)? onStatus;
 }
 
-typedef ToolHandler = Future<Map<String, Object?>> Function(
-    Map<String, Object?> args, ToolInvocation call);
+typedef ToolHandler = Future<Map<String, Object?>> Function(Map<String, Object?> args, ToolInvocation call);
 
 class ToolDefinition {
   const ToolDefinition({required this.spec, required this.handler});
@@ -99,8 +98,7 @@ class ToolRegistry {
           .timeout(timeout);
       return ToolOutcome(ToolStatus.success, _encode(result));
     } on ToolDenied catch (e) {
-      return ToolOutcome(ToolStatus.denied,
-          _encode({'ok': false, 'denied': true, 'reason': e.reason}));
+      return ToolOutcome(ToolStatus.denied, _encode({'ok': false, 'denied': true, 'reason': e.reason}));
     } on ToolFailure catch (e) {
       return _err(ToolStatus.error, e.message);
     } on TimeoutException {
@@ -110,17 +108,12 @@ class ToolRegistry {
     }
   }
 
-  ToolOutcome _err(ToolStatus s, String msg) =>
-      ToolOutcome(s, _encode({'ok': false, 'error': msg}));
+  ToolOutcome _err(ToolStatus s, String msg) => ToolOutcome(s, _encode({'ok': false, 'error': msg}));
 
   String _encode(Map<String, Object?> m) {
     final s = jsonEncode(m);
     if (s.length <= maxResultChars) return s;
-    return jsonEncode({
-      'ok': m['ok'] ?? true,
-      'truncated': true,
-      'partial': s.substring(0, maxResultChars - 200),
-    });
+    return jsonEncode({'ok': m['ok'] ?? true, 'truncated': true, 'partial': s.substring(0, maxResultChars - 200)});
   }
 
   /// Minimal JSON-schema check: required keys, primitive types, enums.

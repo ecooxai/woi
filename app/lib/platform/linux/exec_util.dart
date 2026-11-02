@@ -32,8 +32,7 @@ class CommandFailed implements Exception {
   final int exitCode;
   final String stderr;
   @override
-  String toString() =>
-      '$command failed (exit $exitCode)${stderr.trim().isEmpty ? '' : ': ${stderr.trim()}'}';
+  String toString() => '$command failed (exit $exitCode)${stderr.trim().isEmpty ? '' : ': ${stderr.trim()}'}';
 }
 
 class MissingTool implements Exception {
@@ -43,11 +42,13 @@ class MissingTool implements Exception {
   String toString() => 'Required tool not installed: ${tools.join(' or ')}';
 }
 
-Future<ProcessResult> runChecked(String exe, List<String> args,
-    {Map<String, String>? environment, bool binary = false}) async {
-  final r = await Process.run(exe, args,
-      environment: environment,
-      stdoutEncoding: binary ? null : systemEncoding);
+Future<ProcessResult> runChecked(
+  String exe,
+  List<String> args, {
+  Map<String, String>? environment,
+  bool binary = false,
+}) async {
+  final r = await Process.run(exe, args, environment: environment, stdoutEncoding: binary ? null : systemEncoding);
   if (r.exitCode != 0) {
     throw CommandFailed('$exe ${args.join(' ')}', r.exitCode, '${r.stderr}');
   }

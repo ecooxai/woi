@@ -23,17 +23,15 @@ class LinuxMediaViewer extends MediaViewer {
     if (item.kind == MediaKind.video && item.path != null) {
       final player = which('vlc') ?? which('mpv') ?? which('xdg-open');
       if (player != null) {
-        await Process.start(player, [item.path!],
-            mode: ProcessStartMode.detached, environment: x11Env());
+        await Process.start(player, [item.path!], mode: ProcessStartMode.detached, environment: x11Env());
         return ViewerSurface.external;
       }
     }
     if (useSecondaryWindow) {
       try {
-        final c = await WindowController.create(WindowConfiguration(
-          arguments: '$windowTag${jsonEncode(item.toJson())}',
-          hiddenAtLaunch: false,
-        ));
+        final c = await WindowController.create(
+          WindowConfiguration(arguments: '$windowTag${jsonEncode(item.toJson())}', hiddenAtLaunch: false),
+        );
         await c.show();
         return ViewerSurface.window;
       } catch (e) {

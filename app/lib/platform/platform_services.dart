@@ -32,7 +32,6 @@ class PlatformServices {
 
   static PlatformServices forCurrentPlatform() {
     if (Platform.isLinux) return createLinuxPlatform();
-    throw UnsupportedError(
-        'Woi currently supports Linux only (${Platform.operatingSystem} port pending).');
+    throw UnsupportedError('Woi currently supports Linux only (${Platform.operatingSystem} port pending).');
   }
 }

@@ -30,9 +30,9 @@ class Screenshot {
 
   /// Maps a point in screenshot space back to real screen coordinates.
   Point<int> toScreen(num x, num y) => Point(
-        (originX + x * scaleX).round().clamp(0, originX + originalWidth - 1),
-        (originY + y * scaleY).round().clamp(0, originY + originalHeight - 1),
-      );
+    (originX + x * scaleX).round().clamp(0, originX + originalWidth - 1),
+    (originY + y * scaleY).round().clamp(0, originY + originalHeight - 1),
+  );
 }
 
 abstract class ScreenCapture {

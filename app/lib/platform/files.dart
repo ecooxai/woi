@@ -3,27 +3,22 @@ import '../core/util/diff.dart';
 enum EntryType { file, directory, link, other }
 
 class DirEntry {
-  const DirEntry({
-    required this.name,
-    required this.type,
-    required this.size,
-    this.modified,
-  });
+  const DirEntry({required this.name, required this.type, required this.size, this.modified});
   final String name;
   final EntryType type;
   final int size;
   final DateTime? modified;
 
   Map<String, Object?> toJson() => {
-        'name': name,
-        't': switch (type) {
-          EntryType.file => 'f',
-          EntryType.directory => 'd',
-          EntryType.link => 'l',
-          EntryType.other => '?',
-        },
-        if (type == EntryType.file) 'size': size,
-      };
+    'name': name,
+    't': switch (type) {
+      EntryType.file => 'f',
+      EntryType.directory => 'd',
+      EntryType.link => 'l',
+      EntryType.other => '?',
+    },
+    if (type == EntryType.file) 'size': size,
+  };
 }
 
 class FileReadResult {
@@ -94,11 +89,9 @@ abstract class Files {
   /// Expands `~` and makes relative paths relative to the home directory.
   String resolve(String path);
 
-  Future<FileReadResult> read(String path,
-      {int maxBytes = 64 * 1024, int? offsetLine, int? limitLines});
+  Future<FileReadResult> read(String path, {int maxBytes = 64 * 1024, int? offsetLine, int? limitLines});
 
   Future<List<DirEntry>> list(String path, {bool showHidden = false});
 
-  Future<WriteOutcome> write(String path, String content,
-      {required WriteApprover approve, String? reason});
+  Future<WriteOutcome> write(String path, String content, {required WriteApprover approve, String? reason});
 }

@@ -13,10 +13,7 @@ enum MicMode {
 }
 
 const kVoiceModels = ['gpt-live-1.1', 'gpt-live-1'];
-const kVoices = [
-  'marin', 'cedar', 'alloy', 'ash', 'ballad', 'coral', 'echo', 'sage',
-  'shimmer', 'verse',
-];
+const kVoices = ['marin', 'cedar', 'alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse'];
 
 class AppSettings {
   const AppSettings({
@@ -62,43 +59,39 @@ class AppSettings {
     bool? confirmBeforeBash,
     MicMode? micMode,
     int? imageTokenCost,
-  }) =>
-      AppSettings(
-        authMode: authMode ?? this.authMode,
-        apiKey: apiKey ?? this.apiKey,
-        voiceModel: voiceModel ?? this.voiceModel,
-        voice: voice ?? this.voice,
-        compressionThreshold: compressionThreshold ?? this.compressionThreshold,
-        compressionModel: compressionModel ?? this.compressionModel,
-        delegateModel: delegateModel ?? this.delegateModel,
-        screenshotDelayMs: screenshotDelayMs ?? this.screenshotDelayMs,
-        autoScreenshot: autoScreenshot ?? this.autoScreenshot,
-        confirmBeforeBash: confirmBeforeBash ?? this.confirmBeforeBash,
-        micMode: micMode ?? this.micMode,
-        imageTokenCost: imageTokenCost ?? this.imageTokenCost,
-      );
+  }) => AppSettings(
+    authMode: authMode ?? this.authMode,
+    apiKey: apiKey ?? this.apiKey,
+    voiceModel: voiceModel ?? this.voiceModel,
+    voice: voice ?? this.voice,
+    compressionThreshold: compressionThreshold ?? this.compressionThreshold,
+    compressionModel: compressionModel ?? this.compressionModel,
+    delegateModel: delegateModel ?? this.delegateModel,
+    screenshotDelayMs: screenshotDelayMs ?? this.screenshotDelayMs,
+    autoScreenshot: autoScreenshot ?? this.autoScreenshot,
+    confirmBeforeBash: confirmBeforeBash ?? this.confirmBeforeBash,
+    micMode: micMode ?? this.micMode,
+    imageTokenCost: imageTokenCost ?? this.imageTokenCost,
+  );
 
   /// Whether a change requires reconnecting the live session.
   bool sessionDiffers(AppSettings o) =>
-      o.authMode != authMode ||
-      o.apiKey != apiKey ||
-      o.voiceModel != voiceModel ||
-      o.voice != voice;
+      o.authMode != authMode || o.apiKey != apiKey || o.voiceModel != voiceModel || o.voice != voice;
 
   Map<String, Object?> toJson() => {
-        'authMode': authMode.name,
-        'apiKey': apiKey,
-        'voiceModel': voiceModel,
-        'voice': voice,
-        'compressionThreshold': compressionThreshold,
-        'compressionModel': compressionModel,
-        'delegateModel': delegateModel,
-        'screenshotDelayMs': screenshotDelayMs,
-        'autoScreenshot': autoScreenshot,
-        'confirmBeforeBash': confirmBeforeBash,
-        'micMode': micMode.name,
-        'imageTokenCost': imageTokenCost,
-      };
+    'authMode': authMode.name,
+    'apiKey': apiKey,
+    'voiceModel': voiceModel,
+    'voice': voice,
+    'compressionThreshold': compressionThreshold,
+    'compressionModel': compressionModel,
+    'delegateModel': delegateModel,
+    'screenshotDelayMs': screenshotDelayMs,
+    'autoScreenshot': autoScreenshot,
+    'confirmBeforeBash': confirmBeforeBash,
+    'micMode': micMode.name,
+    'imageTokenCost': imageTokenCost,
+  };
 
   factory AppSettings.fromJson(Map<String, Object?> j) {
     const d = AppSettings();
@@ -114,8 +107,7 @@ class AppSettings {
       apiKey: j['apiKey'] as String? ?? '',
       voiceModel: s('voiceModel', d.voiceModel),
       voice: s('voice', d.voice),
-      compressionThreshold:
-          i('compressionThreshold', d.compressionThreshold).clamp(1000, 1000000),
+      compressionThreshold: i('compressionThreshold', d.compressionThreshold).clamp(1000, 1000000),
       compressionModel: s('compressionModel', d.compressionModel),
       delegateModel: s('delegateModel', d.delegateModel),
       screenshotDelayMs: i('screenshotDelayMs', d.screenshotDelayMs).clamp(0, 10000),
@@ -147,9 +139,7 @@ class SettingsStore {
     final f = File(path);
     await f.parent.create(recursive: true);
     final tmp = File('$path.tmp');
-    await tmp.writeAsString(
-        const JsonEncoder.withIndent('  ').convert(s.toJson()),
-        flush: true);
+    await tmp.writeAsString(const JsonEncoder.withIndent('  ').convert(s.toJson()), flush: true);
     if (Platform.isLinux || Platform.isMacOS) {
       await Process.run('chmod', ['600', tmp.path]);
     }

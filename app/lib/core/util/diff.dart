@@ -88,9 +88,7 @@ LineDiff diffLines(String oldText, String newText, {int maxCells = 4000000}) {
     pre++;
   }
   var suf = 0;
-  while (suf < a.length - pre &&
-      suf < b.length - pre &&
-      a[a.length - 1 - suf] == b[b.length - 1 - suf]) {
+  while (suf < a.length - pre && suf < b.length - pre && a[a.length - 1 - suf] == b[b.length - 1 - suf]) {
     suf++;
   }
   final out = <DiffLine>[];
@@ -116,16 +114,13 @@ LineDiff diffLines(String oldText, String newText, {int maxCells = 4000000}) {
       for (var j = m - 1; j >= 0; j--) {
         dp[i * w + j] = am[i] == bm[j]
             ? dp[(i + 1) * w + j + 1] + 1
-            : (dp[(i + 1) * w + j] >= dp[i * w + j + 1]
-                ? dp[(i + 1) * w + j]
-                : dp[i * w + j + 1]);
+            : (dp[(i + 1) * w + j] >= dp[i * w + j + 1] ? dp[(i + 1) * w + j] : dp[i * w + j + 1]);
       }
     }
     var i = 0, j = 0;
     while (i < n || j < m) {
       if (i < n && j < m && am[i] == bm[j]) {
-        out.add(DiffLine(DiffOp.equal, am[i],
-            oldNo: pre + i + 1, newNo: pre + j + 1));
+        out.add(DiffLine(DiffOp.equal, am[i], oldNo: pre + i + 1, newNo: pre + j + 1));
         i++;
         j++;
       } else if (j < m && (i >= n || dp[i * w + j + 1] >= dp[(i + 1) * w + j])) {
