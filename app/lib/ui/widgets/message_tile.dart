@@ -182,17 +182,8 @@ class _Bubble extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
         decoration: BoxDecoration(
           borderRadius: radius,
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: isUser
-                ? [WoiColors.cyan.withValues(alpha: 0.15), WoiColors.blue.withValues(alpha: 0.08)]
-                : [WoiColors.bg2.withValues(alpha: 0.75), WoiColors.violet.withValues(alpha: 0.07)],
-          ),
-          border: Border.all(color: accent.withValues(alpha: isUser ? 0.28 : 0.18)),
-          boxShadow: [
-            BoxShadow(color: accent.withValues(alpha: m.streaming ? 0.16 : 0.05), blurRadius: 22, spreadRadius: -6),
-          ],
+          color: isUser ? WoiColors.cyan.withValues(alpha: WoiColors.palette.isDark ? 0.16 : 0.08) : WoiColors.bg2,
+          border: Border.all(color: isUser ? WoiColors.cyan.withValues(alpha: 0.16) : WoiColors.stroke),
         ),
         child: content,
       ),
@@ -221,19 +212,15 @@ class _Avatar extends StatelessWidget {
   final bool active;
   @override
   Widget build(BuildContext context) => ExcludeSemantics(
-    child: AnimatedContainer(
-      duration: WoiMotion.medium,
+    child: Container(
       width: 28,
       height: 28,
+      alignment: Alignment.center,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        gradient: RadialGradient(
-          center: Alignment(-0.3, -0.4),
-          colors: [Color(0xFFFFE0F8), WoiColors.magenta, Color(0xFF3A0F6B)],
-          stops: [0, 0.4, 1],
-        ),
-        boxShadow: [BoxShadow(color: WoiColors.magenta.withValues(alpha: active ? 0.75 : 0.4), blurRadius: active ? 18 : 10)],
+        color: active ? WoiColors.cyan : WoiColors.text,
       ),
+      child: Text('W', style: display(12, weight: FontWeight.w700, color: WoiColors.bg1)),
     ),
   );
 }
@@ -286,7 +273,6 @@ class ScreenshotThumb extends StatelessWidget {
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: WoiColors.strokeStrong),
-                  boxShadow: const [BoxShadow(color: Color(0x66000000), blurRadius: 16, offset: Offset(0, 6))],
                 ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(11),
@@ -365,7 +351,8 @@ class ClickMarker extends StatefulWidget {
 
 class _ClickMarkerState extends State<ClickMarker> with SingleTickerProviderStateMixin {
   late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 1500))
-    ..repeat();
+    // A few pulses to draw the eye, then still (no idle frames).
+    ..repeat(count: 3);
 
   @override
   void dispose() {
@@ -450,7 +437,6 @@ class _TypingDotsState extends State<_TypingDots> with SingleTickerProviderState
                   decoration: BoxDecoration(
                     color: widget.color.withValues(alpha: a),
                     shape: BoxShape.circle,
-                    boxShadow: [BoxShadow(color: widget.color.withValues(alpha: a * 0.6), blurRadius: 6)],
                   ),
                 );
               }),
@@ -603,10 +589,9 @@ class _ToolCallCardState extends State<ToolCallCard> {
               duration: WoiMotion.slow,
               curve: WoiMotion.curve,
               decoration: BoxDecoration(
-                color: WoiColors.bg1.withValues(alpha: 0.6),
+                color: WoiColors.bg1,
                 borderRadius: BorderRadius.circular(WoiRadii.md),
                 border: Border.all(color: color.withValues(alpha: busy ? 0.6 : 0.25)),
-                boxShadow: [BoxShadow(color: color.withValues(alpha: busy ? 0.2 : 0.0), blurRadius: 18)],
               ),
               clipBehavior: Clip.antiAlias,
               child: Material(

@@ -14,9 +14,22 @@ import '../widgets/context_meter.dart';
 import '../widgets/empty_state.dart' show KeyCap;
 import '../widgets/glass.dart';
 
-/// Suggestions for the free-text model fields (any model id is accepted).
+/// Choices for the background models (a custom model id is also accepted).
 const kCompressionModels = ['gpt-6-luna', 'gpt-6.1-sol'];
 const kDelegateModels = ['gpt-6.1-sol', 'gpt-6-luna'];
+
+/// Short descriptions shown under the model radio buttons.
+const kModelHints = <String, String>{
+  'gpt-live-1.1': 'Latest; best turn-taking',
+  'gpt-live-1': 'Previous release',
+  'gpt-live-1-codex': 'Tuned for coding tasks',
+  'gpt-realtime-2': 'Latest realtime model',
+  'gpt-realtime-1.5': 'Previous release',
+  'gpt-realtime': 'Original release',
+  'gpt-realtime-mini': 'Fastest, lowest cost',
+  'gpt-6-luna': 'Fast and inexpensive',
+  'gpt-6.1-sol': 'Strongest reasoning, slower',
+};
 
 enum _TestState { idle, testing, ok, failed }
 
@@ -37,13 +50,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late final _compressionModel = TextEditingController(text: _s.compressionModel);
   late final _delegateModel = TextEditingController(text: _s.delegateModel);
   late final _workspace = TextEditingController(text: _s.workspaceDir);
+
+  /// Model choices showing the custom-id field.
+  final _customModel = <String>{};
   final _scroll = ScrollController();
   bool _showKey = false;
   Timer? _debounce;
   _TestState _test = _TestState.idle;
   String? _testMessage;
   int _active = 0;
-  late final List<GlobalKey> _keys = List.generate(6, (_) => GlobalKey());
+  late final List<GlobalKey> _keys = List.generate(7, (_) => GlobalKey());
 
   AppController get c => widget.controller;
 
@@ -145,6 +161,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'When long conversations get summarized, and which models do background work.',
     ),
     (Icons.shield_outlined, 'Screen & safety', 'Screenshots sent with your turns and what needs your approval.'),
+    (Icons.contrast_rounded, 'Appearance', 'How Woi looks.'),
     (Icons.keyboard_alt_outlined, 'Shortcuts', 'Keyboard controls on desktop.'),
     (Icons.info_outline_rounded, 'About', 'Runtime details for troubleshooting.'),
   ];
@@ -153,7 +170,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
     final wide = width >= 900;
-    final bodies = [_connection(wide), _voice(wide), _context(wide), _screen(wide), _shortcuts(), _about()];
+    final bodies = [_connection(wide), _voice(wide), _context(wide), _screen(wide), _appearance(wide), _shortcuts(), _about()];
     final list = ListView(
       controller: _scroll,
       padding: EdgeInsets.fromLTRB(wide ? 8 : 12, 8, wide ? 28 : 12, 40),
@@ -361,23 +378,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // --------------------------------------------------------------- sections
 
   List<Widget> _connection(bool wide) => [
-    Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: RadioGroup<BackendMode>(
-        groupValue: _s.backendMode,
-        onChanged: (v) => v == null ? null : _apply(_s.copyWith(backendMode: v)),
-        child: Column(
-          children: [
-            for (final m in BackendMode.values)
-              RadioListTile<BackendMode>(
-                contentPadding: EdgeInsets.zero,
-                value: m,
-                title: Text(m.label, style: body(14, weight: FontWeight.w500)),
-                subtitle: Text(_backendHint(m), style: body(12.5, color: WoiColors.textDim)),
-              ),
-          ],
-        ),
-      ),
+    _choices<BackendMode>(
+      wide,
+      id: 'backend',
+      title: 'Backend',
+      desc: 'Where the voice session runs. Switching reconnects.',
+      options: BackendMode.values,
+      value: _s.backendMode,
+      label: (m) => m.label,
+      hint: _backendHint,
+      columns: 1,
+      onChanged: (v) => _apply(_s.copyWith(backendMode: v)),
     ),
     if (_s.authMode == AuthMode.codex)
       _row(
@@ -406,25 +417,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   List<Widget> _voice(bool wide) => [
     if (_s.backendMode == BackendMode.gptLive)
-      _row(
+      _choices<String>(
         wide,
-        'gpt-live model',
-        'Speech-to-speech model used over WebRTC.',
-        _dropdown('gpt-live model', _s.voiceModel, kVoiceModels, (v) => _apply(_s.copyWith(voiceModel: v))),
+        id: 'voice-model',
+        title: 'Voice model',
+        desc: 'Speech-to-speech model used over WebRTC.',
+        options: {...kVoiceModels, _s.voiceModel}.toList(),
+        value: _s.voiceModel,
+        hint: (v) => kModelHints[v],
+        monoText: true,
+        onChanged: (v) => _apply(_s.copyWith(voiceModel: v)),
       ),
-    _row(
+    _choices<String>(
       wide,
-      _s.backendMode == BackendMode.gptLive ? 'Realtime model (fallback)' : 'Realtime model',
-      'Used for the WebSocket realtime backends.',
-      _dropdown('Realtime model', _s.realtimeModel, kRealtimeModels, (v) => _apply(_s.copyWith(realtimeModel: v))),
+      id: 'realtime-model',
+      title: _s.backendMode == BackendMode.gptLive ? 'Realtime model (fallback)' : 'Realtime model',
+      desc: 'Used by the WebSocket realtime backends.',
+      options: {...kRealtimeModels, _s.realtimeModel}.toList(),
+      value: _s.realtimeModel,
+      hint: (v) => kModelHints[v],
+      monoText: true,
+      onChanged: (v) => _apply(_s.copyWith(realtimeModel: v)),
     ),
-    _row(
+    _choices<String>(
       wide,
-      'Voice',
-      'Applies from the next session; the current one reconnects.',
-      _s.backendMode == BackendMode.gptLive
-          ? _dropdown('Voice', _s.liveVoice, kLiveVoices, (v) => _apply(_s.copyWith(liveVoice: v)))
-          : _dropdown('Voice', _s.voice, kVoices, (v) => _apply(_s.copyWith(voice: v))),
+      id: 'voice',
+      title: 'Voice',
+      desc: 'How Woi sounds. Applies from the next session; the current one reconnects.',
+      options: {..._s.voiceChoices, _s.activeVoice}.toList(),
+      value: _s.activeVoice,
+      label: _cap,
+      columns: wide ? 5 : 2,
+      onChanged: (v) => _apply(
+        _s.backendMode == BackendMode.gptLive ? _s.copyWith(liveVoice: v) : _s.copyWith(voice: v),
+      ),
     ),
   ];
 
@@ -445,21 +471,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
       controlWidth: 340,
     ),
-    _row(
+    _modelChoices(
       wide,
-      'Compression model',
-      'Writes the summary when the context is compacted.',
-      _modelField('Compression model', _compressionModel, kCompressionModels, 'gpt-6-luna', (v) {
-        _apply(_s.copyWith(compressionModel: v), debounce: true);
-      }),
+      id: 'compression-model',
+      title: 'Compression model',
+      desc: 'Writes the summary when the context is compacted.',
+      options: kCompressionModels,
+      value: _s.compressionModel,
+      ctl: _compressionModel,
+      fallback: 'gpt-6-luna',
+      set: (v, {debounce = false}) => _apply(_s.copyWith(compressionModel: v), debounce: debounce),
     ),
-    _row(
+    _modelChoices(
       wide,
-      'Delegate model',
-      'Runs longer multi-step tasks Woi hands off in the background.',
-      _modelField('Delegate model', _delegateModel, kDelegateModels, 'gpt-6.1-sol', (v) {
-        _apply(_s.copyWith(delegateModel: v), debounce: true);
-      }),
+      id: 'delegate-model',
+      title: 'Delegate model',
+      desc: 'Runs longer multi-step tasks Woi hands off in the background.',
+      options: kDelegateModels,
+      value: _s.delegateModel,
+      ctl: _delegateModel,
+      fallback: 'gpt-6.1-sol',
+      set: (v, {debounce = false}) => _apply(_s.copyWith(delegateModel: v), debounce: debounce),
     ),
     _row(
       wide,
@@ -557,6 +589,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ),
   ];
 
+  List<Widget> _appearance(bool wide) => [
+    _choices<AppTheme>(
+      wide,
+      id: 'theme',
+      title: 'Theme',
+      desc: 'Light is the default; System follows the desktop setting.',
+      options: AppTheme.values,
+      value: _s.theme,
+      label: (t) => t.label,
+      hint: (t) => switch (t) {
+        AppTheme.light => 'Bright, high-contrast surfaces',
+        AppTheme.dark => 'Dim surfaces for low light',
+        AppTheme.system => 'Match the system appearance',
+      },
+      columns: wide ? 3 : 1,
+      onChanged: (v) => _apply(_s.copyWith(theme: v)),
+    ),
+  ];
+
   List<Widget> _shortcuts() {
     const items = [
       (['Space'], 'Hold to talk (push-to-talk mode, when not typing)'),
@@ -565,7 +616,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       (['Shift', 'Enter'], 'New line in the message box'),
       (['Ctrl', 'K'], 'Focus the message box'),
       (['Ctrl', ','], 'Open settings'),
-      (['Ctrl', 'N'], 'New conversation'),
+      (['Ctrl', 'N'], 'New note / conversation'),
+      (['Ctrl', '1'], 'Show the note'),
+      (['Ctrl', '2'], 'Show the chat'),
+      (['Ctrl', '\\'], 'Note and chat side by side (wide windows)'),
+      (['Ctrl', 'R'], 'Run the note line or selection as a message'),
     ];
     return [
       Padding(
@@ -659,6 +714,155 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ),
   );
 
+  static String _cap(String v) => v.isEmpty ? v : '${v[0].toUpperCase()}${v.substring(1)}';
+
+  /// A titled radio list: one row per option (with an optional hint), laid
+  /// out in [columns] on wide screens and one per row (48dp) on phones.
+  Widget _choices<T>(
+    bool wide, {
+    required String id,
+    required String title,
+    required String desc,
+    required List<T> options,
+    required T value,
+    required ValueChanged<T> onChanged,
+    String Function(T)? label,
+    String? Function(T)? hint,
+    int? columns,
+    bool monoText = false,
+    List<Widget> extra = const [],
+  }) {
+    final cols = wide ? (columns ?? 2) : (columns ?? 1).clamp(1, 2);
+    String name(T v) => label?.call(v) ?? '$v';
+    Widget item(T v) {
+      final h = hint?.call(v);
+      final on = v == value;
+      return Semantics(
+        inMutuallyExclusiveGroup: true,
+        child: InkWell(
+          key: ValueKey('radio-$id-${v is Enum ? v.name : v}'),
+          borderRadius: BorderRadius.circular(WoiRadii.md),
+          onTap: () => onChanged(v),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: kTouchTarget),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: [
+                  Radio<T>(value: v),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          name(v),
+                          style: (monoText ? mono(13.5) : body(14)).copyWith(
+                            fontWeight: on ? FontWeight.w600 : FontWeight.w400,
+                            color: WoiColors.text,
+                          ),
+                        ),
+                        if (h != null && h.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 1),
+                            child: Text(h, style: body(12.5, color: WoiColors.textDim, height: 1.3)),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final rows = <Widget>[];
+    for (var i = 0; i < options.length; i += cols) {
+      rows.add(
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (var k = i; k < i + cols; k++)
+              Expanded(child: k < options.length ? item(options[k]) : const SizedBox()),
+          ],
+        ),
+      );
+    }
+    return Padding(
+      key: ValueKey('choices-$id'),
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Semantics(header: true, child: Text(title, style: body(14, weight: FontWeight.w600))),
+          const SizedBox(height: 3),
+          Text(desc, style: body(12.5, color: WoiColors.textDim, height: 1.35)),
+          const SizedBox(height: 6),
+          RadioGroup<T>(
+            groupValue: value,
+            onChanged: (v) => v == null ? null : onChanged(v),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: rows),
+          ),
+          ...extra,
+        ],
+      ),
+    );
+  }
+
+  static const _custom = '\u0000custom';
+
+  /// Model radio list plus a "Custom" choice with a free-text model id.
+  Widget _modelChoices(
+    bool wide, {
+    required String id,
+    required String title,
+    required String desc,
+    required List<String> options,
+    required String value,
+    required TextEditingController ctl,
+    required String fallback,
+    required void Function(String v, {bool debounce}) set,
+  }) {
+    final custom = _customModel.contains(id) || !options.contains(value);
+    return _choices<String>(
+      wide,
+      id: id,
+      title: title,
+      desc: desc,
+      options: [...options, _custom],
+      value: custom ? _custom : value,
+      label: (v) => v == _custom ? 'Custom' : v,
+      hint: (v) => v == _custom ? 'Any model id' : kModelHints[v],
+      monoText: true,
+      columns: wide ? 3 : 1,
+      onChanged: (v) {
+        if (v == _custom) {
+          setState(() => _customModel.add(id));
+          return;
+        }
+        setState(() => _customModel.remove(id));
+        ctl.text = v;
+        set(v);
+      },
+      extra: [
+        if (custom)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 6, 0, 0),
+            child: TextField(
+              key: ValueKey('custom-$id'),
+              controller: ctl,
+              style: mono(13.5),
+              decoration: InputDecoration(labelText: '$title id', hintText: fallback, isDense: true),
+              onChanged: (v) => set(v.trim().isEmpty ? fallback : v.trim(), debounce: true),
+            ),
+          ),
+      ],
+    );
+  }
+
   Widget _dropdown(String label, String value, List<String> options, ValueChanged<String> onChanged) {
     final items = {...options, value}.toList();
     return DropdownButtonFormField<String>(
@@ -675,41 +879,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
       ],
       onChanged: (v) => v == null ? null : onChanged(v),
-    );
-  }
-
-  /// Free-text model id with a suggestions menu.
-  Widget _modelField(
-    String label,
-    TextEditingController ctl,
-    List<String> suggestions,
-    String fallback,
-    ValueChanged<String> onChanged,
-  ) {
-    void set(String v) => onChanged(v.trim().isEmpty ? fallback : v.trim());
-    return TextField(
-      controller: ctl,
-      style: mono(13.5),
-      decoration: InputDecoration(
-        labelText: label,
-        hintText: fallback,
-        suffixIcon: PopupMenuButton<String>(
-          tooltip: 'Suggestions',
-          icon: const Icon(Icons.arrow_drop_down_rounded),
-          onSelected: (v) {
-            ctl.text = v;
-            set(v);
-          },
-          itemBuilder: (_) => [
-            for (final s in suggestions)
-              PopupMenuItem(
-                value: s,
-                child: Text(s, style: mono(13.5)),
-              ),
-          ],
-        ),
-      ),
-      onChanged: set,
     );
   }
 
