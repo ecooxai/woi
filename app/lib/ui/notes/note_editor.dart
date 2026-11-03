@@ -93,7 +93,11 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
   NoteViewMode get mode => _effectiveMode;
   MarkdownEditingController get textController => _ctrl;
 
-  NoteViewMode get _effectiveMode => widget.compact && _mode == NoteViewMode.split ? NoteViewMode.edit : _mode;
+  NoteViewMode get _effectiveMode => _dense && _mode == NoteViewMode.split ? NoteViewMode.edit : _mode;
+
+  /// Narrow pane (phone, or the note half of the side-by-side view): fewer
+  /// toolbar buttons, icon-only mode switch, no in-editor split.
+  bool _dense = false;
 
   @override
   void initState() {
@@ -155,7 +159,7 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
       final sel = _ctrl.selection;
       TextSelection nextSel;
       if (!sel.isValid) {
-        nextSel = TextSelection.collapsed(offset: next.length);
+        nextSel = sel;
       } else if (sel.end <= pre) {
         nextSel = sel; // change after the cursor
       } else if (sel.start >= old.length - suf) {
@@ -167,10 +171,12 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
       _syncing = true;
       _ctrl.value = TextEditingValue(
         text: next,
-        selection: TextSelection(
-          baseOffset: nextSel.baseOffset.clamp(0, next.length),
-          extentOffset: nextSel.extentOffset.clamp(0, next.length),
-        ),
+        selection: nextSel.isValid
+            ? TextSelection(
+                baseOffset: nextSel.baseOffset.clamp(0, next.length),
+                extentOffset: nextSel.extentOffset.clamp(0, next.length),
+              )
+            : nextSel,
       );
       _syncing = false;
     }
@@ -405,7 +411,14 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, box) {
+      _dense = widget.compact || box.maxWidth < 720;
+      return _build();
+    },
+  );
+
+  Widget _build() {
     final m = _effectiveMode;
     final editor = _editorPane();
     final preview = _previewPane();
@@ -567,9 +580,9 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
         editing ? () => _linePrefix('check') : null,
         key: const ValueKey('tb-check'),
       ),
-      if (!widget.compact)
+      if (!_dense)
         btn(Icons.format_list_numbered_rounded, 'Numbered list', editing ? () => _linePrefix('number') : null),
-      if (!widget.compact) btn(Icons.format_quote_rounded, 'Quote', editing ? () => _linePrefix('quote') : null),
+      if (!_dense) btn(Icons.format_quote_rounded, 'Quote', editing ? () => _linePrefix('quote') : null),
       btn(Icons.code_rounded, 'Code (Ctrl+E)', editing ? _codeBlock : null),
       btn(Icons.link_rounded, 'Link', editing ? _link : null),
     ];
@@ -577,7 +590,7 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
       btn(Icons.undo_rounded, 'Undo (Ctrl+Z)', notes.canUndo ? notes.undo : null, key: const ValueKey('tb-undo')),
       btn(Icons.redo_rounded, 'Redo (Ctrl+Shift+Z)', notes.canRedo ? notes.redo : null, key: const ValueKey('tb-redo')),
     ];
-    final modes = _ModeSwitch(mode: m, compact: widget.compact, onChanged: setMode);
+    final modes = _ModeSwitch(mode: m, compact: _dense, onChanged: setMode);
     return Padding(
       padding: EdgeInsets.fromLTRB(widget.compact ? 8 : 14, 8, widget.compact ? 8 : 14, 8),
       child: Row(
@@ -636,7 +649,7 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
             key: const ValueKey('note-words'),
             style: body(12, color: WoiColors.textDim).copyWith(fontFeatures: kTabular),
           ),
-          if (!widget.compact) ...[
+          if (!_dense) ...[
             const SizedBox(width: 10),
             Text(
               '$chars chars',
@@ -644,7 +657,7 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
             ),
           ],
           const Spacer(),
-          if (!widget.compact)
+          if (!_dense)
             Text(
               'Markdown  ·  Ctrl+B  Ctrl+I  Ctrl+E  ·  Ctrl+Enter toggles a todo',
               style: body(11.5, color: WoiColors.textFaint),

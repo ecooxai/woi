@@ -306,7 +306,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _wide(BoxConstraints box) {
     final split = _splitActive;
-    final side = split ? 300.0 : (box.maxWidth >= 1300 ? 380.0 : 340.0);
+    final side = box.maxWidth >= 1300 && !split ? 380.0 : 340.0;
     Widget chatPanel({double maxBubble = 700}) => GlassPanel(
       key: const ValueKey('chat-panel'),
       padding: EdgeInsets.zero,
