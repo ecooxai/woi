@@ -195,6 +195,7 @@ class DelegationExecutor {
     required this.runTool,
     this.latestScreenshot,
     this.contextNote,
+    this.environment,
     this.fastModel = 'gpt-6-luna',
     this.reasoningEffort = 'low',
     this.maxSteps = 4,
@@ -212,6 +213,9 @@ class DelegationExecutor {
   /// each request, so a compacted conversation still resolves "that file".
   final String? Function()? contextNote;
 
+  /// Real user, \$HOME and workspace dir (appended to [instructions]).
+  final String? Function()? environment;
+
   /// Model for the tool loop. Complex work is escalated by the model itself
   /// through `delegate_task` (the app's DelegateBackend, gpt-6.1-sol).
   final String fastModel;
@@ -224,12 +228,19 @@ class DelegationExecutor {
   static const instructions =
       'You carry out a voice assistant\'s request on the user\'s Linux desktop by calling tools. '
       'Act at once, never ask questions. Call every tool the current step needs in one reply. '
-      'The request is transcribed speech: "readme dot md" means README.md. Relative paths are in the home folder. '
+      'The request is transcribed speech: "readme dot md" means README.md. Relative paths resolve against the workspace dir given below; use only the real paths given there. '
       'Show, open, view or play a file: show_file. Never change files with run_bash: read_file, then edit_file '
       '(the user approves a diff). '
       'click_screen coordinates are pixels of the attached screenshot. '
-      'For complex work (writing code, analysis, long text) call delegate_task. '
-      'If no tool fits, answer in one short sentence.';
+      'For complex work (writing code, analysis, long text) call delegate_task; when the user wants code or text '
+      'written or saved, say so in the task (it saves files with write_file). '
+      'Never press keys, click or type for a stop, cancel or never-mind request: do nothing. '
+      'If no tool fits, answer in one short sentence. Never claim something was done unless a tool result shows it.';
+
+  String get _instructions {
+    final env = environment?.call()?.trim();
+    return env == null || env.isEmpty ? instructions : '$instructions\n$env';
+  }
 
   /// Tools whose result the model must see before it can act or answer.
   static const observeTools = {'take_screenshot', 'list_dir', 'read_file'};
@@ -376,7 +387,7 @@ class DelegationExecutor {
       var chain = Future<void>.value();
       final turn = await model.respond(
         model: fastModel,
-        instructions: instructions,
+        instructions: _instructions,
         input: input,
         tools: specs,
         reasoningEffort: reasoningEffort,

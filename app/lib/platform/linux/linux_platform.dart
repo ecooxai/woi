@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 
 import '../app_paths.dart';
+import '../files.dart';
 import '../platform_services.dart';
 import 'linux_audio_io.dart';
 import 'linux_files.dart';
@@ -26,7 +27,7 @@ PlatformServices createLinuxPlatform({bool secondaryWindows = true}) {
     screen: LinuxScreenCapture(),
     input: LinuxInputControl(),
     shell: LinuxShell(defaultWorkingDirectory: paths.homeDir),
-    files: LocalFiles(homeDir: paths.homeDir),
+    files: LocalFiles(homeDir: paths.homeDir, workspaceDir: defaultWorkspaceDir(paths.homeDir, Directory.current.path)),
     viewer: LinuxMediaViewer(useSecondaryWindow: secondaryWindows),
   );
 }

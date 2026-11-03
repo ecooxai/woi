@@ -267,7 +267,7 @@ class _HomeScreenState extends State<HomeScreen> {
     state: linkStateFor(pipeline.status, wasConnected: _wasConnected),
     model: c.activeVoiceModel,
     backend: c.activeBackendMode,
-    voice: c.settings.voice,
+    voice: c.settings.activeVoice,
     detail: pipeline.statusDetail,
     onRetry: pipeline.connect,
     compact: compact,
@@ -359,7 +359,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   Text('VOICE', style: eyebrow()),
                   const Spacer(),
                   Text(
-                    s.voice.toUpperCase(),
+                    s.activeVoice.toUpperCase(),
                     style: eyebrow(color: WoiColors.violet.withValues(alpha: 0.9)),
                   ),
                 ],

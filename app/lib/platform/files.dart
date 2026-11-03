@@ -1,4 +1,14 @@
+import 'package:path/path.dart' as p;
+
 import '../core/util/diff.dart';
+
+/// Default workspace: the directory Woi was launched from, unless that is
+/// \$HOME or `/` (desktop launchers start there), in which case \$HOME.
+String defaultWorkspaceDir(String homeDir, String launchDir) {
+  final cwd = launchDir.isEmpty ? '/' : p.normalize(launchDir);
+  if (cwd == '/' || cwd == p.normalize(homeDir)) return homeDir;
+  return cwd;
+}
 
 enum EntryType { file, directory, link, other }
 
@@ -86,8 +96,19 @@ class WriteOutcome {
 /// File access. Writes cannot bypass confirmation: [write] requires an
 /// approver and only touches the disk after it resolves to true.
 abstract class Files {
-  /// Expands `~` and makes relative paths relative to the home directory.
+  /// The user's real home directory.
+  String get homeDir;
+
+  /// Relative paths resolve against this directory (settings: workspace).
+  String get workspaceDir;
+  set workspaceDir(String dir);
+
+  /// Expands `~`/`$HOME` and makes relative paths relative to [workspaceDir].
   String resolve(String path);
+
+  /// Like [resolve], but when the path does not exist falls back to a
+  /// unique case-insensitive match (readme.md -> README.md).
+  String resolveExisting(String path);
 
   Future<FileReadResult> read(String path, {int maxBytes = 64 * 1024, int? offsetLine, int? limitLines});
 

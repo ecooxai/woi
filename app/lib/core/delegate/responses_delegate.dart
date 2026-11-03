@@ -10,6 +10,10 @@ You receive one complex task and complete it yourself, step by step, using the t
 (read/list files, run bash, write or edit files, keyboard/mouse, screenshots).
 File writes and edits are shown to the user as a diff and need their approval; if they reject one, do not retry it.
 Prefer doing the work over describing it. Do not ask questions; make reasonable assumptions.
+When the task asks for a script, program, document or any file to be written or created, save it with write_file
+(a sensible name in the workspace dir unless a path is given) and say where. Only say a file was saved or changed when
+the tool result shows written=true; if the user declined or a tool failed, say so plainly. Never invent results.
+Use only the real paths from the environment below; never guess home directories.
 Your final message is read aloud by the voice assistant, so make it short and speakable:
 at most 80 words, plain sentences, no markdown, no code blocks, no lists; mention any file paths you created
 or changed and the key result.
@@ -27,6 +31,7 @@ class ResponsesDelegate implements DelegateBackend {
     this.reasoningEffort = 'medium',
     this.excludedTools = const {'delegate_task'},
     this.onStep,
+    this.environment,
   });
 
   final ResponsesClient client;
@@ -42,6 +47,14 @@ class ResponsesDelegate implements DelegateBackend {
 
   /// Progress callback (tool name, args) for UI/tests.
   final void Function(String tool, String args)? onStep;
+
+  /// Real user, \$HOME and workspace dir (appended to the instructions).
+  final String? Function()? environment;
+
+  String get _instructions {
+    final env = environment?.call()?.trim();
+    return env == null || env.isEmpty ? kDelegateInstructions : '$kDelegateInstructions\n$env';
+  }
 
   @override
   Future<DelegateResult> runTask(String task, {required String model, String? context}) async {
@@ -59,7 +72,7 @@ class ResponsesDelegate implements DelegateBackend {
     for (var step = 0; step < maxSteps; step++) {
       final r = await client.create(
         model: model,
-        instructions: kDelegateInstructions,
+        instructions: _instructions,
         input: input,
         tools: specs,
         reasoning: reasoningEffort == null ? null : {'effort': reasoningEffort},

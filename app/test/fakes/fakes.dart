@@ -176,6 +176,7 @@ class FakeInput implements InputControl {
 
 class FakeShell implements Shell {
   final commands = <String>[];
+  final cwds = <String?>[];
 
   @override
   Future<ShellResult> run(
@@ -185,6 +186,7 @@ class FakeShell implements Shell {
     int maxOutputChars = 8000,
   }) async {
     commands.add(command);
+    cwds.add(workingDirectory);
     final echo = RegExp(r'^echo (.*)$').firstMatch(command.trim());
     return ShellResult(
       exitCode: echo != null ? 0 : 127,

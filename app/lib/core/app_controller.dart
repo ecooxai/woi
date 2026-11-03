@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import 'dart:io';
+
 import '../platform/platform_services.dart';
 import '../tools/builtin_tools.dart';
 import '../tools/confirmation.dart';
@@ -64,7 +66,22 @@ class AppController extends ChangeNotifier {
   late final Compressor compressor = _compressorOverride ?? ResponsesCompressor(responses);
   late final DelegateBackend delegate =
       _delegateOverride ??
-      ResponsesDelegate(responses, tools: () => tools, latestScreenshot: () => toolEnv.lastScreenshot?.png);
+      ResponsesDelegate(
+        responses,
+        tools: () => tools,
+        latestScreenshot: () => toolEnv.lastScreenshot?.png,
+        environment: environmentNote,
+      );
+
+  /// Real user name, \$HOME and workspace dir for model prompts.
+  String environmentNote() {
+    final user = Platform.environment['USER'] ?? Platform.environment['LOGNAME'] ?? '';
+    final home = platform.files.homeDir;
+    final ws = platform.files.workspaceDir;
+    return 'Environment: user name ${user.isEmpty ? 'unknown' : user}; home directory (\$HOME, ~) is $home; '
+        'workspace directory (relative paths and the default shell cwd) is $ws. '
+        'Use exactly these paths; never invent others such as /home/oai or /home/user.';
+  }
 
   BackendSelection? _selection;
 
@@ -116,6 +133,8 @@ class AppController extends ChangeNotifier {
   Future<void> init() async {
     try {
       _settings = await _settingsStore.load();
+      _defaultWorkspace = platform.files.workspaceDir;
+      _applyWorkspace();
       await history.init();
       codexAuth = await CodexAuthInfo.load();
       final conv = await history.loadLatest() ?? Conversation();
@@ -160,6 +179,25 @@ class AppController extends ChangeNotifier {
     }
   }
 
+  late String _defaultWorkspace;
+
+  /// The configured workspace dir if it exists, else the launch default.
+  String get defaultWorkspace => _defaultWorkspace;
+
+  void _applyWorkspace() {
+    final want = _settings.workspaceDir.trim();
+    var dir = _defaultWorkspace;
+    if (want.isNotEmpty) {
+      final full = platform.files.resolve(want);
+      if (Directory(full).existsSync()) {
+        dir = full;
+      } else {
+        debugPrint('workspace dir $full does not exist; using $dir');
+      }
+    }
+    platform.files.workspaceDir = dir;
+  }
+
   PipelineOptions _pipelineOptions() => PipelineOptions(
     autoScreenshot: _settings.autoScreenshot,
     screenshotDelay: Duration(milliseconds: _settings.screenshotDelayMs),
@@ -176,12 +214,13 @@ class AppController extends ChangeNotifier {
     }
     return SessionConfig(
       model: activeVoiceModel,
-      voice: _settings.voice,
-      instructions: kAssistantInstructions,
+      voice: _settings.activeVoice,
+      instructions: '$kAssistantInstructions\n${environmentNote()}',
       tools: tools.specs,
       credentials: creds,
       priorContext: c.summary,
       recentContext: contextManager.recentTurns(),
+      environment: environmentNote(),
     );
   }
 
@@ -192,6 +231,7 @@ class AppController extends ChangeNotifier {
       ..threshold = next.compressionThreshold
       ..compressionModel = next.compressionModel
       ..imageTokenCost = next.imageTokenCost;
+    if (next.workspaceDir != prev.workspaceDir) _applyWorkspace();
     notifyListeners();
     await _settingsStore.save(next);
     if (next.micMode != prev.micMode) await pipeline.setMicMode(next.micMode);

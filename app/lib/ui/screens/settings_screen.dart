@@ -36,6 +36,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late final _apiKey = TextEditingController(text: _s.apiKey);
   late final _compressionModel = TextEditingController(text: _s.compressionModel);
   late final _delegateModel = TextEditingController(text: _s.delegateModel);
+  late final _workspace = TextEditingController(text: _s.workspaceDir);
   final _scroll = ScrollController();
   bool _showKey = false;
   Timer? _debounce;
@@ -65,6 +66,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _apiKey.dispose();
     _compressionModel.dispose();
     _delegateModel.dispose();
+    _workspace.dispose();
     _scroll.dispose();
     super.dispose();
   }
@@ -416,7 +418,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       wide,
       'Voice',
       'Applies from the next session; the current one reconnects.',
-      _dropdown('Voice', _s.voice, kVoices, (v) => _apply(_s.copyWith(voice: v))),
+      _s.backendMode == BackendMode.gptLive
+          ? _dropdown('Voice', _s.liveVoice, kLiveVoices, (v) => _apply(_s.copyWith(liveVoice: v)))
+          : _dropdown('Voice', _s.voice, kVoices, (v) => _apply(_s.copyWith(voice: v))),
     ),
   ];
 
@@ -452,6 +456,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _modelField('Delegate model', _delegateModel, kDelegateModels, 'gpt-6.1-sol', (v) {
         _apply(_s.copyWith(delegateModel: v), debounce: true);
       }),
+    ),
+    _row(
+      wide,
+      'Screenshot tiers',
+      'Newest ${_s.imageFullCount} sent in full, next ${_s.imageScaledCount} at 1/${_s.imageScaleDivisor} size, '
+          'older ones replaced by a short description.',
+      Row(
+        children: [
+          for (final (label, value, options, set) in [
+            ('Full', _s.imageFullCount, const [1, 2, 3, 4, 5, 8], (int v) => _s.copyWith(imageFullCount: v)),
+            ('Scaled', _s.imageScaledCount, const [0, 3, 5, 8, 10], (int v) => _s.copyWith(imageScaledCount: v)),
+            ('Scale 1/', _s.imageScaleDivisor, const [2, 3, 4, 5, 8], (int v) => _s.copyWith(imageScaleDivisor: v)),
+          ])
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: _dropdown(
+                  label,
+                  '$value',
+                  [for (final o in {...options, value}) '$o'],
+                  (v) => _apply(set(int.parse(v))),
+                ),
+              ),
+            ),
+        ],
+      ),
+      controlWidth: 340,
+    ),
+    _row(
+      wide,
+      'Workspace folder',
+      'Relative paths and shell commands start here. Empty: the folder Woi was started from '
+          '(or home when started from home or /). Now: ${c.platform.files.workspaceDir}',
+      TextField(
+        controller: _workspace,
+        style: mono(13.5),
+        decoration: InputDecoration(labelText: 'Workspace folder', hintText: c.defaultWorkspace),
+        onChanged: (v) => _apply(_s.copyWith(workspaceDir: v.trim()), debounce: true),
+      ),
     ),
   ];
 

@@ -36,6 +36,7 @@ class SessionConfig {
     this.credentials,
     this.priorContext,
     this.recentContext,
+    this.environment,
   });
 
   final String model;
@@ -52,6 +53,10 @@ class SessionConfig {
   /// conversation). Backends that cannot replay items (gpt-live) put it in
   /// the startup instructions.
   final String? recentContext;
+
+  /// Real user name, \$HOME and workspace dir, for prompts of models that
+  /// run tools (so they never invent paths like /home/oai).
+  final String? environment;
 }
 
 /// Events emitted by a [VoiceBackend].

@@ -12,6 +12,7 @@ import '../auth/auth.dart';
 import '../context/context_manager.dart';
 import '../net/realtime_socket.dart';
 import '../pipeline/vad.dart';
+import '../settings/settings.dart' show kLiveVoices, kLiveDefaultVoice;
 import 'context_sync.dart';
 import 'delegation_executor.dart';
 import 'live_rtc_transport.dart';
@@ -19,36 +20,6 @@ import 'voice_backend.dart';
 
 const kLiveModels = ['gpt-live-1.1', 'gpt-live-1', 'gpt-live-1-codex'];
 
-/// v3 voices accepted by gpt-live (§3.1). Realtime voices (marin, alloy...)
-/// make the call die silently, so anything else maps to [kLiveDefaultVoice].
-const kLiveVoices = [
-  'cove',
-  'juniper',
-  'maple',
-  'spruce',
-  'ember',
-  'vale',
-  'breeze',
-  'arbor',
-  'sol',
-  'aube',
-  'bubbie',
-  'haetsal', //
-  'hanul',
-  'himari',
-  'leher',
-  'miko',
-  'neer',
-  'porto',
-  'rindo',
-  'rio',
-  'rivage',
-  'selva',
-  'sonna',
-  'tinta',
-  'viola',
-];
-const kLiveDefaultVoice = 'cove';
 
 // ------------------------------------------------------------- call creation
 
@@ -289,6 +260,7 @@ class LiveWebRtcBackend implements VoiceBackend, ManagedAudioBackend, LiveContex
       runTool: toolRunner ?? _runToolViaPipeline,
       latestScreenshot: () => _latestImage,
       contextNote: () => _summary,
+      environment: () => config.environment,
       fastModel: delegationFastModel,
       reasoningEffort: delegationReasoningEffort,
     );

@@ -10,17 +10,72 @@ import '../files.dart';
 /// dart:io based file access (also usable on macOS; mobile ports will
 /// sandbox paths differently).
 class LocalFiles implements Files {
-  LocalFiles({required this.homeDir});
+  LocalFiles({required this.homeDir, String? workspaceDir}) : workspaceDir = workspaceDir ?? homeDir;
 
+  @override
   final String homeDir;
 
   @override
-  String resolve(String path) {
+  String workspaceDir;
+
+  /// Expands `~`, `~/`, `$HOME` and `${HOME}` (and `$USER`).
+  static String expand(String path, String homeDir) {
     var s = path.trim();
+    if (s.length >= 2 && (s[0] == '"' || s[0] == "'") && s[s.length - 1] == s[0]) {
+      s = s.substring(1, s.length - 1);
+    }
     if (s == '~') return homeDir;
     if (s.startsWith('~/')) s = p.join(homeDir, s.substring(2));
-    if (!p.isAbsolute(s)) s = p.join(homeDir, s);
+    s = s.replaceAllMapped(RegExp(r'\$\{HOME\}|\$HOME(?![A-Za-z0-9_])'), (_) => homeDir);
+    final user = Platform.environment['USER'];
+    if (user != null && user.isNotEmpty) {
+      s = s.replaceAllMapped(RegExp(r'\$\{USER\}|\$USER(?![A-Za-z0-9_])'), (_) => user);
+    }
+    return s;
+  }
+
+  @override
+  String resolve(String path) {
+    var s = expand(path, homeDir);
+    if (s.isEmpty) return workspaceDir;
+    if (!p.isAbsolute(s)) s = p.join(workspaceDir, s);
     return p.normalize(s);
+  }
+
+  @override
+  String resolveExisting(String path) {
+    final full = resolve(path);
+    if (FileSystemEntity.typeSync(full) != FileSystemEntityType.notFound) return full;
+    return caseInsensitiveMatch(full) ?? full;
+  }
+
+  /// Walks [full] component by component, matching each missing component
+  /// case-insensitively (readme.md -> README.md). Returns null when any
+  /// component has no unique match.
+  static String? caseInsensitiveMatch(String full) {
+    final parts = p.split(full);
+    var cur = parts.first;
+    for (final part in parts.skip(1)) {
+      final exact = p.join(cur, part);
+      if (FileSystemEntity.typeSync(exact) != FileSystemEntityType.notFound) {
+        cur = exact;
+        continue;
+      }
+      final dir = Directory(cur);
+      if (!dir.existsSync()) return null;
+      final want = part.toLowerCase();
+      final hits = <String>[];
+      try {
+        for (final e in dir.listSync(followLinks: false)) {
+          if (p.basename(e.path).toLowerCase() == want) hits.add(e.path);
+        }
+      } catch (_) {
+        return null;
+      }
+      if (hits.length != 1) return null;
+      cur = hits.single;
+    }
+    return cur;
   }
 
   static bool _looksBinary(Uint8List bytes) {
@@ -33,7 +88,7 @@ class LocalFiles implements Files {
 
   @override
   Future<FileReadResult> read(String path, {int maxBytes = 64 * 1024, int? offsetLine, int? limitLines}) async {
-    final full = resolve(path);
+    final full = resolveExisting(path);
     final file = File(full);
     final total = await file.length();
     final raf = await file.open();
@@ -76,7 +131,7 @@ class LocalFiles implements Files {
 
   @override
   Future<List<DirEntry>> list(String path, {bool showHidden = false}) async {
-    final dir = Directory(resolve(path));
+    final dir = Directory(resolveExisting(path));
     final out = <DirEntry>[];
     await for (final e in dir.list(followLinks: false)) {
       final name = p.basename(e.path);
@@ -109,7 +164,7 @@ class LocalFiles implements Files {
 
   @override
   Future<WriteOutcome> write(String path, String content, {required WriteApprover approve, String? reason}) async {
-    final full = resolve(path);
+    final full = resolveExisting(path);
     final file = File(full);
     String? old;
     if (await file.exists()) {

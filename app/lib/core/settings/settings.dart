@@ -30,7 +30,39 @@ const kVoiceModels = ['gpt-live-1.1', 'gpt-live-1', 'gpt-live-1-codex'];
 
 /// Models that work on wss://api.openai.com/v1/realtime (§2.1).
 const kRealtimeModels = ['gpt-realtime-2', 'gpt-realtime-1.5', 'gpt-realtime', 'gpt-realtime-mini'];
+/// Voices of the realtime WebSocket models (direct and API-key modes).
 const kVoices = ['marin', 'cedar', 'alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse'];
+
+/// v3 voices accepted by gpt-live (§3.1). Realtime voices (marin, alloy...)
+/// make the call die silently, so anything else maps to [kLiveDefaultVoice].
+const kLiveVoices = [
+  'cove',
+  'juniper',
+  'maple',
+  'spruce',
+  'ember',
+  'vale',
+  'breeze',
+  'arbor',
+  'sol',
+  'aube',
+  'bubbie',
+  'haetsal', //
+  'hanul',
+  'himari',
+  'leher',
+  'miko',
+  'neer',
+  'porto',
+  'rindo',
+  'rio',
+  'rivage',
+  'selva',
+  'sonna',
+  'tinta',
+  'viola',
+];
+const kLiveDefaultVoice = 'cove';
 
 class AppSettings {
   const AppSettings({
@@ -48,6 +80,11 @@ class AppSettings {
     this.micMode = MicMode.handsFree,
     this.imageTokenCost = 765,
     this.thinkingEarcon = false,
+    this.liveVoice = 'cove',
+    this.workspaceDir = '',
+    this.imageFullCount = 3,
+    this.imageScaledCount = 5,
+    this.imageScaleDivisor = 5,
   });
 
   final BackendMode backendMode;
@@ -73,6 +110,26 @@ class AppSettings {
   /// Soft chime at the end of the user's speech while the reply is coming.
   final bool thinkingEarcon;
 
+  /// gpt-live voice (its own voice set, see [kLiveVoices]).
+  final String liveVoice;
+
+  /// Directory relative paths resolve against; empty = launch directory
+  /// (or \$HOME when launched from \$HOME or /).
+  final String workspaceDir;
+
+  /// Image compaction tiers: the newest [imageFullCount] screenshots stay at
+  /// full resolution, the next [imageScaledCount] are sent at
+  /// 1/[imageScaleDivisor] width and height, older ones become text.
+  final int imageFullCount;
+  final int imageScaledCount;
+  final int imageScaleDivisor;
+
+  /// The voice used by the current backend mode.
+  String get activeVoice => backendMode == BackendMode.gptLive ? liveVoice : voice;
+
+  /// Voices the current backend mode accepts.
+  List<String> get voiceChoices => backendMode == BackendMode.gptLive ? kLiveVoices : kVoices;
+
   AuthMode get authMode => backendMode.authMode;
 
   AppSettings copyWith({
@@ -90,6 +147,11 @@ class AppSettings {
     MicMode? micMode,
     int? imageTokenCost,
     bool? thinkingEarcon,
+    String? liveVoice,
+    String? workspaceDir,
+    int? imageFullCount,
+    int? imageScaledCount,
+    int? imageScaleDivisor,
   }) => AppSettings(
     backendMode: backendMode ?? this.backendMode,
     apiKey: apiKey ?? this.apiKey,
@@ -105,6 +167,11 @@ class AppSettings {
     micMode: micMode ?? this.micMode,
     imageTokenCost: imageTokenCost ?? this.imageTokenCost,
     thinkingEarcon: thinkingEarcon ?? this.thinkingEarcon,
+    liveVoice: liveVoice ?? this.liveVoice,
+    workspaceDir: workspaceDir ?? this.workspaceDir,
+    imageFullCount: imageFullCount ?? this.imageFullCount,
+    imageScaledCount: imageScaledCount ?? this.imageScaledCount,
+    imageScaleDivisor: imageScaleDivisor ?? this.imageScaleDivisor,
   );
 
   /// Whether a change requires reconnecting the live session.
@@ -113,7 +180,8 @@ class AppSettings {
       o.apiKey != apiKey ||
       o.voiceModel != voiceModel ||
       o.realtimeModel != realtimeModel ||
-      o.voice != voice;
+      o.voice != voice ||
+      o.liveVoice != liveVoice;
 
   Map<String, Object?> toJson() => {
     'backendMode': backendMode.name,
@@ -130,6 +198,11 @@ class AppSettings {
     'micMode': micMode.name,
     'imageTokenCost': imageTokenCost,
     'thinkingEarcon': thinkingEarcon,
+    'liveVoice': liveVoice,
+    'workspaceDir': workspaceDir,
+    'imageFullCount': imageFullCount,
+    'imageScaledCount': imageScaledCount,
+    'imageScaleDivisor': imageScaleDivisor,
   };
 
   factory AppSettings.fromJson(Map<String, Object?> j) {
@@ -159,6 +232,11 @@ class AppSettings {
       micMode: MicMode.values.asNameMap()[j['micMode']] ?? d.micMode,
       imageTokenCost: i('imageTokenCost', d.imageTokenCost),
       thinkingEarcon: b('thinkingEarcon', d.thinkingEarcon),
+      liveVoice: s('liveVoice', d.liveVoice),
+      workspaceDir: j['workspaceDir'] as String? ?? '',
+      imageFullCount: i('imageFullCount', d.imageFullCount).clamp(1, 50),
+      imageScaledCount: i('imageScaledCount', d.imageScaledCount).clamp(0, 100),
+      imageScaleDivisor: i('imageScaleDivisor', d.imageScaleDivisor).clamp(2, 10),
     );
   }
 }

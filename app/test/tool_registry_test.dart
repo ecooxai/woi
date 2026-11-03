@@ -166,6 +166,21 @@ void main() {
       expect(statuses, contains(ToolStatus.awaitingApproval));
     });
 
+    test('cwd expands ~ and \$HOME, defaults to the workspace, and must exist', () async {
+      settings = settings.copyWith(confirmBeforeBash: false);
+      await Directory('${fp.root.path}/proj').create();
+      fp.services.files.workspaceDir = '${fp.root.path}/proj';
+      await registry.dispatch('run_bash', '{"command":"echo a"}');
+      await registry.dispatch('run_bash', '{"command":"echo b","cwd":"~"}');
+      await registry.dispatch('run_bash', '{"command":"echo c","cwd":"\$HOME/proj"}');
+      await registry.dispatch('run_bash', '{"command":"echo d","cwd":"\${HOME}"}');
+      expect(fp.shell.cwds, ['${fp.root.path}/proj', fp.root.path, '${fp.root.path}/proj', fp.root.path]);
+      final bad = await registry.dispatch('run_bash', '{"command":"echo e","cwd":"/home/oai"}');
+      expect(bad.ok, isFalse);
+      expect(decode(bad)['error'], allOf(contains('working directory does not exist: /home/oai'), contains(fp.root.path)));
+      expect(fp.shell.commands, hasLength(4));
+    });
+
     test('skips confirmation when disabled in settings', () async {
       settings = settings.copyWith(confirmBeforeBash: false);
       await registry.dispatch('run_bash', '{"command":"echo hi"}');
@@ -187,6 +202,33 @@ void main() {
       expect(entries.any((e) => e['name'] == 'notes.txt'), isTrue);
       final missing = await registry.dispatch('read_file', '{"path":"~/nope.txt"}');
       expect(decode(missing)['error'], contains('no such file'));
+    });
+
+    test('relative paths resolve against the workspace dir', () async {
+      await Directory('${fp.root.path}/ws').create();
+      await File('${fp.root.path}/ws/a.txt').writeAsString('in workspace');
+      fp.services.files.workspaceDir = '${fp.root.path}/ws';
+      final r = await registry.dispatch('read_file', '{"path":"a.txt"}');
+      expect(decode(r)['content'], 'in workspace');
+      await registry.dispatch('write_file', '{"path":"b.txt","content":"x"}');
+      expect(File('${fp.root.path}/ws/b.txt').existsSync(), isTrue);
+      final l = await registry.dispatch('list_dir', '{"path":"."}');
+      expect(decode(l)['path'], '${fp.root.path}/ws');
+    });
+
+    test('missing paths fall back to a unique case-insensitive match', () async {
+      await Directory('${fp.root.path}/Docs').create();
+      await File('${fp.root.path}/Docs/README.md').writeAsString('# Readme');
+      final r = await registry.dispatch('read_file', '{"path":"~/docs/readme.md"}');
+      expect(r.ok, isTrue, reason: r.json);
+      expect(decode(r)['path'], '${fp.root.path}/Docs/README.md');
+      final s = await registry.dispatch('show_file', '{"path":"\$HOME/docs/README.MD","kind":"text"}');
+      expect(s.ok, isTrue, reason: s.json);
+      expect(fp.viewer.shown.single.path, '${fp.root.path}/Docs/README.md');
+      // Ambiguous names are not guessed.
+      await File('${fp.root.path}/Docs/readme.MD').writeAsString('other');
+      final amb = await registry.dispatch('read_file', '{"path":"~/docs/Readme.md"}');
+      expect(amb.ok, isFalse);
     });
 
     test('write_file shows a diff and writes only after approval', () async {

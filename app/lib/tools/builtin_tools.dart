@@ -148,7 +148,7 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
         {
           'command': {'type': 'string'},
           'timeout_s': {'type': 'integer', 'description': 'Default 30, max 300'},
-          'cwd': {'type': 'string', 'description': 'Working directory'},
+          'cwd': {'type': 'string', 'description': 'Working directory (default: the workspace dir). ~ and \$HOME expand.'},
         },
         ['command'],
       ),
@@ -161,11 +161,18 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
           if (!ok) throw ToolDenied('user rejected the command');
           call.onStatus?.call(ToolStatus.running);
         }
-        final cwd = args.strOrNull('cwd');
+        final cwdArg = args.strOrNull('cwd');
+        final cwd = (cwdArg == null || cwdArg.trim().isEmpty) ? p.files.workspaceDir : p.files.resolveExisting(cwdArg);
+        if (!await Directory(cwd).exists()) {
+          throw ToolFailure(
+            'working directory does not exist: $cwd'
+            '${cwdArg == null ? '' : ' (from "$cwdArg")'}. HOME is ${p.files.homeDir}.',
+          );
+        }
         final r = await p.shell.run(
           cmd,
           timeout: Duration(seconds: args.integer('timeout_s', 30).clamp(1, 300)),
-          workingDirectory: cwd == null ? null : p.files.resolve(cwd),
+          workingDirectory: cwd,
         );
         return {'ok': r.exitCode == 0 && !r.timedOut, ...r.toJson()};
       },
@@ -183,7 +190,7 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
       ),
       handler: (args, call) async {
         final path = args.str('path');
-        final full = p.files.resolve(path);
+        final full = p.files.resolveExisting(path);
         if (!await File(full).exists()) throw ToolFailure('no such file: $full');
         final r = await p.files.read(
           path,
@@ -215,8 +222,8 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
         ['path'],
       ),
       handler: (args, call) async {
-        final path = args.str('path', '~');
-        final full = p.files.resolve(path);
+        final path = args.str('path', '.');
+        final full = p.files.resolveExisting(path);
         if (!await Directory(full).exists()) throw ToolFailure('no such directory: $full');
         final entries = await p.files.list(path, showHidden: args.boolean('hidden'));
         return {
@@ -257,7 +264,7 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
       ),
       handler: (args, call) async {
         final path = args.str('path');
-        final full = p.files.resolve(path);
+        final full = p.files.resolveExisting(path);
         if (!await File(full).exists()) throw ToolFailure('no such file: $full');
         final current = await File(full).readAsString();
         final oldS = args.str('old_string'), newS = args.str('new_string');
@@ -287,7 +294,7 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
         ['path'],
       ),
       handler: (args, call) async {
-        final full = p.files.resolve(args.str('path'));
+        final full = p.files.resolveExisting(args.str('path'));
         if (!await File(full).exists()) throw ToolFailure('no such file: $full');
         final kind = MediaKind.values.asNameMap()[args.strOrNull('kind')] ?? MediaItem.kindForPath(full);
         final surface = await p.viewer.show(MediaItem(kind: kind, path: full));
