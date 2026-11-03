@@ -266,7 +266,7 @@ class LiveWebRtcBackend extends VoiceBackend implements ManagedAudioBackend, Liv
       tools: config.tools,
       runTool: toolRunner ?? _runToolViaPipeline,
       latestScreenshot: () => _latestImage,
-      contextNote: () => _summary,
+      contextNote: _delegationNote,
       environment: () => config.environment,
       fastModel: delegationFastModel,
       reasoningEffort: delegationReasoningEffort,
@@ -850,9 +850,24 @@ class LiveWebRtcBackend extends VoiceBackend implements ManagedAudioBackend, Liv
   }
 
   @override
-  void sendImage(Uint8List png, {String? note}) {
+  String? sendImage(Uint8List png, {String? note}) {
     // gpt-live context is text only; images are kept for delegations.
     _latestImage = DelegationImage(png: png, capturedAt: DateTime.now(), note: note);
+    return null;
+  }
+
+  String _screenMemory = '';
+
+  /// Descriptions of older screenshots; delegations get them with the summary.
+  @override
+  void updateScreenMemory(String text) => _screenMemory = text.trim();
+
+  String? _delegationNote() {
+    final parts = [
+      if (_summary != null && _summary!.trim().isNotEmpty) _summary!.trim(),
+      if (_screenMemory.isNotEmpty) 'Earlier screens (described):\n$_screenMemory',
+    ];
+    return parts.isEmpty ? null : parts.join('\n\n');
   }
 
   @override

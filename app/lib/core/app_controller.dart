@@ -11,6 +11,7 @@ import '../tools/tool_registry.dart';
 import 'auth/auth.dart';
 import 'context/compressor.dart';
 import 'context/context_manager.dart';
+import 'context/image_tiers.dart';
 import 'context/responses_compressor.dart';
 import 'delegate/delegate_backend.dart';
 import 'delegate/responses_delegate.dart';
@@ -180,6 +181,11 @@ class AppController extends ChangeNotifier {
         sessionConfig: _sessionConfig,
         options: _pipelineOptions,
         onScreenshotCaptured: (s) => toolEnv.lastScreenshot = s,
+        imageCompactor: ImageCompactor(
+          downscale: uiDownscale,
+          describe: responsesDescriber(responses, model: () => _settings.compressionModel),
+          save: history.saveImage,
+        ),
       );
       pipeline = p;
       _ready = true;

@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../../core/context/image_tiers.dart';
 import '../../core/models/message.dart';
 import '../../platform/audio_io.dart';
 import '../../platform/media_viewer.dart';
@@ -143,7 +144,7 @@ class _Bubble extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         if (m.image != null) ...[
-          ScreenshotThumb(image: m.image!, viewer: viewer),
+          ScreenshotThumb(image: m.image!, viewer: viewer, tier: imageTierOf(m)),
           if (m.text.isNotEmpty || waiting) const SizedBox(height: 10),
         ],
         if (waiting)
@@ -240,8 +241,18 @@ class _Avatar extends StatelessWidget {
 /// Screenshot thumbnail; tap for the zoomable lightbox. [marker] (in
 /// image-pixel coordinates) draws a click target on top.
 class ScreenshotThumb extends StatelessWidget {
-  const ScreenshotThumb({super.key, required this.image, required this.viewer, this.marker, this.maxWidth = 300});
+  const ScreenshotThumb({
+    super.key,
+    required this.image,
+    required this.viewer,
+    this.marker,
+    this.maxWidth = 300,
+    this.tier = ImageTier.full,
+  });
   final ImageAttachment image;
+
+  /// How the model currently has it; the thumbnail is always the original.
+  final ImageTier tier;
   final MediaViewer viewer;
   final Offset? marker;
   final double maxWidth;
@@ -299,6 +310,24 @@ class ScreenshotThumb extends StatelessWidget {
                             position: Offset(
                               mk.dx / image.width * box.maxWidth,
                               mk.dy / image.height * box.maxHeight,
+                            ),
+                          ),
+                        ),
+                      if (tier != ImageTier.full)
+                        Positioned(
+                          left: 6,
+                          bottom: 6,
+                          child: Tooltip(
+                            message: tier == ImageTier.reduced
+                                ? 'Older screenshot: the model now has it at ⅕ size'
+                                : 'Old screenshot: the model now has a text description',
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(6)),
+                              child: Text(
+                                tier == ImageTier.reduced ? 'sent ⅕' : 'described',
+                                style: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w600),
+                              ),
                             ),
                           ),
                         ),
@@ -1004,7 +1033,7 @@ class _SystemNote extends StatelessWidget {
                 Expanded(child: Container(height: 1, color: color.withValues(alpha: 0.12))),
               ],
             ),
-            if (m.image != null) ...[const SizedBox(height: 8), ScreenshotThumb(image: m.image!, viewer: viewer)],
+            if (m.image != null) ...[const SizedBox(height: 8), ScreenshotThumb(image: m.image!, viewer: viewer, tier: imageTierOf(m))],
           ],
         ),
       ),

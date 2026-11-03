@@ -161,7 +161,18 @@ abstract class VoiceBackend {
 
   void sendText(String text);
 
-  void sendImage(Uint8List png, {String? note});
+  /// Adds a screenshot to the model context. Returns the id of the context
+  /// item that holds it when the backend can later [replaceImage] it.
+  String? sendImage(Uint8List png, {String? note});
+
+  /// Replaces the screenshot item [itemId] with a smaller copy ([png]) or a
+  /// text description ([text]), between responses. Returns the new item id,
+  /// or null if not supported / the item is gone.
+  Future<String?> replaceImage(String itemId, {Uint8List? png, String? text}) async => null;
+
+  /// Descriptions of earlier screenshots that left the context (for
+  /// backends whose model context is text only and that delegate actions).
+  void updateScreenMemory(String text) {}
 
   void sendToolResult(String callId, String jsonOutput);
 

@@ -24,7 +24,15 @@ class ContextBreakdown {
     required this.compactedMessages,
     this.measured = false,
     this.textOnly = false,
+    this.imagesSaved = 0,
+    this.imagesReduced = 0,
+    this.imagesDescribed = 0,
   });
+
+  /// Tokens saved by the screenshot tiers (⅕ size / described).
+  final int imagesSaved;
+  final int imagesReduced;
+  final int imagesDescribed;
 
   final int overhead;
   final int summary;
@@ -65,6 +73,9 @@ class ContextBreakdown {
       compactedMessages: p.compactedMessages,
       measured: p.measured,
       textOnly: m.accounting == ContextAccounting.textEstimate,
+      imagesSaved: p.imagesSaved,
+      imagesReduced: p.imagesReduced,
+      imagesDescribed: p.imagesDescribed,
     );
   }
 }
@@ -420,6 +431,12 @@ class BreakdownTable extends StatelessWidget {
         row('Memory summary', '${b.summary}', WoiColors.violet),
         row('Speech & text', '${b.text}', WoiColors.cyan),
         row('Screenshots', '${b.images}', WoiColors.blue, sub: b.textOnly ? 'latest, delegation' : '×${b.imageCount}'),
+        if (b.imagesReduced + b.imagesDescribed > 0)
+          Text(
+            '${b.imagesReduced} sent at ⅕, ${b.imagesDescribed} described'
+            '${b.imagesSaved > 0 ? ' · saved ${formatTokens(b.imagesSaved)}' : ''}',
+            style: body(fs - 0.5, color: WoiColors.textDim),
+          ),
         if (!b.textOnly) row('Audio', '${b.audio}', WoiColors.magenta),
         row('Tool calls', '${b.tools}', WoiColors.amber, sub: '×${b.toolCount}'),
         const SizedBox(height: 6),

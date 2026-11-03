@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -6,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:woi/core/audio/earcon.dart';
 import 'package:woi/core/context/compressor.dart';
 import 'package:woi/core/context/context_manager.dart';
+import 'package:woi/core/context/image_tiers.dart';
 import 'package:woi/core/delegate/delegate_backend.dart';
 import 'package:woi/core/models/message.dart';
 import 'package:woi/core/pipeline/turn_pipeline.dart';
@@ -47,6 +49,7 @@ class Harness {
     PipelineOptions? options,
     Compressor? compressor,
     int threshold = 100000,
+    ImageCompactor? Function(HistoryStore store)? images,
   }) async {
     final fp = await FakePlatform.create();
     final store = HistoryStore(fp.services.paths);
@@ -79,6 +82,7 @@ class Harness {
           SessionConfig(model: 'gpt-live-1.1', voice: 'marin', instructions: 'test', tools: h.tools.specs),
       options: () => h.options,
       onScreenshotCaptured: (s) => env.lastScreenshot = s,
+      imageCompactor: images?.call(store),
     );
     await h.pipeline.start();
     return h;
@@ -106,6 +110,50 @@ class Harness {
 Iterable<Message> ofKind(Conversation c, MessageKind k) => c.messages.where((m) => m.kind == k);
 
 void main() {
+  group('screenshot tiers', () {
+    test('older screenshots go to 1/5 size, then to a description, in the live context', () async {
+      final sizes = <(int, int)>[];
+      final h = await Harness.create(
+        images: (store) => ImageCompactor(
+          downscale: (png, w, h) async {
+            sizes.add((w, h));
+            return Uint8List.fromList(png.take(16).toList());
+          },
+          describe: (png, note) async => 'A terminal with ls output.',
+          save: store.saveImage,
+        ),
+      );
+      for (var i = 0; i < 9; i++) {
+        final shot = await h.fp.screen.capture();
+        await h.pipeline.attachScreenshot(shot, note: 'shot $i');
+      }
+      await h.pipeline.compactImages();
+      final shots = h.conv.messages.where((m) => m.image != null).toList();
+      expect(shots.map(imageTierOf), [
+        ImageTier.described,
+        ...List.filled(5, ImageTier.reduced),
+        ...List.filled(3, ImageTier.full),
+      ]);
+      final r = h.scripted.replaced;
+      expect(r.where((x) => x.$2 != null), hasLength(6), reason: 'images 1-6 were downscaled once each');
+      final described = r.singleWhere((x) => x.$3 != null && x.$2 == null);
+      expect(described.$1, 'img_1_v1', reason: 'the second swap targets the item the first one created');
+      expect(described.$3, contains('A terminal with ls output.'));
+      expect(sizes.first, (256, 144), reason: '1280x720 / 5');
+      // Originals stay; the reduced copy is saved next to them.
+      expect(File(shots.first.image!.path).existsSync(), isTrue);
+      expect(File(shots[1].meta[ImageMeta.sentPath]! as String).existsSync(), isTrue);
+      expect(shots.first.meta[ImageMeta.serverItem], startsWith('img_1_v'));
+      expect(h.scripted.screenMemory, contains('A terminal with ls output.'));
+      // The meter shows the savings.
+      final p = h.context.parts();
+      expect(p.imagesReduced, 5);
+      expect(p.imagesDescribed, 1);
+      expect(p.imagesSaved, greaterThan(5 * 400));
+      await h.dispose();
+    });
+  });
+
   group('screenshots on speech', () {
     test('captured ~delay after speechStarted and sent with sendImage', () async {
       final h = await Harness.create();

@@ -473,6 +473,40 @@ void main() {
     });
   });
 
+  group('screenshot tiers', () {
+    test('sendImage names the item; replaceImage swaps it in place between responses', () async {
+      final r = _Rig();
+      await r.connect();
+      r.userTurn('u1', 'look');
+      final id = r.backend.sendImage(Uint8List.fromList(List.filled(32, 1)), note: 'shot')!;
+      expect(id, startsWith('woi_img_'));
+      r.userTurn('u2', 'next');
+      await _pump();
+      expect(r.backend.serverItemIds, ['u1', id, 'u2']);
+      r.respond('r1');
+      final small = r.backend.replaceImage(id, png: Uint8List.fromList(List.filled(8, 2)), text: '1/5 size');
+      await _pump();
+      expect(r.ws.ofType('conversation.item.delete'), isEmpty, reason: 'waits for the response to finish');
+      r.done('r1');
+      final newId = await small;
+      expect(newId, isNot(id));
+      final create = r.ws.ofType('conversation.item.create').last;
+      expect(create['previous_item_id'], id);
+      expect(jsonEncode(create), contains('input_image'));
+      expect(r.ws.ofType('conversation.item.delete').single['item_id'], id);
+      expect(r.backend.serverItemIds, ['u1', newId, 'u2']);
+      // Then to a description: a system note, so it is not taken for a user turn.
+      final described = await r.backend.replaceImage(newId!, text: 'A terminal.');
+      final note = r.ws.ofType('conversation.item.create').last;
+      expect((note['item'] as Map)['role'], 'system');
+      expect(jsonEncode(note), isNot(contains('input_image')));
+      expect(r.backend.serverItemIds, ['u1', described, 'u2']);
+      expect(r.backend.imagesReplaced, 2);
+      expect(await r.backend.replaceImage('gone'), isNull);
+      await r.dispose();
+    });
+  });
+
   group('applySummary', () {
     Future<_Rig> conversation() async {
       final r = _Rig();

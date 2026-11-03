@@ -9,6 +9,7 @@ import '../../tools/tool_registry.dart';
 import '../audio/earcon.dart';
 import '../audio/wav.dart';
 import '../context/context_manager.dart';
+import '../context/image_tiers.dart';
 import '../models/message.dart';
 import '../settings/settings.dart';
 import '../storage/history_store.dart';
@@ -73,6 +74,7 @@ class TurnPipeline extends ChangeNotifier {
     required this.sessionConfig,
     required this.options,
     this.onScreenshotCaptured,
+    this.imageCompactor,
   }) : _conv = conversation {
     context.attach(conversation);
     _compactionSub = context.compactions.listen(_onCompacted);
@@ -87,6 +89,9 @@ class TurnPipeline extends ChangeNotifier {
   final SessionConfigBuilder sessionConfig;
   PipelineOptions Function() options;
   void Function(Screenshot shot)? onScreenshotCaptured;
+
+  /// Screenshot tiers (newest full, then ⅕ size, then described).
+  final ImageCompactor? imageCompactor;
 
   Conversation _conv;
   VoiceBackend? _backend;
@@ -226,6 +231,7 @@ class TurnPipeline extends ChangeNotifier {
       await b.connect(cfg);
       if (!identical(_backend, b)) return;
       _status = SessionStatus.connected;
+      _pushScreenMemory();
       if (b is ManagedAudioBackend) {
         // The backend owns the mic: swap the platform capture for its stream.
         await _closeMic();
@@ -651,18 +657,64 @@ class TurnPipeline extends ChangeNotifier {
       originalWidth: shot.originalWidth,
       originalHeight: shot.originalHeight,
     );
-    _backend?.sendImage(
+    final itemId = _backend?.sendImage(
       shot.png,
       note:
           '$note Image is ${shot.width}x${shot.height} of a '
           '${shot.originalWidth}x${shot.originalHeight} screen; '
           'click_screen uses image pixel coordinates.',
     );
+    if (itemId != null) target.meta[ImageMeta.serverItem] = itemId;
     screenshotsSent++;
     context.onConversationChanged();
     _persistSoon();
     _changed();
+    unawaited(compactImages());
   }
+
+  /// Lowers screenshot tiers (in the live context where the backend can
+  /// swap items; locally always). Returns when done (tests).
+  Future<void> compactImages() async {
+    final ic = imageCompactor;
+    if (ic == null) return;
+    final conv = _conv;
+    await ic.run(
+      conv.messages,
+      apply: _applyImageTier,
+      onChanged: () {
+        if (!identical(conv, _conv)) return;
+        _pushScreenMemory();
+        context.onConversationChanged();
+        _persistSoon();
+        _changed();
+      },
+    );
+  }
+
+  Future<bool> _applyImageTier(Message m, {Uint8List? png, String? text}) async {
+    final b = _backend;
+    final id = m.meta[ImageMeta.serverItem] as String?;
+    if (b == null || id == null) return false;
+    final next = await b.replaceImage(id, png: png, text: text);
+    if (next == null) return false;
+    m.meta[ImageMeta.serverItem] = next;
+    return true;
+  }
+
+  /// Descriptions of screenshots that left the context, oldest first.
+  String screenMemory({int maxChars = 2000}) {
+    final lines = <String>[];
+    for (final m in _conv.messages) {
+      if (m.compacted || m.image == null) continue;
+      final d = imageDescriptionOf(m);
+      if (d != null) lines.add('- ${ContextManager.renderTime(m.createdAt)}: $d');
+    }
+    var out = lines.join('\n');
+    if (out.length > maxChars) out = '…${out.substring(out.length - maxChars)}';
+    return out;
+  }
+
+  void _pushScreenMemory() => _backend?.updateScreenMemory(screenMemory());
 
   /// Typed input (text fallback).
   void sendText(String text) {

@@ -112,12 +112,13 @@ class MockVoiceBackend extends VoiceBackend {
   }
 
   @override
-  void sendImage(Uint8List png, {String? note}) {
-    if (!_connected) return;
+  String? sendImage(Uint8List png, {String? note}) {
+    if (!_connected) return null;
     imagesReceived++;
     _contextTokens += 765;
     final bd = ByteData.sublistView(png);
     _pendingImage = png.length >= 24 ? (bd.getUint32(16), bd.getUint32(20)) : (0, 0);
+    return null;
   }
 
   @override

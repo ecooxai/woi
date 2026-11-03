@@ -321,6 +321,10 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync {
     final p = _pendingSummaryDone;
     _pendingSummaryDone = null;
     if (p != null && !p.isCompleted) p.complete(const ContextApplyResult(ContextApplyMethod.skipped));
+    for (final op in _imageOps) {
+      if (!op.done.isCompleted) op.done.complete(null);
+    }
+    _imageOps.clear();
     await _events.close();
   }
 
@@ -369,19 +373,85 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync {
   /// Adds an image to the conversation. Does not trigger a response: the turn
   /// it belongs to is answered by server VAD (or by the tool round trip).
   @override
-  void sendImage(Uint8List png, {String? note}) {
-    if (!_ready) return;
-    _send({
-      'type': 'conversation.item.create',
-      'item': {
-        'type': 'message',
-        'role': 'user',
-        'content': [
-          {'type': 'input_image', 'image_url': 'data:${_mime(png)};base64,${base64Encode(png)}'},
-          if (note != null && note.isNotEmpty) {'type': 'input_text', 'text': note},
-        ],
-      },
-    });
+  String? sendImage(Uint8List png, {String? note}) {
+    if (!_ready) return null;
+    final id = _newItemId('img');
+    _send({'type': 'conversation.item.create', 'item': _imageItem(id, png, note)});
+    return id;
+  }
+
+  Map<String, Object?> _imageItem(String id, Uint8List png, String? note) => {
+    'id': id,
+    'type': 'message',
+    'role': 'user',
+    'content': [
+      {'type': 'input_image', 'image_url': 'data:${_mime(png)};base64,${base64Encode(png)}'},
+      if (note != null && note.isNotEmpty) {'type': 'input_text', 'text': note},
+    ],
+  };
+
+  final _imageOps = <({String itemId, Uint8List? png, String? text, Completer<String?> done})>[];
+
+  /// Screenshot tiers: inserts the smaller copy (or a system note with the
+  /// description) right after [itemId] and deletes [itemId], between
+  /// responses, exactly like the summary swap.
+  @override
+  Future<String?> replaceImage(String itemId, {Uint8List? png, String? text}) {
+    if (_closed) return Future.value(null);
+    final done = Completer<String?>();
+    _imageOps.add((itemId: itemId, png: png, text: text, done: done));
+    scheduleMicrotask(_maybeApplySummary);
+    return done.future;
+  }
+
+  /// Image items replaced so far (diagnostics/tests).
+  int imagesReplaced = 0;
+
+  Future<void> _applyImageOpsNow() async {
+    _applyingSummary = true;
+    _applyErrors.clear();
+    try {
+      while (_imageOps.isNotEmpty && !_closed) {
+        final op = _imageOps.removeAt(0);
+        try {
+          op.done.complete(await _replaceItem(op.itemId, op.png, op.text));
+        } catch (e) {
+          _log('image replace failed: $e');
+          _applyErrors.clear();
+          op.done.complete(null);
+        }
+      }
+    } finally {
+      _applyingSummary = false;
+      _applyErrors.clear();
+      _maybeCreateResponse();
+      _maybeApplySummary();
+    }
+  }
+
+  Future<String?> _replaceItem(String itemId, Uint8List? png, String? text) async {
+    if (_itemById(itemId) == null) return null; // compacted or from an old socket
+    final newId = _newItemId(png != null ? 'img' : 'ctx');
+    final item = png != null
+        ? _imageItem(newId, png, text)
+        : _systemItem(newId, text ?? 'Earlier screenshot (removed).');
+    final added = _waitFor(
+      (e) =>
+          (e['type'] == 'conversation.item.added' || e['type'] == 'conversation.item.created') &&
+          (e['item'] as Map?)?['id'] == newId,
+      const Duration(seconds: 8),
+    );
+    _send({'type': 'conversation.item.create', 'previous_item_id': itemId, 'item': item});
+    await added;
+    if (_applyErrors.isNotEmpty) throw RealtimeException(_applyErrors.join('; '));
+    final deleted = _waitFor(
+      (e) => e['type'] == 'conversation.item.deleted' && e['item_id'] == itemId,
+      const Duration(seconds: 5),
+    );
+    _send({'type': 'conversation.item.delete', 'item_id': itemId});
+    await deleted;
+    imagesReplaced++;
+    return newId;
   }
 
   static String _mime(Uint8List b) {
@@ -775,7 +845,11 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync {
   }
 
   void _maybeApplySummary() {
-    if (_pendingSummary == null || !_idle) return;
+    if (!_idle) return;
+    if (_pendingSummary == null) {
+      if (_imageOps.isNotEmpty) unawaited(_applyImageOpsNow());
+      return;
+    }
     final summary = _pendingSummary!;
     final done = _pendingSummaryDone!;
     _pendingSummary = null;

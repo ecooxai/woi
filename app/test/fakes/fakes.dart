@@ -294,7 +294,26 @@ class ScriptedBackend extends VoiceBackend {
   @override
   void sendText(String text) => texts.add(text);
   @override
-  void sendImage(Uint8List png, {String? note}) => images.add((png, note));
+  String? sendImage(Uint8List png, {String? note}) {
+    images.add((png, note));
+    return 'img_${images.length}';
+  }
+
+  /// replaceImage calls: (itemId, png?, text?).
+  final replaced = <(String, Uint8List?, String?)>[];
+  bool supportsReplace = true;
+
+  @override
+  Future<String?> replaceImage(String itemId, {Uint8List? png, String? text}) async {
+    if (!supportsReplace) return null;
+    replaced.add((itemId, png, text));
+    return '${itemId}_v${replaced.length}';
+  }
+
+  String screenMemory = '';
+
+  @override
+  void updateScreenMemory(String text) => screenMemory = text;
   @override
   void sendToolResult(String callId, String jsonOutput) => toolResults.add((callId, jsonOutput));
   @override

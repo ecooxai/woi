@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/message.dart';
 import 'compressor.dart';
+import 'image_tiers.dart';
 
 /// "950", "12.4k", "128k": how token counts are shown (meter and notes).
 String formatTokenCount(int t) {
@@ -66,7 +67,15 @@ class ContextParts {
     required this.compactedMessages,
     required this.total,
     required this.measured,
+    this.imagesSaved = 0,
+    this.imagesReduced = 0,
+    this.imagesDescribed = 0,
   });
+
+  /// Tokens saved by sending screenshots at ⅕ size or as descriptions.
+  final int imagesSaved;
+  final int imagesReduced;
+  final int imagesDescribed;
 
   /// Instructions and tool definitions (voice session and delegation).
   final int overhead;
@@ -91,7 +100,9 @@ class ContextParts {
 class _Baseline {
   _Baseline(this.tokens, this.ids, this.summaryTokens, this.scale);
   final int tokens;
-  final Set<String> ids;
+
+  /// Cost of every message in the context when the usage was reported.
+  final Map<String, int> ids;
   final int summaryTokens;
   final double scale;
 }
@@ -194,13 +205,35 @@ class ContextManager extends ChangeNotifier {
 
   static bool _uiOnly(Message m) => m.kind == MessageKind.system && m.meta['type'] != 'screenshot';
 
+  /// Context cost of the screenshot on [m] at its current tier: full,
+  /// ⅕ size or a description. gpt-live only carries the latest image (for
+  /// delegations) and descriptions (in reconnect / delegation notes).
+  int _imageCost(Message m, String? latestImageId) {
+    final img = m.image;
+    if (img == null) return 0;
+    switch (imageTierOf(m)) {
+      case ImageTier.described:
+        return textTokens(imageDescriptionOf(m) ?? '') + 12;
+      case ImageTier.reduced when _accounting == ContextAccounting.usage:
+        final w = (m.meta[ImageMeta.sentWidth] as num?)?.toInt() ?? img.width ~/ 5;
+        final h = (m.meta[ImageMeta.sentHeight] as num?)?.toInt() ?? img.height ~/ 5;
+        return math.min(imageTokenCost, imageTokensFor(w, h));
+      case _:
+        return _accounting == ContextAccounting.usage || m.id == latestImageId ? imageTokenCost : 0;
+    }
+  }
+
+  /// Tokens saved on [m] by its tier versus a full screenshot (usage mode).
+  int _imageSaving(Message m) {
+    if (m.image == null || _accounting != ContextAccounting.usage) return 0;
+    return math.max(0, imageTokenCost - _imageCost(m, null));
+  }
+
   /// Cost of [m] whether or not it was compacted.
   int _cost(Message m, String? latestImageId) {
     if (_uiOnly(m)) return 0;
     var t = textTokens(m.text) + 4;
-    if (m.image != null && (_accounting == ContextAccounting.usage || m.id == latestImageId)) {
-      t += imageTokenCost;
-    }
+    t += _imageCost(m, latestImageId);
     final audio = m.audio;
     if (audio != null && _accounting == ContextAccounting.usage) {
       final rate = m.kind == MessageKind.assistant ? audioTokensPerSecond * 2 : audioTokensPerSecond;
@@ -240,8 +273,10 @@ class ContextManager extends ChangeNotifier {
     if (_accounting != ContextAccounting.usage || b == null) return estimateTokens();
     var delta = _summaryTokens() - b.summaryTokens;
     for (final m in c.messages) {
-      if (b.ids.contains(m.id)) {
-        if (m.compacted) delta -= _cost(m, null);
+      final was = b.ids[m.id];
+      if (was != null) {
+        // Compacted since, or cheaper now (screenshot downscaled/described).
+        delta += m.compacted ? -was : _cost(m, null) - was;
       } else if (!m.compacted) {
         delta += _cost(m, null);
       }
@@ -253,6 +288,7 @@ class ContextManager extends ChangeNotifier {
   ContextParts parts() {
     final c = _conv;
     var text = 0, images = 0, imageCount = 0, audio = 0, tools = 0, toolCount = 0, compacted = 0;
+    var saved = 0, reduced = 0, described = 0;
     final latest = c == null ? null : _latestImageId(c);
     for (final m in c?.messages ?? const <Message>[]) {
       if (m.compacted) {
@@ -261,9 +297,14 @@ class ContextManager extends ChangeNotifier {
       }
       if (_uiOnly(m)) continue;
       text += textTokens(m.text) + 4;
-      if (m.image != null && (_accounting == ContextAccounting.usage || m.id == latest)) {
-        images += imageTokenCost;
-        imageCount++;
+      if (m.image != null) {
+        final cost = _imageCost(m, latest);
+        images += cost;
+        final tier = imageTierOf(m);
+        if (tier == ImageTier.reduced) reduced++;
+        if (tier == ImageTier.described) described++;
+        if (cost > 0 && tier != ImageTier.described) imageCount++;
+        saved += _imageSaving(m);
       }
       final a = m.audio;
       if (a != null && _accounting == ContextAccounting.usage) {
@@ -290,6 +331,9 @@ class ContextManager extends ChangeNotifier {
       compactedMessages: compacted,
       total: estimatedTokens,
       measured: measured,
+      imagesSaved: k(saved),
+      imagesReduced: reduced,
+      imagesDescribed: described,
     );
   }
 
@@ -297,12 +341,13 @@ class ContextManager extends ChangeNotifier {
   void onUsage(int contextTokens) {
     final c = _conv;
     if (c == null || _accounting != ContextAccounting.usage) return;
-    final ids = <String>{};
+    final ids = <String, int>{};
     var items = _summaryTokens();
     for (final m in c.messages) {
       if (m.compacted) continue;
-      ids.add(m.id);
-      items += _cost(m, null);
+      final cost = _cost(m, null);
+      ids[m.id] = cost;
+      items += cost;
     }
     final scale = items <= 0 ? 1.0 : ((contextTokens - _overhead) / items).clamp(0.5, 4.0).toDouble();
     _baseline = _Baseline(contextTokens, ids, _summaryTokens(), scale);
@@ -438,13 +483,17 @@ class ContextManager extends ChangeNotifier {
     return lines.reversed.join('\n');
   }
 
+  static String renderTime(DateTime t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
   /// One line for a message in a text-only context, or null if it has none.
   static String? renderForContext(Message m, {int maxToolChars = 400}) {
     String clip(String s, int n) => s.length <= n ? s : '${s.substring(0, n)}…';
     final t = m.text.trim().replaceAll(RegExp(r'\s+'), ' ');
+    final desc = m.image == null ? null : imageDescriptionOf(m);
+    final screen = desc == null ? '' : ' [screen: ${clip(desc, 300)}]';
     switch (m.kind) {
       case MessageKind.user:
-        return t.isEmpty ? null : 'User: $t';
+        return t.isEmpty && screen.isEmpty ? null : 'User: $t$screen'.replaceFirst('User:  [', 'User: [');
       case MessageKind.assistant:
         return t.isEmpty ? null : 'Assistant: $t${m.interrupted ? ' (interrupted)' : ''}';
       case MessageKind.tool:
@@ -453,7 +502,7 @@ class ContextManager extends ChangeNotifier {
         return 'Tool ${tool.name}(${clip(tool.argsJson, 200)}) -> ${tool.status.name}: '
             '${clip(tool.resultJson ?? '', maxToolChars)}';
       case MessageKind.system:
-        return null;
+        return desc == null ? null : 'Earlier screen: ${clip(desc, 300)}';
     }
   }
 
