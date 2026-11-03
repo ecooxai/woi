@@ -6,7 +6,7 @@
 #
 #   BIN       path to the bundle's `woi` binary
 #   OUT_DIR   CSVs / summaries / app logs land here
-#   scenarios idle listen typing scroll video   (default: all five)
+#   scenarios idle listen typing scroll video camera   (default: the first five)
 #             idle10 = 10 min idle (RSS growth check)
 #
 # Env: DISPLAY (default :11), SECS (seconds per scenario, default 60),
@@ -67,7 +67,7 @@ launch() {
 
 stop_app() { kill "$APP_PID" 2>/dev/null; wait "$APP_PID" 2>/dev/null; APP_PID=""; sleep 1; }
 
-monitor() { "$QA_DIR/perf_monitor.sh" -d "$1" -l "$2" -c "^$PNAME\$" -o "$OUT/$2.csv" >/dev/null; }
+monitor() { "$QA_DIR/perf_monitor.sh" -d "$1" -l "$2" -c "${3:-^$PNAME\$}" -o "$OUT/$2.csv" >/dev/null; }
 
 center() {
   local w h
@@ -113,6 +113,12 @@ for s in $SCENARIOS; do
       launch video muted WOI_DEBUG_SHOW="$v" || continue
       sleep 4
       monitor "$SECS" video
+      ;;
+    camera)
+      # Camera on (preview tile + frames kept for turns); needs /dev/video0.
+      launch camera muted WOI_DEBUG_CAMERA=1 || continue
+      sleep 6
+      monitor "$SECS" camera   # ffmpeg (the camera reader) is a child: included
       ;;
     *) echo "unknown scenario $s" >&2; continue ;;
   esac

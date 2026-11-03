@@ -173,12 +173,12 @@ class JpegStreamSplitter {
     }
     while (true) {
       if (!_inScan) {
-        if (_pos + 4 > _len) return null;
+        if (_pos + 2 > _len) return null;
         if (b[_pos] != 0xFF) {
-          // Corrupt header: drop this frame.
+          // Corrupt header: drop this frame and look for the next one.
           final soi = _findSoi(1);
           _consume(soi ?? _len);
-          return null;
+          return _scan();
         }
         final m = b[_pos + 1];
         if (m == 0xFF) {
@@ -190,6 +190,7 @@ class JpegStreamSplitter {
           _pos += 2;
           continue;
         }
+        if (_pos + 4 > _len) return null;
         final len = (b[_pos + 2] << 8) | b[_pos + 3];
         if (_pos + 2 + len > _len) return null;
         _pos += 2 + len;

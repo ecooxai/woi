@@ -267,6 +267,10 @@ static void my_application_activate(GApplication* application) {
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   fl_dart_project_set_dart_entrypoint_arguments(
       project, self->dart_entrypoint_arguments);
+  // WOI_RENDERER=skia: Skia over OpenGL instead of Impeller (perf experiments).
+  if (g_strcmp0(g_getenv("WOI_RENDERER"), "skia") == 0) {
+    fl_dart_project_set_enable_impeller(project, FALSE);
+  }
 
   FlView* view = fl_view_new(project);
   GdkRGBA background_color;
