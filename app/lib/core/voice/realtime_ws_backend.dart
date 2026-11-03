@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import '../audio/playback_tracker.dart';
 import '../auth/auth.dart';
 import '../context/context_manager.dart';
+import '../context/image_tiers.dart' show kRawRecentTurns;
 import '../net/realtime_socket.dart';
 import '../notes/pinned_note.dart';
 import 'context_sync.dart';
@@ -56,7 +57,7 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
     this.maxReconnectAttempts = 5,
     this.reconnectBaseDelay = const Duration(milliseconds: 500),
     this.connectTimeout = const Duration(seconds: 15),
-    this.keepRecentTurns = 2,
+    this.keepRecentTurns = kRawRecentTurns,
     PlaybackTracker? playback,
     void Function(String message)? log,
   }) : _connector = connector ?? IoRealtimeSocket.connect,

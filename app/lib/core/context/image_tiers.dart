@@ -39,15 +39,45 @@ ImageTier imageTierOf(Message m) => switch (m.meta[ImageMeta.tier]) {
 
 String? imageDescriptionOf(Message m) => m.meta[ImageMeta.description] as String?;
 
+/// Context compaction rule (docs/PLAN.md): the last 3 user turns (with their
+/// replies, tool calls and screenshots) are ALWAYS sent raw. Only older turns
+/// are summarized, and only images in older turns change tier.
+const kRawRecentTurns = 3;
+
+/// Index of the first message of the [turns]-th last user turn that is still
+/// in the context; everything from there on is sent raw. 0 when there are no
+/// more than [turns] user turns (nothing is old yet), `messages.length` when
+/// [turns] is 0.
+int rawTurnsStart(List<Message> messages, [int turns = kRawRecentTurns]) {
+  if (turns <= 0) return messages.length;
+  var seen = 0;
+  int? cut;
+  for (var i = messages.length - 1; i >= 0; i--) {
+    final m = messages[i];
+    if (m.kind != MessageKind.user || m.compacted) continue;
+    if (cut != null) return cut; // an older user turn exists
+    if (++seen == turns) cut = i;
+  }
+  return 0;
+}
+
 /// Newest [fullCount] screenshots stay as sent, the next [reducedCount] are
 /// downscaled, everything older is described in words. Tiers only ever go
 /// down; compacted messages are left alone (the summary covers them).
+/// Screenshots in the last [rawRecentTurns] user turns are never lowered
+/// (they still count towards the age of older ones).
 class ImageTierPolicy {
-  const ImageTierPolicy({this.fullCount = 3, this.reducedCount = 5, this.reduceFactor = 5});
+  const ImageTierPolicy({
+    this.fullCount = 3,
+    this.reducedCount = 5,
+    this.reduceFactor = 5,
+    this.rawRecentTurns = kRawRecentTurns,
+  });
 
   final int fullCount;
   final int reducedCount;
   final int reduceFactor;
+  final int rawRecentTurns;
 
   ImageTier targetFor(int ageIndex) => ageIndex < fullCount
       ? ImageTier.full
@@ -58,11 +88,13 @@ class ImageTierPolicy {
   /// Messages whose tier must be lowered, newest first, with the new tier.
   List<(Message, ImageTier)> plan(List<Message> messages) {
     final out = <(Message, ImageTier)>[];
+    final raw = rawTurnsStart(messages, rawRecentTurns);
     var age = 0;
     for (var i = messages.length - 1; i >= 0; i--) {
       final m = messages[i];
       if (m.image == null || m.compacted) continue;
       final want = targetFor(age++);
+      if (i >= raw) continue;
       if (want.index > imageTierOf(m).index) out.add((m, want));
     }
     return out;

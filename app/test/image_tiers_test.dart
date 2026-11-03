@@ -11,7 +11,7 @@ Message _shot([String text = '']) =>
 
 void main() {
   test('policy: newest 3 full, next 5 at 1/5, older described; never back up', () {
-    const p = ImageTierPolicy();
+    const p = ImageTierPolicy(rawRecentTurns: 0);
     final msgs = [for (var i = 0; i < 10; i++) _shot('$i')];
     final plan = p.plan(msgs);
     expect(
@@ -29,6 +29,25 @@ void main() {
     msgs.first.meta.remove(ImageMeta.tier);
     msgs.first.compacted = true;
     expect(p.plan(msgs).map((e) => e.$1.text), isNot(contains('0')));
+  });
+
+  test('rule: screenshots in the last 3 user turns stay raw; tiers apply to older turns only', () {
+    const p = ImageTierPolicy();
+    final msgs = <Message>[];
+    // 4 turns, each: user (with screenshot) + 2 tool screenshots + assistant.
+    for (var t = 0; t < 4; t++) {
+      msgs.add(Message(kind: MessageKind.user, text: 'u$t', image: _img));
+      msgs.add(_shot('t$t-a'));
+      msgs.add(_shot('t$t-b'));
+      msgs.add(Message(kind: MessageKind.assistant, text: 'a$t'));
+    }
+    expect(rawTurnsStart(msgs), 4, reason: 'turn 1 starts the raw part');
+    final plan = {for (final (m, t) in p.plan(msgs)) m.text: t};
+    // 9 newer screenshots (ages 0-8) are raw; turn 0's are ages 9-11 -> described.
+    expect(plan, {'u0': ImageTier.described, 't0-a': ImageTier.described, 't0-b': ImageTier.described});
+    // Three turns or fewer: nothing is old yet.
+    expect(p.plan(msgs.sublist(4)), isEmpty);
+    expect(rawTurnsStart(msgs.sublist(4)), 0);
   });
 
   group('context costs', () {
