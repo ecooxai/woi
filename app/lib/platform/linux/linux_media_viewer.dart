@@ -19,9 +19,24 @@ class LinuxMediaViewer extends MediaViewer {
   /// Window method that shows another file in an existing (hidden) viewer.
   static const openMethod = 'open';
 
+  /// Window method that forwards a [ViewerCommand] to the viewer engine.
+  static const controlMethod = 'control';
+
   /// The viewer window. Closing it only hides it (see ui/viewer/viewer_window.dart),
   /// so later files reuse it.
   WindowController? _window;
+
+  @override
+  Future<bool> control(ViewerCommand command, {double seconds = 0}) async {
+    final w = _window;
+    if (w == null) return false;
+    try {
+      return await w.invokeMethod<bool>(controlMethod, {'command': command.name, 'seconds': seconds}) ?? false;
+    } catch (e) {
+      debugPrint('viewer control failed: $e');
+      return false;
+    }
+  }
 
   @override
   Future<ViewerSurface> show(MediaItem item) async {

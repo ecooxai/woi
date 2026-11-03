@@ -96,9 +96,10 @@ class TurnPipeline extends ChangeNotifier {
   /// the user was in as the default `send_keys` target.
   void Function()? onTurnStart;
 
-  /// Typed text handled locally without the model (e.g. "apply" while an
-  /// edit preview is pending). Returns true when handled.
-  bool Function(String text)? localCommand;
+  /// User text handled locally without the model ("apply" / "reject" while
+  /// an edit preview is pending, typed "undo that"). Returns true when
+  /// handled; a spoken one then also drops the model's reply to it.
+  bool Function(String text, {required bool typed})? localCommand;
 
   /// Screenshot tiers (newest full, then ⅕ size, then described).
   final ImageCompactor? imageCompactor;
@@ -743,7 +744,7 @@ class TurnPipeline extends ChangeNotifier {
     onTurnStart?.call();
     final m = _addMessage(Message(kind: MessageKind.user, text: t));
     _conv.touch();
-    if (localCommand?.call(t) ?? false) {
+    if (localCommand?.call(t, typed: true) ?? false) {
       _stopHandled.add(m.id);
       _persistSoon();
       _changed();
@@ -821,7 +822,11 @@ class TurnPipeline extends ChangeNotifier {
         }
         _conv.touch();
         context.onConversationChanged();
-        if (identical(m, _holdMsg)) {
+        final local =
+            !_stopHandled.contains(m.id) && _isLatestUser(m) && (localCommand?.call(m.text, typed: false) ?? false);
+        if (local) {
+          _onStopPhrase(m);
+        } else if (identical(m, _holdMsg)) {
           _checkHold(done: true);
         } else if (isStopPhrase(m.text) && !_stopHandled.contains(m.id) && _isLatestUser(m)) {
           _onStopPhrase(m);

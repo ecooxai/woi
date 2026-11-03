@@ -50,9 +50,16 @@ enum ViewerSurface { window, overlay }
 /// Presents an item inside the main window (fallback surface).
 typedef OverlayPresenter = Future<void> Function(MediaItem item);
 
+/// Voice/tool control of the open viewer.
+enum ViewerCommand { close, pause, play, seekBy, seekTo }
+
 abstract class MediaViewer {
   /// Installed by the UI so the viewer can fall back to an in-app overlay.
   OverlayPresenter? overlayPresenter;
 
   Future<ViewerSurface> show(MediaItem item);
+
+  /// Controls the open viewer ([seconds] for seekBy / seekTo). Returns false
+  /// when no viewer is open or it cannot do that (e.g. pause on an image).
+  Future<bool> control(ViewerCommand command, {double seconds = 0}) async => false;
 }

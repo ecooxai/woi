@@ -7,9 +7,11 @@ import 'dart:io';
 import '../platform/platform_services.dart';
 import '../tools/builtin_tools.dart';
 import '../tools/confirmation.dart';
+import '../tools/app_tools.dart';
 import '../tools/note_tools.dart';
 import '../tools/send_keys_tool.dart';
 import '../tools/tool_registry.dart';
+import 'app_actions.dart';
 import 'auth/auth.dart';
 import 'auth/pkce_login.dart';
 import 'context/compressor.dart';
@@ -18,6 +20,7 @@ import 'context/image_tiers.dart';
 import 'context/responses_compressor.dart';
 import 'delegate/delegate_backend.dart';
 import 'delegate/responses_delegate.dart';
+import 'edits/edit_review.dart';
 import 'models/message.dart';
 import 'notes/note.dart';
 import 'notes/note_controller.dart';
@@ -47,8 +50,14 @@ click_screen takes x/y in the pixel coordinates of the latest screenshot image (
 the app scales them to real screen pixels. Take a screenshot first if you have none or the screen changed.
 Tools: click_screen, type_text, send_keys, take_screenshot, run_bash, read_file, list_dir, edit_file,
 write_file, show_file (show a file, image, audio or video to the user inside Woi), read_note, update_note,
-delegate_task.
-File writes and edits are shown to the user as a diff for approval by the app; shell commands may need approval.
+note_control, app_control, delegate_task.
+note_control runs the notes: append/insert/replace/delete_text in this note, the editor's undo/redo, and new,
+switch, rename, delete, list of notes. app_control runs Woi itself: show_view (note, chat, terminal, split),
+set_setting (theme, voice, voice_model, mic_mode, compaction_threshold, run_in_terminal, edit_apply_delay),
+terminal tabs (terminal_new, terminal_run, terminal_close), the media viewer (viewer_open/close/pause/play/seek),
+apply_edit / reject_edit, and undo_edit for "undo that" (reverts your last note or file edit).
+Note and file edits appear as an inline diff that applies itself after a few seconds unless the user rejects it;
+the tool result tells you whether it was applied. Shell commands may need explicit approval.
 Use delegate_task only for genuinely complex multi-step work (writing programs, multi-file changes, research
 or long analysis); simple actions you do yourself. When a delegated result comes back, speak its gist briefly.
 If the user only says stop, cancel or never mind, stop and say nothing at all; do not acknowledge it.
@@ -64,7 +73,10 @@ the whole note aloud unless asked.
 const kLiveInstructions = '''
 On this connection you cannot use tools yourself: every request to do something on the computer (open, show,
 play, click, type, run, read, write, edit, create, delete, find, list, take a screenshot) must go to delegation,
-every time, even if a similar request was handled before. Never claim an action happened unless the delegation
+every time, even if a similar request was handled before. That includes controlling Woi itself: switching the
+view (note, chat, terminal), changing settings (theme, voice, mic mode), notes (add to, edit, new, switch,
+rename, delete), terminal tabs, the media viewer, and "undo that". If the user only says "apply" or "reject"
+while an edit preview is shown, the app handles it; say nothing. Never claim an action happened unless the delegation
 result says so; speak the result as reported, including failures.
 ''';
 
@@ -159,6 +171,19 @@ class AppController extends ChangeNotifier {
   /// Built-in terminal tabs (Ctrl+3). Nothing runs until the view opens or
   /// the AI runs a command with "Run in terminal" on.
   late final TerminalHub terminals = TerminalHub(workingDirectory: () => platform.files.workspaceDir);
+
+  /// Inline previews of AI note/file edits with the auto-apply countdown.
+  late final EditReview review = EditReview(delaySeconds: () => _settings.editApplyDelay);
+
+  /// Applied AI edits ("undo that") and file backups per conversation.
+  late final EditHistory editHistory = EditHistory(
+    backupRoot: '${platform.paths.dataDir}/backups',
+    notes: notes,
+    conversationId: () => notes.conversationId,
+  );
+
+  /// Every app function, for the UI and the voice tools.
+  late final AppActions actions = AppActions(this);
   late final TurnPipeline pipeline;
 
   AppSettings _settings = const AppSettings();
@@ -193,7 +218,8 @@ class AppController extends ChangeNotifier {
       late final TurnPipeline p;
       toolEnv = ToolEnvironment(
         platform: platform,
-        confirmations: confirmations,
+        // File writes: inline diff card + countdown + backup; bash keeps the dialog.
+        confirmations: ReviewingConfirmations(inner: confirmations, review: review, history: editHistory),
         delegate: delegate,
         settings: () => _settings,
         onScreenshot: (shot, note) => p.attachScreenshot(shot, note: note),
@@ -203,7 +229,8 @@ class AppController extends ChangeNotifier {
         // send_keys supersedes key_combo (targets the user's app, not Woi).
         ..registerAll(builtinTools(toolEnv).where((t) => t.name != 'key_combo'))
         ..register(sendKeysTool(platform.input))
-        ..registerAll(noteTools(notes));
+        ..registerAll(noteTools(notes, review: review, history: editHistory))
+        ..registerAll(appTools(actions));
 
       p = TurnPipeline(
         backendFactory: _createBackend,
@@ -217,6 +244,7 @@ class AppController extends ChangeNotifier {
         options: _pipelineOptions,
         onScreenshotCaptured: (s) => toolEnv.lastScreenshot = s,
         onTurnStart: () => unawaited(platform.input.rememberTargetWindow()),
+        localCommand: _localCommand,
         imageCompactor: ImageCompactor(
           downscale: uiDownscale,
           describe: responsesDescriber(responses, model: () => _settings.compressionModel),
@@ -353,7 +381,7 @@ class AppController extends ChangeNotifier {
     if (!_ready) return;
     final conv = pipeline.conversation;
     if (n.conversationId != conv.id) return;
-    if (conv.messages.isEmpty) conv.title = noteTitle(n.markdown);
+    if (conv.messages.isEmpty && !conv.customTitle) conv.title = noteTitle(n.markdown);
     conv.updatedAt = DateTime.now();
     history.saveSoon(conv);
   }
@@ -384,6 +412,7 @@ class AppController extends ChangeNotifier {
 
   Future<void> newConversation() async {
     if (pipeline.conversation.messages.isEmpty && notes.isEmpty) return;
+    review.rejectAll();
     final c = Conversation();
     await notes.open(c.id);
     await pipeline.switchConversation(c);
@@ -394,6 +423,7 @@ class AppController extends ChangeNotifier {
     if (id == pipeline.conversation.id) return;
     final c = await history.load(id);
     if (c == null) return;
+    review.rejectAll();
     await notes.open(c.id);
     await pipeline.switchConversation(c);
     notifyListeners();
@@ -402,11 +432,48 @@ class AppController extends ChangeNotifier {
   Future<void> deleteConversation(String id) async {
     await notes.deleteFor(id);
     if (id == pipeline.conversation.id) {
+      review.rejectAll();
       final c = Conversation();
       await notes.open(c.id);
       await pipeline.switchConversation(c);
     }
     await history.delete(id);
+    notifyListeners();
+  }
+
+  /// "apply" / "reject" while an edit preview is shown; typed "undo that"
+  /// (spoken undo goes to the model, which may also be delegating it).
+  bool _localCommand(String text, {required bool typed}) {
+    final cmd = parseEditCommand(text, pending: review.hasPending);
+    switch (cmd) {
+      case EditVoiceCommand.apply:
+        return review.apply();
+      case EditVoiceCommand.reject:
+        return review.reject();
+      case EditVoiceCommand.undo:
+        if (!typed || (!review.hasPending && editHistory.last == null)) return false;
+        unawaited(
+          actions.undoLastEdit().then(
+            (r) => debugPrint('undo: $r'),
+            onError: (Object e) => debugPrint('undo failed: $e'),
+          ),
+        );
+        return true;
+      case null:
+        return false;
+    }
+  }
+
+  /// Renames a conversation (= its note tab).
+  Future<void> renameConversation(String id, String title) async {
+    final t = title.trim();
+    if (t.isEmpty) return;
+    final c = id == pipeline.conversation.id ? pipeline.conversation : await history.load(id);
+    if (c == null) return;
+    c
+      ..title = t
+      ..customTitle = true;
+    await history.save(c);
     notifyListeners();
   }
 

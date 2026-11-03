@@ -118,7 +118,7 @@ class _NoteTabsBarState extends State<NoteTabsBar> {
   }
 
   Future<void> _reload() async {
-    final all = await c.listConversations();
+    final all = await c.actions.listNotes();
     if (!mounted) return;
     setState(() {
       _all = all;
@@ -129,7 +129,7 @@ class _NoteTabsBarState extends State<NoteTabsBar> {
   Future<void> _open(String id) async {
     if (id == c.pipeline.conversation.id) return;
     await c.history.flush(c.pipeline.conversation);
-    await c.openConversation(id);
+    await c.actions.openNote(id);
   }
 
   Future<void> _more() async {
@@ -184,7 +184,7 @@ class _NoteTabsBarState extends State<NoteTabsBar> {
             message: 'New note (Ctrl+N)',
             child: IconButton(
               key: const ValueKey('note-new'),
-              onPressed: c.newConversation,
+              onPressed: c.actions.newNote,
               style: IconButton.styleFrom(
                 minimumSize: Size.square(widget.compact ? kTouchTarget : 36),
                 foregroundColor: WoiColors.text,

@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 
+import '../../platform/media_viewer.dart';
 import '../theme.dart';
+import 'viewer_commands.dart';
 
 /// Whether the media viewer is fullscreen (the viewer chrome hides itself).
 final viewerFullscreen = ValueNotifier<bool>(false);
@@ -48,10 +50,28 @@ class VideoViewerBodyState extends State<VideoViewerBody> {
   double? _dragFraction;
 
   VideoPlayerController get controller => _c;
+  StreamSubscription<(ViewerCommand, double)>? _commands;
+
+  /// Voice control from the main window (viewer_commands.dart).
+  void _onCommand((ViewerCommand, double) c) {
+    final (cmd, secs) = c;
+    final playing = _c.value.isPlaying;
+    switch (cmd) {
+      case ViewerCommand.pause when playing:
+      case ViewerCommand.play when !playing:
+        togglePlay();
+      case ViewerCommand.seekBy:
+        seekBy(Duration(milliseconds: (secs * 1000).round()));
+      case ViewerCommand.seekTo:
+        seekBy(Duration(milliseconds: (secs * 1000).round()) - _c.value.position);
+      default:
+    }
+  }
 
   @override
   void initState() {
     super.initState();
+    _commands = viewerCommands.stream.listen(_onCommand);
     _c.addListener(_onValue);
     _c
         .initialize()
@@ -92,6 +112,7 @@ class VideoViewerBodyState extends State<VideoViewerBody> {
 
   @override
   void dispose() {
+    _commands?.cancel();
     _hideTimer?.cancel();
     _c.removeListener(_onValue);
     _c.dispose();

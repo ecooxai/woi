@@ -70,6 +70,9 @@ class TerminalSession extends ChangeNotifier {
     hub._changed();
   }
 
+  /// Types [command] and Enter into this shell, as if the user typed it.
+  void typeCommand(String command) => _onInput('$command\r');
+
   void _onInput(String data) {
     final p = _proc;
     if (kind == TerminalKind.ai && hub._aiRun == null) return; // nothing to type into
