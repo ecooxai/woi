@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="dev.woi.codexspike"
+    android:versionCode="1"
+    android:versionName="0.1">
+    <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="35" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- extractNativeLibs=true: the installer copies lib/arm64-v8a/*.so to nativeLibraryDir,
+         the only app-writable-at-install location that SELinux lets untrusted_app exec (W^X). -->
+    <application android:label="CodexSpike" android:extractNativeLibs="true"
+        android:usesCleartextTraffic="true">
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
