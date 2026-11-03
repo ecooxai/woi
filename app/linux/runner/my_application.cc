@@ -8,6 +8,7 @@
 #include "flutter/generated_plugin_registrant.h"
 
 #include "desktop_multi_window/desktop_multi_window_plugin.h"
+#include "fvp/fvp_plugin.h"
 
 struct _MyApplication {
   GtkApplication parent_instance;
@@ -160,8 +161,24 @@ static FlView* register_window_channel(FlPluginRegistry* registry) {
   return view;
 }
 
+// Viewer windows only need the window and video plugins. flutter_webrtc must
+// not be registered here: its Linux registrar is a function-local static bound
+// to the first (main) view, so registering it again installs a fresh, empty
+// FlutterWebRTC instance on the MAIN engine's "FlutterWebRTC.Method" channel.
+// After the first viewer opened, every gpt-live call (speaker mute on
+// barge-in, stats, hang-up) went to that empty instance and silently failed.
+static void register_viewer_plugins(FlPluginRegistry* registry) {
+  g_autoptr(FlPluginRegistrar) multi_window =
+      fl_plugin_registry_get_registrar_for_plugin(registry,
+                                                  "DesktopMultiWindowPlugin");
+  desktop_multi_window_plugin_register_with_registrar(multi_window);
+  g_autoptr(FlPluginRegistrar) fvp =
+      fl_plugin_registry_get_registrar_for_plugin(registry, "FvpPlugin");
+  fvp_plugin_register_with_registrar(fvp);
+}
+
 static void secondary_window_created(FlPluginRegistry* registry) {
-  fl_register_plugins(registry);
+  register_viewer_plugins(registry);
 
   FlView* view = register_window_channel(registry);
   if (view == nullptr) return;

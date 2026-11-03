@@ -163,13 +163,18 @@ prep_click_target() {
   xdotool mousemove 1500 150   # away from the centre, so a click is visible
 }
 
+# X input idle time in ms. Reported with the click/type checks because the
+# harness drives the real :0 display: a person using it moves the pointer and
+# focus while the fixture runs, which fails those checks without an app fault.
+user_idle() { command -v xprintidle >/dev/null && echo " xidle=$(xprintidle)ms"; }
+
 check_click() { # mode
   local loc; loc=$(xdotool getmouselocation --shell | tr '\n' ' ')
   eval "$(xdotool getmouselocation --shell)"
   local act; act=$(xdotool getactivewindow 2>/dev/null)
   local ok=FAIL
   [ $((X > 950 && X < 970 && Y > 530 && Y < 550)) = 1 ] && ok=PASS
-  result "$1" 02_click_center "$LAST_LAT" "$LAST_DIALOG" "$ok" "mouse=$X,$Y active=$( [ "$act" = "$TARGET_WID" ] && echo target || echo "$act")"
+  result "$1" 02_click_center "$LAST_LAT" "$LAST_DIALOG" "$ok" "mouse=$X,$Y active=$( [ "$act" = "$TARGET_WID" ] && echo target || echo "$act")$(user_idle)"
   # make sure the typing test has the target focused even if the click missed
   [ "$act" = "$TARGET_WID" ] || xdotool windowactivate --sync "$TARGET_WID" 2>/dev/null
 }
@@ -179,7 +184,7 @@ check_type() {
   local typed; typed=$(tr -d '\000' <"$QA_SANDBOX/typed.txt")
   qa_shot "$TARGET_WID" "$1_03_type_target" 500 >/dev/null
   local ok=FAIL; echo "$typed" | grep -qi 'hello,\? world' && ok=PASS
-  result "$1" 03_type_hello_world "$LAST_LAT" "$LAST_DIALOG" "$ok" "typed=$(printf %q "$typed")"
+  result "$1" 03_type_hello_world "$LAST_LAT" "$LAST_DIALOG" "$ok" "typed=$(printf %q "$typed")$(user_idle)"
 }
 
 log_has() { grep -qiE "$1" "$QA_OUT/log_$2.txt" 2>/dev/null; }
