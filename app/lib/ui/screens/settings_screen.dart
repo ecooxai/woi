@@ -323,7 +323,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 10),
           for (var k = 0; k < children.length; k++) ...[
-            if (k > 0) const Divider(height: 1, color: WoiColors.stroke),
+            if (k > 0) Divider(height: 1, color: WoiColors.stroke),
             children[k],
           ],
         ],

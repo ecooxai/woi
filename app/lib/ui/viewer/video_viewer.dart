@@ -223,7 +223,7 @@ class VideoViewerBodyState extends State<VideoViewerBody> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.error_outline, size: 40, color: WoiColors.red),
+          Icon(Icons.error_outline, size: 40, color: WoiColors.red),
           const SizedBox(height: 12),
           Text('Cannot play this video', style: display(16)),
           const SizedBox(height: 6),
@@ -474,7 +474,7 @@ class _SeekPainter extends CustomPainter {
     canvas.drawRRect(
       RRect.fromRectAndRadius(played, r),
       Paint()
-        ..shader = const LinearGradient(colors: [WoiColors.cyan, WoiColors.violet, WoiColors.magenta])
+        ..shader = LinearGradient(colors: [WoiColors.cyan, WoiColors.violet, WoiColors.magenta])
             .createShader(Rect.fromLTWH(0, 0, size.width, size.height)),
     );
     canvas.drawCircle(

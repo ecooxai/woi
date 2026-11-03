@@ -52,7 +52,7 @@ class EmptyState extends StatelessWidget {
         children: [
           ShaderMask(
             blendMode: BlendMode.srcIn,
-            shaderCallback: (r) => const LinearGradient(
+            shaderCallback: (r) => LinearGradient(
               colors: [WoiColors.cyan, WoiColors.violet, WoiColors.magenta],
             ).createShader(r),
             child: Text(

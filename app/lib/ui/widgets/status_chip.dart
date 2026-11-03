@@ -35,9 +35,10 @@ String backendShortName(BackendMode m) => switch (m) {
   BackendMode.apiKey => 'Realtime · API key',
 };
 
-/// "gpt-live-1.1 · connected" with a pulsing dot, a details tooltip and an
-/// inline retry button when the link is down.
-class ConnectionStatusChip extends StatefulWidget {
+/// "gpt-live-1.1 · connected": a status dot, model and state, a details
+/// tooltip and an inline Retry when the link is down. Static (no ticker):
+/// motion lives in the voice indicator next to it.
+class ConnectionStatusChip extends StatelessWidget {
   const ConnectionStatusChip({
     super.key,
     required this.state,
@@ -56,92 +57,31 @@ class ConnectionStatusChip extends StatefulWidget {
   final String? detail;
   final VoidCallback? onRetry;
 
-  /// Phone header: dot + short label only.
+  /// Phones: short model name (or the state when not connected).
   final bool compact;
 
   @override
-  State<ConnectionStatusChip> createState() => _ConnectionStatusChipState();
-}
-
-class _ConnectionStatusChipState extends State<ConnectionStatusChip> with SingleTickerProviderStateMixin {
-  late final AnimationController _pulse = AnimationController(vsync: this, duration: const Duration(milliseconds: 1400));
-
-  bool get _busy => widget.state == LinkState.connecting || widget.state == LinkState.reconnecting;
-
-  @override
-  void initState() {
-    super.initState();
-    _sync();
-  }
-
-  @override
-  void didUpdateWidget(ConnectionStatusChip old) {
-    super.didUpdateWidget(old);
-    _sync();
-  }
-
-  void _sync() {
-    final want = _busy || widget.state == LinkState.connected;
-    if (want && !_pulse.isAnimating) _pulse.repeat();
-    if (!want && _pulse.isAnimating) _pulse.stop();
-  }
-
-  @override
-  void dispose() {
-    _pulse.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final color = linkColor(widget.state);
-    final label = linkLabel(widget.state);
-    final down = widget.state == LinkState.error || widget.state == LinkState.offline;
+    final color = linkColor(state);
+    final label = linkLabel(state);
+    final down = state == LinkState.error || state == LinkState.offline;
     final tooltip = [
-      backendShortName(widget.backend),
-      'Model: ${widget.model}${widget.voice != null ? ' · voice ${widget.voice}' : ''}',
+      backendShortName(backend),
+      'Model: $model${voice != null ? ' · voice $voice' : ''}',
       'Status: $label',
-      if (widget.detail != null && widget.detail!.isNotEmpty) widget.detail!,
-      if (down && widget.onRetry != null) 'Click to retry',
+      if (detail != null && detail!.isNotEmpty) detail!,
     ].join('\n');
 
-    final dot = AnimatedBuilder(
-      animation: _pulse,
-      builder: (context, _) {
-        final v = _pulse.value;
-        return SizedBox.square(
-          dimension: 14,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              if (!down)
-                Container(
-                  width: 6 + 8 * v,
-                  height: 6 + 8 * v,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: color.withValues(alpha: (1 - v) * (_busy ? 0.6 : 0.35)),
-                  ),
-                ),
-              Container(
-                width: 7,
-                height: 7,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: color,
-                  boxShadow: [BoxShadow(color: color.withValues(alpha: 0.8), blurRadius: 6)],
-                ),
-              ),
-            ],
-          ),
-        );
-      },
+    final dot = Container(
+      width: 7,
+      height: 7,
+      decoration: BoxDecoration(shape: BoxShape.circle, color: color),
     );
 
-    final text = widget.compact
+    final text = compact
         ? Text(
-            widget.state == LinkState.connected ? shortModelName(widget.model) : label,
-            style: _style(color, widget.compact),
+            state == LinkState.connected ? shortModelName(model) : label,
+            style: _style(state == LinkState.connected ? WoiColors.textDim : color),
             maxLines: 1,
             softWrap: false,
             overflow: TextOverflow.ellipsis,
@@ -149,9 +89,9 @@ class _ConnectionStatusChipState extends State<ConnectionStatusChip> with Single
         : Text.rich(
             TextSpan(
               children: [
-                TextSpan(text: widget.model, style: _style(WoiColors.text, false)),
-                TextSpan(text: '  ·  ', style: _style(WoiColors.textFaint, false)),
-                TextSpan(text: label, style: _style(color, false)),
+                TextSpan(text: model, style: _style(WoiColors.textDim)),
+                TextSpan(text: ' · ', style: _style(WoiColors.textFaint)),
+                TextSpan(text: label, style: _style(state == LinkState.connected ? WoiColors.textDim : color)),
               ],
             ),
             maxLines: 1,
@@ -159,64 +99,71 @@ class _ConnectionStatusChipState extends State<ConnectionStatusChip> with Single
             overflow: TextOverflow.ellipsis,
           );
 
-    final chip = AnimatedContainer(
-      duration: WoiMotion.medium,
-      padding: EdgeInsets.fromLTRB(8, 5, down && widget.onRetry != null ? 4 : 12, 5),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.09),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withValues(alpha: 0.32)),
-      ),
+    return Semantics(
+      container: true,
+      liveRegion: true,
+      label: 'Connection: $model, $label',
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          dot,
-          const SizedBox(width: 7),
-          Flexible(child: text),
-          if (down && widget.onRetry != null) ...[
-            const SizedBox(width: 6),
-            _RetryButton(color: color, onTap: widget.onRetry!),
+          Flexible(
+            child: Tooltip(
+              message: tooltip,
+              child: Row(
+                key: const ValueKey('connection-status'),
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  dot,
+                  const SizedBox(width: 6),
+                  Flexible(child: text),
+                ],
+              ),
+            ),
+          ),
+          if (down && onRetry != null) ...[
+            const SizedBox(width: 4),
+            _RetryButton(color: color, onTap: onRetry!, large: compact),
           ],
         ],
       ),
     );
-
-    return Semantics(
-      container: true,
-      liveRegion: true,
-      label: 'Connection: ${widget.model}, $label',
-      child: Tooltip(message: tooltip, child: chip),
-    );
   }
 
-  TextStyle _style(Color c, bool compact) =>
-      body(compact ? 12 : 12.5, weight: FontWeight.w600, color: c).copyWith(fontFeatures: kTabular);
+  TextStyle _style(Color c) => body(12, weight: FontWeight.w500, color: c).copyWith(fontFeatures: kTabular);
 }
 
 class _RetryButton extends StatelessWidget {
-  const _RetryButton({required this.color, required this.onTap});
+  const _RetryButton({required this.color, required this.onTap, this.large = false});
   final Color color;
   final VoidCallback onTap;
+
+  /// Phone: full 48dp hit target.
+  final bool large;
 
   @override
   Widget build(BuildContext context) => Semantics(
     button: true,
     label: 'Retry connection',
-    child: Material(
-      color: color.withValues(alpha: 0.16),
-      shape: const StadiumBorder(),
+    excludeSemantics: true,
+    child: Tooltip(
+      message: 'Retry connection',
       child: InkWell(
-        customBorder: const StadiumBorder(),
+        key: const ValueKey('retry-connection'),
+        borderRadius: BorderRadius.circular(WoiRadii.sm),
         onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.refresh_rounded, size: 14, color: color),
-              const SizedBox(width: 4),
-              Text('Retry', style: body(12, weight: FontWeight.w700, color: color)),
-            ],
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: large ? kTouchTarget : 28, minWidth: large ? kTouchTarget : 0),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.refresh_rounded, size: 14, color: color),
+                const SizedBox(width: 3),
+                Text('Retry', style: body(12, weight: FontWeight.w600, color: color)),
+              ],
+            ),
           ),
         ),
       ),

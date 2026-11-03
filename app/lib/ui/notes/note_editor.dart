@@ -38,6 +38,24 @@ class _ToggleCheckIntent extends Intent {
   const _ToggleCheckIntent();
 }
 
+class _RunIntent extends Intent {
+  const _RunIntent();
+}
+
+/// The text "Run" sends: the selection, or else the line at the cursor
+/// (trimmed). Empty when there is nothing to send.
+String runTextFor(TextEditingValue v) {
+  final t = v.text;
+  final sel = v.selection;
+  if (!sel.isValid) return '';
+  if (!sel.isCollapsed) return sel.textInside(t).trim();
+  final at = sel.baseOffset.clamp(0, t.length);
+  final s = at <= 0 ? 0 : t.lastIndexOf('\n', at - 1) + 1;
+  var e = t.indexOf('\n', at);
+  if (e < 0) e = t.length;
+  return t.substring(s, e).trim();
+}
+
 /// Action that only claims the key when [enabled] says so (otherwise the
 /// key falls through to the text field, e.g. Enter outside a list).
 class _FnAction<T extends Intent> extends Action<T> {
@@ -61,9 +79,20 @@ final _listLine = RegExp(r'^(\s*)([-*+]|\d{1,9}[.)])(\s+)(\[[ xX]\]\s+)?');
 /// split), toolbar, clickable checklists, autosave state, undo/redo, word
 /// count and the "AI edited" highlight with its Undo chip.
 class NoteEditor extends StatefulWidget {
-  const NoteEditor({super.key, required this.notes, this.compact = false, this.onOpenLink, this.initialMode});
+  const NoteEditor({
+    super.key,
+    required this.notes,
+    this.compact = false,
+    this.onOpenLink,
+    this.initialMode,
+    this.onRun,
+  });
 
   final NoteController notes;
+
+  /// "Run": sends the cursor line or the selection to the assistant as a
+  /// user turn. Null disables the button (e.g. while offline).
+  final ValueChanged<String>? onRun;
 
   /// Phone layout: smaller toolbar, no split mode.
   final bool compact;
@@ -392,6 +421,20 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
     toggleCheckAt(line);
   }
 
+  /// Sends the selection or cursor line through [NoteEditor.onRun].
+  void run() {
+    final text = runTextFor(_ctrl.value);
+    final onRun = widget.onRun;
+    if (onRun == null) return;
+    if (text.isEmpty) {
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        const SnackBar(content: Text('Put the cursor on a line or select text to run it.')),
+      );
+      return;
+    }
+    onRun(text);
+  }
+
   void _onTapEditor() {
     final sel = _ctrl.selection;
     if (!sel.isValid || !sel.isCollapsed) return;
@@ -429,17 +472,7 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Expanded(child: editor),
-          Container(
-            width: 1,
-            margin: const EdgeInsets.symmetric(vertical: 12),
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [Colors.transparent, WoiColors.strokeStrong, Colors.transparent],
-              ),
-            ),
-          ),
+          Container(width: 1, color: WoiColors.stroke),
           Expanded(child: preview),
         ],
       ),
@@ -482,6 +515,7 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
         const SingleActivator(LogicalKeyboardKey.tab): const _IndentIntent(false),
         const SingleActivator(LogicalKeyboardKey.tab, shift: true): const _IndentIntent(true),
         const SingleActivator(LogicalKeyboardKey.enter, control: true): const _ToggleCheckIntent(),
+        const SingleActivator(LogicalKeyboardKey.keyR, control: true): const _RunIntent(),
       },
       child: Actions(
         actions: <Type, Action<Intent>>{
@@ -491,6 +525,7 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
           _NewlineIntent: _FnAction<_NewlineIntent>((_) => _newline(), enabled: _listAtCursor),
           _IndentIntent: _FnAction<_IndentIntent>((i) => _indent(i.outdent), enabled: _onListLine),
           _ToggleCheckIntent: _FnAction<_ToggleCheckIntent>((_) => _toggleCheckAtCursor()),
+          _RunIntent: _FnAction<_RunIntent>((_) => run(), enabled: () => widget.onRun != null),
         },
         child: LayoutBuilder(
           builder: (context, box) {
@@ -591,6 +626,24 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
       btn(Icons.redo_rounded, 'Redo (Ctrl+Shift+Z)', notes.canRedo ? notes.redo : null, key: const ValueKey('tb-redo')),
     ];
     final modes = _ModeSwitch(mode: m, compact: _dense, onChanged: setMode);
+    final runBtn = Tooltip(
+      message: widget.onRun == null
+          ? 'Run (connect first)'
+          : 'Run: send the current line or selection to Woi (Ctrl+R)',
+      child: FilledButton.icon(
+        key: const ValueKey('note-run'),
+        onPressed: widget.onRun == null ? null : run,
+        style: FilledButton.styleFrom(
+          minimumSize: Size(0, widget.compact ? kTouchTarget : 34),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          textStyle: body(13, weight: FontWeight.w600),
+          disabledBackgroundColor: WoiColors.glassStrong,
+          disabledForegroundColor: WoiColors.textFaint,
+        ),
+        icon: const Icon(Icons.play_arrow_rounded, size: 18),
+        label: const Text('Run'),
+      ),
+    );
     return Padding(
       padding: EdgeInsets.fromLTRB(widget.compact ? 8 : 14, 8, widget.compact ? 8 : 14, 8),
       child: Row(
@@ -614,6 +667,8 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
           ),
           const SizedBox(width: 8),
           modes,
+          const SizedBox(width: 8),
+          runBtn,
         ],
       ),
     );
@@ -631,7 +686,7 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
     final chars = notes.text.length;
     return Container(
       padding: EdgeInsets.fromLTRB(widget.compact ? 16 : 20, 7, widget.compact ? 16 : 20, 9),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         border: Border(top: BorderSide(color: WoiColors.stroke)),
       ),
       child: Row(
@@ -661,7 +716,7 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
             child: _dense
                 ? const SizedBox.shrink()
                 : Text(
-                    'Markdown  ·  Ctrl+B  Ctrl+I  Ctrl+E  ·  Ctrl+Enter toggles a todo',
+                    'Markdown  ·  Ctrl+B  Ctrl+I  Ctrl+E  ·  Ctrl+Enter toggles a todo  ·  Ctrl+R runs a line',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.right,
@@ -692,22 +747,15 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
               constraints: BoxConstraints(maxWidth: widget.compact ? 360 : 560),
               padding: const EdgeInsets.fromLTRB(12, 5, 5, 5),
               decoration: BoxDecoration(
-                color: WoiColors.bg2.withValues(alpha: 0.92),
+                color: WoiColors.bg1,
                 borderRadius: BorderRadius.circular(999),
-                border: Border.all(color: WoiColors.violet.withValues(alpha: 0.55)),
-                boxShadow: [
-                  BoxShadow(color: WoiColors.violet.withValues(alpha: 0.30), blurRadius: 24, spreadRadius: -4),
-                  const BoxShadow(color: Color(0x66000000), blurRadius: 18, offset: Offset(0, 8)),
-                ],
+                border: Border.all(color: WoiColors.violet.withValues(alpha: 0.45)),
+                boxShadow: [BoxShadow(color: WoiColors.shadow, blurRadius: 12, offset: const Offset(0, 4))],
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  ShaderMask(
-                    shaderCallback: (r) =>
-                        const LinearGradient(colors: [WoiColors.cyan, WoiColors.magenta]).createShader(r),
-                    child: const Icon(Icons.auto_awesome, size: 16, color: Colors.white),
-                  ),
+                  Icon(Icons.auto_awesome, size: 16, color: WoiColors.violet),
                   const SizedBox(width: 8),
                   Text(
                     'AI edited',
@@ -727,8 +775,8 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
                     key: const ValueKey('ai-undo'),
                     onPressed: notes.undoAiEdit,
                     style: TextButton.styleFrom(
-                      foregroundColor: WoiColors.text,
-                      backgroundColor: WoiColors.violet.withValues(alpha: 0.18),
+                      foregroundColor: WoiColors.violet,
+                      backgroundColor: WoiColors.violet.withValues(alpha: 0.10),
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                       minimumSize: const Size(0, 32),
                       shape: const StadiumBorder(),
@@ -794,8 +842,8 @@ class _ModeSwitch extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
-        color: WoiColors.bg0.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(999),
+        color: WoiColors.glass,
+        borderRadius: BorderRadius.circular(WoiRadii.md),
         border: Border.all(color: WoiColors.stroke),
       ),
       child: Row(
@@ -811,28 +859,18 @@ class _ModeSwitch extends StatelessWidget {
                 child: InkWell(
                   key: ValueKey('note-mode-${m.name}'),
                   onTap: () => onChanged(m),
-                  borderRadius: BorderRadius.circular(999),
-                  child: AnimatedContainer(
-                    duration: WoiMotion.fast,
-                    padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 12, vertical: compact ? 8 : 6),
+                  borderRadius: BorderRadius.circular(WoiRadii.sm),
+                  child: Container(
+                    padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 10, vertical: compact ? 8 : 5),
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(999),
-                      gradient: m == mode
-                          ? LinearGradient(
-                              colors: [
-                                WoiColors.cyan.withValues(alpha: 0.22),
-                                WoiColors.violet.withValues(alpha: 0.22),
-                              ],
-                            )
-                          : null,
-                      border: Border.all(
-                        color: m == mode ? WoiColors.cyan.withValues(alpha: 0.45) : Colors.transparent,
-                      ),
+                      borderRadius: BorderRadius.circular(WoiRadii.sm),
+                      color: m == mode ? WoiColors.bg1 : null,
+                      border: Border.all(color: m == mode ? WoiColors.stroke : Colors.transparent),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(icon, size: 15, color: m == mode ? WoiColors.cyan : WoiColors.textDim),
+                        Icon(icon, size: 15, color: m == mode ? WoiColors.text : WoiColors.textDim),
                         if (!compact) ...[
                           const SizedBox(width: 6),
                           Text(

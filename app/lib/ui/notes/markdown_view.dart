@@ -316,7 +316,7 @@ class _MarkdownViewState extends State<MarkdownView> {
             margin: const EdgeInsets.symmetric(vertical: 1),
             decoration: BoxDecoration(
               color: WoiColors.violet.withValues(alpha: 0.10),
-              border: const Border(left: BorderSide(color: WoiColors.violet, width: 2)),
+              border: Border(left: BorderSide(color: WoiColors.violet, width: 2)),
               borderRadius: BorderRadius.circular(4),
             ),
             padding: const EdgeInsets.only(left: 8),
@@ -347,7 +347,7 @@ class _MarkdownViewState extends State<MarkdownView> {
               if (b.level == 1)
                 ShaderMask(
                   shaderCallback: (r) =>
-                      const LinearGradient(colors: [WoiColors.text, WoiColors.cyan, WoiColors.violet]).createShader(r),
+                      LinearGradient(colors: [WoiColors.text, WoiColors.cyan, WoiColors.violet]).createShader(r),
                   child: Text.rich(TextSpan(children: _spans(b.text, style.copyWith(color: Colors.white)))),
                 )
               else
@@ -397,7 +397,7 @@ class _MarkdownViewState extends State<MarkdownView> {
         return Container(
           margin: const EdgeInsets.symmetric(vertical: 16),
           height: 1,
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             gradient: LinearGradient(colors: [Colors.transparent, WoiColors.strokeStrong, Colors.transparent]),
           ),
         );
@@ -432,11 +432,11 @@ class _MarkdownViewState extends State<MarkdownView> {
               height: 18,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(5),
-                gradient: checked ? const LinearGradient(colors: [WoiColors.mint, WoiColors.cyan]) : null,
+                gradient: checked ? LinearGradient(colors: [WoiColors.mint, WoiColors.cyan]) : null,
                 border: Border.all(color: checked ? Colors.transparent : WoiColors.strokeStrong, width: 1.5),
                 boxShadow: checked ? [BoxShadow(color: WoiColors.mint.withValues(alpha: 0.35), blurRadius: 10)] : null,
               ),
-              child: checked ? const Icon(Icons.check_rounded, size: 14, color: WoiColors.bg0) : null,
+              child: checked ? Icon(Icons.check_rounded, size: 14, color: WoiColors.bg0) : null,
             ),
           ),
         ),
@@ -528,7 +528,7 @@ class _MarkdownViewState extends State<MarkdownView> {
         scrollDirection: Axis.horizontal,
         child: Table(
           defaultColumnWidth: const IntrinsicColumnWidth(),
-          border: const TableBorder(
+          border: TableBorder(
             horizontalInside: BorderSide(color: WoiColors.stroke),
             verticalInside: BorderSide(color: WoiColors.stroke),
           ),

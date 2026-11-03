@@ -8,11 +8,11 @@ import '../theme.dart';
 
 /// Play/stop control for a recorded clip, with an animated progress ring.
 class AudioClipButton extends StatefulWidget {
-  const AudioClipButton({super.key, required this.clip, required this.audio, this.color = WoiColors.cyan});
+  const AudioClipButton({super.key, required this.clip, required this.audio, this.color});
 
   final AudioClip clip;
   final AudioIO audio;
-  final Color color;
+  final Color? color;
 
   @override
   State<AudioClipButton> createState() => _AudioClipButtonState();
@@ -78,16 +78,16 @@ class _AudioClipButtonState extends State<AudioClipButton> with SingleTickerProv
                       builder: (context, _) => CircularProgressIndicator(
                         value: playing ? _progress.value : 0,
                         strokeWidth: 2,
-                        color: widget.color,
-                        backgroundColor: widget.color.withValues(alpha: 0.2),
+                        color: widget.color ?? WoiColors.cyan,
+                        backgroundColor: (widget.color ?? WoiColors.cyan).withValues(alpha: 0.2),
                       ),
                     ),
-                    Icon(playing ? Icons.stop_rounded : Icons.play_arrow_rounded, size: 18, color: widget.color),
+                    Icon(playing ? Icons.stop_rounded : Icons.play_arrow_rounded, size: 18, color: widget.color ?? WoiColors.cyan),
                   ],
                 ),
               ),
               const SizedBox(width: 6),
-              Text('${secs}s', style: mono(11, color: widget.color.withValues(alpha: 0.85))),
+              Text('${secs}s', style: mono(11, color: (widget.color ?? WoiColors.cyan).withValues(alpha: 0.85))),
             ],
           ),
         ),

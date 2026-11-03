@@ -5,6 +5,7 @@ import 'dart:ui' show AppExitResponse;
 import 'package:flutter/material.dart';
 
 import '../core/app_controller.dart';
+import '../core/settings/settings.dart';
 import '../platform/media_viewer.dart';
 import '../platform/platform_services.dart';
 import '../platform/window_attention.dart';
@@ -13,7 +14,6 @@ import 'screens/home_screen.dart';
 import 'theme.dart';
 import 'viewer/viewer_app.dart';
 import 'widgets/glass.dart';
-import 'widgets/voice_orb.dart';
 
 /// Root widget of the main window.
 class WoiApp extends StatefulWidget {
@@ -42,7 +42,7 @@ class _WoiAppState extends State<WoiApp> with WidgetsBindingObserver {
       final ctx = _navigatorKey.currentContext;
       if (ctx != null && ctx.mounted) await showMediaOverlay(ctx, item, _platform.audio);
     };
-    OrbShader.preload();
+    _controller.addListener(_syncTheme);
     _controller.init();
     _debugShowFromEnv();
   }
@@ -67,6 +67,32 @@ class _WoiAppState extends State<WoiApp> with WidgetsBindingObserver {
     }());
   }
 
+  AppTheme? _theme;
+
+  /// Applies the theme setting. Widgets read [WoiColors] while building, so
+  /// a switch marks every element dirty (like hot reload does) instead of
+  /// rebuilding the app from scratch: routes, scroll offsets and text
+  /// selections survive.
+  void _syncTheme() {
+    final t = _controller.ready ? _controller.settings.theme : AppTheme.light;
+    if (t == _theme && t != AppTheme.system) return;
+    _theme = t;
+    final brightness = WidgetsBinding.instance.platformDispatcher.platformBrightness;
+    if (!WoiColors.use(paletteFor(t, brightness)) || !mounted) return;
+    setState(() {});
+    void mark(Element e) {
+      e.markNeedsBuild();
+      e.visitChildren(mark);
+    }
+
+    (context as Element).visitChildren(mark);
+  }
+
+  @override
+  void didChangePlatformBrightness() {
+    if (_theme == AppTheme.system) _syncTheme();
+  }
+
   @override
   Future<AppExitResponse> didRequestAppExit() async {
     await _controller.shutdown();
@@ -76,6 +102,7 @@ class _WoiAppState extends State<WoiApp> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _controller.removeListener(_syncTheme);
     _controller.shutdown();
     super.dispose();
   }
@@ -86,7 +113,8 @@ class _WoiAppState extends State<WoiApp> with WidgetsBindingObserver {
       title: 'Woi',
       debugShowCheckedModeBanner: false,
       navigatorKey: _navigatorKey,
-      theme: buildWoiTheme(),
+      theme: buildWoiTheme(WoiColors.palette),
+      themeAnimationDuration: Duration.zero,
       home: ListenableBuilder(
         listenable: _controller,
         builder: (context, _) {
@@ -99,18 +127,8 @@ class _WoiAppState extends State<WoiApp> with WidgetsBindingObserver {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      VoiceOrb(mode: _controller.initError == null ? OrbMode.connecting : OrbMode.offline, size: 180),
-                      const SizedBox(height: 18),
-                      ShaderMask(
-                        shaderCallback: (r) =>
-                            const LinearGradient(colors: [WoiColors.cyan, WoiColors.violet, WoiColors.magenta])
-                                .createShader(r),
-                        child: Text(
-                          'WOI',
-                          style: display(30, weight: FontWeight.w700, color: Colors.white, spacing: 8),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
+                      Text('Woi', style: display(32, weight: FontWeight.w700, spacing: -0.5)),
+                      const SizedBox(height: 12),
                       if (_controller.initError == null)
                         Text('Starting up…', style: body(13, color: WoiColors.textDim))
                       else

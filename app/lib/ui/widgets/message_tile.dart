@@ -165,7 +165,7 @@ class _Bubble extends StatelessWidget {
             children: [
               if (m.audio != null) AudioClipButton(clip: m.audio!, audio: audio, color: accent),
               if (m.interrupted)
-                const Pill(label: 'interrupted', color: WoiColors.amber, icon: Icons.content_cut, dense: true),
+                Pill(label: 'interrupted', color: WoiColors.amber, icon: Icons.content_cut, dense: true),
               Text(_time(m.createdAt), style: body(11, color: WoiColors.textFaint)),
             ],
           ),
@@ -227,7 +227,7 @@ class _Avatar extends StatelessWidget {
       height: 28,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        gradient: const RadialGradient(
+        gradient: RadialGradient(
           center: Alignment(-0.3, -0.4),
           colors: [Color(0xFFFFE0F8), WoiColors.magenta, Color(0xFF3A0F6B)],
           stops: [0, 0.4, 1],
@@ -354,9 +354,9 @@ class ScreenshotThumb extends StatelessWidget {
 
 /// Pulsing crosshair target drawn at a click position.
 class ClickMarker extends StatefulWidget {
-  const ClickMarker({super.key, required this.position, this.color = WoiColors.amber, this.size = 26});
+  const ClickMarker({super.key, required this.position, this.color, this.size = 26});
   final Offset position;
-  final Color color;
+  final Color? color;
   final double size;
 
   @override
@@ -376,7 +376,7 @@ class _ClickMarkerState extends State<ClickMarker> with SingleTickerProviderStat
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: _c,
-    builder: (context, _) => CustomPaint(painter: _MarkerPainter(widget.position, widget.color, widget.size, _c.value)),
+    builder: (context, _) => CustomPaint(painter: _MarkerPainter(widget.position, widget.color ?? WoiColors.amber, widget.size, _c.value)),
   );
 }
 
@@ -884,7 +884,7 @@ class _Terminal extends StatelessWidget {
         children: [
           Container(
             padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
-            decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: WoiColors.stroke))),
+            decoration: BoxDecoration(border: Border(bottom: BorderSide(color: WoiColors.stroke))),
             child: Row(
               children: [
                 for (final c in const [Color(0xFFFF5F57), Color(0xFFFEBC2E), Color(0xFF28C840)])
@@ -906,7 +906,7 @@ class _Terminal extends StatelessWidget {
                   ),
                 if (result['timed_out'] == true) ...[
                   const SizedBox(width: 6),
-                  const Pill(label: 'timed out', color: WoiColors.amber, dense: true),
+                  Pill(label: 'timed out', color: WoiColors.amber, dense: true),
                 ],
                 if (ms != null) ...[
                   const SizedBox(width: 8),

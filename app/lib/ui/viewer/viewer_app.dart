@@ -249,7 +249,7 @@ class _TextViewerBodyState extends State<TextViewerBody> {
                   ],
                 ),
               ),
-              const Divider(height: 1, color: WoiColors.stroke),
+              Divider(height: 1, color: WoiColors.stroke),
               Expanded(
                 child: _rendered
                     ? MarkdownView(markdown: snap.data!, onLink: _openLink)
@@ -503,7 +503,7 @@ class _WavePainter extends CustomPainter {
     final w = size.width / n;
     final mid = size.height / 2;
     final played = Paint()
-      ..shader = const LinearGradient(colors: [WoiColors.cyan, WoiColors.violet, WoiColors.magenta])
+      ..shader = LinearGradient(colors: [WoiColors.cyan, WoiColors.violet, WoiColors.magenta])
           .createShader(Offset.zero & size);
     final rest = Paint()..color = WoiColors.textFaint.withValues(alpha: 0.45);
     for (var i = 0; i < n; i++) {

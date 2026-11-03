@@ -42,7 +42,7 @@ class _HistoryDrawerState extends State<HistoryDrawer> {
     return Drawer(
       width: w < 420 ? w * 0.88 : 360,
       backgroundColor: WoiColors.bg1.withValues(alpha: 0.96),
-      shape: const RoundedRectangleBorder(
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.horizontal(right: Radius.circular(WoiRadii.xl)),
         side: BorderSide(color: WoiColors.stroke),
       ),
@@ -76,7 +76,7 @@ class _HistoryDrawerState extends State<HistoryDrawer> {
                 ],
               ),
             ),
-            const Divider(color: WoiColors.stroke),
+            Divider(color: WoiColors.stroke),
             Expanded(
               child: FutureBuilder<List<ConversationSummary>>(
                 future: _items,
@@ -88,7 +88,7 @@ class _HistoryDrawerState extends State<HistoryDrawer> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(Icons.forum_outlined, size: 36, color: WoiColors.textFaint),
+                          Icon(Icons.forum_outlined, size: 36, color: WoiColors.textFaint),
                           const SizedBox(height: 10),
                           Text('No saved conversations yet', style: body(13, color: WoiColors.textDim)),
                         ],
