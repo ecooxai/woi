@@ -97,7 +97,8 @@ class NoteController extends ChangeNotifier {
     if (next == text) return;
     final now = DateTime.now();
     final last = _lastUserEdit;
-    final grouped = last != null &&
+    final grouped =
+        last != null &&
         now.difference(last) < typingGroup &&
         _undo.isNotEmpty &&
         _undo.last.source == NoteEditSource.user;

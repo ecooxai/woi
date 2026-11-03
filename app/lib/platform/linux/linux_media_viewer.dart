@@ -1,15 +1,13 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/foundation.dart';
 
 import '../media_viewer.dart';
-import 'exec_util.dart';
 
-/// Opens media in a secondary Flutter window (desktop_multi_window).
-/// Video goes to VLC (libmpv is not installed, so media_kit is unavailable);
-/// anything that fails falls back to the in-app overlay.
+/// Opens media in a secondary Flutter window (desktop_multi_window), video
+/// included (embedded fvp/libmdk player). Nothing is ever handed to an
+/// external app; if the window cannot be created the in-app overlay is used.
 class LinuxMediaViewer extends MediaViewer {
   LinuxMediaViewer({this.useSecondaryWindow = true});
 
@@ -20,13 +18,6 @@ class LinuxMediaViewer extends MediaViewer {
 
   @override
   Future<ViewerSurface> show(MediaItem item) async {
-    if (item.kind == MediaKind.video && item.path != null) {
-      final player = which('vlc') ?? which('mpv') ?? which('xdg-open');
-      if (player != null) {
-        await Process.start(player, [item.path!], mode: ProcessStartMode.detached, environment: x11Env());
-        return ViewerSurface.external;
-      }
-    }
     if (useSecondaryWindow) {
       try {
         // Shown at once (a hidden window is realized at 1x1 and the first

@@ -42,7 +42,8 @@ static gboolean clear_gl_before_view_realize(GSignalInvocationHint* hint,
 }
 
 // Secondary windows are created by desktop_multi_window with an empty title
-// and no background colour. "woi/window" lets the viewer engine set its title.
+// and no background colour. "woi/window" lets the viewer engine set its title
+// and toggle fullscreen (video).
 static void window_method_cb(FlMethodChannel* channel, FlMethodCall* call,
                              gpointer user_data) {
   GtkWidget* view = GTK_WIDGET(user_data);
@@ -59,6 +60,21 @@ static void window_method_cb(FlMethodChannel* channel, FlMethodCall* call,
       GtkWidget* bar = gtk_window_get_titlebar(GTK_WINDOW(toplevel));
       if (bar != nullptr && GTK_IS_HEADER_BAR(bar)) {
         gtk_header_bar_set_title(GTK_HEADER_BAR(bar), title);
+      }
+    }
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+  } else if (g_strcmp0(fl_method_call_get_name(call), "setFullscreen") == 0) {
+    // In-app video viewer: F / double-click toggles, Esc leaves.
+    FlValue* args = fl_method_call_get_args(call);
+    const gboolean on = args != nullptr &&
+                        fl_value_get_type(args) == FL_VALUE_TYPE_BOOL &&
+                        fl_value_get_bool(args);
+    GtkWidget* toplevel = gtk_widget_get_toplevel(view);
+    if (GTK_IS_WINDOW(toplevel)) {
+      if (on) {
+        gtk_window_fullscreen(GTK_WINDOW(toplevel));
+      } else {
+        gtk_window_unfullscreen(GTK_WINDOW(toplevel));
       }
     }
     response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
