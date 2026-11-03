@@ -45,7 +45,7 @@ class MediaItem {
 }
 
 /// How an item ended up being shown.
-enum ViewerSurface { window, overlay, external }
+enum ViewerSurface { window, overlay }
 
 /// Presents an item inside the main window (fallback surface).
 typedef OverlayPresenter = Future<void> Function(MediaItem item);

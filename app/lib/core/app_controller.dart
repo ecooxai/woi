@@ -7,6 +7,7 @@ import 'dart:io';
 import '../platform/platform_services.dart';
 import '../tools/builtin_tools.dart';
 import '../tools/confirmation.dart';
+import '../tools/note_tools.dart';
 import '../tools/tool_registry.dart';
 import 'auth/auth.dart';
 import 'context/compressor.dart';
@@ -16,11 +17,16 @@ import 'context/responses_compressor.dart';
 import 'delegate/delegate_backend.dart';
 import 'delegate/responses_delegate.dart';
 import 'models/message.dart';
+import 'notes/note.dart';
+import 'notes/note_controller.dart';
+import 'notes/note_store.dart';
+import 'notes/pinned_note.dart';
 import 'pipeline/turn_pipeline.dart';
 import 'responses/responses_client.dart';
 import 'settings/settings.dart';
 import 'storage/history_store.dart';
 import 'voice/backend_factory.dart';
+import 'voice/pinned_context.dart';
 import 'voice/voice_backend.dart';
 
 const kAssistantInstructions = '''
@@ -37,11 +43,18 @@ Screenshots of the user's screen are attached while they speak; use them to reso
 click_screen takes x/y in the pixel coordinates of the latest screenshot image (not the real screen);
 the app scales them to real screen pixels. Take a screenshot first if you have none or the screen changed.
 Tools: click_screen, type_text, key_combo, take_screenshot, run_bash, read_file, list_dir, edit_file,
-write_file, show_file (show a file, image, audio or video to the user), delegate_task.
+write_file, show_file (show a file, image, audio or video to the user inside Woi), read_note, update_note,
+delegate_task.
 File writes and edits are shown to the user as a diff for approval by the app; shell commands may need approval.
 Use delegate_task only for genuinely complex multi-step work (writing programs, multi-file changes, research
 or long analysis); simple actions you do yourself. When a delegated result comes back, speak its gist briefly.
 If the user only says stop, cancel or never mind, stop and say nothing at all; do not acknowledge it.
+Every conversation has a Markdown note that the user sees and edits too; its current text is pinned below.
+Proactively record what matters with update_note, without asking and without announcing it at length:
+decisions, todos (as "- [ ] task" checklist items), facts, names, dates, numbers and file paths. Check off
+todos with mode check_item when they are done. Keep the note tidy: short bullets under "## " sections
+(replace_section to rewrite a section). Answer questions from the note when it has the answer. Never read
+the whole note aloud unless asked.
 ''';
 
 /// Extra rules for gpt-live, which acts only through delegation.
@@ -132,6 +145,10 @@ class AppController extends ChangeNotifier {
 
   late final SettingsStore _settingsStore = SettingsStore(platform.paths.settingsFile);
   late final HistoryStore history = HistoryStore(platform.paths);
+
+  /// The note of the active conversation (pinned in the model context).
+  late final NoteController notes = NoteController(store: NoteStore(platform.paths.dataDir));
+  int _pinnedRevision = -1;
   late final ContextManager contextManager;
   late final ToolRegistry tools;
   late final ToolEnvironment toolEnv;
@@ -152,6 +169,8 @@ class AppController extends ChangeNotifier {
       await history.init();
       codexAuth = await CodexAuthInfo.load();
       final conv = await history.loadLatest() ?? Conversation();
+      await notes.open(conv.id);
+      notes.onSaved = _onNoteSaved;
 
       contextManager = ContextManager(
         compressor: compressor,
@@ -159,6 +178,9 @@ class AppController extends ChangeNotifier {
         compressionModel: _settings.compressionModel,
         imageTokenCost: _settings.imageTokenCost,
       );
+      contextManager.pinnedTokens = pinnedNoteTokens(notes.text);
+      _pinnedRevision = notes.revision;
+      notes.addListener(_onNoteChanged);
 
       late final TurnPipeline p;
       toolEnv = ToolEnvironment(
@@ -168,7 +190,9 @@ class AppController extends ChangeNotifier {
         settings: () => _settings,
         onScreenshot: (shot, note) => p.attachScreenshot(shot, note: note),
       );
-      tools = ToolRegistry()..registerAll(builtinTools(toolEnv));
+      tools = ToolRegistry()
+        ..registerAll(builtinTools(toolEnv))
+        ..registerAll(noteTools(notes));
 
       p = TurnPipeline(
         backendFactory: _createBackend,
@@ -244,7 +268,28 @@ class AppController extends ChangeNotifier {
       priorContext: c.summary,
       recentContext: contextManager.recentTurns(),
       environment: environmentNote(),
+      pinnedNote: notes.text,
     );
+  }
+
+  /// Keeps the pinned note current in the context meter and the live session.
+  void _onNoteChanged() {
+    if (notes.revision == _pinnedRevision) return;
+    _pinnedRevision = notes.revision;
+    contextManager.pinnedTokens = pinnedNoteTokens(notes.text);
+    final Object? b = pipeline.backend;
+    if (b is PinnedNoteSync) b.setPinnedNote(notes.text);
+  }
+
+  /// A conversation that only has a note is saved too, so it is listed in
+  /// the history (titled after the note).
+  void _onNoteSaved(Note n) {
+    if (!_ready) return;
+    final conv = pipeline.conversation;
+    if (n.conversationId != conv.id) return;
+    if (conv.messages.isEmpty) conv.title = noteTitle(n.markdown);
+    conv.updatedAt = DateTime.now();
+    history.saveSoon(conv);
   }
 
   Future<void> updateSettings(AppSettings next) async {
@@ -272,8 +317,10 @@ class AppController extends ChangeNotifier {
   Future<List<ConversationSummary>> listConversations() => history.list();
 
   Future<void> newConversation() async {
-    if (pipeline.conversation.messages.isEmpty) return;
-    await pipeline.switchConversation(Conversation());
+    if (pipeline.conversation.messages.isEmpty && notes.isEmpty) return;
+    final c = Conversation();
+    await notes.open(c.id);
+    await pipeline.switchConversation(c);
     notifyListeners();
   }
 
@@ -281,13 +328,17 @@ class AppController extends ChangeNotifier {
     if (id == pipeline.conversation.id) return;
     final c = await history.load(id);
     if (c == null) return;
+    await notes.open(c.id);
     await pipeline.switchConversation(c);
     notifyListeners();
   }
 
   Future<void> deleteConversation(String id) async {
+    await notes.deleteFor(id);
     if (id == pipeline.conversation.id) {
-      await pipeline.switchConversation(Conversation());
+      final c = Conversation();
+      await notes.open(c.id);
+      await pipeline.switchConversation(c);
     }
     await history.delete(id);
     notifyListeners();
@@ -297,6 +348,7 @@ class AppController extends ChangeNotifier {
   void compactNow() => contextManager.maybeCompress(force: true);
 
   Future<void> shutdown() async {
+    await notes.flush();
     if (_ready) await pipeline.shutdown();
   }
 }

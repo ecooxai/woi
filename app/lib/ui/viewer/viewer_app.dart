@@ -5,14 +5,16 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
 
 import '../../platform/audio_io.dart';
-import '../../platform/linux/exec_util.dart' show which, x11Env;
 import '../../platform/media_viewer.dart';
 import '../theme.dart';
 import '../widgets/code_highlight.dart';
 import '../widgets/glass.dart';
+import '../notes/markdown_view.dart';
 import '../widgets/image_viewer.dart';
+import 'video_viewer.dart';
 
 /// App shown in a secondary desktop window (desktop_multi_window).
 class ViewerApp extends StatelessWidget {
@@ -23,23 +25,35 @@ class ViewerApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) => MaterialApp(
     debugShowCheckedModeBanner: false,
-    title: 'Woi · ${item.title}',
+    title: viewerWindowTitle(item),
     theme: buildWoiTheme(),
     home: Scaffold(
       body: WoiBackdrop(
         child: SafeArea(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(padding: const EdgeInsets.fromLTRB(20, 14, 20, 6), child: ViewerTitle(item: item)),
-              Expanded(child: MediaBody(item: item, audio: audio)),
-            ],
+          child: ValueListenableBuilder<bool>(
+            valueListenable: viewerFullscreen,
+            builder: (context, full, body) => Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (!full)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 14, 20, 6),
+                    child: ViewerTitle(item: item),
+                  ),
+                Expanded(child: body!),
+              ],
+            ),
+            child: MediaBody(item: item, audio: audio),
           ),
         ),
       ),
     ),
   );
 }
+
+/// Title of a viewer window (runner title and MaterialApp title agree).
+/// Plain ASCII: a middle dot here showed up as "Woi \uFFFD hello.wav".
+String viewerWindowTitle(MediaItem item) => 'Woi - ${item.title}';
 
 class ViewerTitle extends StatelessWidget {
   const ViewerTitle({super.key, required this.item, this.trailing});
@@ -68,7 +82,11 @@ class ViewerTitle extends StatelessWidget {
             children: [
               Text(item.title, style: display(16), overflow: TextOverflow.ellipsis),
               if (item.path != null)
-                Text(item.path!, style: mono(11, color: WoiColors.textFaint), overflow: TextOverflow.ellipsis),
+                Text(
+                  item.path!,
+                  style: mono(11, color: WoiColors.textFaint),
+                  overflow: TextOverflow.ellipsis,
+                ),
             ],
           ),
         ),
@@ -89,15 +107,14 @@ class MediaBody extends StatelessWidget {
     MediaKind.image => ZoomableImage(file: File(item.path ?? '')),
     MediaKind.text => TextViewerBody(item: item),
     MediaKind.audio => AudioViewerBody(path: item.path ?? '', audio: audio),
-    MediaKind.video => _VideoBody(path: item.path ?? ''),
+    MediaKind.video => VideoViewerBody(path: item.path ?? ''),
   };
 }
 
 class _Message extends StatelessWidget {
-  const _Message({required this.icon, required this.text, this.action});
+  const _Message({required this.icon, required this.text});
   final IconData icon;
   final String text;
-  final Widget? action;
   @override
   Widget build(BuildContext context) => Center(
     child: Padding(
@@ -107,49 +124,13 @@ class _Message extends StatelessWidget {
         children: [
           Icon(icon, size: 40, color: WoiColors.textDim),
           const SizedBox(height: 12),
-          Text(text, style: body(14, color: WoiColors.textDim), textAlign: TextAlign.center),
-          if (action != null) ...[const SizedBox(height: 18), action!],
+          Text(
+            text,
+            style: body(14, color: WoiColors.textDim),
+            textAlign: TextAlign.center,
+          ),
         ],
       ),
-    ),
-  );
-}
-
-// ------------------------------------------------------------------- video
-
-class _VideoBody extends StatefulWidget {
-  const _VideoBody({required this.path});
-  final String path;
-  @override
-  State<_VideoBody> createState() => _VideoBodyState();
-}
-
-class _VideoBodyState extends State<_VideoBody> {
-  String? _status;
-
-  Future<void> _open() async {
-    final player = which('vlc') ?? which('mpv') ?? which('xdg-open');
-    if (player == null) {
-      setState(() => _status = 'No video player found. Install VLC.');
-      return;
-    }
-    try {
-      await Process.start(player, [widget.path], mode: ProcessStartMode.detached, environment: x11Env());
-      setState(() => _status = 'Opened in ${player.split('/').last}');
-    } catch (e) {
-      setState(() => _status = 'Could not start $player: $e');
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) => _Message(
-    icon: Icons.movie_outlined,
-    text: _status ?? 'Video plays in VLC (in-app video needs libmpv, which is not installed).',
-    action: FilledButton.icon(
-      style: FilledButton.styleFrom(minimumSize: const Size(0, kTouchTarget)),
-      onPressed: _open,
-      icon: const Icon(Icons.play_circle_outline),
-      label: const Text('Open in VLC'),
     ),
   );
 }
@@ -167,6 +148,23 @@ class _TextViewerBodyState extends State<TextViewerBody> {
   static const _maxBytes = 2 * 1024 * 1024;
   late final Future<String> _text = _load();
   bool _wrap = false;
+
+  /// Markdown files open rendered; the toggle shows the source.
+  late bool _rendered = isMarkdown;
+
+  bool get isMarkdown {
+    final l = (widget.item.language ?? '').toLowerCase();
+    if (l == 'md' || l == 'markdown') return true;
+    final p = (widget.item.path ?? widget.item.title).toLowerCase();
+    return p.endsWith('.md') || p.endsWith('.markdown');
+  }
+
+  void _openLink(String target) {
+    if (target.startsWith('http://') || target.startsWith('https://')) {
+      Clipboard.setData(ClipboardData(text: target));
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text('Link copied: $target')));
+    }
+  }
 
   Future<String> _load() async {
     if (widget.item.text != null) return widget.item.text!;
@@ -201,7 +199,10 @@ class _TextViewerBodyState extends State<TextViewerBody> {
         TextSpan(
           children: [
             for (var i = 0; i < lines.length; i++) ...[
-              TextSpan(text: '${'${i + 1}'.padLeft(gutter)}   ', style: mono(12.5, color: WoiColors.textFaint, height: 1.55)),
+              TextSpan(
+                text: '${'${i + 1}'.padLeft(gutter)}   ',
+                style: mono(12.5, color: WoiColors.textFaint, height: 1.55),
+              ),
               ...highlightLine(lines[i].replaceAll('\t', '    '), lang, size: 12.5),
               const TextSpan(text: '\n'),
             ],
@@ -222,21 +223,42 @@ class _TextViewerBodyState extends State<TextViewerBody> {
                   children: [
                     Text('${lines.length} lines', style: body(12, color: WoiColors.textFaint)),
                     const Spacer(),
-                    Text('Wrap', style: body(12, color: WoiColors.textDim)),
-                    Switch(value: _wrap, onChanged: (v) => setState(() => _wrap = v)),
+                    if (isMarkdown)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 12),
+                        child: SegmentedButton<bool>(
+                          key: const ValueKey('md-mode'),
+                          showSelectedIcon: false,
+                          style: SegmentedButton.styleFrom(visualDensity: VisualDensity.compact),
+                          segments: const [
+                            ButtonSegment(
+                              value: true,
+                              icon: Icon(Icons.auto_stories_outlined, size: 16),
+                              label: Text('Preview'),
+                            ),
+                            ButtonSegment(value: false, icon: Icon(Icons.code, size: 16), label: Text('Source')),
+                          ],
+                          selected: {_rendered},
+                          onSelectionChanged: (v) => setState(() => _rendered = v.first),
+                        ),
+                      ),
+                    if (!_rendered) ...[
+                      Text('Wrap', style: body(12, color: WoiColors.textDim)),
+                      Switch(value: _wrap, onChanged: (v) => setState(() => _wrap = v)),
+                    ],
                   ],
                 ),
               ),
               const Divider(height: 1, color: WoiColors.stroke),
               Expanded(
-                child: Scrollbar(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(16),
-                    child: _wrap
-                        ? text
-                        : SingleChildScrollView(scrollDirection: Axis.horizontal, child: text),
-                  ),
-                ),
+                child: _rendered
+                    ? MarkdownView(markdown: snap.data!, onLink: _openLink)
+                    : Scrollbar(
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.all(16),
+                          child: _wrap ? text : SingleChildScrollView(scrollDirection: Axis.horizontal, child: text),
+                        ),
+                      ),
               ),
             ],
           ),
@@ -251,7 +273,9 @@ class _TextViewerBodyState extends State<TextViewerBody> {
 /// Peak envelope of a PCM WAV file (8/16/24/32-bit int, any channels), or
 /// null if it is not a WAV we understand.
 ({List<double> peaks, Duration duration})? wavPeaks(Uint8List b, {int buckets = 160}) {
-  if (b.length < 44 || String.fromCharCodes(b.sublist(0, 4)) != 'RIFF' || String.fromCharCodes(b.sublist(8, 12)) != 'WAVE') {
+  if (b.length < 44 ||
+      String.fromCharCodes(b.sublist(0, 4)) != 'RIFF' ||
+      String.fromCharCodes(b.sublist(8, 12)) != 'WAVE') {
     return null;
   }
   final bd = ByteData.sublistView(b);
@@ -295,7 +319,10 @@ class _TextViewerBodyState extends State<TextViewerBody> {
       final v = switch (bps) {
         1 => (bd.getUint8(o) - 128).toDouble(),
         2 => bd.getInt16(o, Endian.little).toDouble(),
-        3 => (((bd.getUint8(o + 2) << 24) | (bd.getUint8(o + 1) << 16) | (bd.getUint8(o) << 8)) >> 8).toSigned(24).toDouble(),
+        3 =>
+          (((bd.getUint8(o + 2) << 24) | (bd.getUint8(o + 1) << 16) | (bd.getUint8(o) << 8)) >> 8)
+              .toSigned(24)
+              .toDouble(),
         _ => bd.getInt32(o, Endian.little).toDouble(),
       };
       final a = (v / full).abs();
@@ -440,9 +467,14 @@ class _AudioViewerBodyState extends State<AudioViewerBody> with SingleTickerProv
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            _error ?? (dur == null ? 'Waveform unavailable for this format' : '${_fmt(_elapsed)} / ${_fmt(dur)}'),
-                            style: mono(12.5, color: _error != null ? WoiColors.red : WoiColors.textDim)
-                                .copyWith(fontFeatures: kTabular),
+                            _error ??
+                                (dur == null
+                                    ? 'Waveform unavailable for this format'
+                                    : '${_fmt(_elapsed)} / ${_fmt(dur)}'),
+                            style: mono(
+                              12.5,
+                              color: _error != null ? WoiColors.red : WoiColors.textDim,
+                            ).copyWith(fontFeatures: kTabular),
                           ),
                         ],
                       ),
@@ -502,34 +534,41 @@ class _WavePainter extends CustomPainter {
 Future<void> showMediaOverlay(BuildContext context, MediaItem item, AudioIO audio) {
   return showDialog<void>(
     context: context,
-    builder: (ctx) {
-      final size = MediaQuery.sizeOf(ctx);
-      final phone = size.width < 600;
-      return Dialog(
-        insetPadding: EdgeInsets.all(phone ? 8 : 24),
-        backgroundColor: WoiColors.bg1.withValues(alpha: 0.96),
-        child: SizedBox(
-          width: size.width * (phone ? 1 : 0.85),
-          height: size.height * (phone ? 0.92 : 0.85),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 14, 8, 6),
-                child: ViewerTitle(
-                  item: item,
-                  trailing: IconButton(
-                    tooltip: 'Close',
-                    onPressed: () => Navigator.pop(ctx),
-                    icon: const Icon(Icons.close),
+    builder: (ctx) => ValueListenableBuilder<bool>(
+      valueListenable: viewerFullscreen,
+      builder: (ctx, full, _) {
+        final size = MediaQuery.sizeOf(ctx);
+        final phone = size.width < 600;
+        return Dialog(
+          insetPadding: full ? EdgeInsets.zero : EdgeInsets.all(phone ? 8 : 24),
+          shape: full ? const RoundedRectangleBorder() : null,
+          backgroundColor: full ? Colors.black : WoiColors.bg1.withValues(alpha: 0.96),
+          child: SizedBox(
+            width: size.width * (phone || full ? 1 : 0.85),
+            height: size.height * (full ? 1 : (phone ? 0.92 : 0.85)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (!full)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 14, 8, 6),
+                    child: ViewerTitle(
+                      item: item,
+                      trailing: IconButton(
+                        tooltip: 'Close',
+                        onPressed: () => Navigator.pop(ctx),
+                        icon: const Icon(Icons.close),
+                      ),
+                    ),
                   ),
+                Expanded(
+                  child: MediaBody(item: item, audio: audio),
                 ),
-              ),
-              Expanded(child: MediaBody(item: item, audio: audio)),
-            ],
+              ],
+            ),
           ),
-        ),
-      );
-    },
-  );
+        );
+      },
+    ),
+  ).whenComplete(() => viewerFullscreen.value = false);
 }

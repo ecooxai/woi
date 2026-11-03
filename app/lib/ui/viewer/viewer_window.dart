@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import '../../platform/linux/linux_audio_io.dart';
 import '../../platform/linux/linux_media_viewer.dart';
 import '../../platform/media_viewer.dart';
+import 'video_viewer.dart';
 import 'viewer_app.dart';
 
 /// Runs the viewer engine of a secondary window. The runner hides the window
@@ -14,7 +15,7 @@ import 'viewer_app.dart';
 void runViewer(MediaItem first, {MethodChannel window = const MethodChannel('woi/window')}) {
   final current = ValueNotifier<MediaItem?>(first);
   void setTitle(MediaItem item) =>
-      window.invokeMethod<void>('setTitle', 'Woi - ${item.title}').catchError((Object _) {});
+      window.invokeMethod<void>('setTitle', viewerWindowTitle(item)).catchError((Object _) {});
   setTitle(first);
 
   window.setMethodCallHandler((call) async {
@@ -35,6 +36,8 @@ void runViewer(MediaItem first, {MethodChannel window = const MethodChannel('woi
 
   HardwareKeyboard.instance.addHandler((e) {
     if (e is! KeyDownEvent || e.logicalKey != LogicalKeyboardKey.escape) return false;
+    // In fullscreen video, Esc only leaves fullscreen (handled by the player).
+    if (viewerFullscreen.value) return false;
     window.invokeMethod<void>('close').catchError((Object _) {});
     return true;
   });

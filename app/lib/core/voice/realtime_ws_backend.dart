@@ -7,7 +7,9 @@ import '../audio/playback_tracker.dart';
 import '../auth/auth.dart';
 import '../context/context_manager.dart';
 import '../net/realtime_socket.dart';
+import '../notes/pinned_note.dart';
 import 'context_sync.dart';
+import 'pinned_context.dart';
 import 'voice_backend.dart';
 
 class RealtimeException implements Exception {
@@ -42,7 +44,7 @@ const _benignErrors = {
 /// * automatic reconnect that restores the summary and recent turns;
 /// * [applySummary]: compaction applied between responses with
 ///   `conversation.item.delete` (reconnect as a fallback).
-class RealtimeWsBackend extends VoiceBackend implements LiveContextSync {
+class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedNoteSync {
   RealtimeWsBackend({
     RealtimeConnector? connector,
     this.credentialsProvider,
@@ -124,7 +126,12 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync {
   final List<String> _applyErrors = [];
   final List<(bool Function(Map<String, Object?>), Completer<Map<String, Object?>>)> _waiters = [];
 
+  // Pinned conversation note (part of the instructions; null = no notes).
+  String? _pinnedNote;
+  bool _pinnedDirty = false;
+
   /// Diagnostics.
+  int pinnedRefreshes = 0;
   int reconnects = 0;
   int truncationsSent = 0;
   int cancelsSent = 0;
@@ -146,12 +153,40 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync {
     if (!_events.isClosed) _events.add(e);
   }
 
+  // ------------------------------------------------------------- pinned note
+
+  String _instructions(SessionConfig c) =>
+      _pinnedNote == null ? c.instructions : withPinnedNote(c.instructions, _pinnedNote);
+
+  /// The note changed: the instructions are refreshed with `session.update`
+  /// right away when no response is running, else right after it (before
+  /// the next `response.create`), so every response sees the current note.
+  @override
+  void setPinnedNote(String? markdown) {
+    if (markdown == _pinnedNote) return;
+    _pinnedNote = markdown;
+    _pinnedDirty = true;
+    if (_activeResponseId == null) _refreshPinnedNote();
+  }
+
+  void _refreshPinnedNote() {
+    final cfg = _config;
+    if (!_pinnedDirty || !_ready || cfg == null) return;
+    _pinnedDirty = false;
+    pinnedRefreshes++;
+    _send({
+      'type': 'session.update',
+      'session': {'type': 'realtime', 'instructions': _instructions(cfg)},
+    });
+  }
+
   // ----------------------------------------------------------------- session
 
   @override
   Future<void> connect(SessionConfig config) async {
     _config = config;
     _closed = false;
+    _pinnedNote = config.pinnedNote;
     _summary = config.priorContext?.trim().isEmpty ?? true ? null : config.priorContext!.trim();
     await _open(initialContext: _summary == null ? null : _summaryText(_summary!));
   }
@@ -160,7 +195,7 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync {
     'type': 'session.update',
     'session': {
       'type': 'realtime',
-      'instructions': c.instructions,
+      'instructions': _instructions(c),
       'output_modalities': ['audio'],
       'audio': {
         'input': {
@@ -215,6 +250,7 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync {
     try {
       await created.future.timeout(connectTimeout);
       final updated = _handshake = Completer<void>();
+      _pinnedDirty = false;
       _send(sessionUpdate(cfg));
       await updated.future.timeout(connectTimeout);
     } catch (e) {
@@ -517,6 +553,7 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync {
     if (!_wantResponse || !_ready) return;
     if (_activeResponseId != null || _responseRequested || _pendingCalls.isNotEmpty) return;
     if (_userSpeaking || _applyingSummary) return;
+    _refreshPinnedNote();
     _wantResponse = false;
     _responseRequested = true;
     _send({'type': 'response.create'});
@@ -720,6 +757,7 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync {
     _truncateAfterDone.clear();
     pending.forEach(_sendTruncate);
     _emit(ResponseDone(cancelled: cancelled || suppressed));
+    _refreshPinnedNote();
     _maybeCreateResponse();
     _maybeApplySummary();
   }

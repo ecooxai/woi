@@ -12,6 +12,7 @@ String formatTokens(int t) => formatTokenCount(t);
 class ContextBreakdown {
   const ContextBreakdown({
     this.overhead = 0,
+    this.note = 0,
     required this.summary,
     required this.text,
     required this.images,
@@ -35,6 +36,9 @@ class ContextBreakdown {
   final int imagesDescribed;
 
   final int overhead;
+
+  /// The pinned conversation note.
+  final int note;
   final int summary;
   final int text;
   final int images;
@@ -54,13 +58,14 @@ class ContextBreakdown {
   /// gpt-live: text-only voice context, screenshots only for delegations.
   final bool textOnly;
 
-  int get heuristic => overhead + summary + text + images + audio + tools;
+  int get heuristic => overhead + note + summary + text + images + audio + tools;
   double get fill => threshold <= 0 ? 0 : total / threshold;
 
   static ContextBreakdown of(ContextManager m, Conversation? conv) {
     final p = m.parts();
     return ContextBreakdown(
       overhead: p.overhead,
+      note: p.pinned,
       summary: p.summary,
       text: p.text,
       images: p.images,
@@ -428,6 +433,7 @@ class BreakdownTable extends StatelessWidget {
       children: [
         if (!large) ...[Text('Context window', style: body(13, weight: FontWeight.w700)), const SizedBox(height: 6)],
         if (b.overhead > 0) row('Instructions & tools', '${b.overhead}', WoiColors.textFaint),
+        row('Pinned note', '${b.note}', WoiColors.mint, sub: 'every turn'),
         row('Memory summary', '${b.summary}', WoiColors.violet),
         row('Speech & text', '${b.text}', WoiColors.cyan),
         row('Screenshots', '${b.images}', WoiColors.blue, sub: b.textOnly ? 'latest, delegation' : '×${b.imageCount}'),

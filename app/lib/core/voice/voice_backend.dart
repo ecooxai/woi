@@ -37,6 +37,7 @@ class SessionConfig {
     this.priorContext,
     this.recentContext,
     this.environment,
+    this.pinnedNote,
   });
 
   final String model;
@@ -57,6 +58,10 @@ class SessionConfig {
   /// Real user name, \$HOME and workspace dir, for prompts of models that
   /// run tools (so they never invent paths like /home/oai).
   final String? environment;
+
+  /// The conversation note, pinned in the context every turn (never
+  /// compacted). See [PinnedNoteSync] for how backends keep it current.
+  final String? pinnedNote;
 }
 
 /// Events emitted by a [VoiceBackend].

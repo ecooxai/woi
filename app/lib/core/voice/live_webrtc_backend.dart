@@ -11,11 +11,13 @@ import '../audio/wav.dart';
 import '../auth/auth.dart';
 import '../context/context_manager.dart';
 import '../net/realtime_socket.dart';
+import '../notes/pinned_note.dart';
 import '../pipeline/vad.dart';
 import '../settings/settings.dart' show kLiveVoices, kLiveDefaultVoice;
 import 'context_sync.dart';
 import 'delegation_executor.dart';
 import 'live_rtc_transport.dart';
+import 'pinned_context.dart';
 import 'voice_backend.dart';
 
 const kLiveModels = ['gpt-live-1.1', 'gpt-live-1', 'gpt-live-1-codex'];
@@ -89,7 +91,7 @@ class LiveConnectTimings {
 ///   [ToolCall], answered with [sendToolResult]) so confirmations and the
 ///   transcript UI work as usual; the result goes back with
 ///   `delegation.context.append` and the voice model speaks it.
-class LiveWebRtcBackend extends VoiceBackend implements ManagedAudioBackend, LiveContextSync {
+class LiveWebRtcBackend extends VoiceBackend implements ManagedAudioBackend, LiveContextSync, PinnedNoteSync {
   LiveWebRtcBackend({
     required this.transportFactory,
     RealtimeConnector? sideband,
@@ -146,6 +148,7 @@ class LiveWebRtcBackend extends VoiceBackend implements ManagedAudioBackend, Liv
   RealtimeSocket? get _ws => _session?.ws;
   SessionConfig? _config;
   String? _summary;
+  String? _pinnedNote;
   DelegationExecutor? _executor;
   DelegationModel? _delegationModel;
   bool _closed = false;
@@ -246,10 +249,11 @@ class LiveWebRtcBackend extends VoiceBackend implements ManagedAudioBackend, Liv
     _config = config;
     final prior = config.priorContext?.trim();
     _summary = prior == null || prior.isEmpty ? null : prior;
+    _pinnedNote = config.pinnedNote;
     final total = Stopwatch()..start();
     final s = await _openSession(
       config,
-      composeInstructions(config.instructions, _summary, config.recentContext),
+      composeInstructions(config.instructions, _summary, config.recentContext, note: _pinnedNote),
       activate: true,
       timed: true,
     );
@@ -268,16 +272,23 @@ class LiveWebRtcBackend extends VoiceBackend implements ManagedAudioBackend, Liv
       latestScreenshot: () => _latestImage,
       contextNote: _delegationNote,
       environment: () => config.environment,
+      pinnedNote: () => _pinnedNote,
       fastModel: delegationFastModel,
       reasoningEffort: delegationReasoningEffort,
     );
   }
 
+  /// gpt-live instructions are immutable: the note reaches the voice model
+  /// at startup and on every compaction swap, and every delegation gets the
+  /// current note in its input.
+  @override
+  void setPinnedNote(String? markdown) => _pinnedNote = markdown;
+
   /// Startup instructions: the session's instructions are immutable and
   /// `session.initial_items` does not exist (§3.2), so earlier context goes
   /// here as text.
-  static String composeInstructions(String base, String? summary, String? recent) {
-    final b = StringBuffer(base);
+  static String composeInstructions(String base, String? summary, String? recent, {String? note}) {
+    final b = StringBuffer(note == null ? base : withPinnedNote(base, note));
     if (summary != null && summary.trim().isNotEmpty) {
       b.write('\n\nEarlier in this conversation (summary):\n${summary.trim()}');
     }
@@ -464,7 +475,7 @@ class LiveWebRtcBackend extends VoiceBackend implements ManagedAudioBackend, Liv
         try {
           next = await _openSession(
             cfg,
-            composeInstructions(cfg.instructions, want.summary, want.recent),
+            composeInstructions(cfg.instructions, want.summary, want.recent, note: _pinnedNote),
             activate: false,
           );
         } catch (e) {
