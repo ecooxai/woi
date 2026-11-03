@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:xterm/xterm.dart';
@@ -98,10 +99,23 @@ final Map<ShortcutActivator, Intent> _shortcuts = {
 };
 
 /// The terminal view: a tab strip plus the active tab's terminal.
+bool get _desktop => switch (defaultTargetPlatform) {
+  TargetPlatform.linux || TargetPlatform.windows || TargetPlatform.macOS => true,
+  _ => false,
+};
+
 class TerminalPanel extends StatefulWidget {
-  const TerminalPanel({super.key, required this.hub, this.fontSize = 13.5});
+  const TerminalPanel({super.key, required this.hub, this.fontSize = 13.5, this.hardwareKeyboardOnly});
   final TerminalHub hub;
   final double fontSize;
+
+  /// Read typed characters straight from key events instead of the platform
+  /// text-input (IME) connection. Defaults to true on desktop: xterm's IME
+  /// path diffs against an editing state it resets asynchronously, so fast
+  /// typing on Linux doubled or replayed characters. The cost is no IME
+  /// composition (CJK) in the desktop terminal; Android keeps the IME path
+  /// for its soft keyboard.
+  final bool? hardwareKeyboardOnly;
 
   @override
   State<TerminalPanel> createState() => _TerminalPanelState();
@@ -280,6 +294,7 @@ class _TerminalPanelState extends State<TerminalPanel> {
                           controller: active.controller,
                           focusNode: _nodeFor(active),
                           autofocus: true,
+                          hardwareKeyboardOnly: widget.hardwareKeyboardOnly ?? _desktop,
                           theme: termTheme,
                           textStyle: TerminalStyle(
                             fontSize: widget.fontSize,

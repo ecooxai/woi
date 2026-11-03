@@ -58,11 +58,13 @@ void main() {
     );
   });
 
-  Future<void> pump(WidgetTester t, {Brightness brightness = Brightness.light}) async {
+  Future<void> pump(WidgetTester t, {Brightness brightness = Brightness.light, bool? hardwareKeyboardOnly}) async {
     await t.pumpWidget(
       MaterialApp(
         theme: ThemeData(brightness: brightness),
-        home: Scaffold(body: TerminalPanel(hub: hub)),
+        home: Scaffold(
+          body: TerminalPanel(hub: hub, hardwareKeyboardOnly: hardwareKeyboardOnly),
+        ),
       ),
     );
     await t.pump();
@@ -136,6 +138,30 @@ void main() {
     await t.pump();
     expect(hub.sessions, hasLength(2));
     await t.pump(const Duration(seconds: 1)); // TerminalView's double-tap timer
+  });
+
+  testWidgets('desktop key input: fast typing reaches the shell exactly once', (t) async {
+    await pump(t, hardwareKeyboardOnly: true);
+    await t.tap(find.byType(TerminalView));
+    await t.pump();
+    // No frames between keys, like a fast typist or xdotool.
+    for (final k in [
+      LogicalKeyboardKey.keyE,
+      LogicalKeyboardKey.keyC,
+      LogicalKeyboardKey.keyH,
+      LogicalKeyboardKey.keyO,
+      LogicalKeyboardKey.space,
+      LogicalKeyboardKey.keyH,
+      LogicalKeyboardKey.keyI,
+      LogicalKeyboardKey.enter,
+    ]) {
+      await t.sendKeyEvent(k, platform: 'linux');
+    }
+    await t.sendKeyDownEvent(LogicalKeyboardKey.controlLeft, platform: 'linux');
+    await t.sendKeyEvent(LogicalKeyboardKey.keyC, platform: 'linux');
+    await t.sendKeyUpEvent(LogicalKeyboardKey.controlLeft, platform: 'linux');
+    expect(procs.first.written.toString(), 'echo hi\r\x03');
+    await t.pump(const Duration(seconds: 1));
   });
 
   testWidgets('closing every tab shows a New terminal button', (t) async {
