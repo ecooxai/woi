@@ -143,17 +143,23 @@ class _TerminalPanelState extends State<TerminalPanel> {
     });
   }
 
-  void _newTab() {
-    final s = hub.newShell();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _focus[s.id]?.requestFocus());
+  /// Focuses a tab's terminal after the next frame, unless a dialog or menu
+  /// opened in the meantime (it would steal the dialog's keyboard focus).
+  void _focusLater(int id) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !(ModalRoute.of(context)?.isCurrent ?? true)) return;
+      _focus[id]?.requestFocus();
+    });
   }
+
+  void _newTab() => _focusLater(hub.newShell().id);
 
   void _close(TerminalSession s) => hub.close(s);
 
   void _select(int i) {
     hub.select(i);
     final s = hub.active;
-    if (s != null) WidgetsBinding.instance.addPostFrameCallback((_) => _focus[s.id]?.requestFocus());
+    if (s != null) _focusLater(s.id);
   }
 
   Future<void> _rename(TerminalSession s) async {

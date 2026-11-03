@@ -102,6 +102,23 @@ void main() {
     expect(find.text('logs'), findsNothing);
   });
 
+  testWidgets('rename dialog keeps keyboard focus when both clicks land before a frame', (t) async {
+    await pump(t);
+    final tab = find.byKey(ValueKey('terminal-tab-${hub.sessions.first.id}'));
+    // Under load both clicks are handled before the select's post-frame focus.
+    await t.tap(tab);
+    await t.tap(tab);
+    await t.pumpAndSettle();
+    final field = t.widget<EditableText>(
+      find.descendant(of: find.byKey(const ValueKey('terminal-rename-field')), matching: find.byType(EditableText)),
+    );
+    expect(field.focusNode.hasFocus, isTrue);
+    expect(terminalHasFocus(), isFalse);
+    await t.tap(find.text('Cancel'));
+    await t.pumpAndSettle();
+    expect(terminalHasFocus(), isTrue);
+  });
+
   testWidgets('typing goes to the shell; Ctrl+Shift+T opens a tab', (t) async {
     await pump(t);
     await t.tap(find.byType(TerminalView));
