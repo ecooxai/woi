@@ -97,7 +97,7 @@ for s in $SCENARIOS; do
       ;;
     scroll)
       launch scroll muted || continue
-      xdotool windowactivate --sync "$WID" 2>/dev/null; xdotool key --window "$WID" ctrl+2; sleep 1
+      xdotool windowactivate --sync "$WID" 2>/dev/null; xdotool windowraise "$WID"; xdotool key --window "$WID" ctrl+2; sleep 1
       center 60 50
       monitor "$SECS" scroll &
       mon=$!
