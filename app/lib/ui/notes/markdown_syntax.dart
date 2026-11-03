@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme.dart';
+import '../widgets/code_highlight.dart';
 
 /// Editor text styles (the source view of the note).
 abstract final class MdEditorStyle {
@@ -10,7 +11,7 @@ abstract final class MdEditorStyle {
     2 => 19.5,
     3 => 17.0,
     _ => 15.5,
-  }, weight: FontWeight.w700).copyWith(height: 1.5, color: level == 1 ? Colors.white : WoiColors.text);
+  }, weight: FontWeight.w700).copyWith(height: 1.5, color: WoiColors.text);
   static TextStyle marker() => mono(14, color: WoiColors.violet.withValues(alpha: 0.85), height: 1.62);
   static TextStyle code() => mono(14, color: WoiColors.amber, height: 1.62);
 }
@@ -58,7 +59,7 @@ List<MdRun> highlightMarkdown(String text) {
       add(0, line.length, MdEditorStyle.code().copyWith(color: WoiColors.textFaint));
       inFence = !inFence;
     } else if (inFence) {
-      add(0, line.length, MdEditorStyle.code().copyWith(color: const Color(0xFFD5E1F5)));
+      add(0, line.length, MdEditorStyle.code().copyWith(color: CodeColors.plain));
     } else if (_headingRe.firstMatch(line) case final h?) {
       final level = h.group(1)!.length;
       final hs = MdEditorStyle.heading(level);

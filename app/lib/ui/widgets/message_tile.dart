@@ -909,7 +909,7 @@ class _Terminal extends StatelessWidget {
                   TextSpan(
                     children: [
                       TextSpan(text: r'$ ', style: mono(12.5, color: WoiColors.mint)),
-                      TextSpan(text: '$command\n', style: mono(12.5, color: WoiColors.text)),
+                      TextSpan(text: '$command\n', style: mono(12.5, color: const Color(0xFFE8EEF8))),
                       if (out.isNotEmpty) TextSpan(text: out.endsWith('\n') ? out : '$out\n', style: mono(12, color: const Color(0xFFC9D6EA))),
                       if (err.isNotEmpty) TextSpan(text: err, style: mono(12, color: WoiColors.red)),
                       if (out.isEmpty && err.isEmpty && code != null)

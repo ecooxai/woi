@@ -552,7 +552,7 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
                   focusedBorder: InputBorder.none,
                   filled: false,
                   isCollapsed: true,
-                  contentPadding: EdgeInsets.fromLTRB(hPad, widget.compact ? 16 : 24, hPad, 80),
+                  contentPadding: EdgeInsets.fromLTRB(hPad, widget.compact ? 16 : 24, hPad, widget.compact ? 12 : 16),
                   hintText: '# Untitled note\n\nStart typing, or just talk.\nWoi records decisions, todos, facts and paths here as you go.',
                   hintMaxLines: 6,
                   hintStyle: body(15.5, height: 1.62, color: WoiColors.textFaint),

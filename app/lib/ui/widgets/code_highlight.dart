@@ -2,15 +2,16 @@ import 'package:flutter/material.dart';
 
 import '../theme.dart';
 
-/// Token colours (One-Dark-ish, tuned for the Woi palette).
+/// Token colours: One-Dark-ish on the dark theme, GitHub-ish on light.
 abstract final class CodeColors {
-  static const plain = Color(0xFFD5E1F5);
-  static const keyword = Color(0xFFC792EA);
-  static const string = Color(0xFFA5E887);
-  static const number = Color(0xFFFFB86C);
-  static const comment = Color(0xFF7A8CAB);
-  static const type = Color(0xFF7FDBFF);
-  static const punct = Color(0xFF9DAFCB);
+  static bool get _dark => WoiColors.palette.isDark;
+  static Color get plain => _dark ? const Color(0xFFD5E1F5) : const Color(0xFF1F2937);
+  static Color get keyword => _dark ? const Color(0xFFC792EA) : const Color(0xFF8250DF);
+  static Color get string => _dark ? const Color(0xFFA5E887) : const Color(0xFF0A7F3F);
+  static Color get number => _dark ? const Color(0xFFFFB86C) : const Color(0xFFB45309);
+  static Color get comment => _dark ? const Color(0xFF7A8CAB) : const Color(0xFF6B7280);
+  static Color get type => _dark ? const Color(0xFF7FDBFF) : const Color(0xFF0550AE);
+  static Color get punct => _dark ? const Color(0xFF9DAFCB) : const Color(0xFF57606A);
 }
 
 enum CodeLang { cLike, hash, markup, plain }
