@@ -183,7 +183,11 @@ class ResponsesClient {
       'model': model,
       'instructions': ?instructions,
       'input': input,
-      if (tools != null && tools.isNotEmpty) ...{'tools': tools, 'tool_choice': 'auto', 'parallel_tool_calls': parallelToolCalls},
+      if (tools != null && tools.isNotEmpty) ...{
+        'tools': tools,
+        'tool_choice': 'auto',
+        'parallel_tool_calls': parallelToolCalls,
+      },
       'reasoning': ?reasoning,
       'stream': true,
       'store': false,
@@ -251,59 +255,75 @@ class ResponsesClient {
     Map<String, Object?>? usage;
     var status = 'incomplete';
     String? finalText;
-    await for (final e in events) {
-      if (e.data == '[DONE]') break;
-      Map<String, Object?> ev;
-      try {
-        final j = jsonDecode(e.data);
-        if (j is! Map) continue;
-        ev = j.cast<String, Object?>();
-      } catch (_) {
-        continue;
-      }
-      firstEvent ??= sw.elapsed;
-      final type = ev['type'] as String? ?? e.event ?? '';
-      switch (type) {
-        case 'response.output_text.delta':
-          final d = ev['delta'] as String? ?? '';
-          firstToken ??= sw.elapsed;
-          text.write(d);
-          onTextDelta?.call(d);
-        case 'response.output_item.done':
-          final item = (ev['item'] as Map?)?.cast<String, Object?>();
-          if (item?['type'] == 'function_call') {
-            final id = item!['call_id'] as String? ?? '';
+    // Iterate manually so that after `response.completed` the rest of the
+    // body (chunked terminator) is drained in the background: cancelling an
+    // HttpClientResponse early destroys its socket, which would defeat the
+    // kept-alive connection ([reuseConnections]).
+    final it = StreamIterator(events);
+    try {
+      while (await it.moveNext()) {
+        final e = it.current;
+        if (e.data == '[DONE]') break;
+        Map<String, Object?> ev;
+        try {
+          final j = jsonDecode(e.data);
+          if (j is! Map) continue;
+          ev = j.cast<String, Object?>();
+        } catch (_) {
+          continue;
+        }
+        firstEvent ??= sw.elapsed;
+        final type = ev['type'] as String? ?? e.event ?? '';
+        switch (type) {
+          case 'response.output_text.delta':
+            final d = ev['delta'] as String? ?? '';
             firstToken ??= sw.elapsed;
-            if (seenCalls.add(id)) {
-              final call = FunctionCallItem(
-                callId: id,
-                name: item['name'] as String? ?? '',
-                arguments: item['arguments'] as String? ?? '{}',
-              );
-              calls.add(call);
-              onFunctionCall?.call(call);
+            text.write(d);
+            onTextDelta?.call(d);
+          case 'response.output_item.done':
+            final item = (ev['item'] as Map?)?.cast<String, Object?>();
+            if (item?['type'] == 'function_call') {
+              final id = item!['call_id'] as String? ?? '';
+              firstToken ??= sw.elapsed;
+              if (seenCalls.add(id)) {
+                final call = FunctionCallItem(
+                  callId: id,
+                  name: item['name'] as String? ?? '',
+                  arguments: item['arguments'] as String? ?? '{}',
+                );
+                calls.add(call);
+                onFunctionCall?.call(call);
+              }
             }
-          }
-        case 'response.completed' || 'response.incomplete' || 'response.failed':
-          final r = (ev['response'] as Map?)?.cast<String, Object?>();
-          status = r?['status'] as String? ?? type.split('.').last;
-          usage = (r?['usage'] as Map?)?.cast<String, Object?>();
-          if (type == 'response.failed') {
-            final err = (r?['error'] as Map?)?.cast<String, Object?>();
+          case 'response.completed' || 'response.incomplete' || 'response.failed':
+            final r = (ev['response'] as Map?)?.cast<String, Object?>();
+            status = r?['status'] as String? ?? type.split('.').last;
+            usage = (r?['usage'] as Map?)?.cast<String, Object?>();
+            if (type == 'response.failed') {
+              final err = (r?['error'] as Map?)?.cast<String, Object?>();
+              throw ResponsesException(
+                redactSecrets(err?['message'] as String? ?? 'response failed'),
+                code: err?['code'] as String?,
+              );
+            }
+            if (text.isEmpty) finalText = _textFromOutput(r?['output']);
+          case 'error':
+            final err = (ev['error'] as Map?)?.cast<String, Object?>() ?? ev;
             throw ResponsesException(
-              redactSecrets(err?['message'] as String? ?? 'response failed'),
-              code: err?['code'] as String?,
+              redactSecrets(err['message'] as String? ?? 'stream error'),
+              code: err['code'] as String?,
             );
-          }
-          if (text.isEmpty) finalText = _textFromOutput(r?['output']);
-        case 'error':
-          final err = (ev['error'] as Map?)?.cast<String, Object?>() ?? ev;
-          throw ResponsesException(
-            redactSecrets(err['message'] as String? ?? 'stream error'),
-            code: err['code'] as String?,
-          );
+        }
+        if (type == 'response.completed' || type == 'response.incomplete') break;
       }
-      if (type == 'response.completed' || type == 'response.incomplete') break;
+    } finally {
+      unawaited(() async {
+        try {
+          while (await it.moveNext().timeout(const Duration(seconds: 10))) {}
+        } catch (_) {
+          await it.cancel();
+        }
+      }());
     }
     return ResponsesResult(
       text: text.isEmpty ? (finalText ?? '') : text.toString(),

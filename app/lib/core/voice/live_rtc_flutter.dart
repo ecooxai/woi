@@ -23,6 +23,7 @@ class FlutterLiveRtcTransport implements LiveRtcTransport {
   bool _speakerEnabled = true;
   final _states = StreamController<String>.broadcast();
   String _description = 'flutter_webrtc';
+  String? _outputId;
 
   @override
   Stream<String> get connectionStates => _states.stream;
@@ -47,6 +48,8 @@ class FlutterLiveRtcTransport implements LiveRtcTransport {
   Future<String> createOffer() async {
     final inputId = await _findDevice('audioinput', options.inputDeviceMatch);
     final outputId = await _findDevice('audiooutput', options.outputDeviceMatch);
+    debugPrint('webrtc devices: in=$inputId out=$outputId');
+    _outputId = outputId;
     if (outputId != null) await Helper.selectAudioOutput(outputId);
 
     // No STUN/TURN: the server is a public ICE endpoint and host candidates
@@ -54,12 +57,30 @@ class FlutterLiveRtcTransport implements LiveRtcTransport {
     final pc = await createPeerConnection({'iceServers': <Object>[], 'sdpSemantics': 'unified-plan'});
     _pc = pc;
     pc.onConnectionState = (s) {
+      final out = _outputId;
+      if (s == RTCPeerConnectionState.RTCPeerConnectionStateConnected && out != null) {
+        // libwebrtc's pulse ADM ignores the playout device until playout is
+        // initialized (first remote audio); select it again now.
+        unawaited(Helper.selectAudioOutput(out).catchError((Object e) => debugPrint('webrtc output: $e')));
+      }
       if (!_states.isClosed) _states.add(s.name.replaceFirst('RTCPeerConnectionState', '').toLowerCase());
     };
     pc.onTrack = (e) {
       if (e.track.kind == 'audio') {
         _remoteAudio.add(e.track);
         e.track.enabled = _speakerEnabled;
+        final out = _outputId;
+        if (out != null) {
+          // Playout may (re)initialize once remote audio flows; selecting
+          // only at `connected` occasionally left the first reply on the
+          // default sink.
+          for (final ms in const [300, 1500]) {
+            Timer(Duration(milliseconds: ms), () {
+              if (_pc == null) return;
+              Helper.selectAudioOutput(out).catchError((Object e) => debugPrint('webrtc output: $e'));
+            });
+          }
+        }
       }
     };
 

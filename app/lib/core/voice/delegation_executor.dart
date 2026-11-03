@@ -59,8 +59,20 @@ class ResponsesDelegationModel implements DelegationModel {
     : client = ResponsesClient(credentials: credentials, codexEndpoint: endpoint, reuseConnections: true);
 
   final ResponsesClient client;
+  DateTime _lastUse = DateTime(2000);
 
-  Future<void> warmUp() => client.warmUp();
+  Future<void> warmUp() {
+    _lastUse = DateTime.now();
+    return client.warmUp();
+  }
+
+  /// Re-opens the kept-alive connection if it has been idle long enough that
+  /// the server may have dropped it (called when the user starts talking, so
+  /// the TLS handshake is done before `delegation.created`).
+  Future<void> warmUpIfIdle({Duration idle = const Duration(seconds: 40)}) async {
+    if (DateTime.now().difference(_lastUse) < idle) return;
+    await warmUp();
+  }
 
   @override
   Future<DelegationModelTurn> respond({
@@ -72,6 +84,7 @@ class ResponsesDelegationModel implements DelegationModel {
     void Function(DelegationToolCall call)? onToolCall,
   }) async {
     final ResponsesResult r;
+    _lastUse = DateTime.now();
     try {
       r = await client.create(
         model: model,
@@ -137,9 +150,12 @@ class DelegationToolRun {
 
 /// Outcome + timings of one delegation (all durations from `delegation.created`).
 class DelegationReport {
-  DelegationReport({required this.id, required this.request});
+  DelegationReport({required this.id, required this.request}) : createdAt = DateTime.now();
   final String id;
   final String request;
+
+  /// Wall clock when the delegation started (≈ `delegation.created` receipt).
+  final DateTime createdAt;
   String model = '';
   int steps = 0;
   bool usedScreenshot = false;
@@ -203,12 +219,73 @@ class DelegationExecutor {
   static const instructions =
       'You carry out a voice assistant\'s request on the user\'s Linux desktop by calling tools. '
       'Act at once, never ask questions. Call every tool the current step needs in one reply. '
+      'The request is transcribed speech: "readme dot md" means README.md. Relative paths are in the home folder. '
+      'Show, open, view or play a file: show_file. Never change files with run_bash: read_file, then edit_file '
+      '(the user approves a diff). '
       'click_screen coordinates are pixels of the attached screenshot. '
       'For complex work (writing code, analysis, long text) call delegate_task. '
       'If no tool fits, answer in one short sentence.';
 
   /// Tools whose result the model must see before it can act or answer.
-  static const observeTools = {'take_screenshot', 'list_dir'};
+  static const observeTools = {'take_screenshot', 'list_dir', 'read_file'};
+
+  /// Read-only shell commands (locating / inspecting files).
+  static final _lookupCommand = RegExp(
+    r'^\s*(find|ls|locate|which|whereis|stat|file|cat|head|tail|grep|rg|fd|test|readlink|realpath|du|wc)\b',
+  );
+  static final _explicitCommand = RegExp(r'\b(run|execute|command)\b', caseSensitive: false);
+
+  /// Whether [c] only gathers information the model needs to finish the
+  /// request (so its result is fed back for another step). A shell lookup
+  /// the user asked for ("run ls") is the action itself.
+  static bool isObservation(DelegationToolCall c, String request) {
+    if (observeTools.contains(c.name)) return true;
+    if (c.name != 'run_bash' || _explicitCommand.hasMatch(request)) return false;
+    try {
+      final cmd = (jsonDecode(c.arguments) as Map)['command'];
+      return cmd is String && _lookupCommand.hasMatch(cmd) && !cmd.contains('>');
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static final _showRequest = RegExp(
+    r'^\s*(?:please\s+)?(?:show|open|view|display|play)(?:\s+me)?(?:\s+the)?'
+    r'(?:\s+(?:file|video|movie|clip|image|picture|photo|song|audio|track|document))?'
+    r'(?:\s+(?:called|named))?\s+(.+?)[\s.!?]*$',
+    caseSensitive: false,
+  );
+  static const _spokenDigits = {
+    'zero': '0',
+    'one': '1',
+    'two': '2',
+    'three': '3',
+    'four': '4',
+    'five': '5',
+    'six': '6',
+    'seven': '7',
+    'eight': '8',
+    'nine': '9',
+  };
+
+  /// File path of a plain "show / open / play FILE" request, with spoken
+  /// names normalized ("readme dot md" → readme.md, "demo dot mp four" →
+  /// demo.mp4), or null. Such requests skip the model ([execute] fast path).
+  static String? showFastPath(String request) {
+    final m = _showRequest.firstMatch(request.replaceAll(RegExp('[“”"]'), ''));
+    if (m == null) return null;
+    var name = m.group(1)!.trim();
+    name = name.replaceAllMapped(
+      RegExp(
+        r'\s+dot\s+([a-z0-9]+)((?:\s+(?:zero|one|two|three|four|five|six|seven|eight|nine))*)',
+        caseSensitive: false,
+      ),
+      (d) =>
+          '.${d[1]}${d[2]!.trim().split(RegExp(r'\s+')).where((w) => w.isNotEmpty).map((w) => _spokenDigits[w.toLowerCase()]).join()}',
+    );
+    final file = RegExp(r'^[~/\w.-]*\w\.[A-Za-z0-9]{1,5}$');
+    return file.hasMatch(name) ? name : null;
+  }
 
   int _seq = 0;
 
@@ -225,18 +302,64 @@ class DelegationExecutor {
     return report;
   }
 
+  /// Requests that refer to what is on screen (and so need the image).
+  static final _visual = RegExp(
+    r"\b(click|tap|press|screen|see|look|visible|button|icon|window|tab|menu|link|field|dialog|popup|this|that|"
+    r"these|those|here|there|top|bottom|left|right|corner|center|centre|middle|scroll|select|highlight|drag|hover|"
+    r"image|picture|photo|describe|what'?s on|what is on|showing|open (it|the one)|close (it|this|that))\b",
+    caseSensitive: false,
+  );
+
+  /// Whether [request] needs the screenshot (otherwise it is not sent: the
+  /// image upload and its tokens cost several hundred ms).
+  static bool needsScreen(String request) => _visual.hasMatch(request);
+
   Future<void> _run(String request, DelegationReport report, Stopwatch sw) async {
-    final specs = [for (final t in tools) t.toJson()];
+    // Fast path: "show me README.md" needs no model round trip.
+    final fastPath = showFastPath(request);
+    if (fastPath != null && tools.any((t) => t.name == 'show_file')) {
+      final n = report.tools.length;
+      final run = await _showFast(report, sw, fastPath);
+      if (run != null) {
+        report.tools
+          ..removeRange(n, report.tools.length)
+          ..add(run);
+        report
+          ..model = 'fast-path'
+          ..steps = 0
+          ..firstToolCall = report.tools[n].startedAt
+          ..toolsDone = run.doneAt
+          ..resultText = _summarize(report, const []);
+        return;
+      }
+      report.tools.removeRange(n, report.tools.length); // not found: let the model look
+    }
+    final visual = needsScreen(request);
     final hasScreenshotTool = tools.any((t) => t.name == 'take_screenshot');
 
     var shot = latestScreenshot?.call();
+    Future<void>? capture;
     if (hasScreenshotTool && (shot == null || _now().difference(shot.capturedAt) > freshScreenshotAfter)) {
-      // No usable screenshot yet: capture through the app so it is attached
-      // to the conversation and click_screen maps coordinates against it.
+      // No usable screenshot: capture through the app so it is attached to
+      // the conversation and click_screen maps coordinates against it. Only
+      // visual requests wait for it; the others start the model right away.
       report.freshCapture = true;
-      await _exec(report, sw, 'take_screenshot', '{}', 'shot_${report.id}');
-      shot = latestScreenshot?.call();
+      capture = _exec(report, sw, 'take_screenshot', '{}', 'shot_${report.id}');
+      if (visual) {
+        await capture;
+        shot = latestScreenshot?.call();
+      } else {
+        shot = null;
+      }
+    } else if (!visual) {
+      shot = null;
     }
+    // With the image attached, a take_screenshot call would only cost
+    // another round trip; without it the model can still ask for a look.
+    final specs = [
+      for (final t in tools)
+        if (!(shot != null && t.name == 'take_screenshot')) t.toJson(),
+    ];
 
     final input = <Map<String, Object?>>[_userMessage(request, shot)];
     report.usedScreenshot = shot != null;
@@ -264,7 +387,7 @@ class DelegationExecutor {
       report.toolsDone = sw.elapsed;
 
       final names = turn.calls.map((c) => c.name).toSet();
-      final needsLook = names.every(observeTools.contains);
+      final needsLook = turn.calls.every((c) => isObservation(c, request));
       if (!needsLook || step == maxSteps - 1) break;
 
       // Observation step: feed results (and a fresh screenshot) back.
@@ -282,7 +405,35 @@ class DelegationExecutor {
         if (s != null) input.add(_userMessage('Fresh screenshot.', s));
       }
     }
+    await capture;
     report.resultText = _summarize(report, texts);
+  }
+
+  /// show_file([path]); if missing, retries with a case-insensitive match
+  /// in its directory (speech gives "readme.md" for README.md). Returns the
+  /// successful run or null.
+  Future<DelegationToolRun?> _showFast(DelegationReport report, Stopwatch sw, String path) async {
+    await _exec(report, sw, 'show_file', jsonEncode({'path': path}), 'fast_${report.id}');
+    if (report.tools.last.ok || !tools.any((t) => t.name == 'list_dir')) {
+      return report.tools.last.ok ? report.tools.last : null;
+    }
+    final slash = path.lastIndexOf('/');
+    final dir = slash < 0 ? '~' : (slash == 0 ? '/' : path.substring(0, slash));
+    final base = path.substring(slash + 1).toLowerCase();
+    await _exec(report, sw, 'list_dir', jsonEncode({'path': dir}), 'fast_ls_${report.id}');
+    String? match;
+    try {
+      final entries = (jsonDecode(report.tools.last.resultJson ?? '{}') as Map)['entries'];
+      if (entries is List) {
+        for (final e in entries.whereType<Map>()) {
+          if (e['t'] != 'd' && '${e['name']}'.toLowerCase() == base) match = '${e['name']}';
+        }
+      }
+    } catch (_) {}
+    if (match == null) return null;
+    final full = slash < 0 ? match : '${path.substring(0, slash + 1)}$match';
+    await _exec(report, sw, 'show_file', jsonEncode({'path': full}), 'fast2_${report.id}');
+    return report.tools.last.ok ? report.tools.last : null;
   }
 
   Map<String, Object?> _userMessage(String text, DelegationImage? shot) => {

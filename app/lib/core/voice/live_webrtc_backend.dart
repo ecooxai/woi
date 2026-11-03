@@ -129,6 +129,7 @@ class LiveWebRtcBackend implements VoiceBackend, ManagedAudioBackend {
     this.sidebandBase = 'wss://api.openai.com/v1/live',
     this.sessionStartTimeout = const Duration(seconds: 15),
     this.delegationFastModel = 'gpt-6-luna',
+    this.delegationReasoningEffort = 'low',
     this.vadStopMs = 550,
   }) : _connectSideband = sideband ?? IoRealtimeSocket.connect,
        _createCall = createCall ?? createLiveCallHttp;
@@ -151,6 +152,9 @@ class LiveWebRtcBackend implements VoiceBackend, ManagedAudioBackend {
   final String sidebandBase;
   final Duration sessionStartTimeout;
   final String delegationFastModel;
+
+  /// Reasoning effort of the delegation model (`none` is ~0.2 s faster).
+  final String? delegationReasoningEffort;
   final int vadStopMs;
 
   final _events = StreamController<BackendEvent>.broadcast();
@@ -206,6 +210,10 @@ class LiveWebRtcBackend implements VoiceBackend, ManagedAudioBackend {
   bool get hasServerVad => true;
 
   String get transportDescription => _rtc?.description ?? '-';
+
+  /// Delegations received but not yet reported on [delegations].
+  int get pendingDelegations => _pendingDelegations;
+  int _pendingDelegations = 0;
 
   void _emit(BackendEvent e) {
     if (!_events.isClosed) _events.add(e);
@@ -299,6 +307,7 @@ class LiveWebRtcBackend implements VoiceBackend, ManagedAudioBackend {
     );
     timings.sessionStarted = total.elapsed;
     rtc.setMicEnabled(_inputEnabled);
+    debugPrint('gpt-live connected: $model voice=$voice call=${call.callId} $timings via ${rtc.description}');
 
     final dm =
         delegationModelFactory?.call(creds) ?? ResponsesDelegationModel(credentialsProvider ?? () async => creds);
@@ -310,6 +319,7 @@ class LiveWebRtcBackend implements VoiceBackend, ManagedAudioBackend {
       runTool: toolRunner ?? _runToolViaPipeline,
       latestScreenshot: () => _latestImage,
       fastModel: delegationFastModel,
+      reasoningEffort: delegationReasoningEffort,
     );
   }
 
@@ -343,6 +353,7 @@ class LiveWebRtcBackend implements VoiceBackend, ManagedAudioBackend {
       case 'turn.done':
         final turn = _map(ev['turn']);
         final text = '${turn['transcript'] ?? ''}'.trim();
+        if (text.isNotEmpty) debugPrint('gpt-live ${turn['role']}: $text');
         if (turn['role'] == 'user') {
           if (_userSpeaking) _userStopped();
           _emit(UserTranscriptDone(text));
@@ -454,6 +465,8 @@ class LiveWebRtcBackend implements VoiceBackend, ManagedAudioBackend {
   void _userStarted() {
     if (_userSpeaking) return;
     _userSpeaking = true;
+    final dm = _delegationModel;
+    if (dm is ResponsesDelegationModel) unawaited(dm.warmUpIfIdle());
     _emit(const SpeechStarted());
   }
 
@@ -474,6 +487,7 @@ class LiveWebRtcBackend implements VoiceBackend, ManagedAudioBackend {
     final ex = _executor;
     if (id.isEmpty || ex == null) return;
     final sw = Stopwatch()..start();
+    _pendingDelegations++;
     unawaited(() async {
       final report = await ex.execute(text, id: id);
       if (_closed) return;
@@ -502,7 +516,9 @@ class LiveWebRtcBackend implements VoiceBackend, ManagedAudioBackend {
 
   void _reportDelegation(String id) {
     final w = _awaitingSpeech.remove(id);
-    if (w != null && !_delegations.isClosed) _delegations.add(w.$1);
+    if (w == null) return;
+    _pendingDelegations--;
+    if (!_delegations.isClosed) _delegations.add(w.$1);
   }
 
   Future<String> _runToolViaPipeline(String callId, String name, String argsJson) {

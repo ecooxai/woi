@@ -59,6 +59,11 @@ class _Server {
   int status = 200;
   String errorBody = '';
 
+  /// Pause between the last event and the end of the body (the real server
+  /// sends the chunked terminator a little after `response.completed`).
+  Duration tailDelay = Duration.zero;
+  final clientPorts = <int>[];
+
   Uri get url => Uri.parse('http://127.0.0.1:${http.port}/responses');
 
   Future<void> start() async {
@@ -66,7 +71,8 @@ class _Server {
     http.listen((req) async {
       requests.add((jsonDecode(await utf8.decodeStream(req)) as Map).cast());
       headers.add(req.headers);
-      final res = req.response;
+      clientPorts.add(req.connectionInfo!.remotePort);
+      final res = req.response..bufferOutput = false; // flush() really sends each chunk
       res.headers.removeAll(HttpHeaders.contentTypeHeader); // like chatgpt.com: no Content-Type
       res.statusCode = status;
       res.headers.set('x-codex-primary-used-percent', '12');
@@ -79,6 +85,7 @@ class _Server {
           res.add(body.sublist(i, i + 37 > body.length ? body.length : i + 37));
           await res.flush();
         }
+        await Future<void>.delayed(tailDelay);
       }
       await res.close();
     });
@@ -138,6 +145,26 @@ void main() {
       expect(h.value('authorization'), 'Bearer tok_abc');
       expect(h.value('chatgpt-account-id'), 'acct');
       expect(h.value('originator'), 'codex_cli_rs');
+    });
+
+    test('reuseConnections: returns at response.completed and keeps the connection alive', () async {
+      server.tailDelay = const Duration(milliseconds: 300);
+      final reuse = ResponsesClient(credentials: () async => creds, codexEndpoint: server.url, reuseConnections: true);
+      addTearDown(reuse.close);
+      for (var i = 0; i < 3; i++) {
+        final sw = Stopwatch()..start();
+        final r = await reuse.create(
+          model: 'gpt-6-luna',
+          input: [
+            userMessage([inputText('hi $i')]),
+          ],
+        );
+        expect(r.status, 'completed');
+        expect(sw.elapsed, lessThan(const Duration(milliseconds: 280)), reason: 'no wait for the body end');
+        // Let the background drain finish so the socket goes back to the pool.
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+      }
+      expect(server.clientPorts.toSet(), hasLength(1), reason: 'one kept-alive connection');
     });
 
     test('collects function calls and outputAsInput replays them without ids', () async {
