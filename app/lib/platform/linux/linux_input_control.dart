@@ -32,8 +32,20 @@ class LinuxInputControl implements InputControl {
   @override
   Future<void> typeText(String text) async {
     if (text.isEmpty) return;
-    await _run(['type', '--clearmodifiers', '--delay', '6', '--', text]);
+    await _run(typeArgs(text));
   }
+
+  /// Modifier keys released (and not restored) before typing.
+  static const typeReleases = [
+    'Shift_L', 'Shift_R', 'Control_L', 'Control_R', 'Alt_L', 'Alt_R', 'Super_L', 'Super_R', 'ISO_Level3_Shift',
+  ];
+
+  /// xdotool arguments for [typeText]. Not `type --clearmodifiers`: that saves
+  /// and *restores* every active modifier, Caps Lock and held mouse button
+  /// around the text (re-pressing them afterwards), which injected stray key
+  /// events into the target (QA saw `2⌫Hello, world`) and can leave a button
+  /// stuck after a click. Plain key-ups of the modifiers give clean text.
+  static List<String> typeArgs(String text) => ['keyup', ...typeReleases, 'type', '--delay', '12', '--', text];
 
   @override
   Future<void> keyCombo(String combo) async {
