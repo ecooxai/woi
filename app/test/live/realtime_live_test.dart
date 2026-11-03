@@ -20,6 +20,7 @@ import 'package:woi/core/app_controller.dart' show kAssistantInstructions;
 import 'package:woi/core/auth/auth.dart';
 import 'package:woi/core/context/compressor.dart';
 import 'package:woi/core/context/context_manager.dart';
+import 'package:woi/core/context/image_tiers.dart';
 import 'package:woi/core/context/responses_compressor.dart';
 import 'package:woi/core/delegate/delegate_backend.dart';
 import 'package:woi/core/delegate/responses_delegate.dart';
@@ -116,7 +117,12 @@ class _LiveRig {
   final clock = Stopwatch()..start();
   StreamSubscription<BackendEvent>? _sub;
 
-  static Future<_LiveRig> create(CodexAuthManager auth, {Compressor? compressor, int threshold = 1 << 30}) async {
+  static Future<_LiveRig> create(
+    CodexAuthManager auth, {
+    Compressor? compressor,
+    int threshold = 1 << 30,
+    ImageCompactor? Function(HistoryStore store)? images,
+  }) async {
     final r = _LiveRig._(await Directory.systemTemp.createTemp('woi_live_'));
     File('${r.root.path}/README.md').writeAsStringSync('# Demo project\n\nThis README is a test fixture.\n');
     File('${r.root.path}/notes.txt').writeAsStringSync('eggs\n');
@@ -162,6 +168,7 @@ class _LiveRig {
           SessionConfig(model: _model, voice: 'marin', instructions: kAssistantInstructions, tools: r.tools.specs),
       options: () => const PipelineOptions(screenshotDelay: Duration(milliseconds: 600)),
       onScreenshotCaptured: (s) => env.lastScreenshot = s,
+      imageCompactor: images?.call(store),
     );
     await r.pipeline.start();
     await waitFor(() => r.backend?.isReady ?? false, timeout: const Duration(seconds: 20));
@@ -489,6 +496,116 @@ void main() {
     },
   );
 
+  test(
+    'screenshot tiers: 12 screenshots, older ones swapped for 1/5 copies and descriptions in the live session',
+    skip: skip,
+    timeout: const Timeout(Duration(minutes: 4)),
+    () async {
+      const words = [
+        'ALPHA', 'BRAVO', 'CHARLIE', 'DELTA', 'ECHO', 'FOXTROT', //
+        'GOLF', 'HOTEL', 'INDIA', 'JULIET', 'KILO', 'LIMA',
+      ];
+      final dir = await Directory.systemTemp.createTemp('woi_live_tiers_');
+      final shots = <Screenshot>[];
+      for (var i = 0; i < words.length; i++) {
+        final f = '${dir.path}/s$i.png';
+        final hue = (i * 30) % 360;
+        final res = await Process.run('magick', [
+          '-size', '1280x720', 'xc:hsl($hue,60%,25%)', //
+          '-fill', 'white', '-pointsize', '150', '-gravity', 'center', '-annotate', '+0+0', words[i],
+          '-pointsize', '40', '-annotate', '+0+170', 'Screen ${i + 1} of ${words.length}', f,
+        ]);
+        expect(res.exitCode, 0, reason: '${res.stderr}');
+        shots.add(
+          Screenshot(png: File(f).readAsBytesSync(), width: 1280, height: 720, originalWidth: 2560, originalHeight: 1440),
+        );
+      }
+      final client = ResponsesClient(credentials: auth.credentials);
+      final gate = Completer<void>();
+      final describeMs = <int>[];
+      final rig = await _LiveRig.create(
+        auth,
+        images: (store) => ImageCompactor(
+          downscale: (png, w, h) async {
+            await gate.future;
+            return uiDownscaleOr(png, w, h, dir.path);
+          },
+          describe: (png, note) async {
+            final sw = Stopwatch()..start();
+            final d = await responsesDescriber(client)(png, note);
+            describeMs.add(sw.elapsedMilliseconds);
+            return d;
+          },
+          save: store.saveImage,
+        ),
+      );
+      try {
+        Future<int> turn(String text) async {
+          final n = rig.events.where((e) => e.$2 is Usage).length;
+          rig.pipeline.sendText(text);
+          await rig.silenceUntil(
+            () => rig.events.where((e) => e.$2 is Usage).length > n && !rig.backend!.responseActive,
+            timeout: const Duration(seconds: 40),
+          );
+          return (rig.events.where((e) => e.$2 is Usage).last.$2 as Usage).inputTokens;
+        }
+
+        final base = await turn('Reply only: OK.');
+        for (var i = 0; i < shots.length; i++) {
+          await rig.pipeline.attachScreenshot(shots[i], note: 'Screenshot ${i + 1}.');
+        }
+        final full = await turn('I just sent you twelve screenshots. Reply only: OK.');
+        final perFull = (full - base - 30) / shots.length;
+        final metered = rig.context.estimatedTokens;
+        final sw = Stopwatch()..start();
+        gate.complete();
+        await rig.pipeline.compactImages();
+        final tierMs = sw.elapsedMilliseconds;
+        expect(rig.backend!.imagesReplaced, greaterThanOrEqualTo(9));
+        final meterAfter = rig.context.estimatedTokens;
+        final tiered = await turn(
+          'Reply in one line: the big word on screenshot 1, the big word on screenshot 6, and on screenshot 12.',
+        );
+        final answer = [for (final (_, e) in rig.after<AssistantTranscriptDone>(Duration.zero)) e.text].last;
+        final msgs = rig.pipeline.conversation.messages.where((m) => m.image != null).toList();
+        final tiers = msgs.map(imageTierOf).toList();
+        final ids = rig.backend!.serverItemIds;
+        final errors = [for (final (_, e) in rig.after<BackendError>(Duration.zero)) '${e.code}: ${e.message}'];
+        final p = rig.context.parts();
+        final descTokens = [for (final m in msgs.take(4)) ContextManager.textTokens(imageDescriptionOf(m) ?? '') + 20];
+        final perReduced = (tiered - base - 60 - 3 * perFull - descTokens.fold(0, (a, b) => a + b)) / 5;
+        print(
+          'IMAGE COST: base $base, full ≈${perFull.round()}/image, 1/5 ≈${perReduced.round()}/image, '
+          'descriptions $descTokens',
+        );
+        print(
+          'IMAGE TIERS: input tokens $full → $tiered (meter $metered → $meterAfter, saved ${p.imagesSaved}); '
+          'tiers ${tiers.map((t) => t.name[0]).join()}; replaced ${rig.backend!.imagesReplaced} items in $tierMs ms; '
+          'describe ms $describeMs; server items: ${ids.where((i) => i.startsWith('woi_img')).length} images, '
+          '${ids.where((i) => i.startsWith('woi_ctx')).length} notes; answer="$answer"; errors=$errors; '
+          'description[0]="${imageDescriptionOf(msgs.first)}"',
+        );
+        expect(tiers, [
+          ...List.filled(4, ImageTier.described),
+          ...List.filled(5, ImageTier.reduced),
+          ...List.filled(3, ImageTier.full),
+        ]);
+        expect(errors, isEmpty);
+        expect(ids.where((i) => i.startsWith('woi_img')), hasLength(8));
+        expect(ids.where((i) => i.startsWith('woi_ctx')), hasLength(4));
+        expect(tiered, lessThan(full * 0.8), reason: 'the live context must shrink');
+        expect(meterAfter, lessThan(metered * 0.8), reason: 'the meter reflects the savings');
+        expect(File(msgs.first.image!.path).readAsBytesSync(), shots.first.png, reason: 'original kept');
+        final a = answer.toUpperCase();
+        expect(a, contains('ALPHA'), reason: 'described image content lost');
+        expect(a, contains('FOXTROT'), reason: '1/5 image unreadable');
+        expect(a, contains('LIMA'));
+      } finally {
+        await rig.dispose();
+      }
+    },
+  );
+
   group('compaction on the live session', skip: skip, () {
     test('summary injected as a system item, old items deleted, facts recalled', () async {
       final b = RealtimeWsBackend(credentialsProvider: auth.credentials, keepRecentTurns: 1, log: (_) {})
@@ -672,4 +789,17 @@ void main() {
       expect(r.output.split(RegExp(r'\s+')).length, lessThan(120));
     }, timeout: const Timeout(Duration(minutes: 5)));
   });
+}
+
+/// Engine downscale, or ImageMagick when the test runner has no codec.
+Future<Uint8List> uiDownscaleOr(Uint8List png, int w, int h, String tmp) async {
+  try {
+    return await uiDownscale(png, w, h).timeout(const Duration(seconds: 5));
+  } catch (_) {
+    final src = '$tmp/in_${png.hashCode}.png', dst = '$tmp/out_${png.hashCode}.png';
+    File(src).writeAsBytesSync(png);
+    final r = await Process.run('magick', [src, '-resize', '${w}x$h!', dst]);
+    if (r.exitCode != 0) throw StateError('${r.stderr}');
+    return File(dst).readAsBytesSync();
+  }
 }

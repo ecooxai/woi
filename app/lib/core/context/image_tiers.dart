@@ -69,24 +69,6 @@ class ImageTierPolicy {
   }
 }
 
-/// Approximate Realtime/Responses token cost of a WxH image (high detail:
-/// fit in 2048, shortest side to 768, 85 + 170 per 512 px tile).
-int imageTokensFor(int w, int h) {
-  if (w <= 0 || h <= 0) return 765;
-  var sw = w.toDouble(), sh = h.toDouble();
-  final fit = 2048 / (sw > sh ? sw : sh);
-  if (fit < 1) {
-    sw *= fit;
-    sh *= fit;
-  }
-  final short = sw < sh ? sw : sh;
-  if (short > 768) {
-    sw *= 768 / short;
-    sh *= 768 / short;
-  }
-  return 85 + 170 * (sw / 512).ceil() * (sh / 512).ceil();
-}
-
 typedef Downscale = Future<Uint8List> Function(Uint8List png, int width, int height);
 typedef Describe = Future<String> Function(Uint8List png, String? note);
 typedef SaveVariant = Future<String> Function(String messageId, Uint8List png);

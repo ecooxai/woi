@@ -31,12 +31,6 @@ void main() {
     expect(p.plan(msgs).map((e) => e.$1.text), isNot(contains('0')));
   });
 
-  test('token cost of an image by size (85 + 170 per 512px tile)', () {
-    expect(imageTokensFor(1280, 720), 85 + 170 * 6);
-    expect(imageTokensFor(256, 144), 255);
-    expect(imageTokensFor(4096, 2160), imageTokensFor(1456, 768));
-  });
-
   group('context costs', () {
     late ContextManager cm;
     late Conversation conv;
@@ -67,7 +61,7 @@ void main() {
           ..[ImageMeta.sentHeight] = 144;
       }
       final after = cm.estimatedTokens;
-      expect(after, 10 * 4 + 3 * 765 + 5 * 255 + 2 * (20 + 12));
+      expect(after, 10 * 4 + 3 * 765 + 5 * 497 + 2 * (20 + 12));
       final p = cm.parts();
       expect(p.imageCount, 8);
       expect(p.imagesReduced, 5);
@@ -86,7 +80,7 @@ void main() {
         ..[ImageMeta.sentWidth] = 256
         ..[ImageMeta.sentHeight] = 144;
       final scale = 8000 / (4 * 769);
-      expect(cm.estimatedTokens, 8000 - ((765 - 255) * scale).round());
+      expect(cm.estimatedTokens, 8000 - ((765 - 497) * scale).round());
     });
 
     test('text-only accounting: descriptions count, only the latest image does', () {

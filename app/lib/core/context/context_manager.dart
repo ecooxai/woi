@@ -139,6 +139,11 @@ class ContextManager extends ChangeNotifier {
   });
 
   final Compressor compressor;
+
+  /// Cost of a 1/5-size screenshot relative to a full one. Measured on
+  /// gpt-realtime-2 (2026-11-03): 1280x720 ≈ 382 tokens, 256x144 ≈ 247;
+  /// small images are not much cheaper, so the tile formula is no guide.
+  static const reducedImageShare = 0.65;
   int threshold;
   String compressionModel;
   int imageTokenCost;
@@ -215,9 +220,7 @@ class ContextManager extends ChangeNotifier {
       case ImageTier.described:
         return textTokens(imageDescriptionOf(m) ?? '') + 12;
       case ImageTier.reduced when _accounting == ContextAccounting.usage:
-        final w = (m.meta[ImageMeta.sentWidth] as num?)?.toInt() ?? img.width ~/ 5;
-        final h = (m.meta[ImageMeta.sentHeight] as num?)?.toInt() ?? img.height ~/ 5;
-        return math.min(imageTokenCost, imageTokensFor(w, h));
+        return (imageTokenCost * reducedImageShare).round();
       case _:
         return _accounting == ContextAccounting.usage || m.id == latestImageId ? imageTokenCost : 0;
     }
