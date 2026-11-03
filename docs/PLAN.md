@@ -106,3 +106,10 @@ When compaction runs, screenshots/images are tiered by recency:
   app-side timeout + GET /cancel; fallback --device-auth. Android needs in-app CONNECT proxy (HTTPS_PROXY) for DNS,
   SSL_CERT_FILE = concatenated /apex/com.android.conscrypt/cacerts, HOME/TMPDIR/CODEX_HOME pre-created,
   foreground service during login.
+
+## Decision 2026-11-03 (revised, user): NO bundled codex on Android
+- Auth on Android = native Dart OAuth2 PKCE (CODEX_CLI.md §6.3): client_id from codex, Dart HttpServer on 127.0.0.1:1455
+  callback, authorize URL opened in Chrome Custom Tab, token exchange at auth.openai.com/oauth/token, write auth.json in
+  app-private storage (same schema as codex so refresh logic is shared). Foreground service during login if needed.
+- Linux: same native login code path when ~/.codex/auth.json is missing/invalid; codex CLI still bundled on Linux
+  (user asked earlier) for use in the built-in terminal. Supersedes the Android part of the previous decision.
