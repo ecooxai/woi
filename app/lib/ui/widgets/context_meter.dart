@@ -91,7 +91,15 @@ Color meterColor(double fill) => fill < 0.6
     ? WoiColors.amber
     : WoiColors.red;
 
-enum ContextMeterStyle { panel, bar, ring }
+enum ContextMeterStyle {
+  panel,
+  bar,
+  ring,
+
+  /// Input-bar status row: a short bar plus "12k / 32k" (or "37%" when
+  /// [ContextMeter.dense]).
+  compact,
+}
 
 /// tokens / threshold gauge with a breakdown tooltip, a "compacting…"
 /// shimmer, and (tap) a details sheet with a "Compact now" action.
@@ -102,12 +110,16 @@ class ContextMeter extends StatelessWidget {
     this.conversation,
     this.style = ContextMeterStyle.panel,
     this.onCompact,
+    this.dense = false,
   });
 
   final ContextManager manager;
   final Conversation? conversation;
   final ContextMeterStyle style;
   final VoidCallback? onCompact;
+
+  /// [ContextMeterStyle.compact] only: percentage instead of token counts.
+  final bool dense;
 
   @override
   Widget build(BuildContext context) {
@@ -125,6 +137,19 @@ class ContextMeter extends StatelessWidget {
 
         final Widget gauge = switch (style) {
           ContextMeterStyle.ring => _Ring(fill: fill, color: color, busy: busy),
+          ContextMeterStyle.compact => Row(
+            key: const ValueKey('context-compact'),
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(width: dense ? 28 : 40, child: MeterBar(fill: fill, color: color, busy: busy, height: 4)),
+              const SizedBox(width: 6),
+              Text(
+                busy ? 'compacting…' : (dense ? '${(b.fill * 100).round()}%' : label),
+                style: mono(11, color: busy ? color : WoiColors.textDim).copyWith(fontFeatures: kTabular),
+                softWrap: false,
+              ),
+            ],
+          ),
           ContextMeterStyle.bar => SizedBox(
             width: 190,
             child: Column(
@@ -193,7 +218,13 @@ class ContextMeter extends StatelessWidget {
                 behavior: HitTestBehavior.opaque,
                 onTap: () => showContextDetails(context, manager, conversation, onCompact: onCompact),
                 child: ConstrainedBox(
-                  constraints: BoxConstraints(minHeight: style == ContextMeterStyle.panel ? 0 : kTouchTarget),
+                  constraints: BoxConstraints(
+                    minHeight: switch (style) {
+                      ContextMeterStyle.panel => 0,
+                      ContextMeterStyle.compact => dense ? kTouchTarget : 28,
+                      _ => kTouchTarget,
+                    },
+                  ),
                   child: Center(widthFactor: 1, child: gauge),
                 ),
               ),
@@ -205,7 +236,7 @@ class ContextMeter extends StatelessWidget {
   }
 }
 
-/// Glowing progress bar; a light sweep runs across it while compacting.
+/// Flat progress bar; a light sweep runs across it only while compacting.
 class MeterBar extends StatefulWidget {
   const MeterBar({super.key, required this.fill, required this.color, this.busy = false, this.height = 5});
   final double fill;
@@ -252,7 +283,7 @@ class _MeterBarState extends State<MeterBar> with SingleTickerProviderStateMixin
         child: Stack(
           fit: StackFit.expand,
           children: [
-            const ColoredBox(color: WoiColors.glassStrong),
+            ColoredBox(color: WoiColors.glassStrong),
             TweenAnimationBuilder<double>(
               tween: Tween(end: widget.fill),
               duration: const Duration(milliseconds: 700),
@@ -260,12 +291,7 @@ class _MeterBarState extends State<MeterBar> with SingleTickerProviderStateMixin
               builder: (context, v, _) => FractionallySizedBox(
                 alignment: Alignment.centerLeft,
                 widthFactor: v,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(colors: [c.withValues(alpha: 0.55), c]),
-                    boxShadow: [BoxShadow(color: c.withValues(alpha: 0.7), blurRadius: 8)],
-                  ),
-                ),
+                child: ColoredBox(color: c),
               ),
             ),
             if (widget.busy)

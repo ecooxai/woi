@@ -239,6 +239,8 @@ class AppController extends ChangeNotifier {
   bool get needsLogin => _needsLogin;
 
   Future<bool> _checkNeedsLogin() async {
+    // An injected backend (tests, demos) needs no credentials.
+    if (_backendOverride != null) return false;
     final key = _settings.apiKey.trim().isNotEmpty || (Platform.environment['OPENAI_API_KEY'] ?? '').trim().isNotEmpty;
     if (key) return false;
     return !await hasValidCodexAuth(authManager.path);

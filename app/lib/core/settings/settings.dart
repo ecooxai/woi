@@ -12,6 +12,16 @@ enum MicMode {
   final String label;
 }
 
+/// Colour theme of the UI.
+enum AppTheme {
+  light('Light'),
+  dark('Dark'),
+  system('System');
+
+  const AppTheme(this.label);
+  final String label;
+}
+
 /// Which voice backend the app talks to.
 enum BackendMode {
   gptLive('gpt-live (WebRTC)'),
@@ -86,6 +96,7 @@ class AppSettings {
     this.imageFullCount = 3,
     this.imageScaledCount = 5,
     this.imageScaleDivisor = 5,
+    this.theme = AppTheme.light,
   });
 
   final BackendMode backendMode;
@@ -128,6 +139,9 @@ class AppSettings {
   final int imageScaledCount;
   final int imageScaleDivisor;
 
+  /// UI colour theme (light by default).
+  final AppTheme theme;
+
   /// The voice used by the current backend mode.
   String get activeVoice => backendMode == BackendMode.gptLive ? liveVoice : voice;
 
@@ -157,6 +171,7 @@ class AppSettings {
     int? imageFullCount,
     int? imageScaledCount,
     int? imageScaleDivisor,
+    AppTheme? theme,
   }) => AppSettings(
     backendMode: backendMode ?? this.backendMode,
     apiKey: apiKey ?? this.apiKey,
@@ -178,6 +193,7 @@ class AppSettings {
     imageFullCount: imageFullCount ?? this.imageFullCount,
     imageScaledCount: imageScaledCount ?? this.imageScaledCount,
     imageScaleDivisor: imageScaleDivisor ?? this.imageScaleDivisor,
+    theme: theme ?? this.theme,
   );
 
   /// Whether a change requires reconnecting the live session.
@@ -210,6 +226,7 @@ class AppSettings {
     'imageFullCount': imageFullCount,
     'imageScaledCount': imageScaledCount,
     'imageScaleDivisor': imageScaleDivisor,
+    'theme': theme.name,
   };
 
   factory AppSettings.fromJson(Map<String, Object?> j) {
@@ -245,6 +262,7 @@ class AppSettings {
       imageFullCount: i('imageFullCount', d.imageFullCount).clamp(1, 50),
       imageScaledCount: i('imageScaledCount', d.imageScaledCount).clamp(0, 100),
       imageScaleDivisor: i('imageScaleDivisor', d.imageScaleDivisor).clamp(2, 10),
+      theme: AppTheme.values.asNameMap()[j['theme']] ?? d.theme,
     );
   }
 }

@@ -50,16 +50,10 @@ class EmptyState extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          ShaderMask(
-            blendMode: BlendMode.srcIn,
-            shaderCallback: (r) => const LinearGradient(
-              colors: [WoiColors.cyan, WoiColors.violet, WoiColors.magenta],
-            ).createShader(r),
-            child: Text(
-              'How can I help?',
-              textAlign: TextAlign.center,
-              style: display(30, weight: FontWeight.w600, spacing: 0.2),
-            ),
+          Text(
+            'How can I help?',
+            textAlign: TextAlign.center,
+            style: display(28, weight: FontWeight.w600, spacing: -0.3),
           ),
           const SizedBox(height: 10),
           Text(
@@ -141,7 +135,6 @@ class _HintChipState extends State<_HintChip> {
                   borderRadius: BorderRadius.circular(999),
                   color: accent.withValues(alpha: _hover ? 0.16 : 0.07),
                   border: Border.all(color: accent.withValues(alpha: _hover ? 0.6 : 0.28)),
-                  boxShadow: _hover ? [BoxShadow(color: accent.withValues(alpha: 0.25), blurRadius: 18)] : null,
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
