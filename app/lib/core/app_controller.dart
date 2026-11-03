@@ -521,7 +521,8 @@ class AppController extends ChangeNotifier {
 
   /// Typed "what's in this image": the media goes out with the turn.
   Future<String?>? _beforeTypedTurn(String text) {
-    if (!isMediaQuestion(text)) return null;
+    // gpt-live: the delegation runs inspect_media itself before answering.
+    if (activeBackendMode == BackendMode.gptLive || !isMediaQuestion(text)) return null;
     return () async {
       final s = await refreshOpenMedia();
       if (s == null) return null;

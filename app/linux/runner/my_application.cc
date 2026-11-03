@@ -271,8 +271,9 @@ static void my_application_activate(GApplication* application) {
   // Measured on Mesa llvmpipe (qa/perf_scenarios.sh, 30 s): idle 18% -> 4%
   // CPU, scroll 431% -> 222%; Impeller has no raster cache and its SDF
   // text/shadow shaders are expensive in software GL. The media viewer
-  // windows (created by desktop_multi_window) stay on Impeller: fvp video
-  // textures render black in a Skia viewer.
+  // windows (created by desktop_multi_window) stay on Impeller: video in a
+  // Skia viewer could not be checked on the llvmpipe test display, where fvp
+  // output is black with either renderer.
   if (g_strcmp0(g_getenv("WOI_RENDERER"), "impeller") != 0) {
     fl_dart_project_set_enable_impeller(project, FALSE);
   }
