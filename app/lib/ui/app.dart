@@ -45,6 +45,19 @@ class _WoiAppState extends State<WoiApp> with WidgetsBindingObserver {
     _controller.addListener(_syncTheme);
     _controller.init();
     _debugShowFromEnv();
+    _frameLogFromEnv();
+  }
+
+  /// Perf hook: `WOI_FRAME_LOG=1` prints the frame count every 5 s (only when
+  /// frames were drawn), to find what keeps an idle window repainting.
+  void _frameLogFromEnv() {
+    if (Platform.environment['WOI_FRAME_LOG'] != '1') return;
+    var frames = 0;
+    WidgetsBinding.instance.addTimingsCallback((t) => frames += t.length);
+    Timer.periodic(const Duration(seconds: 5), (_) {
+      if (frames > 0) debugPrint('frames/5s: $frames');
+      frames = 0;
+    });
   }
 
   /// Debug hook: `WOI_DEBUG_SHOW=/a.png:/b.txt` opens each file in the media

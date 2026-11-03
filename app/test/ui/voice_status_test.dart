@@ -24,7 +24,8 @@ void main() {
       final busy = {VoiceMode.connecting, VoiceMode.thinking, VoiceMode.tool, VoiceMode.compacting}.contains(m);
       expect(voiceModeAnimates(m), busy, reason: '$m');
     }
-    expect(voiceModeShowsLevel(VoiceMode.listening), isTrue);
+    expect(voiceModeShowsLevel(VoiceMode.hearing), isTrue);
+    expect(voiceModeShowsLevel(VoiceMode.listening), isFalse);
     expect(voiceModeShowsLevel(VoiceMode.idle), isFalse);
   });
 
@@ -35,9 +36,9 @@ void main() {
     level.addListener(() => notes++);
     level.source = src;
 
-    // Sub-step jitter is dropped.
+    // Noise under the floor and sub-step jitter are dropped.
     src.value = 0.02;
-    src.value = 0.04;
+    src.value = 0.05;
     expect(notes, 0);
 
     // A burst of changes within one period: at most one now, one later.
@@ -87,10 +88,10 @@ void main() {
     await t.pumpWidget(const SizedBox());
   });
 
-  testWidgets('listening shows a level waveform that follows the mic', (t) async {
+  testWidgets('hearing shows a level waveform that follows the mic', (t) async {
     final mic = ValueNotifier<double>(0);
-    await pump(t, VoiceMode.listening, mic: mic);
-    expect(find.text('Listening'), findsOneWidget);
+    await pump(t, VoiceMode.hearing, mic: mic);
+    expect(find.text('Hearing you…'), findsOneWidget);
     mic.value = 0.8;
     await t.pump(const Duration(milliseconds: 100));
     expect(t.takeException(), isNull);

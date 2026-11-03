@@ -65,9 +65,10 @@ bool voiceModeAnimates(VoiceMode m) =>
     m == VoiceMode.tool ||
     m == VoiceMode.compacting;
 
-/// Whether a mode shows the live level waveform.
-bool voiceModeShowsLevel(VoiceMode m) =>
-    m == VoiceMode.listening || m == VoiceMode.hearing || m == VoiceMode.speaking;
+/// Whether a mode shows the live level waveform. Plain listening (mic open,
+/// nobody talking) is a still dot: room noise would otherwise keep the
+/// window repainting, and every frame is costly on software GL.
+bool voiceModeShowsLevel(VoiceMode m) => m == VoiceMode.hearing || m == VoiceMode.speaking;
 
 /// Re-publishes an audio level at most [hz] times per second, quantized to
 /// [steps] levels, so a widget listening to it repaints only when the
@@ -96,7 +97,13 @@ class ThrottledLevel extends ChangeNotifier implements ValueListenable<double> {
     _onSource();
   }
 
-  double _quantize(double v) => (v.clamp(0.0, 1.0) * steps).round() / steps;
+  /// Levels under [floor] (background noise) read as silence.
+  static const floor = 0.06;
+
+  double _quantize(double v) {
+    final c = v.clamp(0.0, 1.0);
+    return c < floor ? 0 : (c * steps).round() / steps;
+  }
 
   void _onSource() {
     _pending = _quantize(_source?.value ?? 0);
