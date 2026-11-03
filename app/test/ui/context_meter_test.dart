@@ -24,7 +24,7 @@ void main() {
 
   setUp(() {
     compressor = _Gated();
-    cm = ContextManager(compressor: compressor, threshold: 10000, keepRecent: 2, minInterval: Duration.zero);
+    cm = ContextManager(compressor: compressor, threshold: 10000, keepRecentTurns: 2, minInterval: Duration.zero);
     conv = Conversation();
     cm.attach(conv);
     for (var i = 0; i < 6; i++) {

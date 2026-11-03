@@ -9,8 +9,10 @@ import '../../platform/audio_io.dart';
 import '../audio/playback_clock.dart';
 import '../audio/wav.dart';
 import '../auth/auth.dart';
+import '../context/context_manager.dart';
 import '../net/realtime_socket.dart';
 import '../pipeline/vad.dart';
+import 'context_sync.dart';
 import 'delegation_executor.dart';
 import 'live_rtc_transport.dart';
 import 'voice_backend.dart';
@@ -117,7 +119,7 @@ class LiveConnectTimings {
 ///   [ToolCall], answered with [sendToolResult]) so confirmations and the
 ///   transcript UI work as usual; the result goes back with
 ///   `delegation.context.append` and the voice model speaks it.
-class LiveWebRtcBackend implements VoiceBackend, ManagedAudioBackend {
+class LiveWebRtcBackend implements VoiceBackend, ManagedAudioBackend, LiveContextSync {
   LiveWebRtcBackend({
     required this.transportFactory,
     RealtimeConnector? sideband,
@@ -131,6 +133,9 @@ class LiveWebRtcBackend implements VoiceBackend, ManagedAudioBackend {
     this.delegationFastModel = 'gpt-6-luna',
     this.delegationReasoningEffort = 'low',
     this.vadStopMs = 550,
+    this.swapQuiet = const Duration(milliseconds: 1500),
+    this.swapPoll = const Duration(milliseconds: 250),
+    this.swapAttempts = 3,
   }) : _connectSideband = sideband ?? IoRealtimeSocket.connect,
        _createCall = createCall ?? createLiveCallHttp;
 
@@ -157,11 +162,20 @@ class LiveWebRtcBackend implements VoiceBackend, ManagedAudioBackend {
   final String? delegationReasoningEffort;
   final int vadStopMs;
 
+  /// Compaction swap ([applySummary]): how long the call must have been idle,
+  /// how often to check, and how many prepared sessions may be discarded
+  /// because the conversation moved on before giving up.
+  final Duration swapQuiet;
+  final Duration swapPoll;
+  final int swapAttempts;
+
   final _events = StreamController<BackendEvent>.broadcast();
   final _delegations = StreamController<DelegationReport>.broadcast();
-  LiveRtcTransport? _rtc;
-  RealtimeSocket? _ws;
-  StreamSubscription<String>? _wsSub;
+  _LiveSession? _session;
+  LiveRtcTransport? get _rtc => _session?.rtc;
+  RealtimeSocket? get _ws => _session?.ws;
+  SessionConfig? _config;
+  String? _summary;
   DelegationExecutor? _executor;
   DelegationModel? _delegationModel;
   bool _closed = false;
@@ -208,6 +222,15 @@ class LiveWebRtcBackend implements VoiceBackend, ManagedAudioBackend {
 
   late final _ManagedPlayer _player = _ManagedPlayer(this);
 
+  // ---- compaction swap (applySummary)
+  ({String summary, String? recent})? _pendingApply;
+  Completer<ContextApplyResult>? _applyDone;
+  _LiveSession? _preparing;
+  bool _swapping = false;
+  Timer? _applyTimer;
+  int _activity = 0;
+  DateTime _lastActivity = DateTime.now();
+
   @override
   Stream<BackendEvent> get events => _events.stream;
 
@@ -217,6 +240,9 @@ class LiveWebRtcBackend implements VoiceBackend, ManagedAudioBackend {
 
   @override
   bool get hasServerVad => true;
+
+  @override
+  ContextAccounting get contextAccounting => ContextAccounting.textEstimate;
 
   String get transportDescription => _rtc?.description ?? '-';
 
@@ -239,84 +265,19 @@ class LiveWebRtcBackend implements VoiceBackend, ManagedAudioBackend {
     if (creds.mode != AuthMode.codex) {
       throw StateError('gpt-live is only available with the Codex ChatGPT login (not an API key)');
     }
-    final model = kLiveModels.contains(config.model) ? config.model : kLiveModels.first;
-    final voice = kLiveVoices.contains(config.voice) ? config.voice : kLiveDefaultVoice;
-    final headers = creds.headers(live: true);
+    _config = config;
+    final prior = config.priorContext?.trim();
+    _summary = prior == null || prior.isEmpty ? null : prior;
     final total = Stopwatch()..start();
-
-    final rtc = transportFactory();
-    _rtc = rtc;
-    var sw = Stopwatch()..start();
-    final offer = await rtc.createOffer();
-    timings.offer = sw.elapsed;
-
-    var instructions = config.instructions;
-    final prior = config.priorContext;
-    if (prior != null && prior.trim().isNotEmpty) {
-      instructions = '$instructions\n\nEarlier in this conversation (summary):\n${prior.trim()}';
-    }
-    sw = Stopwatch()..start();
-    final call = await _createCall(Uri.parse(callsUrl), headers, {
-      'sdp': offer,
-      'session': {
-        'model': model,
-        'instructions': instructions,
-        'audio': {
-          'output': {'voice': voice},
-        },
-        'delegation': {'type': 'client'},
-      },
-    });
-    timings.callCreate = sw.elapsed;
-    callId = call.callId;
-    await rtc.setAnswer(call.answerSdp);
-
-    sw = Stopwatch()..start();
-    final RealtimeSocket ws;
-    try {
-      ws = await _connectSideband(Uri.parse('$sidebandBase/${call.callId}'), headers);
-    } catch (e) {
-      throw LiveCallException(
-        'sideband rejected: ${redactSecrets('$e')} (an invalid session config kills the call silently)',
-      );
-    }
-    timings.sideband = sw.elapsed;
-    _ws = ws;
-    final started = Completer<void>();
-    _wsSub = ws.messages.listen(
-      (raw) {
-        Map<String, Object?> ev;
-        try {
-          ev = (jsonDecode(raw) as Map).cast<String, Object?>();
-        } catch (_) {
-          return;
-        }
-        if (ev['type'] == 'session.started' && !started.isCompleted) started.complete();
-        try {
-          _onSideband(ev);
-        } catch (e, st) {
-          debugPrint('live sideband handler: $e\n$st');
-        }
-      },
-      onDone: () {
-        if (!started.isCompleted) {
-          started.completeError(LiveCallException('sideband closed before session.started (${ws.closeCode})'));
-        }
-        if (!_closed) {
-          _emit(BackendError('gpt-live session ended (${ws.closeCode ?? '-'} ${ws.closeReason ?? ''})', fatal: true));
-        }
-      },
-      onError: (Object e) {
-        if (!started.isCompleted) started.completeError(e);
-      },
-    );
-    await started.future.timeout(
-      sessionStartTimeout,
-      onTimeout: () => throw LiveCallException('no session.started within ${sessionStartTimeout.inSeconds}s'),
+    final s = await _openSession(
+      config,
+      composeInstructions(config.instructions, _summary, config.recentContext),
+      activate: true,
+      timed: true,
     );
     timings.sessionStarted = total.elapsed;
-    rtc.setMicEnabled(_inputEnabled);
-    debugPrint('gpt-live connected: $model voice=$voice call=${call.callId} $timings via ${rtc.description}');
+    s.rtc.setMicEnabled(_inputEnabled);
+    debugPrint('gpt-live connected: ${s.model} voice=${s.voice} call=${s.callId} $timings via ${s.rtc.description}');
 
     final dm =
         delegationModelFactory?.call(creds) ?? ResponsesDelegationModel(credentialsProvider ?? () async => creds);
@@ -327,9 +288,253 @@ class LiveWebRtcBackend implements VoiceBackend, ManagedAudioBackend {
       tools: config.tools,
       runTool: toolRunner ?? _runToolViaPipeline,
       latestScreenshot: () => _latestImage,
+      contextNote: () => _summary,
       fastModel: delegationFastModel,
       reasoningEffort: delegationReasoningEffort,
     );
+  }
+
+  /// Startup instructions: the session's instructions are immutable and
+  /// `session.initial_items` does not exist (§3.2), so earlier context goes
+  /// here as text.
+  static String composeInstructions(String base, String? summary, String? recent) {
+    final b = StringBuffer(base);
+    if (summary != null && summary.trim().isNotEmpty) {
+      b.write('\n\nEarlier in this conversation (summary):\n${summary.trim()}');
+    }
+    if (recent != null && recent.trim().isNotEmpty) {
+      b.write('\n\nMost recent turns, verbatim (continue from here; do not greet again):\n${recent.trim()}');
+    }
+    return b.toString();
+  }
+
+  /// Creates a call (offer → call → answer → sideband → session.started).
+  /// With [activate] its events drive the backend at once; otherwise the
+  /// session is prepared muted and only [_swapTo] makes it live.
+  Future<_LiveSession> _openSession(
+    SessionConfig config,
+    String instructions, {
+    required bool activate,
+    bool timed = false,
+  }) async {
+    final creds = config.credentials!;
+    final model = kLiveModels.contains(config.model) ? config.model : kLiveModels.first;
+    final voice = kLiveVoices.contains(config.voice) ? config.voice : kLiveDefaultVoice;
+    final headers = creds.headers(live: true);
+    final s = _LiveSession(transportFactory(), model, voice);
+    if (activate) {
+      _session = s;
+    } else {
+      _preparing = s;
+      s.rtc
+        ..setMicEnabled(false)
+        ..setSpeakerEnabled(false);
+    }
+    try {
+      var sw = Stopwatch()..start();
+      final offer = await s.rtc.createOffer();
+      if (timed) timings.offer = sw.elapsed;
+      sw = Stopwatch()..start();
+      final call = await _createCall(Uri.parse(callsUrl), headers, {
+        'sdp': offer,
+        'session': {
+          'model': model,
+          'instructions': instructions,
+          'audio': {
+            'output': {'voice': voice},
+          },
+          'delegation': {'type': 'client'},
+        },
+      });
+      if (timed) timings.callCreate = sw.elapsed;
+      s.callId = call.callId;
+      if (activate) callId = call.callId;
+      await s.rtc.setAnswer(call.answerSdp);
+      if (s.closed) throw LiveCallException('closed while connecting');
+
+      sw = Stopwatch()..start();
+      final RealtimeSocket ws;
+      try {
+        ws = await _connectSideband(Uri.parse('$sidebandBase/${call.callId}'), headers);
+      } catch (e) {
+        throw LiveCallException(
+          'sideband rejected: ${redactSecrets('$e')} (an invalid session config kills the call silently)',
+        );
+      }
+      if (timed) timings.sideband = sw.elapsed;
+      s.ws = ws;
+      if (s.closed) throw LiveCallException('closed while connecting');
+      s.sub = ws.messages.listen(
+        (raw) {
+          Map<String, Object?> ev;
+          try {
+            ev = (jsonDecode(raw) as Map).cast<String, Object?>();
+          } catch (_) {
+            return;
+          }
+          if (ev['type'] == 'session.started' && !s.started.isCompleted) s.started.complete();
+          // A prepared or replaced session never touches the turn state.
+          if (!identical(_session, s)) return;
+          try {
+            _onSideband(ev);
+          } catch (e, st) {
+            debugPrint('live sideband handler: $e\n$st');
+          }
+        },
+        onDone: () {
+          if (!s.started.isCompleted) {
+            s.started.completeError(LiveCallException('sideband closed before session.started (${ws.closeCode})'));
+          }
+          if (!_closed && identical(_session, s)) {
+            _emit(BackendError('gpt-live session ended (${ws.closeCode ?? '-'} ${ws.closeReason ?? ''})', fatal: true));
+          }
+        },
+        onError: (Object e) {
+          if (!s.started.isCompleted) s.started.completeError(e);
+        },
+      );
+      await s.started.future.timeout(
+        sessionStartTimeout,
+        onTimeout: () => throw LiveCallException('no session.started within ${sessionStartTimeout.inSeconds}s'),
+      );
+      return s;
+    } catch (_) {
+      if (!activate) unawaited(s.close());
+      rethrow;
+    } finally {
+      if (identical(_preparing, s)) _preparing = null;
+    }
+  }
+
+  // ------------------------------------------------- compaction (§3.2)
+
+  /// Applies a compaction to the live call. gpt-live keeps its own growing
+  /// context and its instructions are immutable, so "apply" means: the next
+  /// delegation gets [summary] as memory right away, and once the call is
+  /// idle (no user speech, no assistant turn or audio, no delegation or
+  /// tool in flight, quiet for [swapQuiet]) a new call is prepared with
+  /// instructions + [summary] + [recentTurns], muted, while the old one keeps
+  /// serving. It is swapped in only if nothing happened meanwhile (otherwise
+  /// it is discarded and prepared again), so no response is interrupted.
+  @override
+  Future<ContextApplyResult> applySummary(String summary, {String? recentTurns}) {
+    if (_closed || _config == null) {
+      return Future.value(const ContextApplyResult(ContextApplyMethod.skipped, detail: 'not connected'));
+    }
+    _summary = summary.trim();
+    _pendingApply = (summary: summary.trim(), recent: recentTurns);
+    final c = _applyDone ??= Completer<ContextApplyResult>();
+    _scheduleApply(Duration.zero);
+    return c.future;
+  }
+
+  void _noteActivity() {
+    _activity++;
+    _lastActivity = DateTime.now();
+  }
+
+  bool get _idle =>
+      !_assistantOpen &&
+      !_userSpeaking &&
+      _openUserKey == null &&
+      _keyByTurn.isEmpty &&
+      _pendingTools.isEmpty &&
+      _pendingDelegations == 0 &&
+      !_player.isPlaying;
+
+  bool get _quiet => _idle && DateTime.now().difference(_lastActivity) >= swapQuiet;
+
+  void _scheduleApply([Duration? delay]) {
+    _applyTimer?.cancel();
+    _applyTimer = Timer(delay ?? swapPoll, _tryApply);
+  }
+
+  void _tryApply() {
+    if (_pendingApply == null || _swapping) return;
+    if (_closed) {
+      _finishApply(const ContextApplyResult(ContextApplyMethod.skipped, detail: 'closed'));
+      return;
+    }
+    if (!_quiet) return _scheduleApply();
+    unawaited(_swap());
+  }
+
+  void _finishApply(ContextApplyResult r) {
+    final c = _applyDone;
+    _applyDone = null;
+    _pendingApply = null;
+    if (c != null && !c.isCompleted) c.complete(r);
+  }
+
+  Future<void> _swap() async {
+    _swapping = true;
+    var result = const ContextApplyResult(ContextApplyMethod.skipped, detail: 'conversation kept moving');
+    try {
+      for (var attempt = 0; attempt < swapAttempts; attempt++) {
+        while (!_closed && !_quiet) {
+          await Future<void>.delayed(swapPoll);
+        }
+        final want = _pendingApply;
+        final cfg = _config;
+        if (_closed || want == null || cfg == null) {
+          result = const ContextApplyResult(ContextApplyMethod.skipped, detail: 'closed');
+          break;
+        }
+        final activity = _activity;
+        final _LiveSession next;
+        try {
+          next = await _openSession(
+            cfg,
+            composeInstructions(cfg.instructions, want.summary, want.recent),
+            activate: false,
+          );
+        } catch (e) {
+          result = ContextApplyResult(ContextApplyMethod.skipped, detail: 'reconnect failed: $e');
+          continue;
+        }
+        if (_closed) {
+          await next.close();
+          break;
+        }
+        if (activity != _activity || !_idle || !identical(want, _pendingApply)) {
+          // The user or the assistant spoke meanwhile (the new call would miss
+          // that turn), or a newer summary arrived: prepare again.
+          await next.close();
+          continue;
+        }
+        _swapTo(next);
+        result = ContextApplyResult(ContextApplyMethod.reconnected, detail: 'call ${next.callId}');
+        break;
+      }
+    } finally {
+      _swapping = false;
+      _finishApply(result);
+    }
+  }
+
+  /// Makes [next] the live call (synchronously, between turns) and closes
+  /// the old one.
+  void _swapTo(_LiveSession next) {
+    final old = _session;
+    _session = next;
+    callId = next.callId;
+    _closeTimer?.cancel();
+    _out.clear();
+    _firstOutMs = null;
+    _outEndMs = 0;
+    _emittedUntilMs = 0;
+    _assistantStartMs = 0;
+    _assistantCloseAtMs = null;
+    _interrupted = false;
+    _speakerMuted = false;
+    _transcriptKey = null;
+    _vad.reset();
+    _player.clock.reset();
+    next.rtc
+      ..setSpeakerEnabled(true)
+      ..setMicEnabled(_inputEnabled);
+    debugPrint('gpt-live: compacted context, switched call ${old?.callId} -> ${next.callId}');
+    if (old != null) unawaited(old.close());
   }
 
   // -------------------------------------------------------------- sideband
@@ -361,6 +566,7 @@ class LiveWebRtcBackend implements VoiceBackend, ManagedAudioBackend {
           _openAssistant(_int(turn['start_ms']));
         }
       case 'turn.done':
+        _noteActivity();
         final turn = _map(ev['turn']);
         final text = '${turn['transcript'] ?? ''}'.trim();
         if (text.isNotEmpty) debugPrint('gpt-live ${turn['role']}: $text');
@@ -407,6 +613,7 @@ class LiveWebRtcBackend implements VoiceBackend, ManagedAudioBackend {
 
   void _openAssistant(int startMs) {
     if (_assistantOpen) return;
+    _noteActivity();
     _assistantOpen = true;
     _assistantCloseAtMs = null;
     _assistantStartMs = startMs;
@@ -453,6 +660,7 @@ class LiveWebRtcBackend implements VoiceBackend, ManagedAudioBackend {
 
   void _finishAssistant() {
     if (!_assistantOpen) return;
+    _noteActivity();
     _closeTimer?.cancel();
     _assistantOpen = false;
     _assistantCloseAtMs = null;
@@ -486,6 +694,7 @@ class LiveWebRtcBackend implements VoiceBackend, ManagedAudioBackend {
   /// Starts (or resumes) the open user turn; returns its key.
   String _userStarted() {
     final key = _openUserKey ??= 'user_${++_userSeq}';
+    _noteActivity();
     if (_userSpeaking) return key;
     _userSpeaking = true;
     final dm = _delegationModel;
@@ -495,6 +704,7 @@ class LiveWebRtcBackend implements VoiceBackend, ManagedAudioBackend {
   }
 
   void _userStopped() {
+    _noteActivity();
     _userSpeaking = false;
     _emit(SpeechStopped(itemId: _openUserKey));
   }
@@ -527,6 +737,7 @@ class LiveWebRtcBackend implements VoiceBackend, ManagedAudioBackend {
         : '';
     final ex = _executor;
     if (id.isEmpty || ex == null) return;
+    _noteActivity();
     final sw = Stopwatch()..start();
     _pendingDelegations++;
     unawaited(() async {
@@ -585,6 +796,7 @@ class LiveWebRtcBackend implements VoiceBackend, ManagedAudioBackend {
 
   @override
   void sendText(String text) {
+    _noteActivity();
     // No user-text item on this transport: inject it as context the model
     // reacts to (§3.2 session.context.append).
     _send({
@@ -650,20 +862,14 @@ class LiveWebRtcBackend implements VoiceBackend, ManagedAudioBackend {
     if (_closed) return;
     _closed = true;
     _closeTimer?.cancel();
-    try {
-      _send({'type': 'session.close'});
-    } catch (_) {}
+    _applyTimer?.cancel();
+    _finishApply(const ContextApplyResult(ContextApplyMethod.skipped, detail: 'closed'));
     for (final c in _pendingTools.values) {
       if (!c.isCompleted) c.complete('{"ok":false,"error":"session closed"}');
     }
     _pendingTools.clear();
-    await _wsSub?.cancel();
-    try {
-      await _ws?.close();
-    } catch (_) {}
-    try {
-      await _rtc?.close();
-    } catch (_) {}
+    await _preparing?.close();
+    await _session?.close();
     _delegationModel?.close();
     for (final m in _mics.toList()) {
       await m.close();
@@ -676,11 +882,41 @@ class LiveWebRtcBackend implements VoiceBackend, ManagedAudioBackend {
 
 // ------------------------------------------------------------------ helpers
 
+/// One gpt-live call: WebRTC media plus its sideband socket.
+class _LiveSession {
+  _LiveSession(this.rtc, this.model, this.voice);
+  final LiveRtcTransport rtc;
+  final String model;
+  final String voice;
+  RealtimeSocket? ws;
+  StreamSubscription<String>? sub;
+  String? callId;
+  final started = Completer<void>();
+  bool closed = false;
+
+  Future<void> close() async {
+    if (closed) return;
+    closed = true;
+    try {
+      ws?.send(jsonEncode({'type': 'session.close'}));
+    } catch (_) {}
+    await sub?.cancel();
+    try {
+      await ws?.close();
+    } catch (_) {}
+    try {
+      await rtc.close();
+    } catch (_) {}
+  }
+}
+
 /// Sparse PCM store keyed by session milliseconds (200 ms frames).
 class _PcmTimeline {
   _PcmTimeline({required this.maxMs});
   final int maxMs;
   final SplayTreeMap<int, Uint8List> _frames = SplayTreeMap();
+
+  void clear() => _frames.clear();
 
   void add(int startMs, Uint8List pcm) {
     _frames[startMs] = pcm;

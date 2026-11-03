@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import '../../platform/audio_io.dart';
 import '../auth/auth.dart';
+import '../context/context_manager.dart';
 
 /// Audio format used everywhere between the app and the voice backend:
 /// signed 16-bit little-endian PCM, 24 kHz, mono.
@@ -34,6 +35,7 @@ class SessionConfig {
     this.tools = const [],
     this.credentials,
     this.priorContext,
+    this.recentContext,
   });
 
   final String model;
@@ -45,6 +47,11 @@ class SessionConfig {
   /// Summary of earlier (compacted) conversation, to be injected on
   /// (re)connect so the model keeps long-term context.
   final String? priorContext;
+
+  /// Text of the turns after [priorContext] (still verbatim in the
+  /// conversation). Backends that cannot replay items (gpt-live) put it in
+  /// the startup instructions.
+  final String? recentContext;
 }
 
 /// Events emitted by a [VoiceBackend].
@@ -138,6 +145,9 @@ abstract class VoiceBackend {
   /// Whether the backend detects speech itself and emits [SpeechStarted] /
   /// [SpeechStopped]. When false the turn pipeline runs a local energy VAD.
   bool get hasServerVad => true;
+
+  /// How [ContextManager] measures this backend's context.
+  ContextAccounting get contextAccounting => ContextAccounting.usage;
 
   Future<void> connect(SessionConfig config);
 

@@ -51,7 +51,7 @@ class Harness {
     final ctx = ContextManager(
       compressor: compressor ?? StubCompressor(latency: Duration.zero),
       threshold: threshold,
-      keepRecent: 2,
+      keepRecentTurns: 2,
       minInterval: Duration.zero,
     );
     final h = Harness._(fp, store, ctx, FakeConfirmations(), backend ?? () => ScriptedBackend());
@@ -358,7 +358,10 @@ void main() {
 
   group('context', () {
     test('usage events feed the context manager; compaction adds a system note', () async {
-      final h = await Harness.create(threshold: 300, compressor: _ShortCompressor());
+      final h = await Harness.create(threshold: 100000, compressor: _ShortCompressor());
+      final overhead = h.context.overheadTokens;
+      expect(overhead, greaterThan(100), reason: 'instructions + tool definitions are context');
+      expect(h.context.accounting, ContextAccounting.usage);
       final events = <ContextCompacted>[];
       h.pipeline.compactionEvents.listen(events.add);
       for (var i = 0; i < 4; i++) {
@@ -366,12 +369,21 @@ void main() {
         h.scripted.emit(AssistantTranscriptDelta('reply $i ${'y' * 200}'));
         h.scripted.emit(const ResponseDone());
       }
-      h.scripted.emit(const Usage(500, 100, 600));
+      h.scripted.emit(Usage(overhead + 500, 100, overhead + 600));
+      expect(h.context.estimatedTokens, overhead + 600);
+      h.context.threshold = overhead + 300;
+      h.context.onConversationChanged();
       await waitFor(() => events.isNotEmpty);
-      expect(events.first.tokensBefore, greaterThan(events.first.tokensAfter));
+      final e = events.first;
+      expect(e.tokensBefore, overhead + 600, reason: 'the meter value before');
+      expect(e.tokensAfter, h.context.estimatedTokens, reason: 'the meter value after');
+      expect(e.substantial, isTrue);
       final note = h.conv.messages.lastWhere((m) => m.meta['type'] == 'compaction');
       expect(note.kind, MessageKind.system);
-      expect(note.text, startsWith('Context compacted: '));
+      expect(
+        note.text,
+        startsWith('Context compacted: ${formatTokenCount(e.tokensBefore)} → ${formatTokenCount(e.tokensAfter)} tokens'),
+      );
       expect(h.conv.summary, isNotNull);
       await h.dispose();
     });

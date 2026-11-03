@@ -11,15 +11,17 @@ Facts: durable facts about the user, their machine and preferences.
 Tasks: what the user asked for and the status of each (done / pending / failed).
 Files: exact file paths, commands and URLs that matter.
 Decisions: choices made and constraints agreed on.
-Screen: what the attached screenshots showed, described in words (only what matters later).
+Screen: the screenshots are removed from the context after this, so describe each attached one in a short phrase
+(app, document or page, and anything the user referred to), merging near-identical ones.
 Keep exact names, numbers and paths. Drop greetings, filler, repetition and tool chatter.
 If a previous summary is given, merge it: keep what is still relevant, update what changed.
 ''';
 
 /// [Compressor] backed by the Responses API (default model gpt-6-luna).
-/// Screenshots are sent as images so their content survives as text.
+/// Screenshots are sent as images (the newest [maxImages]) so their content
+/// survives as short text descriptions once they leave the context.
 class ResponsesCompressor implements Compressor {
-  ResponsesCompressor(this.client, {this.maxImages = 3, this.maxToolChars = 500});
+  ResponsesCompressor(this.client, {this.maxImages = 6, this.maxToolChars = 500});
 
   final ResponsesClient client;
   final int maxImages;
@@ -37,7 +39,10 @@ class ResponsesCompressor implements Compressor {
     }
     sb.writeln('CONVERSATION TO COMPRESS:');
     // Only the most recent screenshots are attached; older ones are noted.
-    final withImages = [for (final m in messages) if (m.image != null) m];
+    final withImages = [
+      for (final m in messages)
+        if (m.image != null) m,
+    ];
     final attach = withImages.length <= maxImages ? withImages : withImages.sublist(withImages.length - maxImages);
     var imageNo = 0;
     final images = <Map<String, Object?>>[];
@@ -65,11 +70,7 @@ class ResponsesCompressor implements Compressor {
     if (images.isNotEmpty) {
       content.add(inputText('Screenshots #1..#${images.length} are attached above in order.'));
     }
-    final r = await client.create(
-      model: model,
-      instructions: kCompressorInstructions,
-      input: [userMessage(content)],
-    );
+    final r = await client.create(model: model, instructions: kCompressorInstructions, input: [userMessage(content)]);
     final summary = r.text.trim();
     if (summary.isEmpty) throw StateError('compressor returned an empty summary');
     return CompressionResult(summary: summary, tokensAfter: (summary.length / 4).ceil());

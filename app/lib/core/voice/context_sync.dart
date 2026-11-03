@@ -24,6 +24,10 @@ class ContextApplyResult {
 /// Optional [VoiceBackend] capability: replace old server-side conversation
 /// items with a summary. Implementations must wait until no response is
 /// active (between responses) and must not interrupt playback.
+///
+/// [recentTurns] is a text rendering of the turns the compaction kept, for
+/// backends that rebuild the context from text (gpt-live reconnect); the
+/// Realtime backend keeps those items on the server and ignores it.
 abstract interface class LiveContextSync {
-  Future<ContextApplyResult> applySummary(String summary);
+  Future<ContextApplyResult> applySummary(String summary, {String? recentTurns});
 }

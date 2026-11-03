@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../audio/playback_tracker.dart';
 import '../auth/auth.dart';
+import '../context/context_manager.dart';
 import '../net/realtime_socket.dart';
 import 'context_sync.dart';
 import 'voice_backend.dart';
@@ -83,6 +84,9 @@ class RealtimeWsBackend implements VoiceBackend, LiveContextSync {
   final void Function(String) _log;
 
   final _events = StreamController<BackendEvent>.broadcast();
+
+  @override
+  ContextAccounting get contextAccounting => ContextAccounting.usage;
   RealtimeSocket? _ws;
   StreamSubscription<String>? _wsSub;
   SessionConfig? _config;
@@ -744,7 +748,7 @@ class RealtimeWsBackend implements VoiceBackend, LiveContextSync {
       !_applyingSummary;
 
   @override
-  Future<ContextApplyResult> applySummary(String summary) {
+  Future<ContextApplyResult> applySummary(String summary, {String? recentTurns}) {
     if (_closed) return Future.value(const ContextApplyResult(ContextApplyMethod.skipped, detail: 'closed'));
     _pendingSummary = summary;
     final c = _pendingSummaryDone ??= Completer<ContextApplyResult>();

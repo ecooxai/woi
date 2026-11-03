@@ -135,7 +135,7 @@ class _LiveRig {
     r.context = ContextManager(
       compressor: compressor ?? StubCompressor(latency: Duration.zero),
       threshold: threshold,
-      keepRecent: 2,
+      keepRecentTurns: 2,
       minInterval: Duration.zero,
     );
     final env = ToolEnvironment(

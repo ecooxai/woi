@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
@@ -11,6 +12,7 @@ import '../models/message.dart';
 import '../settings/settings.dart';
 import '../storage/history_store.dart';
 import '../voice/context_sync.dart';
+import '../voice/delegation_executor.dart';
 import '../voice/voice_backend.dart';
 import 'vad.dart';
 
@@ -19,6 +21,17 @@ enum SessionStatus { disconnected, connecting, connected, error }
 enum AssistantPhase { offline, idle, listening, userSpeaking, thinking, toolRunning, speaking }
 
 /// Runtime knobs read on every turn (backed by AppSettings in the app).
+/// Fixed context of a session: instructions and tool definitions, plus the
+/// delegation prompt for gpt-live (whose tools run in a delegation model).
+int contextOverhead(SessionConfig cfg, ContextAccounting accounting) {
+  var t = ContextManager.textTokens(cfg.instructions);
+  t += ContextManager.textTokens(jsonEncode([for (final s in cfg.tools) s.toJson()]));
+  if (accounting == ContextAccounting.textEstimate) {
+    t += ContextManager.textTokens(DelegationExecutor.instructions);
+  }
+  return t;
+}
+
 class PipelineOptions {
   const PipelineOptions({
     this.autoScreenshot = true,
@@ -177,6 +190,7 @@ class TurnPipeline extends ChangeNotifier {
     );
     try {
       final cfg = await sessionConfig(_conv);
+      context.configure(accounting: b.contextAccounting, overheadTokens: contextOverhead(cfg, b.contextAccounting));
       await b.connect(cfg);
       if (!identical(_backend, b)) return;
       _status = SessionStatus.connected;
@@ -614,9 +628,12 @@ class TurnPipeline extends ChangeNotifier {
 
   void _onCompacted(ContextCompacted c) {
     if (_disposed) return;
+    final images = c.describedImages == 0
+        ? ''
+        : ', ${c.describedImages} screenshot${c.describedImages == 1 ? '' : 's'} replaced by descriptions';
     _addSystem(
-      'Context compacted: ${c.tokensBefore} → ${c.tokensAfter} tokens '
-      '(${c.compactedMessages} messages summarised)',
+      'Context compacted: ${formatTokenCount(c.tokensBefore)} → ${formatTokenCount(c.tokensAfter)} tokens '
+      '(${c.compactedMessages} messages summarised$images)',
       meta: {'type': 'compaction', 'before': c.tokensBefore, 'after': c.tokensAfter},
     );
     _compactionEvents.add(c);
@@ -631,7 +648,7 @@ class TurnPipeline extends ChangeNotifier {
     final Object? b = _backend;
     if (b is! LiveContextSync) return;
     b
-        .applySummary(c.summary)
+        .applySummary(c.summary, recentTurns: context.recentTurns())
         .then((r) {
           lastContextApply = r;
           debugPrint('compaction applied to live session: $r');

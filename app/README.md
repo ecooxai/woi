@@ -67,6 +67,27 @@ Pick the backend under **Settings → Voice backend**. `lib/core/voice/backend_f
   The pipeline's "Context compacted: X → Y tokens" banner fires when the compressor
   finishes.
 
+### Context size and compaction (`lib/core/context/context_manager.dart`)
+`ContextManager.estimatedTokens` is the only context figure. The header meter, the
+compaction trigger and the "Context compacted: X → Y" note all read it. Each backend
+declares its `contextAccounting`:
+- **usage** (direct realtime): the last `response.done` usage, plus a calibrated
+  estimate of what changed since (new messages, minus compacted ones, plus summary growth).
+- **textEstimate** (gpt-live, which reports no usage): instructions, tool and delegation
+  prompts, summary, transcripts, typed text and tool output, plus the latest screenshot
+  (the delegation input). Audio is not counted.
+
+When the context passes the threshold, compaction summarizes everything before the last 2
+user turns, screenshots included. `gpt-6-luna` describes the screenshots in words and
+they leave the context. Compaction is skipped if it would free less than 25% of the
+compressible part, and rejected if the summary is not smaller than what it replaces.
+
+On gpt-live, applying a compaction works like this. Instructions are immutable and there
+are no initial items (spec §3.2). Delegations get the summary as memory right away. Once
+the call has been idle for 1.5 s, a new call is prepared muted with instructions,
+summary and the recent turns. It is swapped in between turns. If anyone spoke in the
+meantime it is discarded and prepared again, so a response is never interrupted.
+
 ### Responses API (`lib/core/responses/responses_client.dart`)
 - ChatGPT login: `chatgpt.com/backend-api/codex/responses`. API key: `api.openai.com/v1/responses`.
 - Requests always use `stream: true` and `store: false`, with the full history resent on

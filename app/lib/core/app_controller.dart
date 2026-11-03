@@ -180,6 +180,7 @@ class AppController extends ChangeNotifier {
       tools: tools.specs,
       credentials: creds,
       priorContext: c.summary,
+      recentContext: contextManager.recentTurns(),
     );
   }
 

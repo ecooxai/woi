@@ -10,6 +10,7 @@ import 'package:woi/core/models/message.dart';
 import 'package:woi/core/pipeline/turn_pipeline.dart';
 import 'package:woi/core/settings/settings.dart';
 import 'package:woi/core/storage/history_store.dart';
+import 'package:woi/core/voice/context_sync.dart';
 import 'package:woi/core/voice/delegation_executor.dart';
 import 'package:woi/core/voice/live_webrtc_backend.dart';
 import 'package:woi/core/voice/voice_backend.dart';
@@ -28,15 +29,23 @@ const _tools = [
 class _Rig {
   _Rig({List<DelegationModelTurn> turns = const []}) : model = FakeDelegationModel(List.of(turns)) {
     backend = LiveWebRtcBackend(
-      transportFactory: () => rtc,
+      transportFactory: () {
+        if (_made++ > 0) rtcs.add(FakeLiveTransport());
+        return rtcs.last;
+      },
       sideband: server.connect,
       createCall: server.createCall,
       delegationModelFactory: (_) => model,
+      swapQuiet: const Duration(milliseconds: 60),
+      swapPoll: const Duration(milliseconds: 10),
     );
     sub = backend.events.listen(events.add);
   }
 
-  final rtc = FakeLiveTransport();
+  /// One transport per call (a compaction swap creates a second one).
+  final rtcs = [FakeLiveTransport()];
+  int _made = 0;
+  FakeLiveTransport get rtc => rtcs.last;
   final server = FakeLiveServer();
   final FakeDelegationModel model;
   late final LiveWebRtcBackend backend;
@@ -284,6 +293,88 @@ void main() {
     });
   });
 
+  group('compaction swap (applySummary)', () {
+    String instructionsOf(_Rig r, int call) =>
+        (r.server.calls[call].$3['session']! as Map)['instructions'] as String;
+
+    test('waits for the reply to end, prepares a muted call with summary + recent turns, then swaps', () async {
+      final r = _Rig(turns: [const DelegationModelTurn(text: 'ok', calls: [])]);
+      await r.connect();
+      final old = r.ws;
+      final oldRtc = r.rtc;
+      // Assistant is speaking: nothing may happen yet.
+      old.audio(200, pcm(200));
+      old.outputWords('Here is', 200);
+      final res = r.backend.applySummary('Facts: user is Alice.', recentTurns: 'User: hi\nAssistant: hello');
+      await _tick(150);
+      expect(r.server.calls, hasLength(1), reason: 'never while a reply is active');
+      old.turn('done', 'assistant', 200, 400, 'Here is.');
+      old.audio(400, pcm(200));
+      final result = await res.timeout(const Duration(seconds: 2));
+      expect(result.method, ContextApplyMethod.reconnected);
+      expect(r.server.calls, hasLength(2));
+      final ins = instructionsOf(r, 1);
+      expect(ins, startsWith('Be brief.'));
+      expect(ins, contains('Earlier in this conversation (summary):\nFacts: user is Alice.'));
+      expect(ins, contains('User: hi\nAssistant: hello'));
+      // Prepared muted, unmuted on the swap; the old call is closed.
+      final next = r.rtc;
+      expect(identical(next, oldRtc), isFalse);
+      expect(next.micToggles.first, isFalse);
+      expect(next.micEnabled, isTrue, reason: 'input state carried over from the old call');
+      expect(next.speakerEnabled, isTrue);
+      await _tick(10);
+      expect(oldRtc.closed, isTrue);
+      expect(old.ofType('session.close'), hasLength(1));
+      expect(r.backend.callId, 'rtc_test2');
+      expect(r.of<BackendError>(), isEmpty, reason: 'closing the old sideband is not an error');
+      // The new call drives the turn state; delegations get the summary.
+      r.ws.inputWords('and now', 300);
+      await _tick();
+      expect(r.of<UserTranscriptDelta>().last.text, 'and now');
+      r.ws.delegation('d1', 'open the file');
+      await _tick(20);
+      final input = jsonEncode(r.model.requests.last.input);
+      expect(input, contains('Conversation memory'));
+      expect(input, contains('Facts: user is Alice.'));
+      await r.dispose();
+    });
+
+    test('a turn during preparation discards the prepared call and retries', () async {
+      final r = _Rig();
+      await r.connect();
+      final old = r.ws;
+      r.server.autoStart = false;
+      final res = r.backend.applySummary('S1');
+      await _tick(120);
+      expect(r.server.sockets, hasLength(2), reason: 'second call is being prepared');
+      final prepared = r.server.sockets[1];
+      // The user starts talking before the new call is ready.
+      old.turn('created', 'user', 500, 0, '');
+      prepared.push({'type': 'session.started', 'session': <String, Object?>{}});
+      await _tick(30);
+      expect(prepared.closed, isTrue, reason: 'it would miss this turn');
+      expect(r.backend.callId, 'rtc_test1');
+      old.turn('done', 'user', 500, 900, 'Hello.');
+      r.server.autoStart = true;
+      final result = await res.timeout(const Duration(seconds: 2));
+      expect(result.method, ContextApplyMethod.reconnected);
+      expect(r.backend.callId, 'rtc_test3');
+      expect(r.of<UserTranscriptDone>().single.text, 'Hello.');
+      await r.dispose();
+    });
+
+    test('close while waiting resolves as skipped', () async {
+      final r = _Rig();
+      await r.connect();
+      r.ws.outputWords('Talking', 200);
+      final res = r.backend.applySummary('S');
+      await r.dispose();
+      expect((await res).method, ContextApplyMethod.skipped);
+      expect(r.server.calls, hasLength(1));
+    });
+  });
+
   group('delegation', () {
     test('delegation.created → ToolCall → sendToolResult → delegation.context.append', () async {
       final r = _Rig(
@@ -396,6 +487,8 @@ void main() {
       await waitFor(() => p.status == SessionStatus.connected);
       expect(fp.audio.mic, isNull, reason: 'WebRTC owns the mic: no pw-record');
       expect(rig.rtc.micEnabled, isTrue);
+      expect(p.context.accounting, ContextAccounting.textEstimate, reason: 'gpt-live: no usage, text context');
+      expect(p.context.overheadTokens, greaterThan(ContextManager.textTokens(DelegationExecutor.instructions)));
 
       // User speaks (server echo) → pipeline sees speech, takes a screenshot.
       rig.ws.micEcho(pcm(500));

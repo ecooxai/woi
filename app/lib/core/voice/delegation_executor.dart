@@ -194,6 +194,7 @@ class DelegationExecutor {
     required this.tools,
     required this.runTool,
     this.latestScreenshot,
+    this.contextNote,
     this.fastModel = 'gpt-6-luna',
     this.reasoningEffort = 'low',
     this.maxSteps = 4,
@@ -206,6 +207,10 @@ class DelegationExecutor {
   final List<ToolSpec> tools;
   final DelegationToolRunner runTool;
   final DelegationImage? Function()? latestScreenshot;
+
+  /// Conversation memory (the compaction summary) given to the model with
+  /// each request, so a compacted conversation still resolves "that file".
+  final String? Function()? contextNote;
 
   /// Model for the tool loop. Complex work is escalated by the model itself
   /// through `delegate_task` (the app's DelegateBackend, gpt-6.1-sol).
@@ -436,14 +441,19 @@ class DelegationExecutor {
     return report.tools.last.ok ? report.tools.last : null;
   }
 
-  Map<String, Object?> _userMessage(String text, DelegationImage? shot) => {
-    'type': 'message',
-    'role': 'user',
-    'content': [
-      if (shot != null) {'type': 'input_image', 'image_url': 'data:image/png;base64,${base64Encode(shot.png)}'},
-      {'type': 'input_text', 'text': shot?.note == null ? text : '$text\n(${shot!.note})'},
-    ],
-  };
+  Map<String, Object?> _userMessage(String text, DelegationImage? shot) {
+    final note = contextNote?.call()?.trim();
+    return {
+      'type': 'message',
+      'role': 'user',
+      'content': [
+        if (note != null && note.isNotEmpty)
+          {'type': 'input_text', 'text': 'Conversation memory (background only):\n$note'},
+        if (shot != null) {'type': 'input_image', 'image_url': 'data:image/png;base64,${base64Encode(shot.png)}'},
+        {'type': 'input_text', 'text': shot?.note == null ? text : '$text\n(${shot!.note})'},
+      ],
+    };
+  }
 
   Future<void> _exec(DelegationReport report, Stopwatch sw, String name, String args, String callId) async {
     final run = DelegationToolRun(name, args, sw.elapsed);

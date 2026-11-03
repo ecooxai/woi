@@ -4,6 +4,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import '../audio/wav.dart';
+import '../context/context_manager.dart';
 import '../pipeline/vad.dart';
 import 'voice_backend.dart';
 
@@ -34,6 +35,9 @@ class MockVoiceBackend implements VoiceBackend {
   final int silenceToStopMs;
 
   final _events = StreamController<BackendEvent>.broadcast();
+
+  @override
+  ContextAccounting get contextAccounting => ContextAccounting.usage;
   SessionConfig? _config;
   bool _connected = false;
 

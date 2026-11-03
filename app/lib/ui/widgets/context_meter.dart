@@ -6,15 +6,12 @@ import '../../core/context/context_manager.dart';
 import '../../core/models/message.dart';
 import '../theme.dart';
 
-String formatTokens(int t) {
-  if (t >= 100000) return '${(t / 1000).round()}k';
-  if (t >= 1000) return '${(t / 1000).toStringAsFixed(1)}k';
-  return '$t';
-}
+String formatTokens(int t) => formatTokenCount(t);
 
-/// Where the context tokens go (heuristic, same weights as [ContextManager]).
+/// Where the context tokens go: the parts of [ContextManager.estimatedTokens].
 class ContextBreakdown {
   const ContextBreakdown({
+    this.overhead = 0,
     required this.summary,
     required this.text,
     required this.images,
@@ -25,8 +22,11 @@ class ContextBreakdown {
     required this.total,
     required this.threshold,
     required this.compactedMessages,
+    this.measured = false,
+    this.textOnly = false,
   });
 
+  final int overhead;
   final int summary;
   final int text;
   final int images;
@@ -35,44 +35,36 @@ class ContextBreakdown {
   final int tools;
   final int toolCount;
 
-  /// What the meter shows (backend-reported usage when available).
+  /// What the meter shows ([ContextManager.estimatedTokens]).
   final int total;
   final int threshold;
   final int compactedMessages;
 
-  int get heuristic => summary + text + images + audio + tools;
+  /// [total] is anchored on the backend's usage report.
+  final bool measured;
+
+  /// gpt-live: text-only voice context, screenshots only for delegations.
+  final bool textOnly;
+
+  int get heuristic => overhead + summary + text + images + audio + tools;
   double get fill => threshold <= 0 ? 0 : total / threshold;
 
   static ContextBreakdown of(ContextManager m, Conversation? conv) {
-    var text = 0, images = 0, imageCount = 0, audio = 0, tools = 0, toolCount = 0, compacted = 0;
-    for (final msg in conv?.messages ?? const <Message>[]) {
-      if (msg.compacted) {
-        compacted++;
-        continue;
-      }
-      text += (msg.text.length / 4).ceil() + 4;
-      if (msg.image != null) {
-        images += m.imageTokenCost;
-        imageCount++;
-      }
-      if (msg.audio != null) audio += (msg.audio!.durationMs / 1000 * m.audioTokensPerSecond).round();
-      final t = msg.tool;
-      if (t != null) {
-        tools += ((t.argsJson.length + (t.resultJson?.length ?? 0)) / 4).ceil() + 8;
-        toolCount++;
-      }
-    }
+    final p = m.parts();
     return ContextBreakdown(
-      summary: ((conv?.summary?.length ?? 0) / 4).ceil(),
-      text: text,
-      images: images,
-      imageCount: imageCount,
-      audio: audio,
-      tools: tools,
-      toolCount: toolCount,
-      total: m.estimatedTokens,
+      overhead: p.overhead,
+      summary: p.summary,
+      text: p.text,
+      images: p.images,
+      imageCount: p.imageCount,
+      audio: p.audio,
+      tools: p.tools,
+      toolCount: p.toolCount,
+      total: p.total,
       threshold: m.threshold,
-      compactedMessages: compacted,
+      compactedMessages: p.compactedMessages,
+      measured: p.measured,
+      textOnly: m.accounting == ContextAccounting.textEstimate,
     );
   }
 }
@@ -154,9 +146,16 @@ class ContextMeter extends StatelessWidget {
                 children: [
                   Text('CONTEXT', style: eyebrow()),
                   const SizedBox(width: 8),
-                  if (busy) Text('compacting…', style: body(11, weight: FontWeight.w600, color: color)),
+                  if (busy)
+                    Text(
+                      'compacting…',
+                      style: body(11, weight: FontWeight.w600, color: color),
+                    ),
                   const Spacer(),
-                  Text(label, style: mono(12, color: color).copyWith(fontFeatures: kTabular)),
+                  Text(
+                    label,
+                    style: mono(12, color: color).copyWith(fontFeatures: kTabular),
+                  ),
                 ],
               ),
               const SizedBox(height: 8),
@@ -169,7 +168,9 @@ class ContextMeter extends StatelessWidget {
           button: true,
           label: semantics,
           child: Tooltip(
-            richMessage: WidgetSpan(child: BreakdownTable(b: b, compressing: busy)),
+            richMessage: WidgetSpan(
+              child: BreakdownTable(b: b, compressing: busy),
+            ),
             child: MouseRegion(
               cursor: SystemMouseCursors.click,
               child: GestureDetector(
@@ -201,7 +202,10 @@ class MeterBar extends StatefulWidget {
 }
 
 class _MeterBarState extends State<MeterBar> with SingleTickerProviderStateMixin {
-  late final AnimationController _sweep = AnimationController(vsync: this, duration: const Duration(milliseconds: 1100));
+  late final AnimationController _sweep = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1100),
+  );
 
   @override
   void initState() {
@@ -257,7 +261,11 @@ class _MeterBarState extends State<MeterBar> with SingleTickerProviderStateMixin
                   child: DecoratedBox(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
-                        colors: [Colors.white.withValues(alpha: 0), Colors.white.withValues(alpha: 0.7), Colors.white.withValues(alpha: 0)],
+                        colors: [
+                          Colors.white.withValues(alpha: 0),
+                          Colors.white.withValues(alpha: 0.7),
+                          Colors.white.withValues(alpha: 0),
+                        ],
                       ),
                     ),
                   ),
@@ -382,7 +390,11 @@ class BreakdownTable extends StatelessWidget {
               TextSpan(
                 children: [
                   TextSpan(text: k, style: body(fs)),
-                  if (sub != null) TextSpan(text: '  $sub', style: body(fs - 1, color: WoiColors.textFaint)),
+                  if (sub != null)
+                    TextSpan(
+                      text: '  $sub',
+                      style: body(fs - 1, color: WoiColors.textFaint),
+                    ),
                 ],
               ),
             ),
@@ -399,25 +411,22 @@ class BreakdownTable extends StatelessWidget {
       ),
     );
 
-    final reported = b.total != b.heuristic;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (!large) ...[
-          Text('Context window', style: body(13, weight: FontWeight.w700)),
-          const SizedBox(height: 6),
-        ],
+        if (!large) ...[Text('Context window', style: body(13, weight: FontWeight.w700)), const SizedBox(height: 6)],
+        if (b.overhead > 0) row('Instructions & tools', '${b.overhead}', WoiColors.textFaint),
         row('Memory summary', '${b.summary}', WoiColors.violet),
         row('Speech & text', '${b.text}', WoiColors.cyan),
-        row('Screenshots', '${b.images}', WoiColors.blue, sub: '×${b.imageCount}'),
-        row('Audio', '${b.audio}', WoiColors.magenta),
+        row('Screenshots', '${b.images}', WoiColors.blue, sub: b.textOnly ? 'latest, delegation' : '×${b.imageCount}'),
+        if (!b.textOnly) row('Audio', '${b.audio}', WoiColors.magenta),
         row('Tool calls', '${b.tools}', WoiColors.amber, sub: '×${b.toolCount}'),
         const SizedBox(height: 6),
         Container(height: 1, width: large ? 250 : 210, color: WoiColors.stroke),
         const SizedBox(height: 6),
         Text(
-          '${reported ? 'Backend-reported' : 'Estimated'} total  ${formatTokens(b.total)}',
+          '${b.measured ? 'Measured (last response)' : 'Estimated'} total  ${formatTokens(b.total)}',
           style: body(fs, weight: FontWeight.w600),
         ),
         Text(
@@ -426,7 +435,11 @@ class BreakdownTable extends StatelessWidget {
         ),
         if (b.compactedMessages > 0)
           Text('${b.compactedMessages} older messages summarised', style: body(fs - 0.5, color: WoiColors.textDim)),
-        if (compressing) Text('Compacting now…', style: body(fs - 0.5, weight: FontWeight.w600, color: WoiColors.violet)),
+        if (compressing)
+          Text(
+            'Compacting now…',
+            style: body(fs - 0.5, weight: FontWeight.w600, color: WoiColors.violet),
+          ),
       ],
     );
   }
@@ -452,7 +465,9 @@ Future<void> showContextDetails(
             children: [
               Icon(Icons.memory_rounded, color: color),
               const SizedBox(width: 10),
-              Expanded(child: Text('Context window', style: display(19), overflow: TextOverflow.ellipsis)),
+              Expanded(
+                child: Text('Context window', style: display(19), overflow: TextOverflow.ellipsis),
+              ),
               const SizedBox(width: 8),
               Text(
                 '${formatTokens(b.total)} / ${formatTokens(b.threshold)}',
