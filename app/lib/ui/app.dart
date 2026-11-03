@@ -9,6 +9,7 @@ import '../platform/media_viewer.dart';
 import '../platform/platform_services.dart';
 import '../platform/window_attention.dart';
 import 'confirmations.dart';
+import 'login/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'theme.dart';
 import 'viewer/viewer_app.dart';
@@ -90,6 +91,13 @@ class _WoiAppState extends State<WoiApp> with WidgetsBindingObserver {
       home: ListenableBuilder(
         listenable: _controller,
         builder: (context, _) {
+          if (_controller.ready && _controller.needsLogin) {
+            return LoginScreen(
+              createFlow: _controller.createLoginFlow,
+              onSignedIn: _controller.completeChatGptLogin,
+              onApiKey: _controller.useApiKey,
+            );
+          }
           if (_controller.ready) return HomeScreen(controller: _controller);
           return Scaffold(
             body: WoiBackdrop(

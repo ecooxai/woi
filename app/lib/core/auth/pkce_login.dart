@@ -201,8 +201,14 @@ class PkceLoginFlow {
     }
     // Callers may only await [result] later; never surface it as unhandled.
     unawaited(_done.future.then((_) {}, onError: (Object _) {}));
-    _server = await _bind();
-    _port = _server!.port;
+    final server = await _bind();
+    if (_done.isCompleted) {
+      // Cancelled while binding.
+      await server.close(force: true);
+      return authorizeUrl;
+    }
+    _server = server;
+    _port = server.port;
     _server!.listen(_handle, onError: (Object _) {});
     _timer = Timer(timeout, () => _fail(LoginFailure.timedOut, 'Sign-in timed out after ${timeout.inMinutes} min.'));
     final url = authorizeUrl;
