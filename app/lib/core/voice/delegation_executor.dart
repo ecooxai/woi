@@ -303,6 +303,31 @@ class DelegationExecutor {
     return file.hasMatch(name) ? name : null;
   }
 
+  static final _typeRequest = RegExp(
+    r'^\s*(?:(?:ok(?:ay)?|please|can you|could you|now)[\s,]+)*type(?:\s+out)?(?:\s+(?:the\s+)?(?:text|words?))?[\s:,]+(.+?)\s*$',
+    caseSensitive: false,
+  );
+  static final _generative = RegExp(
+    r"\b(a|an|some|the|my|your|this|that|summary|poem|email|letter|code|reply|answer|about|list|it|me)\b",
+    caseSensitive: false,
+  );
+
+  /// Literal text of a plain "type X" request (quoted, or a few words that
+  /// are clearly the text itself), or null when the text must be written
+  /// first ("type a short email to Bob"). Such requests skip the model.
+  static String? typeFastPath(String request) {
+    final m = _typeRequest.firstMatch(request);
+    if (m == null) return null;
+    var body = m.group(1)!.trim();
+    final quoted = RegExp('["\'“”‘’]').hasMatch(body);
+    body = body.replaceAll(RegExp('^["\'“”‘’]+|["\'“”‘’.!?]+\$'), '').trim();
+    final tail = RegExp(r'\s+(?:please|for me|now)\$', caseSensitive: false);
+    body = body.replaceAll(tail, '').trim();
+    if (body.isEmpty || body.length > 200) return null;
+    if (!quoted && (body.split(RegExp(r'\s+')).length > 4 || _generative.hasMatch(body))) return null;
+    return body;
+  }
+
   int _seq = 0;
 
   Future<DelegationReport> execute(String request, {String? id}) async {
@@ -349,6 +374,20 @@ class DelegationExecutor {
         return;
       }
       report.tools.removeRange(n, report.tools.length); // not found: let the model look
+    }
+    // Fast path: "type 'hello world'" goes straight to the focused window
+    // (the model sometimes clicked somewhere first and never typed).
+    final typed = typeFastPath(request);
+    if (typed != null && tools.any((t) => t.name == 'type_text')) {
+      await _exec(report, sw, 'type_text', jsonEncode({'text': typed}), 'fast_${report.id}');
+      final run = report.tools.last;
+      report
+        ..model = 'fast-path'
+        ..steps = 0
+        ..firstToolCall = run.startedAt
+        ..toolsDone = run.doneAt
+        ..resultText = _summarize(report, const []);
+      return;
     }
     final visual = needsScreen(request);
     final hasScreenshotTool = tools.any((t) => t.name == 'take_screenshot');

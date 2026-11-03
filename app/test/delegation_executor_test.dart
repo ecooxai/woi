@@ -98,6 +98,17 @@ void main() {
     expect(r.runs.first.$2, 'take_screenshot');
   });
 
+  test('plain "type X" types into the focused window without a model call', () async {
+    final r = _Runner();
+    final m = FakeDelegationModel(const []);
+    final rep = await DelegationExecutor(model: m, tools: _tools, runTool: r.call).execute("Type 'hello world");
+    expect(m.requests, isEmpty);
+    expect(rep.model, 'fast-path');
+    expect(rep.tools.single.name, 'type_text');
+    expect(jsonDecode(rep.tools.single.argsJson), {'text': 'hello world'});
+    expect(rep.resultText, startsWith('Done.'));
+  });
+
   test('non-visual requests skip the image and do not wait for a capture', () async {
     // Fresh screenshot available but not needed: text only.
     final r = _Runner()..shot = DelegationImage(png: Uint8List(4), capturedAt: DateTime.now());
@@ -136,7 +147,7 @@ void main() {
       tools: _tools,
       runTool: runner,
       latestScreenshot: () => r2.shot,
-    ).execute('Type hello world');
+    ).execute('Type a short greeting');
     await pumpEventQueue();
     expect(m2.requests, hasLength(1), reason: 'model request started before the capture finished');
     slow.complete();
@@ -164,6 +175,13 @@ void main() {
 
   test('show fast path: spoken file names, no model call; falls back on failure', () async {
     expect(DelegationExecutor.showFastPath('Show me the file README dot md'), 'README.md');
+    expect(DelegationExecutor.typeFastPath("Type 'hello world"), 'hello world');
+    expect(DelegationExecutor.typeFastPath('Type "Hello, world!"'), 'Hello, world');
+    expect(DelegationExecutor.typeFastPath('please type hello world'), 'hello world');
+    expect(DelegationExecutor.typeFastPath('Type out the text: foo bar.'), 'foo bar');
+    expect(DelegationExecutor.typeFastPath('Type a short email to Bob about the meeting'), isNull);
+    expect(DelegationExecutor.typeFastPath('type a summary of this page'), isNull);
+    expect(DelegationExecutor.typeFastPath('Click the button and type hello'), isNull);
     expect(DelegationExecutor.showFastPath('Show me the file README.md.'), 'README.md');
     expect(DelegationExecutor.showFastPath('Play the video demo dot mp four'), 'demo.mp4');
     expect(DelegationExecutor.showFastPath('Open ~/Pictures/cat.png'), '~/Pictures/cat.png');
