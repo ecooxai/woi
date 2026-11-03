@@ -14,14 +14,14 @@ export 'audio_describer.dart' show AudioDescriber;
 /// frame, image or video frame from the viewer). Click coordinates never
 /// refer to it.
 class ContextImage {
-  const ContextImage({
+  ContextImage({
     required this.bytes,
     required this.width,
     required this.height,
     required this.note,
     required this.kind,
     DateTime? capturedAt,
-  }) : _capturedAt = capturedAt;
+  }) : capturedAt = capturedAt ?? DateTime.now();
 
   /// JPEG or PNG.
   final Uint8List bytes;
@@ -33,8 +33,7 @@ class ContextImage {
 
   /// [ContextImageKind.camera] or [ContextImageKind.media].
   final String kind;
-  final DateTime? _capturedAt;
-  DateTime get capturedAt => _capturedAt ?? DateTime.now();
+  final DateTime capturedAt;
 
   bool get isJpeg => bytes.length > 2 && bytes[0] == 0xFF && bytes[1] == 0xD8;
 

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import '../auth/auth.dart';
+import '../media/media_context.dart' show isMediaQuestion, cameraCommand;
 import '../notes/pinned_note.dart';
 import '../responses/responses_client.dart';
 import 'voice_backend.dart';
@@ -195,6 +196,7 @@ class DelegationExecutor {
     required this.tools,
     required this.runTool,
     this.latestScreenshot,
+    this.contextImages,
     this.contextNote,
     this.environment,
     this.pinnedNote,
@@ -210,6 +212,11 @@ class DelegationExecutor {
   final List<ToolSpec> tools;
   final DelegationToolRunner runTool;
   final DelegationImage? Function()? latestScreenshot;
+
+  /// Camera frame and media image (gpt-live keeps them per slot); attached
+  /// to every request while fresh ([contextImageMaxAge]).
+  final List<DelegationImage> Function()? contextImages;
+  static const contextImageMaxAge = Duration(seconds: 45);
 
   /// Conversation memory (the compaction summary) given to the model with
   /// each request, so a compacted conversation still resolves "that file".
@@ -250,7 +257,7 @@ class DelegationExecutor {
   }
 
   /// Tools whose result the model must see before it can act or answer.
-  static const observeTools = {'take_screenshot', 'list_dir', 'read_file', 'read_note'};
+  static const observeTools = {'take_screenshot', 'list_dir', 'read_file', 'read_note', 'inspect_media'};
 
   /// Read-only shell commands (locating / inspecting files).
   static final _lookupCommand = RegExp(
@@ -363,6 +370,27 @@ class DelegationExecutor {
   static bool needsScreen(String request) => _visual.hasMatch(request);
 
   Future<void> _run(String request, DelegationReport report, Stopwatch sw) async {
+    // Fast path: "open camera" / "close camera".
+    final cam = cameraCommand(request);
+    if (cam != null && tools.any((t) => t.name == 'camera')) {
+      await _exec(report, sw, 'camera', jsonEncode({'action': cam ? 'open' : 'close'}), 'fast_${report.id}');
+      final run = report.tools.last;
+      report
+        ..model = 'fast-path'
+        ..steps = 0
+        ..firstToolCall = run.startedAt
+        ..toolsDone = run.doneAt
+        ..resultText = _summarize(report, const []);
+      return;
+    }
+    // "what's in this image / what is this song": look at the open media
+    // first (the image lands in [contextImages], audio comes back as text),
+    // then let the model answer with it.
+    String? mediaResult;
+    if (isMediaQuestion(request) && tools.any((t) => t.name == 'inspect_media')) {
+      await _exec(report, sw, 'inspect_media', jsonEncode({'question': request}), 'media_${report.id}');
+      mediaResult = report.tools.last.resultJson;
+    }
     // Fast path: "show me README.md" needs no model round trip.
     final fastPath = showFastPath(request);
     if (fastPath != null && tools.any((t) => t.name == 'show_file')) {
@@ -396,7 +424,13 @@ class DelegationExecutor {
         ..resultText = _summarize(report, const []);
       return;
     }
-    final visual = needsScreen(request);
+    final extras = _freshContextImages();
+    // A question about the open media or the camera is answered from their
+    // images; the screen is only waited for when the request names it.
+    final aboutContext =
+        (mediaResult != null || (extras.isNotEmpty && !looksLikeAction(request))) &&
+        !RegExp(r'\bscreen|\bwindow|\bdesktop|\bclick').hasMatch(request);
+    final visual = needsScreen(request) && !aboutContext;
     final hasScreenshotTool = tools.any((t) => t.name == 'take_screenshot');
 
     var shot = latestScreenshot?.call();
@@ -420,11 +454,19 @@ class DelegationExecutor {
     // another round trip; without it the model can still ask for a look.
     final specs = [
       for (final t in tools)
-        if (!(shot != null && t.name == 'take_screenshot')) t.toJson(),
+        if (!(shot != null && t.name == 'take_screenshot') && !(mediaResult != null && t.name == 'inspect_media'))
+          t.toJson(),
     ];
 
-    final input = <Map<String, Object?>>[_userMessage(request, shot)];
-    report.usedScreenshot = shot != null;
+    final input = <Map<String, Object?>>[
+      _userMessage(
+        mediaResult == null ? request : '$request\n(inspect_media result: $mediaResult)',
+        shot,
+        extras: extras,
+      ),
+    ];
+    if (extras.isNotEmpty) report.usedScreenshot = true;
+    report.usedScreenshot = report.usedScreenshot || shot != null;
     final texts = <String>[];
 
     for (var step = 0; step < maxSteps; step++) {
@@ -466,6 +508,10 @@ class DelegationExecutor {
         final s = latestScreenshot?.call();
         if (s != null) input.add(_userMessage('Fresh screenshot.', s));
       }
+      if (names.contains('inspect_media')) {
+        final media = _freshContextImages().where((i) => !extras.contains(i)).toList();
+        if (media.isNotEmpty) input.add(_userMessage('The media image.', null, extras: media));
+      }
     }
     await capture;
     report.resultText = _summarize(report, texts);
@@ -498,7 +544,18 @@ class DelegationExecutor {
     return report.tools.last.ok ? report.tools.last : null;
   }
 
-  Map<String, Object?> _userMessage(String text, DelegationImage? shot) {
+  List<DelegationImage> _freshContextImages() {
+    final now = _now();
+    return [
+      for (final i in contextImages?.call() ?? const <DelegationImage>[])
+        if (now.difference(i.capturedAt) <= contextImageMaxAge) i,
+    ];
+  }
+
+  static String _dataUrl(Uint8List b) =>
+      'data:${b.length > 2 && b[0] == 0xFF && b[1] == 0xD8 ? 'image/jpeg' : 'image/png'};base64,${base64Encode(b)}';
+
+  Map<String, Object?> _userMessage(String text, DelegationImage? shot, {List<DelegationImage> extras = const []}) {
     final note = contextNote?.call()?.trim();
     final pinned = pinnedNote?.call();
     return {
@@ -508,7 +565,11 @@ class DelegationExecutor {
         if (pinned != null) {'type': 'input_text', 'text': pinnedNoteBlock(pinned)},
         if (note != null && note.isNotEmpty)
           {'type': 'input_text', 'text': 'Conversation memory (background only):\n$note'},
-        if (shot != null) {'type': 'input_image', 'image_url': 'data:image/png;base64,${base64Encode(shot.png)}'},
+        for (final x in extras) ...[
+          {'type': 'input_image', 'image_url': _dataUrl(x.png)},
+          if (x.note != null) {'type': 'input_text', 'text': '(${x.note})'},
+        ],
+        if (shot != null) {'type': 'input_image', 'image_url': _dataUrl(shot.png)},
         {'type': 'input_text', 'text': shot?.note == null ? text : '$text\n(${shot!.note})'},
       ],
     };

@@ -97,6 +97,7 @@ class AppSettings {
     this.imageScaledCount = 5,
     this.imageScaleDivisor = 5,
     this.theme = AppTheme.light,
+    this.cameraReplacesScreenshot = false,
   });
 
   final BackendMode backendMode;
@@ -142,6 +143,10 @@ class AppSettings {
   /// UI colour theme (light by default).
   final AppTheme theme;
 
+  /// While the camera is on its frame replaces the turn's screenshot
+  /// (default: both are attached).
+  final bool cameraReplacesScreenshot;
+
   /// The voice used by the current backend mode.
   String get activeVoice => backendMode == BackendMode.gptLive ? liveVoice : voice;
 
@@ -172,6 +177,7 @@ class AppSettings {
     int? imageScaledCount,
     int? imageScaleDivisor,
     AppTheme? theme,
+    bool? cameraReplacesScreenshot,
   }) => AppSettings(
     backendMode: backendMode ?? this.backendMode,
     apiKey: apiKey ?? this.apiKey,
@@ -194,6 +200,7 @@ class AppSettings {
     imageScaledCount: imageScaledCount ?? this.imageScaledCount,
     imageScaleDivisor: imageScaleDivisor ?? this.imageScaleDivisor,
     theme: theme ?? this.theme,
+    cameraReplacesScreenshot: cameraReplacesScreenshot ?? this.cameraReplacesScreenshot,
   );
 
   /// Whether a change requires reconnecting the live session.
@@ -227,6 +234,7 @@ class AppSettings {
     'imageScaledCount': imageScaledCount,
     'imageScaleDivisor': imageScaleDivisor,
     'theme': theme.name,
+    'cameraReplacesScreenshot': cameraReplacesScreenshot,
   };
 
   factory AppSettings.fromJson(Map<String, Object?> j) {
@@ -263,6 +271,7 @@ class AppSettings {
       imageScaledCount: i('imageScaledCount', d.imageScaledCount).clamp(0, 100),
       imageScaleDivisor: i('imageScaleDivisor', d.imageScaleDivisor).clamp(2, 10),
       theme: AppTheme.values.asNameMap()[j['theme']] ?? d.theme,
+      cameraReplacesScreenshot: b('cameraReplacesScreenshot', d.cameraReplacesScreenshot),
     );
   }
 }

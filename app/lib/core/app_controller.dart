@@ -6,7 +6,10 @@ import 'dart:io';
 
 import '../platform/platform_services.dart';
 import '../tools/builtin_tools.dart';
+import '../platform/camera.dart';
+import '../platform/media_viewer.dart';
 import '../tools/confirmation.dart';
+import '../tools/media_tools.dart';
 import '../tools/note_tools.dart';
 import '../tools/tool_registry.dart';
 import 'auth/auth.dart';
@@ -17,6 +20,8 @@ import 'context/image_tiers.dart';
 import 'context/responses_compressor.dart';
 import 'delegate/delegate_backend.dart';
 import 'delegate/responses_delegate.dart';
+import 'media/audio_describer.dart';
+import 'media/media_context.dart';
 import 'models/message.dart';
 import 'notes/note.dart';
 import 'notes/note_controller.dart';
@@ -65,6 +70,23 @@ On this connection you cannot use tools yourself: every request to do something 
 play, click, type, run, read, write, edit, create, delete, find, list, take a screenshot) must go to delegation,
 every time, even if a similar request was handled before. Never claim an action happened unless the delegation
 result says so; speak the result as reported, including failures.
+''';
+
+/// Camera and media context (spec batch 2026-11-03 #3).
+const kCameraMediaInstructions = '''
+Camera: tool camera (open/close). While it is on, a live camera frame (the user and their surroundings, not the
+screen) is attached to each user turn; answer "what do you see", "what am I holding" from the newest frame.
+Media: when the user asks about what is open in Woi's viewer ("what's in this image", "what is this song",
+"what are they saying", "what's happening in the video now"), call inspect_media (unless its result or the
+media image is already attached to the turn) and answer from it; for video mention the timestamp if useful.
+''';
+
+/// gpt-live: looking and listening is done by delegation too.
+const kLiveCameraMediaInstructions = '''
+You cannot see or hear media yourself. Questions about what the camera sees, the screen, or the image, video or
+audio open in Woi's viewer ("what do you see", "what's in this image", "what is this song", "what's happening
+now") go to delegation as well, every time: it sees the camera frames and the open media. Opening or closing the
+camera goes to delegation too.
 ''';
 
 /// Owns the long-lived services and exposes app-level actions to the UI.
@@ -200,7 +222,12 @@ class AppController extends ChangeNotifier {
       );
       tools = ToolRegistry()
         ..registerAll(builtinTools(toolEnv))
-        ..registerAll(noteTools(notes));
+        ..registerAll(noteTools(notes))
+        ..registerAll(
+          mediaTools(
+            MediaToolsHost(setCamera: setCamera, cameraOn: () => cameraOn, inspectMedia: inspectMedia),
+          ),
+        );
 
       p = TurnPipeline(
         backendFactory: _createBackend,
@@ -219,6 +246,9 @@ class AppController extends ChangeNotifier {
           save: history.saveImage,
         ),
       );
+      p
+        ..cameraImage = _cameraImage
+        ..beforeTypedTurn = _beforeTypedTurn;
       pipeline = p;
       _ready = true;
       notifyListeners();
@@ -308,6 +338,7 @@ class AppController extends ChangeNotifier {
     screenshotDelay: Duration(milliseconds: _settings.screenshotDelayMs),
     micMode: _settings.micMode,
     thinkingEarcon: _settings.thinkingEarcon,
+    cameraReplacesScreenshot: _settings.cameraReplacesScreenshot,
   );
 
   Future<SessionConfig> _sessionConfig(Conversation c) async {
@@ -323,6 +354,8 @@ class AppController extends ChangeNotifier {
       instructions: [
         kAssistantInstructions,
         if (_settings.backendMode == BackendMode.gptLive) kLiveInstructions,
+        kCameraMediaInstructions,
+        if (_settings.backendMode == BackendMode.gptLive) kLiveCameraMediaInstructions,
         environmentNote(),
       ].join('\n'),
       tools: tools.specs,
@@ -406,10 +439,109 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ---------------------------------------------------------------- camera
+
+  CameraService get camera => platform.camera;
+  bool get cameraOn => camera.active.value;
+  bool _cameraBusy = false;
+
+  /// Camera open/close in progress (the UI toggle shows a spinner).
+  bool get cameraBusy => _cameraBusy;
+
+  ContextImage? _cameraImage() {
+    final f = camera.latest();
+    return f == null ? null : ContextImage.camera(f, when: 'when the user spoke');
+  }
+
+  /// Turns the camera on/off (tool, delegation fast path, input bar toggle).
+  /// Opening attaches the first frame right away so the model can look at
+  /// once. Returns the tool result.
+  Future<Map<String, Object?>> setCamera(bool on) async {
+    if (on == cameraOn && !_cameraBusy) {
+      return {'ok': true, 'on': on, 'note': 'camera already ${on ? 'on' : 'off'}'};
+    }
+    _cameraBusy = true;
+    notifyListeners();
+    try {
+      if (on) {
+        await camera.open();
+        final f = await camera.nextFrame();
+        if (f != null && _ready) {
+          pipeline.attachContextImage(ContextImage.camera(f, when: 'just after the camera was opened'));
+        }
+        return {
+          'ok': true,
+          'on': true,
+          if (f != null) 'frame': '${f.width}x${f.height} attached; a new frame comes with every user turn',
+        };
+      }
+      await camera.close();
+      if (_ready) pipeline.clearContextImage(ContextImageKind.camera);
+      return {'ok': true, 'on': false};
+    } on CameraException catch (e) {
+      if (_ready) pipeline.notice('Camera: ${e.message}');
+      return {'ok': false, 'error': e.message};
+    } finally {
+      _cameraBusy = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> toggleCamera() => setCamera(!cameraOn);
+
+  // ---------------------------------------------------------- media context
+
+  /// What is open in the viewer (refreshed whenever the media is inspected).
+  final ValueNotifier<ViewerState?> openMedia = ValueNotifier(null);
+
+  late final MediaContextService media = MediaContextService(
+    viewer: platform.viewer,
+    grabber: platform.mediaGrab,
+    describeAudio: realtimeAudioDescriber(credentials: credentials, model: () => _settings.realtimeModel),
+  );
+
+  /// The viewer's current item, also kept in [openMedia].
+  Future<ViewerState?> refreshOpenMedia() async {
+    final s = await media.current();
+    openMedia.value = s;
+    return s;
+  }
+
+  /// `inspect_media`: attaches the open item's content to the conversation.
+  Future<Map<String, Object?>> inspectMedia(String? question) async {
+    final s = await refreshOpenMedia();
+    if (s == null) return {'ok': false, 'error': 'nothing is open in the viewer'};
+    final ctx = await media.grab(state: s, question: question);
+    if (ctx == null) return {'ok': false, 'error': 'nothing is open in the viewer'};
+    final img = ctx.image;
+    if (img != null && _ready) pipeline.attachContextImage(img);
+    if (img == null && _ready) pipeline.notice(ctx.summary);
+    return ctx.toToolResult();
+  }
+
+  /// Typed "what's in this image": the media goes out with the turn.
+  Future<String?>? _beforeTypedTurn(String text) {
+    if (!isMediaQuestion(text)) return null;
+    return () async {
+      final s = await refreshOpenMedia();
+      if (s == null) return null;
+      final r = await inspectMedia(text);
+      if (r['ok'] != true) return null;
+      final content = r['content'];
+      return [
+        text,
+        '',
+        '[Woi attached the media open in the viewer for this question (${r['summary']}); do not call inspect_media.]',
+        if (content is String && content.isNotEmpty) 'Media content: $content',
+      ].join('\n');
+    }();
+  }
+
   /// Manual compaction from the UI.
   void compactNow() => contextManager.maybeCompress(force: true);
 
   Future<void> shutdown() async {
+    await camera.close();
     await notes.flush();
     if (_ready) await pipeline.shutdown();
     terminals.dispose();
