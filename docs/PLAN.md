@@ -64,3 +64,38 @@ When compaction runs, screenshots/images are tiered by recency:
   external apps (no VLC/xdg-open). Video needs an embedded player that works on Linux without sudo installs
   (candidates: fvp (bundled mdk), media_kit (needs libmpv), or an ffmpeg-decode-to-texture fallback), portable to
   Android/macOS/iOS later.
+
+## Spec batch 2026-11-03 (user requirements)
+### UI simplification
+- Clean, modern, minimalist style. DEFAULT LIGHT THEME (dark optional in settings). Less glow/glass; generous whitespace,
+  crisp typography, subtle shadows. Orb stays but simpler/elegant.
+- Settings use radio-button lists for choices (models, voices, backend mode, theme) instead of dropdowns.
+### Note editor UX
+- Top-right "New note" icon button.
+- Recent notes as tabs at top: show the 4 most recent; a "More" button opens a dropdown list of all other notes (searchable).
+### Context compaction rule
+- The last 3 turns are ALWAYS sent raw (verbatim text + their images). Only turns older than 3 turns are compressed
+  when compaction runs. (Image tiers spec still applies to images inside older turns.)
+### Built-in terminal
+- In-app terminal with tabs (new/close/rename tab, scrollback, copy/paste, ANSI colors, resize), real PTY shell.
+  Accessible as a third view (Note / Chat / Terminal). The AI's run_bash output can be shown in a terminal tab.
+### Bundled Codex CLI + login
+- Ship the codex CLI inside the app (Linux x64 now; Android arm64 from npm @openai/codex@<ver>-linux-arm64, musl static).
+- On app start, if no valid Codex auth: prompt the user to log in → run `codex login` (first/default method = browser OAuth
+  with localhost callback), capture the auth URL, open it (Linux: system browser or in-app webview; Android: Chrome Custom
+  Tab); the callback reaches the codex process's localhost server; resulting auth.json is used by the app.
+- Use an app-private CODEX_HOME on Android; on Linux default to ~/.codex (use existing login if valid).
+### Android port (after Linux is solid)
+- Same Flutter app on Android (test device: Xiaomi MI 8, LineageOS Android 15/SDK 35, arm64, adb serial 2d4f6bc0).
+- Platform impls: audio (mic/playback), screenshot (MediaProjection or assistant screenshot), input (AccessibilityService
+  for click/type), shell/terminal (app sandbox shell + bundled codex), files (app storage + SAF).
+- Codex binary packaged as lib/arm64-v8a/libcodex.so (extracted to nativeLibraryDir, executable under W^X).
+- Android system assistant: implement VoiceInteractionService/VoiceInteractionSessionService so the user can set Woi as
+  default digital assistant; long-press home wakes it; ALWAYS include the assist screenshot (onHandleScreenshot) and send to AI.
+
+## Roadmap
+- Iter 4 (running): notes + in-app media (branch notes-media), backend QA fixes (main).
+- Iter 5: UI simplification (light/minimal/radios), editor UX tabs, compaction rule (raw last 3 turns), built-in terminal,
+  bundled codex CLI + login flow (Linux).
+- Iter 6: Android port + system assistant + codex arm64 + on-device testing.
+- Iter 7+: polish, QA, perf, scoring toward 99.
