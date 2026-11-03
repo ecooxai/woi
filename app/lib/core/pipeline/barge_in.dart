@@ -95,9 +95,7 @@ class BargeInDetector {
       // decays once playback is over.
       if (_refAgeMs > 600) _refRms *= 0.9;
       // Between replies: track the room noise, re-arm.
-      _noiseFloor = rms < _noiseFloor * 4 || rms < minThreshold
-          ? _noiseFloor * 0.97 + rms * 0.03
-          : _noiseFloor;
+      _noiseFloor = rms < _noiseFloor * 4 || rms < minThreshold ? _noiseFloor * 0.97 + rms * 0.03 : _noiseFloor;
       _voicedMs = 0;
       _gapMs = 0;
       _fired = false;
@@ -158,9 +156,40 @@ bool isStopPhrase(String text) {
 }
 
 const _stopWords = {
-  'ok', 'okay', 'hey', 'no', 'woi', 'please', 'um', 'uh', 'stop', 'it', 'that', 'this', 'talking', 'now', 'there',
-  'cancel', 'never', 'mind', 'nevermind', 'forget', 'be', 'quiet', 'shut', 'up', 'hush', 'enough', "that's", 'thats',
-  'hold', 'on', 'wait', 'thanks', 'thank', 'you',
+  'ok',
+  'okay',
+  'hey',
+  'no',
+  'woi',
+  'please',
+  'um',
+  'uh',
+  'stop',
+  'it',
+  'that',
+  'this',
+  'talking',
+  'now',
+  'there',
+  'cancel',
+  'never',
+  'mind',
+  'nevermind',
+  'forget',
+  'be',
+  'quiet',
+  'shut',
+  'up',
+  'hush',
+  'enough',
+  "that's",
+  'thats',
+  'hold',
+  'on',
+  'wait',
+  'thanks',
+  'thank',
+  'you',
 };
 
 /// Whether a partial transcript may still turn out to be a stop phrase.

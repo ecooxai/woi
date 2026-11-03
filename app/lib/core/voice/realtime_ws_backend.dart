@@ -581,7 +581,9 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync {
         final pcm = base64Decode(b64);
         playback.onAudio(ev['item_id'] as String? ?? '', pcm.length);
         _emit(AssistantAudioDelta(pcm));
-      case 'response.output_audio_transcript.delta' || 'response.audio_transcript.delta' || 'response.output_text.delta':
+      case 'response.output_audio_transcript.delta' ||
+          'response.audio_transcript.delta' ||
+          'response.output_text.delta':
         if (_suppressed(ev)) return;
         final d = ev['delta'] as String? ?? '';
         if (d.isNotEmpty) _emit(AssistantTranscriptDelta(d));
@@ -742,7 +744,8 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync {
     if (recent.length > maxChars) recent = '…${recent.substring(recent.length - maxChars)}';
     final parts = [
       if (_summary != null) _summaryText(_summary!),
-      if (recent.isNotEmpty) 'Most recent turns (the voice connection was re-established; continue naturally):\n$recent',
+      if (recent.isNotEmpty)
+        'Most recent turns (the voice connection was re-established; continue naturally):\n$recent',
     ];
     return parts.isEmpty ? null : parts.join('\n\n');
   }
@@ -777,9 +780,12 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync {
     final done = _pendingSummaryDone!;
     _pendingSummary = null;
     _pendingSummaryDone = null;
-    _applySummaryNow(summary).then(done.complete, onError: (Object e) {
-      done.complete(ContextApplyResult(ContextApplyMethod.skipped, detail: '$e'));
-    });
+    _applySummaryNow(summary).then(
+      done.complete,
+      onError: (Object e) {
+        done.complete(ContextApplyResult(ContextApplyMethod.skipped, detail: '$e'));
+      },
+    );
   }
 
   /// Index of the first item kept verbatim: the start of the
@@ -799,7 +805,10 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync {
     var moved = true;
     while (moved) {
       moved = false;
-      final keptOutputs = {for (final it in _items.skip(cut)) if (it.type == 'function_call_output') it.callId};
+      final keptOutputs = {
+        for (final it in _items.skip(cut))
+          if (it.type == 'function_call_output') it.callId,
+      };
       for (var i = 0; i < cut; i++) {
         if (_items[i].type == 'function_call' && keptOutputs.contains(_items[i].callId)) {
           cut = i;
@@ -834,7 +843,8 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync {
       ];
       final newId = _newItemId('ctx');
       final added = _waitFor(
-        (e) => (e['type'] == 'conversation.item.added' || e['type'] == 'conversation.item.created') &&
+        (e) =>
+            (e['type'] == 'conversation.item.added' || e['type'] == 'conversation.item.created') &&
             (e['item'] as Map?)?['id'] == newId,
         const Duration(seconds: 5),
       );

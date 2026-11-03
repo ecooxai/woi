@@ -709,10 +709,8 @@ class TurnPipeline extends ChangeNotifier {
   }
 
   void _handle(BackendEvent e) {
-    final assistantSide = e is AssistantTranscriptDelta ||
-        e is AssistantTranscriptDone ||
-        e is AssistantAudioDelta ||
-        e is ResponseDone;
+    final assistantSide =
+        e is AssistantTranscriptDelta || e is AssistantTranscriptDone || e is AssistantAudioDelta || e is ResponseDone;
     if (assistantSide && !_discardUntilDone) {
       if (_dropping) {
         if (e is ResponseDone) _finishAssistant(interrupted: true);

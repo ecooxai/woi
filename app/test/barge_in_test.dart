@@ -96,12 +96,33 @@ void main() {
   });
 
   group('isStopPhrase', () {
-    for (final s in ['Stop', 'stop.', 'Stop!', 'Okay, stop.', 'Please stop', 'stop talking', 'Cancel', 'cancel that',
-      'Never mind', 'Nevermind.', 'Forget it', 'Woi, stop.', 'Stop, please.', 'Be quiet', 'That\'s enough']) {
+    for (final s in [
+      'Stop',
+      'stop.',
+      'Stop!',
+      'Okay, stop.',
+      'Please stop',
+      'stop talking',
+      'Cancel',
+      'cancel that',
+      'Never mind',
+      'Nevermind.',
+      'Forget it',
+      'Woi, stop.',
+      'Stop, please.',
+      'Be quiet',
+      'That\'s enough',
+    ]) {
       test('"$s" is a stop phrase', () => expect(isStopPhrase(s), isTrue));
     }
-    for (final s in ['Stop the music player and open Firefox', 'How do I cancel my subscription?',
-      'Don\'t stop', 'Hello, how are you?', '', 'Show me the file stop.txt']) {
+    for (final s in [
+      'Stop the music player and open Firefox',
+      'How do I cancel my subscription?',
+      'Don\'t stop',
+      'Hello, how are you?',
+      '',
+      'Show me the file stop.txt',
+    ]) {
       test('"$s" is not a stop phrase', () => expect(isStopPhrase(s), isFalse));
     }
   });

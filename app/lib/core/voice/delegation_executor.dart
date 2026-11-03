@@ -533,4 +533,3 @@ final _actionRequest = RegExp(
 /// Whether typed text asks the assistant to *do* something on the computer
 /// (gpt-live never delegates typed text itself, so the app runs it).
 bool looksLikeAction(String text) => _actionRequest.hasMatch(text.trim());
-

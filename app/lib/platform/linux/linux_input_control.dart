@@ -37,7 +37,15 @@ class LinuxInputControl implements InputControl {
 
   /// Modifier keys released (and not restored) before typing.
   static const typeReleases = [
-    'Shift_L', 'Shift_R', 'Control_L', 'Control_R', 'Alt_L', 'Alt_R', 'Super_L', 'Super_R', 'ISO_Level3_Shift',
+    'Shift_L',
+    'Shift_R',
+    'Control_L',
+    'Control_R',
+    'Alt_L',
+    'Alt_R',
+    'Super_L',
+    'Super_R',
+    'ISO_Level3_Shift',
   ];
 
   /// xdotool arguments for [typeText]. Not `type --clearmodifiers`: that saves

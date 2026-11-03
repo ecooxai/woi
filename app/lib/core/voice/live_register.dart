@@ -7,9 +7,6 @@ import 'live_webrtc_backend.dart';
 /// echo cancellation on.
 void registerGptLive() {
   GptLiveHook.register(
-    (ctx) => LiveWebRtcBackend(
-      transportFactory: FlutterLiveRtcTransport.new,
-      credentialsProvider: ctx.credentials,
-    ),
+    (ctx) => LiveWebRtcBackend(transportFactory: FlutterLiveRtcTransport.new, credentialsProvider: ctx.credentials),
   );
 }

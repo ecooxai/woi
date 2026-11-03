@@ -50,13 +50,9 @@ class BackendSelection {
 }
 
 /// Builds the voice backend for [BackendContext.settings].
-BackendSelection createVoiceBackend(
-  BackendContext ctx, {
-  VoiceBackend Function(BackendContext ctx)? realtimeBuilder,
-}) {
+BackendSelection createVoiceBackend(BackendContext ctx, {VoiceBackend Function(BackendContext ctx)? realtimeBuilder}) {
   final s = ctx.settings;
-  VoiceBackend realtime() =>
-      realtimeBuilder?.call(ctx) ?? RealtimeWsBackend(credentialsProvider: ctx.credentials);
+  VoiceBackend realtime() => realtimeBuilder?.call(ctx) ?? RealtimeWsBackend(credentialsProvider: ctx.credentials);
   switch (s.backendMode) {
     case BackendMode.gptLive:
       final live = GptLiveHook.builder;

@@ -20,7 +20,6 @@ import 'voice_backend.dart';
 
 const kLiveModels = ['gpt-live-1.1', 'gpt-live-1', 'gpt-live-1-codex'];
 
-
 // ------------------------------------------------------------- call creation
 
 class LiveCall {
@@ -759,7 +758,9 @@ class LiveWebRtcBackend extends VoiceBackend implements ManagedAudioBackend, Liv
   /// What the model is told when a delegation finishes: the real outcome
   /// (failures included) and how to voice it, without repeating filler.
   static String delegationResultNote(DelegationReport report) {
-    final failed = report.error != null || report.resultText.startsWith('Not fully done') ||
+    final failed =
+        report.error != null ||
+        report.resultText.startsWith('Not fully done') ||
         report.resultText.startsWith('Failed');
     return '${report.resultText}\n'
         '${failed ? 'This did NOT fully succeed. ' : ''}'
