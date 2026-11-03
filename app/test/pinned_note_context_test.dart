@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -102,7 +101,9 @@ void main() {
       final m = FakeDelegationModel([]);
       final ex = DelegationExecutor(
         model: m,
-        tools: const [ToolSpec(name: 'list_dir', description: 'ls', parameters: {'type': 'object'})],
+        tools: const [
+          ToolSpec(name: 'list_dir', description: 'ls', parameters: {'type': 'object'}),
+        ],
         runTool: (id, name, args) async => '{"ok":true}',
         latestScreenshot: () => DelegationImage(png: Uint8List(4), capturedAt: DateTime.now(), note: 'x'),
         pinnedNote: () => note,

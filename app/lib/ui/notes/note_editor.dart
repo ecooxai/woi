@@ -656,12 +656,18 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
               style: body(12, color: WoiColors.textFaint).copyWith(fontFeatures: kTabular),
             ),
           ],
-          const Spacer(),
-          if (!_dense)
-            Text(
-              'Markdown  ·  Ctrl+B  Ctrl+I  Ctrl+E  ·  Ctrl+Enter toggles a todo',
-              style: body(11.5, color: WoiColors.textFaint),
-            ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _dense
+                ? const SizedBox.shrink()
+                : Text(
+                    'Markdown  ·  Ctrl+B  Ctrl+I  Ctrl+E  ·  Ctrl+Enter toggles a todo',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.right,
+                    style: body(11.5, color: WoiColors.textFaint),
+                  ),
+          ),
         ],
       ),
     );
