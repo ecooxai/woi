@@ -40,3 +40,7 @@ When compaction runs, screenshots/images are tiered by recency:
   to the reconnect startup context.
 - UI: transcript keeps the original image locally (tap to view), shows a badge "sent as 1/5" or "described: …";
   context meter and banner reflect the savings.
+
+## Backlog (next iteration)
+- BUG: run_bash with cwd "~" fails — expand ~ / $HOME in all path args (run_bash cwd, read/show/edit/list paths).
+- gpt-realtime-2 live 9/9: eos→first audio median 1967ms (vs 2614ms on 1.5); speaks preamble before tool call.
