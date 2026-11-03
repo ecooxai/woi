@@ -50,6 +50,9 @@ class TerminalSession extends ChangeNotifier {
 
   TermProcess? _proc;
   StreamSubscription<String>? _out;
+
+  /// Completes when the current process's output stream ended (EOF).
+  Completer<void> _outDone = Completer<void>()..complete();
   int? _exitCode;
   bool _disposed = false;
 
@@ -81,6 +84,7 @@ class TerminalSession extends ChangeNotifier {
   void _attach(TermProcess proc, {void Function(String chunk)? tap}) {
     _proc = proc;
     _exitCode = null;
+    final done = _outDone = Completer<void>();
     // One decoder per process keeps split UTF-8 sequences intact. Each chunk
     // marks the view dirty once; Flutter coalesces repaints per frame.
     _out = proc.output
@@ -92,10 +96,19 @@ class TerminalSession extends ChangeNotifier {
             tap?.call(s);
           },
           onError: (Object _) {},
+          onDone: () {
+            if (!done.isCompleted) done.complete();
+          },
           cancelOnError: false,
         );
     notifyListeners();
   }
+
+  /// Waits (bounded) until the output of the exited process is drained: the
+  /// exit code can arrive before the last output chunk, which a short
+  /// command would otherwise lose.
+  Future<void> _drain({Duration max = const Duration(seconds: 2)}) =>
+      _outDone.future.timeout(max, onTimeout: () {});
 
   void _startShell() {
     final h = hub;
@@ -120,9 +133,12 @@ class TerminalSession extends ChangeNotifier {
     _proc = null;
     if (_disposed) return;
     // Let the last output drain before the footer.
-    Future<void>.delayed(const Duration(milliseconds: 30), () {
-      _out?.cancel();
-      _out = null;
+    final sub = _out;
+    _drain().then((_) {
+      if (identical(_out, sub)) {
+        sub?.cancel();
+        _out = null;
+      }
       if (_disposed) return;
       if (kind == TerminalKind.shell) {
         terminal.write('\r\n\x1b[2m[process exited with code $code; press any key to restart]\x1b[0m\r\n');
@@ -295,12 +311,17 @@ done
     );
     s._attach(proc, tap: _onAiOutput);
     proc.exitCode.then((code) {
-      final run = _aiRun;
-      if (run != null && identical(run.proc, proc)) run.finish(code == 0 ? -1 : code);
-      if (!identical(s._proc, proc)) return;
-      s._proc = null;
-      s._out?.cancel();
-      s._out = null;
+      final mine = identical(s._proc, proc);
+      if (mine) s._proc = null;
+      final sub = s._out;
+      // Collect the dying shell's last output before finishing its command.
+      (mine ? s._drain() : Future<void>.value()).then((_) {
+        final run = _aiRun;
+        if (run != null && identical(run.proc, proc)) run.finish(code == 0 ? -1 : code);
+        if (!mine || !identical(s._out, sub)) return;
+        sub?.cancel();
+        s._out = null;
+      });
     });
   }
 
