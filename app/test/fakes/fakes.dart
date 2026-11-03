@@ -299,6 +299,16 @@ class ScriptedBackend extends VoiceBackend {
   void sendToolResult(String callId, String jsonOutput) => toolResults.add((callId, jsonOutput));
   @override
   void cancelResponse() => cancels++;
+  int stopDrops = 0;
+  final holds = <bool>[];
+  @override
+  void stopAndDrop() {
+    stopDrops++;
+    cancels++;
+  }
+
+  @override
+  void setReplyHold(bool hold) => holds.add(hold);
   @override
   Future<void> close() async {
     closed = true;

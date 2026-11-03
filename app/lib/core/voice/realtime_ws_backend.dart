@@ -425,7 +425,18 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync {
     }
   }
 
+  /// "Stop": cancel what runs now and any response the server creates for
+  /// the stop utterance itself during the next few seconds.
+  @override
+  void stopAndDrop() {
+    cancelResponse();
+    _dropResponsesUntil = DateTime.now().add(const Duration(seconds: 3));
+  }
+
+  DateTime? _dropResponsesUntil;
+
   void _requestResponse() {
+    _dropResponsesUntil = null;
     _wantResponse = true;
     _maybeCreateResponse();
   }
@@ -515,6 +526,7 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync {
         // Stop local playback first (the pipeline does it on SpeechStarted);
         // the played position is frozen right now.
         _interruptPlayback();
+        _dropResponsesUntil = null;
         _userSpeaking = true;
         _emit(SpeechStarted(itemId: ev['item_id'] as String?));
       case 'input_audio_buffer.speech_stopped':
@@ -552,6 +564,8 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync {
         _activeResponseId = r?['id'] as String? ?? 'resp';
         _responseRequested = false;
         _cancelSent = false;
+        final drop = _dropResponsesUntil;
+        if (drop != null && DateTime.now().isBefore(drop)) _cancelOnCreate = true;
         if (_cancelOnCreate) {
           _cancelOnCreate = false;
           _suppressResponseId = _activeResponseId;

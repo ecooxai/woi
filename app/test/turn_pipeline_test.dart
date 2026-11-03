@@ -286,7 +286,9 @@ void main() {
     });
 
     test('earcon plays on its own player while waiting, not when the reply already started', () async {
-      final h = await Harness.create(options: const PipelineOptions(autoScreenshot: false, thinkingEarcon: true));
+      final h = await Harness.create(
+        options: const PipelineOptions(autoScreenshot: false, thinkingEarcon: true, localBargeIn: false),
+      );
       // Main player opened by the pipeline first.
       h.scripted.emit(const SpeechStarted(itemId: 'u1'));
       h.scripted.emit(const SpeechStopped(itemId: 'u1'));
@@ -343,11 +345,110 @@ void main() {
       expect(reply.text, 'Hello there, ');
       b.emit(const ResponseDone(cancelled: true));
 
-      // The next response is accepted again.
+      // The next response is held until the interruption's transcript shows
+      // it was not just "stop", then accepted again.
       b.emit(const SpeechStopped());
       b.emit(const AssistantTranscriptDelta('Sure.'));
+      expect(ofKind(h.conv, MessageKind.assistant).length, 1, reason: 'held');
+      b.emit(const UserTranscriptDone('Tell me about Mars instead.'));
       b.emit(const ResponseDone());
       expect(ofKind(h.conv, MessageKind.assistant).last.text, 'Sure.');
+      await h.dispose();
+    });
+
+    test('local mic onset cuts playback before the server notices', () async {
+      final h = await Harness.create(options: const PipelineOptions(autoScreenshot: false));
+      final b = h.scripted;
+      final mic = h.fp.audio.mic!;
+      b.emit(const AssistantTranscriptDelta('Once upon a time '));
+      // Assistant audio plays; the mic hears only faint echo for a while.
+      for (var i = 0; i < 40; i++) {
+        b.emit(AssistantAudioDelta(pcm(20, amplitude: 8000)));
+        mic.push(pcm(20, amplitude: 300));
+      }
+      expect(h.pipeline.localOnsets, 0, reason: 'echo is not an onset');
+      final stops = h.player.stops;
+      // The user talks over it.
+      for (var i = 0; i < 10; i++) {
+        mic.push(pcm(20, amplitude: 9000));
+      }
+      expect(h.pipeline.localOnsets, 1);
+      expect(h.player.stops, stops + 1);
+      expect(b.cancels, 1);
+      expect(b.holds, [true], reason: 'reply held until we know it is not "stop"');
+      expect(ofKind(h.conv, MessageKind.assistant).single.interrupted, isTrue);
+      // Server VAD confirms later: no second barge-in.
+      b.emit(const SpeechStarted(itemId: 'u1'));
+      expect(h.pipeline.bargeIns, 1);
+      await h.dispose();
+    });
+
+    test('"stop" while speaking: stopped locally, its spoken answer is dropped (no bubble)', () async {
+      final h = await Harness.create(options: const PipelineOptions(autoScreenshot: false));
+      final b = h.scripted;
+      b.emit(const AssistantTranscriptDelta('A long story '));
+      b.emit(AssistantAudioDelta(pcm(500, amplitude: 1000)));
+      b.emit(const SpeechStarted(itemId: 'u1'));
+      expect(b.cancels, 1);
+      b.emit(const ResponseDone(cancelled: true));
+      b.emit(const SpeechStopped(itemId: 'u1'));
+      // Server answers before the transcript is in: held.
+      b.emit(const AssistantTranscriptDelta('Okay, stopping.'));
+      b.emit(AssistantAudioDelta(pcm(100, amplitude: 1000)));
+      final written = h.player.written.length;
+      b.emit(const UserTranscriptDone('Stop.', itemId: 'u1'));
+      expect(h.pipeline.stopsHandled, 1);
+      expect(b.stopDrops, 1);
+      b.emit(const AssistantTranscriptDone('Okay, stopping.'));
+      b.emit(const ResponseDone());
+      expect(h.player.written.length, written, reason: 'ack never played');
+      final replies = ofKind(h.conv, MessageKind.assistant);
+      expect(replies.map((m) => m.text), ['A long story '], reason: 'no stray bubble');
+      expect(b.texts, isEmpty, reason: 'nothing delegated or sent');
+      await h.dispose();
+    });
+
+    test('idle "never mind" drops the reply; a normal short turn still gets one', () async {
+      final h = await Harness.create(options: const PipelineOptions(autoScreenshot: false));
+      final b = h.scripted;
+      b.emit(const SpeechStarted(itemId: 'u1'));
+      b.emit(const SpeechStopped(itemId: 'u1'));
+      b.emit(const AssistantTranscriptDelta('Alright.'));
+      b.emit(const UserTranscriptDone('Never mind.', itemId: 'u1'));
+      b.emit(const ResponseDone());
+      expect(ofKind(h.conv, MessageKind.assistant), isEmpty);
+      expect(b.stopDrops, 1);
+
+      b.emit(const SpeechStarted(itemId: 'u2'));
+      b.emit(const SpeechStopped(itemId: 'u2'));
+      b.emit(const AssistantTranscriptDelta('Hi!'));
+      b.emit(AssistantAudioDelta(pcm(100, amplitude: 1000)));
+      b.emit(const UserTranscriptDone('Hello.', itemId: 'u2'));
+      b.emit(const ResponseDone());
+      expect(ofKind(h.conv, MessageKind.assistant).single.text, 'Hi!');
+      expect(h.player.written.length, greaterThan(0));
+      await h.dispose();
+    });
+
+    test('held reply is released after a timeout when no transcript arrives', () async {
+      final h = await Harness.create(options: const PipelineOptions(autoScreenshot: false));
+      final b = h.scripted;
+      b.emit(const SpeechStarted(itemId: 'u1'));
+      b.emit(const SpeechStopped(itemId: 'u1'));
+      b.emit(const AssistantTranscriptDelta('Hi!'));
+      expect(ofKind(h.conv, MessageKind.assistant), isEmpty);
+      await waitFor(() => ofKind(h.conv, MessageKind.assistant).isNotEmpty, timeout: const Duration(seconds: 3));
+      await h.dispose();
+    });
+
+    test('typed "cancel" is handled locally and never sent', () async {
+      final h = await Harness.create(options: const PipelineOptions(autoScreenshot: false));
+      final b = h.scripted;
+      b.emit(AssistantAudioDelta(pcm(300, amplitude: 1000)));
+      h.pipeline.sendText('cancel');
+      expect(b.texts, isEmpty);
+      expect(h.player.isPlaying, isFalse);
+      expect(h.pipeline.stopsHandled, 1);
       await h.dispose();
     });
 

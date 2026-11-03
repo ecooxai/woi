@@ -167,6 +167,14 @@ class LiveWebRtcBackend extends VoiceBackend implements ManagedAudioBackend, Liv
   Timer? _closeTimer;
   bool _speakerMuted = false;
   bool _interrupted = false;
+  // Pipeline is deciding whether an interruption was just "stop": a new
+  // assistant turn stays muted meanwhile.
+  bool _replyHeld = false;
+  // After "stop": the model's reply to it stays muted and hidden, and
+  // delegations it starts are declined.
+  DateTime? _dropUntil;
+  String? _dropKey;
+  bool _dropTurn = false;
 
   // ---- user speech state
   late final EnergyVad _vad = EnergyVad(stopMs: vadStopMs);
@@ -528,7 +536,7 @@ class LiveWebRtcBackend extends VoiceBackend implements ManagedAudioBackend, Liv
       case 'output_transcript.added':
         _openAssistant(_int(ev['start_ms']));
         final t = _itemText(ev);
-        if (t.isNotEmpty) _emit(AssistantTranscriptDelta(t));
+        if (t.isNotEmpty && !_dropTurn) _emit(AssistantTranscriptDelta(t));
         _markSpoken();
       case 'turn.created':
         final turn = _map(ev['turn']);
@@ -591,7 +599,13 @@ class LiveWebRtcBackend extends VoiceBackend implements ManagedAudioBackend, Liv
     _assistantStartMs = startMs;
     _emittedUntilMs = startMs;
     _interrupted = false;
-    if (_speakerMuted) {
+    _dropTurn = _dropping;
+    if (_dropTurn) {
+      _interrupted = true;
+      _mute();
+    } else if (_replyHeld) {
+      _mute();
+    } else if (_speakerMuted) {
       _speakerMuted = false;
       _rtc?.setSpeakerEnabled(true);
     }
@@ -612,7 +626,7 @@ class LiveWebRtcBackend extends VoiceBackend implements ManagedAudioBackend, Liv
     if (until > _emittedUntilMs) {
       final pcm = _out.slice(_emittedUntilMs, until);
       _emittedUntilMs = until;
-      if (pcm.isNotEmpty && !_speakerMuted) _emit(AssistantAudioDelta(pcm));
+      if (pcm.isNotEmpty && !_speakerMuted && !_dropTurn) _emit(AssistantAudioDelta(pcm));
     }
     final closeAt = _assistantCloseAtMs;
     if (closeAt != null && _outEndMs >= closeAt) _finishAssistant();
@@ -636,9 +650,10 @@ class LiveWebRtcBackend extends VoiceBackend implements ManagedAudioBackend, Liv
     _closeTimer?.cancel();
     _assistantOpen = false;
     _assistantCloseAtMs = null;
-    _emit(AssistantTranscriptDone(_assistantClosingText));
+    if (!_dropTurn) _emit(AssistantTranscriptDone(_assistantClosingText));
     _emit(ResponseDone(cancelled: _interrupted));
     _interrupted = false;
+    _dropTurn = false;
   }
 
   /// Saves the session timeline slice of an assistant turn (§3.5).
@@ -669,6 +684,7 @@ class LiveWebRtcBackend extends VoiceBackend implements ManagedAudioBackend, Liv
     _noteActivity();
     if (_userSpeaking) return key;
     _userSpeaking = true;
+    if (key != _dropKey) _dropUntil = null;
     final dm = _delegationModel;
     if (dm is ResponsesDelegationModel) unawaited(dm.warmUpIfIdle());
     _emit(SpeechStarted(itemId: key));
@@ -710,6 +726,17 @@ class LiveWebRtcBackend extends VoiceBackend implements ManagedAudioBackend, Liv
     final ex = _executor;
     if (id.isEmpty || ex == null) return;
     _noteActivity();
+    if (_dropping) {
+      debugPrint('gpt-live: declined delegation "$text" (user said stop)');
+      _send({
+        'type': 'delegation.context.append',
+        'delegation_item_id': id,
+        'content': [
+          {'type': 'input_text', 'text': 'Not done: the user said stop / cancel. Do nothing and say nothing.'},
+        ],
+      });
+      return;
+    }
     final sw = Stopwatch()..start();
     _pendingDelegations++;
     unawaited(() async {
@@ -769,15 +796,45 @@ class LiveWebRtcBackend extends VoiceBackend implements ManagedAudioBackend, Liv
   @override
   void sendText(String text) {
     _noteActivity();
-    // No user-text item on this transport: inject it as context the model
-    // reacts to (§3.2 session.context.append).
-    _send({
-      'type': 'session.context.append',
-      'channel': 'developer',
-      'content': [
-        {'type': 'input_text', 'text': 'The user typed: $text'},
-      ],
-    });
+    final t = text.trim();
+    if (t.isEmpty) return;
+    final ex = _executor;
+    // Typed text never starts a delegation on gpt-live, so action requests
+    // are carried out here and the model only voices the real outcome.
+    if (ex != null && looksLikeAction(t)) {
+      _runTypedAction(t, ex);
+      return;
+    }
+    // No user-text item on this transport. Context without a channel makes
+    // the model answer (the 'developer' channel is read silently; §3.2).
+    _appendContext('The user typed (instead of speaking): $t');
+  }
+
+  void _appendContext(String text) => _send({
+    'type': 'session.context.append',
+    'content': [
+      {'type': 'input_text', 'text': text},
+    ],
+  });
+
+  void _runTypedAction(String text, DelegationExecutor ex) {
+    _pendingDelegations++;
+    unawaited(() async {
+      final DelegationReport report;
+      try {
+        report = await ex.execute(text, id: 'typed_${++_toolSeq}');
+      } finally {
+        _pendingDelegations--;
+      }
+      if (_closed) return;
+      debugPrint('live typed action "$text": ${report.timingSummary()}');
+      _appendContext(
+        'The user typed: "$text". The app already carried it out. Result: ${report.resultText}\n'
+        'Tell the user the outcome in one short sentence, exactly as reported; if it failed or was not done, '
+        'say so plainly. Do not start another action for this request.',
+      );
+      if (!_delegations.isClosed) _delegations.add(report);
+    }());
   }
 
   @override
@@ -798,9 +855,41 @@ class LiveWebRtcBackend extends VoiceBackend implements ManagedAudioBackend, Liv
   void cancelResponse() {
     if (!_assistantOpen && !_player.isPlaying) return;
     _interrupted = true;
+    _mute();
+  }
+
+  void _mute() {
     _speakerMuted = true;
     _rtc?.setSpeakerEnabled(false);
     _player.clock.reset();
+  }
+
+  bool get _dropping {
+    final u = _dropUntil;
+    return u != null && DateTime.now().isBefore(u);
+  }
+
+  /// "Stop": silence now and swallow the model's answer to it (full duplex,
+  /// so there is nothing to cancel server-side; the model yields by itself).
+  @override
+  void stopAndDrop() {
+    _dropKey = _openUserKey;
+    _dropUntil = DateTime.now().add(const Duration(seconds: 4));
+    if (_assistantOpen) {
+      _interrupted = true;
+      _dropTurn = true;
+    }
+    _mute();
+  }
+
+  @override
+  void setReplyHold(bool hold) {
+    if (_replyHeld == hold) return;
+    _replyHeld = hold;
+    if (!hold && _assistantOpen && _speakerMuted && !_interrupted && !_dropTurn) {
+      _speakerMuted = false;
+      _rtc?.setSpeakerEnabled(true);
+    }
   }
 
   // ------------------------------------------------------- managed audio

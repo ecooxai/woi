@@ -15,6 +15,7 @@ import '../storage/history_store.dart';
 import '../voice/context_sync.dart';
 import '../voice/delegation_executor.dart';
 import '../voice/voice_backend.dart';
+import 'barge_in.dart';
 import 'vad.dart';
 
 enum SessionStatus { disconnected, connecting, connected, error }
@@ -40,6 +41,7 @@ class PipelineOptions {
     this.maxScreenshotWidth = 1280,
     this.micMode = MicMode.handsFree,
     this.thinkingEarcon = false,
+    this.localBargeIn = true,
   });
   final bool autoScreenshot;
   final Duration screenshotDelay;
@@ -49,6 +51,10 @@ class PipelineOptions {
   /// Play [thinkingEarconPcm] when the user stops speaking and the reply
   /// has not started yet.
   final bool thinkingEarcon;
+
+  /// Cut playback on a local mic onset (echo-robust energy detector) instead
+  /// of waiting for the server to notice the interruption.
+  final bool localBargeIn;
 }
 
 typedef SessionConfigBuilder = Future<SessionConfig> Function(Conversation c);
@@ -118,11 +124,29 @@ class TurnPipeline extends ChangeNotifier {
   bool _discardUntilDone = false;
   int _toolsRunning = 0;
   final EnergyVad _localVad = EnergyVad();
+
+  // Local barge-in and "stop" handling.
+  final BargeInDetector _onset = BargeInDetector();
+  // Raw platform mic used only for onset detection when the backend owns the
+  // real mic (its stream is a delayed server echo, too late for barge-in).
+  MicStream? _onsetMic;
+  StreamSubscription<Uint8List>? _onsetSub;
+  // After an interruption (or a short utterance) the next reply is held until
+  // we know the user did not just say "stop".
+  bool _holding = false;
+  Message? _holdMsg;
+  final List<BackendEvent> _held = [];
+  Timer? _holdTimer;
+  // The reply to a "stop" is dropped until then.
+  DateTime? _dropUntil;
+  final Set<String> _stopHandled = {};
   Timer? _phaseTicker;
   AssistantPhase _lastPhase = AssistantPhase.offline;
 
   /// Counters for diagnostics/tests.
   int bargeIns = 0;
+  int localOnsets = 0;
+  int stopsHandled = 0;
   int screenshotsSent = 0;
 
   final _compactionEvents = StreamController<ContextCompacted>.broadcast();
@@ -245,6 +269,9 @@ class TurnPipeline extends ChangeNotifier {
     _finishAssistant(interrupted: _assistantMsg != null);
     _awaitingResponse = false;
     _discardUntilDone = false;
+    _endHold();
+    _held.clear();
+    _dropUntil = null;
     _localVad.reset();
     _out?.stop();
   }
@@ -284,8 +311,26 @@ class TurnPipeline extends ChangeNotifier {
       _mic = mic;
       _micSub = mic.chunks.listen(_onMicChunk);
       _levelsChanged.value++;
+      if (managed != null) unawaited(_openOnsetMic());
     } catch (e) {
       _addSystem('Microphone unavailable: $e', meta: {'type': 'error'});
+    }
+  }
+
+  Future<void> _openOnsetMic() async {
+    if (_onsetMic != null || !options().localBargeIn) return;
+    try {
+      final m = await audio.openMic();
+      if (_mic == null || !_micManaged || _onsetMic != null) {
+        await m.close();
+        return;
+      }
+      _onsetMic = m;
+      _onsetSub = m.chunks.listen((c) {
+        if (_status == SessionStatus.connected && _micMode == MicMode.handsFree) _feedOnset(c);
+      });
+    } catch (e) {
+      debugPrint('barge-in mic unavailable: $e');
     }
   }
 
@@ -296,6 +341,11 @@ class TurnPipeline extends ChangeNotifier {
     _mic = null;
     _micManaged = false;
     await m?.close();
+    await _onsetSub?.cancel();
+    _onsetSub = null;
+    final o = _onsetMic;
+    _onsetMic = null;
+    await o?.close();
     _levelsChanged.value++;
   }
 
@@ -310,6 +360,7 @@ class TurnPipeline extends ChangeNotifier {
     } else {
       _preRoll.add(chunk);
     }
+    if (!_micManaged && _micMode == MicMode.handsFree) _feedOnset(chunk);
     if (!b.hasServerVad && _micMode == MicMode.handsFree) {
       _localVad.sensitivityScale = _assistantAudible ? 2.5 : 1.0;
       switch (_localVad.process(chunk)) {
@@ -349,23 +400,127 @@ class TurnPipeline extends ChangeNotifier {
 
   // ------------------------------------------------------------ user turns
 
-  void _bargeIn() {
+  /// Stops the assistant now; returns whether anything was interrupted.
+  bool _bargeIn() {
     final speaking = _assistantAudible || _assistantMsg != null;
-    if (!speaking) return;
+    if (!speaking) return false;
     bargeIns++;
     _out?.stop();
-    if (_assistantMsg != null) {
-      _backend?.cancelResponse();
-      _discardUntilDone = true;
+    // Also when the response already finished but its audio is still
+    // playing: the backend truncates / mutes what was not heard.
+    _backend?.cancelResponse();
+    if (_assistantMsg != null) _discardUntilDone = true;
+    _finishAssistant(interrupted: true);
+    return true;
+  }
+
+  void _feedOnset(Uint8List chunk) {
+    if (!options().localBargeIn) return;
+    if (_onset.process(chunk, audible: _assistantAudible && !_userSpeaking)) _localOnset();
+  }
+
+  /// The user started talking over the assistant (local detector): cut the
+  /// audio right away; the server confirms the turn a few hundred ms later.
+  void _localOnset() {
+    if (_userSpeaking || !_assistantAudible) return;
+    localOnsets++;
+    debugPrint('barge-in: local onset (echo gain ${_onset.echoGain.toStringAsFixed(2)})');
+    if (_bargeIn()) _beginHold(null);
+    _changed();
+  }
+
+  // ---- reply hold / "stop"
+
+  void _beginHold(Message? msg) {
+    if (!_holding) {
+      _holding = true;
+      _backend?.setReplyHold(true);
+    }
+    if (msg != null) _holdMsg = msg;
+    _holdTimer?.cancel();
+    _holdTimer = Timer(const Duration(seconds: 6), _releaseHold);
+  }
+
+  void _endHold() {
+    _holdTimer?.cancel();
+    _holdTimer = null;
+    _holdMsg = null;
+    if (_holding) {
+      _holding = false;
+      _backend?.setReplyHold(false);
+    }
+  }
+
+  /// Not "stop" after all: play what was held back.
+  void _releaseHold() {
+    if (!_holding) return;
+    _endHold();
+    final events = List.of(_held);
+    _held.clear();
+    for (final e in events) {
+      _onEvent(e);
+    }
+  }
+
+  /// Decides a held reply from the transcript of the interrupting utterance.
+  /// [done]: the transcript is final; [replyStarted]: the backend started a
+  /// reply (on full-duplex backends the turn is then complete).
+  void _checkHold({bool done = false, bool replyStarted = false}) {
+    final m = _holdMsg;
+    if (!_holding || m == null) return;
+    final text = m.text.trim();
+    if (text.isEmpty) {
+      if (done) _releaseHold();
+      return;
+    }
+    if (isStopPhrase(text)) {
+      if (done || (replyStarted && _micManaged)) _onStopPhrase(m);
+      return;
+    }
+    if (done || !couldBecomeStopPhrase(text)) _releaseHold();
+  }
+
+  /// The user said "stop" / "cancel" / "never mind": handled here, never sent
+  /// on as a task. Playback stops, the running reply is cancelled and the
+  /// model's answer to the stop request is dropped.
+  void _onStopPhrase(Message m) {
+    if (!_stopHandled.add(m.id)) return;
+    stopsHandled++;
+    debugPrint('stop phrase "${m.text.trim()}": stopping locally');
+    _held.clear();
+    _endHold();
+    _out?.stop();
+    final a = _assistantMsg;
+    if (a != null && _conv.messages.indexOf(a) > _conv.messages.indexOf(m)) {
+      // Already the answer to "stop" itself: no bubble for it.
+      _conv.messages.remove(a);
+      _assistantMsg = null;
+      _assistantPcm.takeBytes();
     }
     _finishAssistant(interrupted: true);
+    _discardUntilDone = false;
+    _dropUntil = DateTime.now().add(const Duration(seconds: 4));
+    _backend?.stopAndDrop();
+    _awaitingResponse = false;
+    _changed();
+  }
+
+  bool get _dropping {
+    final u = _dropUntil;
+    if (u == null) return false;
+    if (DateTime.now().isAfter(u)) {
+      _dropUntil = null;
+      return false;
+    }
+    return true;
   }
 
   void _onSpeechStarted({String? itemId}) {
     if (_userSpeaking) return;
     _earconTimer?.cancel();
     _earconTimer = null;
-    _bargeIn();
+    final interrupted = _bargeIn();
+    _dropUntil = null;
     _userSpeaking = true;
     _utterancePcm.clear();
     // A known item id continues that turn (the backend saw one turn across a
@@ -386,6 +541,7 @@ class TurnPipeline extends ChangeNotifier {
     }
     _utterancePcm.add(_preRoll.drain());
     _currentUtterance = msg;
+    if (interrupted || (_holding && _holdMsg == null)) _beginHold(msg);
     final opts = options();
     _screenshotTimer?.cancel();
     _screenshotTimer = null;
@@ -437,6 +593,22 @@ class TurnPipeline extends ChangeNotifier {
     }
     final pcm = _utterancePcm.takeBytes();
     if (msg != null) {
+      final ms = pcm.length * 1000 ~/ kVoiceBytesPerSecond;
+      if (_holding && identical(_holdMsg, msg)) {
+        // Long utterances are never just "stop".
+        if (ms > 2500) {
+          _releaseHold();
+        } else {
+          _holdTimer?.cancel();
+          _holdTimer = Timer(const Duration(milliseconds: 2000), _releaseHold);
+        }
+      } else if (!_holding && !_micManaged && ms < 1300 && options().localBargeIn) {
+        // A short utterance could be "stop" with nothing playing: hold the
+        // reply (PCM backends buffer it) until the transcript says otherwise.
+        _beginHold(msg);
+        _holdTimer?.cancel();
+        _holdTimer = Timer(const Duration(milliseconds: 1500), _releaseHold);
+      }
       _lastUtteranceId = msg.id;
       _lastUtterancePcm = pcm;
     }
@@ -498,8 +670,21 @@ class TurnPipeline extends ChangeNotifier {
     final b = _backend;
     if (t.isEmpty || b == null || _status != SessionStatus.connected) return;
     _bargeIn();
-    _addMessage(Message(kind: MessageKind.user, text: t));
+    _releaseHold();
+    _dropUntil = null;
+    final m = _addMessage(Message(kind: MessageKind.user, text: t));
     _conv.touch();
+    if (isStopPhrase(t)) {
+      // Typed "stop": handled locally, nothing is sent.
+      _stopHandled.add(m.id);
+      stopsHandled++;
+      _out?.stop();
+      b.cancelResponse();
+      _awaitingResponse = false;
+      _persistSoon();
+      _changed();
+      return;
+    }
     _awaitingResponse = true;
     b.sendText(t);
     _persistSoon();
@@ -524,6 +709,21 @@ class TurnPipeline extends ChangeNotifier {
   }
 
   void _handle(BackendEvent e) {
+    final assistantSide = e is AssistantTranscriptDelta ||
+        e is AssistantTranscriptDone ||
+        e is AssistantAudioDelta ||
+        e is ResponseDone;
+    if (assistantSide && !_discardUntilDone) {
+      if (_dropping) {
+        if (e is ResponseDone) _finishAssistant(interrupted: true);
+        return;
+      }
+      if (_holding) {
+        _held.add(e);
+        if (e is! ResponseDone) _checkHold(replyStarted: true);
+        return;
+      }
+    }
     switch (e) {
       case SpeechStarted(:final itemId):
         _onSpeechStarted(itemId: itemId);
@@ -532,6 +732,7 @@ class TurnPipeline extends ChangeNotifier {
       case UserTranscriptDelta(:final text, :final itemId):
         final m = _userForTranscript(itemId);
         m.text += text;
+        if (identical(m, _holdMsg)) _checkHold();
         _persistSoon();
         _changed();
       case UserTranscriptDone(:final text, :final itemId, :final noSpeech):
@@ -547,6 +748,11 @@ class TurnPipeline extends ChangeNotifier {
         }
         _conv.touch();
         context.onConversationChanged();
+        if (identical(m, _holdMsg)) {
+          _checkHold(done: true);
+        } else if (isStopPhrase(m.text) && !_stopHandled.contains(m.id) && _isLatestUser(m)) {
+          _onStopPhrase(m);
+        }
         _persistSoon();
         _changed();
       case AssistantTranscriptDelta(:final text):
@@ -563,6 +769,7 @@ class TurnPipeline extends ChangeNotifier {
         if (_discardUntilDone || _userSpeaking) return;
         _assistant();
         _awaitingResponse = false;
+        _onset.onPlayback(pcm16);
         _out?.write(pcm16);
         _assistantPcm.add(pcm16);
       case ToolCall(:final callId, :final name, :final argsJson):
@@ -604,6 +811,15 @@ class TurnPipeline extends ChangeNotifier {
     _awaitingTranscript.add(m);
     if (itemId != null) _userByItem[itemId] = m;
     return _addMessage(m);
+  }
+
+  /// Whether [m] is the newest user message (a late "stop" transcript for an
+  /// old turn must not cancel the current reply).
+  bool _isLatestUser(Message m) {
+    for (final x in _conv.messages.reversed) {
+      if (x.kind == MessageKind.user) return identical(x, m);
+    }
+    return false;
   }
 
   Message _assistant() => _assistantMsg ??= _addMessage(Message(kind: MessageKind.assistant, streaming: true));

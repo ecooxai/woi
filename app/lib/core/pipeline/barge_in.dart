@@ -90,8 +90,10 @@ class BargeInDetector {
   bool _frame(Uint8List f, bool audible) {
     final rms = pcm16Rms(f);
     _refAgeMs += _frameMs;
-    if (_refAgeMs > 600) _refRms *= 0.9;
     if (!audible) {
+      // Replies are generated faster than they play, so the reference only
+      // decays once playback is over.
+      if (_refAgeMs > 600) _refRms *= 0.9;
       // Between replies: track the room noise, re-arm.
       _noiseFloor = rms < _noiseFloor * 4 || rms < minThreshold
           ? _noiseFloor * 0.97 + rms * 0.03
@@ -153,4 +155,16 @@ final _stopPhrase = RegExp(
 bool isStopPhrase(String text) {
   final t = text.trim();
   return t.isNotEmpty && t.length <= 40 && _stopPhrase.hasMatch(t);
+}
+
+const _stopWords = {
+  'ok', 'okay', 'hey', 'no', 'woi', 'please', 'um', 'uh', 'stop', 'it', 'that', 'this', 'talking', 'now', 'there',
+  'cancel', 'never', 'mind', 'nevermind', 'forget', 'be', 'quiet', 'shut', 'up', 'hush', 'enough', "that's", 'thats',
+  'hold', 'on', 'wait', 'thanks', 'thank', 'you',
+};
+
+/// Whether a partial transcript may still turn out to be a stop phrase.
+bool couldBecomeStopPhrase(String text) {
+  final words = text.toLowerCase().split(RegExp(r"[^a-z']+")).where((w) => w.isNotEmpty).toList();
+  return words.length <= 6 && words.every(_stopWords.contains);
 }

@@ -517,3 +517,20 @@ class DelegationExecutor {
 
   static String _clip(String s, int n) => s.length <= n ? s : '${s.substring(0, n - 1)}…';
 }
+
+final _actionRequest = RegExp(
+  r"^(?:(?:ok(?:ay)?|hey|woi|please|now|so|and|then)[\s,]+)*"
+  r"(?:(?:can|could|would|will)\s+you\s+(?:please\s+)?|i\s+(?:want|need)\s+you\s+to\s+|"
+  r"(?:i'?d\s+like\s+you\s+to|go\s+ahead\s+and|try\s+to)\s+|let'?s\s+)?"
+  r"(?:open|show|display|play|pause|click|double[- ]click|right[- ]click|type|enter|run|execute|edit|write|"
+  r"create|make|delete|remove|rename|move|copy|list|read|find|search|look\s+up|press|hit|scroll|close|"
+  r"save|take|capture|launch|start|stop\s+the|install|download|go\s+to|navigate|select|drag|paste|"
+  r"append|add|insert|replace|change|set|turn|switch|maximi[sz]e|minimi[sz]e|focus|check|count|send|"
+  r"fill|submit|upload|zip|unzip|extract|print|cd|ls|cat|grep|mkdir|touch)\b",
+  caseSensitive: false,
+);
+
+/// Whether typed text asks the assistant to *do* something on the computer
+/// (gpt-live never delegates typed text itself, so the app runs it).
+bool looksLikeAction(String text) => _actionRequest.hasMatch(text.trim());
+

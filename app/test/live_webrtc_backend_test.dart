@@ -273,13 +273,14 @@ void main() {
       await r.dispose();
     });
 
-    test('sendText becomes developer context; errors surface', () async {
+    test('typed chat becomes channel-less context (answered); errors surface', () async {
       final r = _Rig();
       await r.connect();
-      r.backend.sendText('open my notes');
+      r.backend.sendText('What is two plus two?');
       final ev = r.ws.ofType('session.context.append').single;
-      expect(ev['channel'], 'developer');
-      expect(jsonEncode(ev['content']), contains('open my notes'));
+      expect(ev.containsKey('channel'), isFalse, reason: "the 'developer' channel gets no reply");
+      expect(jsonEncode(ev['content']), contains('What is two plus two?'));
+      expect(r.model.requests, isEmpty, reason: 'not an action: no executor run');
       r.ws.push({
         'type': 'error',
         'error': {'code': 'bad', 'message': 'nope'},
@@ -289,6 +290,82 @@ void main() {
       r.backend.sendAudio(pcm(20, amplitude: 100)); // no-op: audio goes over RTP
       await _tick();
       expect(r.ws.sent.where((e) => '${e['type']}'.contains('audio')), isEmpty);
+      await r.dispose();
+    });
+  });
+
+  group('typed actions and stop', () {
+    test('typed action runs the executor; the model voices the real result', () async {
+      final r = _Rig(
+        turns: [
+          DelegationModelTurn(
+            text: '',
+            calls: [
+              call('run_bash', {'command': 'ls ~'}),
+            ],
+          ),
+          DelegationModelTurn(text: 'Listed 3 entries.', calls: const []),
+        ],
+      );
+      await r.connect();
+      r.backend.sendText('Run ls in my home folder');
+      await waitFor(() => r.of<ToolCall>().isNotEmpty);
+      expect(r.ws.ofType('session.context.append'), isEmpty, reason: 'nothing claimed before the result');
+      r.backend.sendToolResult(r.of<ToolCall>().single.callId, '{"ok":false,"error":"permission denied"}');
+      await waitFor(() => r.ws.ofType('session.context.append').isNotEmpty);
+      final ev = r.ws.ofType('session.context.append').single;
+      expect(ev.containsKey('channel'), isFalse);
+      final text = jsonEncode(ev['content']);
+      expect(text, contains('Run ls in my home folder'));
+      expect(text, contains('already carried it out'));
+      expect(text, contains('failed'));
+      expect(r.model.requests.first.input.toString(), contains('Run ls in my home folder'));
+      await r.dispose();
+    });
+
+    test('looksLikeAction', () {
+      for (final t in ['Open the file notes.txt', 'please run ls', 'Can you click the OK button?', 'type hello world',
+        'Show me README.md', 'take a screenshot']) {
+        expect(looksLikeAction(t), isTrue, reason: t);
+      }
+      for (final t in ['What is two plus two?', 'Hello, how are you?', 'Tell me a joke', 'Why is the sky blue?']) {
+        expect(looksLikeAction(t), isFalse, reason: t);
+      }
+    });
+
+    test('stopAndDrop mutes, hides the answer to "stop" and declines its delegations', () async {
+      final r = _Rig();
+      await r.connect();
+      r.ws.outputWords('A long story', 200);
+      r.ws.audio(200, pcm(200, amplitude: 4000));
+      await _tick();
+      r.backend.stopAndDrop();
+      expect(r.rtc.speakerEnabled, isFalse);
+      r.ws.turn('done', 'assistant', 200, 400, 'A long story');
+      await _tick(10);
+      final deltasBefore = r.of<AssistantTranscriptDelta>().length;
+      // The model acknowledges the stop in a new turn: stays muted and hidden.
+      r.ws.outputWords('Sure, stopping.', 900);
+      r.ws.audio(900, pcm(200, amplitude: 4000));
+      await _tick();
+      expect(r.rtc.speakerEnabled, isFalse);
+      expect(r.of<AssistantTranscriptDelta>().length, deltasBefore);
+      r.ws.delegation('del_x', 'Stop the story.');
+      await waitFor(() => r.ws.ofType('delegation.context.append').isNotEmpty);
+      expect(jsonEncode(r.ws.ofType('delegation.context.append').single), contains('Do nothing'));
+      expect(r.model.requests, isEmpty, reason: 'nothing executed');
+      await r.dispose();
+    });
+
+    test('setReplyHold keeps a new turn muted until released', () async {
+      final r = _Rig();
+      await r.connect();
+      r.backend.setReplyHold(true);
+      r.ws.outputWords('Sure.', 200);
+      await _tick();
+      expect(r.rtc.speakerEnabled, isFalse);
+      r.backend.setReplyHold(false);
+      expect(r.rtc.speakerEnabled, isTrue);
       await r.dispose();
     });
   });
@@ -486,7 +563,9 @@ void main() {
       );
       await p.start();
       await waitFor(() => p.status == SessionStatus.connected);
-      expect(fp.audio.mic, isNull, reason: 'WebRTC owns the mic: no pw-record');
+      // WebRTC owns the mic; the platform mic is only a local barge-in detector.
+      await waitFor(() => fp.audio.mic != null, reason: 'onset-detector mic');
+      expect(fp.audio.mic!.closed, isFalse);
       expect(rig.rtc.micEnabled, isTrue);
       expect(p.context.accounting, ContextAccounting.textEstimate, reason: 'gpt-live: no usage, text context');
       expect(p.context.overheadTokens, greaterThan(ContextManager.textTokens(DelegationExecutor.instructions)));
