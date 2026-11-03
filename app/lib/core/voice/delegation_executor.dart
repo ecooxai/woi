@@ -244,6 +244,9 @@ class DelegationExecutor {
       'Show, open, view or play a file: show_file. Never change files with run_bash: read_file, then edit_file '
       '(the user approves a diff). '
       'click_screen coordinates are pixels of the attached screenshot. '
+      'A live camera frame (webcam) or a media image (open in Woi\'s viewer) may be attached: they are not the '
+      'screen. Answer questions about what the camera sees or what the media shows directly from that image, in '
+      'one or two sentences, without tools. '
       'For complex work (writing code, analysis, long text) call delegate_task; when the user wants code or text '
       'written or saved, say so in the task (it saves files with write_file). '
       'The conversation note is attached: answer questions from it, record decisions, todos, facts and '
@@ -257,7 +260,7 @@ class DelegationExecutor {
   }
 
   /// Tools whose result the model must see before it can act or answer.
-  static const observeTools = {'take_screenshot', 'list_dir', 'read_file', 'read_note', 'inspect_media'};
+  static const observeTools = {'take_screenshot', 'list_dir', 'read_file', 'read_note', 'inspect_media', 'camera'};
 
   /// Read-only shell commands (locating / inspecting files).
   static final _lookupCommand = RegExp(
