@@ -104,6 +104,7 @@ class AppSettings {
     this.imageScaleDivisor = 5,
     this.theme = AppTheme.light,
     this.editApplyDelay = 5,
+    this.cameraReplacesScreenshot = false,
   });
 
   final BackendMode backendMode;
@@ -154,6 +155,10 @@ class AppSettings {
   /// explicit Apply.
   final int editApplyDelay;
 
+  /// While the camera is on its frame replaces the turn's screenshot
+  /// (default: both are attached).
+  final bool cameraReplacesScreenshot;
+
   /// The voice used by the current backend mode.
   String get activeVoice => backendMode == BackendMode.gptLive ? liveVoice : voice;
 
@@ -185,6 +190,7 @@ class AppSettings {
     int? imageScaleDivisor,
     AppTheme? theme,
     int? editApplyDelay,
+    bool? cameraReplacesScreenshot,
   }) => AppSettings(
     backendMode: backendMode ?? this.backendMode,
     apiKey: apiKey ?? this.apiKey,
@@ -208,6 +214,7 @@ class AppSettings {
     imageScaleDivisor: imageScaleDivisor ?? this.imageScaleDivisor,
     theme: theme ?? this.theme,
     editApplyDelay: editApplyDelay ?? this.editApplyDelay,
+    cameraReplacesScreenshot: cameraReplacesScreenshot ?? this.cameraReplacesScreenshot,
   );
 
   /// Whether a change requires reconnecting the live session.
@@ -242,6 +249,7 @@ class AppSettings {
     'imageScaleDivisor': imageScaleDivisor,
     'theme': theme.name,
     'editApplyDelay': editApplyDelay,
+    'cameraReplacesScreenshot': cameraReplacesScreenshot,
   };
 
   factory AppSettings.fromJson(Map<String, Object?> j) {
@@ -281,6 +289,7 @@ class AppSettings {
       editApplyDelay: kEditApplyDelays.contains(i('editApplyDelay', d.editApplyDelay))
           ? i('editApplyDelay', d.editApplyDelay)
           : d.editApplyDelay,
+      cameraReplacesScreenshot: b('cameraReplacesScreenshot', d.cameraReplacesScreenshot),
     );
   }
 }

@@ -144,7 +144,7 @@ class _Bubble extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         if (m.image != null) ...[
-          ScreenshotThumb(image: m.image!, viewer: viewer, tier: imageTierOf(m)),
+          ScreenshotThumb(image: m.image!, viewer: viewer, tier: imageTierOf(m), label: imageLabel(m)),
           if (m.text.isNotEmpty || waiting) const SizedBox(height: 10),
         ],
         if (waiting)
@@ -235,8 +235,12 @@ class ScreenshotThumb extends StatelessWidget {
     this.marker,
     this.maxWidth = 300,
     this.tier = ImageTier.full,
+    this.label = 'Screenshot',
   });
   final ImageAttachment image;
+
+  /// "Screenshot", "Camera frame", "Media image" ([imageLabel]).
+  final String label;
 
   /// How the model currently has it; the thumbnail is always the original.
   final ImageTier tier;
@@ -252,7 +256,7 @@ class ScreenshotThumb extends StatelessWidget {
     return Semantics(
       button: true,
       image: true,
-      label: mk == null ? 'Screenshot. Tap to enlarge' : 'Screenshot with click at ${mk.dx.round()}, ${mk.dy.round()}',
+      label: mk == null ? '$label. Tap to enlarge' : '$label with click at ${mk.dx.round()}, ${mk.dy.round()}',
       child: MouseRegion(
         cursor: SystemMouseCursors.zoomIn,
         child: GestureDetector(
@@ -260,7 +264,7 @@ class ScreenshotThumb extends StatelessWidget {
             context,
             image.path,
             caption:
-                'Screenshot · ${image.originalWidth}×${image.originalHeight} (sent ${image.width}×${image.height})'
+                '$label · ${image.originalWidth}×${image.originalHeight} (sent ${image.width}×${image.height})'
                 '${mk != null ? ' · click (${mk.dx.round()}, ${mk.dy.round()})' : ''}',
             marker: mk == null || image.width <= 0 ? null : Offset(mk.dx / image.width, mk.dy / image.height),
             onOpenWindow: () => viewer.show(MediaItem(kind: MediaKind.image, path: image.path)),
@@ -305,8 +309,8 @@ class ScreenshotThumb extends StatelessWidget {
                           bottom: 6,
                           child: Tooltip(
                             message: tier == ImageTier.reduced
-                                ? 'Older screenshot: the model now has it at ⅕ size'
-                                : 'Old screenshot: the model now has a text description',
+                                ? 'Older ${label.toLowerCase()}: the model now has it at ⅕ size'
+                                : 'Old ${label.toLowerCase()}: the model now has a text description',
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(6)),
@@ -999,6 +1003,8 @@ class _SystemNote extends StatelessWidget {
       'error' => (WoiColors.red, Icons.warning_amber_rounded),
       'notice' => (WoiColors.amber, Icons.info_outline),
       'screenshot' => (WoiColors.cyan, Icons.screenshot_monitor),
+      'camera' => (WoiColors.cyan, Icons.videocam_outlined),
+      'media' => (WoiColors.cyan, Icons.perm_media_outlined),
       _ => (WoiColors.textDim, Icons.info_outline),
     };
     return Padding(
@@ -1041,7 +1047,16 @@ class _SystemNote extends StatelessWidget {
                 Expanded(child: Container(height: 1, color: color.withValues(alpha: 0.12))),
               ],
             ),
-            if (m.image != null) ...[const SizedBox(height: 8), ScreenshotThumb(image: m.image!, viewer: viewer, tier: imageTierOf(m))],
+            if (m.image != null) ...[
+              const SizedBox(height: 8),
+              ScreenshotThumb(
+                image: m.image!,
+                viewer: viewer,
+                tier: imageTierOf(m),
+                label: imageLabel(m),
+                maxWidth: type == 'camera' ? 200 : 300,
+              ),
+            ],
           ],
         ),
       ),

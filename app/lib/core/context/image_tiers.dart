@@ -146,7 +146,8 @@ class ImageCompactor {
       if (img == null || m.compacted) continue;
       try {
         final original = await File(img.path).readAsBytes();
-        final note = 'Screenshot from ${_clock(m.createdAt)}${m.text.isNotEmpty ? ' (${m.text})' : ''}.';
+        final label = imageLabel(m);
+        final note = '$label from ${_clock(m.createdAt)}${m.text.isNotEmpty ? ' (${m.text})' : ''}.';
         if (tier == ImageTier.reduced) {
           final w = (img.width / policy.reduceFactor).round().clamp(1, 1 << 15);
           final h = (img.height / policy.reduceFactor).round().clamp(1, 1 << 15);
@@ -164,7 +165,7 @@ class ImageCompactor {
         } else {
           final text = (await describe(original, m.text.isEmpty ? null : m.text)).trim();
           if (text.isEmpty) throw StateError('empty description');
-          if (await apply(m, text: 'Earlier screenshot from ${_clock(m.createdAt)} (image removed): $text')) {
+          if (await apply(m, text: 'Earlier ${label.toLowerCase()} from ${_clock(m.createdAt)} (image removed): $text')) {
             applied++;
           }
           m.meta
@@ -211,4 +212,12 @@ Describe responsesDescriber(ResponsesClient client, {String Function()? model}) 
     ],
   );
   return r.text;
+};
+
+/// "Screenshot", "Camera frame" or "Media image" (from the message's
+/// `imageKind` meta, see ContextImageMeta).
+String imageLabel(Message m) => switch (m.meta['imageKind']) {
+  'camera' => 'Camera frame',
+  'media' => 'Media image',
+  _ => 'Screenshot',
 };

@@ -6,8 +6,10 @@ import '../app_paths.dart';
 import '../files.dart';
 import '../platform_services.dart';
 import 'linux_audio_io.dart';
+import 'linux_camera.dart';
 import 'linux_files.dart';
 import 'linux_input_control.dart';
+import 'linux_media_grab.dart';
 import 'linux_media_viewer.dart';
 import 'linux_screen_capture.dart';
 import 'linux_shell.dart';
@@ -29,5 +31,7 @@ PlatformServices createLinuxPlatform({bool secondaryWindows = true}) {
     shell: LinuxShell(defaultWorkingDirectory: paths.homeDir),
     files: LocalFiles(homeDir: paths.homeDir, workspaceDir: defaultWorkspaceDir(paths.homeDir, Directory.current.path)),
     viewer: LinuxMediaViewer(useSecondaryWindow: secondaryWindows),
+    camera: LinuxCameraService(device: Platform.environment['WOI_CAMERA'] ?? '/dev/video0'),
+    mediaGrab: const FfmpegMediaGrabber(),
   );
 }

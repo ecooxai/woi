@@ -10,9 +10,11 @@ import '../audio/earcon.dart';
 import '../audio/wav.dart';
 import '../context/context_manager.dart';
 import '../context/image_tiers.dart';
+import '../media/media_context.dart';
 import '../models/message.dart';
 import '../settings/settings.dart';
 import '../storage/history_store.dart';
+import '../voice/context_images.dart';
 import '../voice/context_sync.dart';
 import '../voice/delegation_executor.dart';
 import '../voice/voice_backend.dart';
@@ -43,7 +45,12 @@ class PipelineOptions {
     this.micMode = MicMode.handsFree,
     this.thinkingEarcon = false,
     this.localBargeIn = true,
+    this.cameraReplacesScreenshot = false,
   });
+
+  /// While the camera is on, its frame replaces the turn's screenshot
+  /// instead of being attached next to it.
+  final bool cameraReplacesScreenshot;
   final bool autoScreenshot;
   final Duration screenshotDelay;
   final int maxScreenshotWidth;
@@ -103,6 +110,14 @@ class TurnPipeline extends ChangeNotifier {
 
   /// Screenshot tiers (newest full, then ⅕ size, then described).
   final ImageCompactor? imageCompactor;
+
+  /// The camera frame to attach to a user turn; null while the camera is off.
+  ContextImage? Function()? cameraImage;
+
+  /// Runs before a typed turn is sent (media context for "what's in this
+  /// image"). Returns null synchronously when there is nothing to do;
+  /// otherwise the future's text (if any) is what the model receives.
+  Future<String?>? Function(String text)? beforeTypedTurn;
 
   Conversation _conv;
   VoiceBackend? _backend;
@@ -567,7 +582,9 @@ class TurnPipeline extends ChangeNotifier {
     final opts = options();
     _screenshotTimer?.cancel();
     _screenshotTimer = null;
-    if (opts.autoScreenshot && msg.image == null && !_screenshotStarted.contains(msg.id)) {
+    if ((opts.autoScreenshot || cameraImage?.call() != null) &&
+        msg.image == null &&
+        !_screenshotStarted.contains(msg.id)) {
       _screenshotTimer = Timer(opts.screenshotDelay, () {
         _screenshotTimer = null;
         _captureFor(msg);
@@ -653,6 +670,11 @@ class TurnPipeline extends ChangeNotifier {
 
   Future<void> _captureFor(Message msg) async {
     _screenshotStarted.add(msg.id);
+    final opts = options();
+    final cam = cameraImage?.call();
+    final replace = cam != null && opts.cameraReplacesScreenshot;
+    if (cam != null) attachContextImage(cam, to: replace ? msg : null);
+    if (replace || !opts.autoScreenshot) return;
     try {
       final shot = await screen.capture(maxWidth: options().maxScreenshotWidth);
       await attachScreenshot(shot, note: 'Screen when the user spoke.', to: msg);
@@ -687,6 +709,60 @@ class TurnPipeline extends ChangeNotifier {
     _persistSoon();
     _changed();
     unawaited(compactImages());
+  }
+
+  /// Number of camera/media images sent (diagnostics/tests).
+  int contextImagesSent = 0;
+
+  /// Sends a camera frame or media image to the model (at once, so a turn
+  /// sent right after carries it) and attaches it to [to] or a new system
+  /// message. gpt-live keeps it for delegations ([ContextImageSink]).
+  /// Compaction tiers apply like for screenshots.
+  Message attachContextImage(ContextImage img, {Message? to}) {
+    final target =
+        to ??
+        _addMessage(
+          Message(
+            kind: MessageKind.system,
+            text: img.kind == ContextImageKind.camera ? 'Camera frame' : 'Image from the viewer',
+            meta: {'type': img.kind},
+          ),
+        );
+    target.meta[ContextImageMeta.kind] = img.kind;
+    final Object? b = _backend;
+    if (b is ContextImageSink) {
+      b.setContextImage(img.kind, DelegationImage(png: img.bytes, capturedAt: img.capturedAt, note: img.note));
+    } else {
+      final itemId = _backend?.sendImage(img.bytes, note: img.note);
+      if (itemId != null) target.meta[ImageMeta.serverItem] = itemId;
+    }
+    contextImagesSent++;
+    final conv = _conv;
+    store
+        .saveImage(target.id, img.bytes, ext: img.isJpeg ? 'jpg' : 'png')
+        .then((path) {
+          target.image = ImageAttachment(
+            path: path,
+            width: img.width,
+            height: img.height,
+            originalWidth: img.width,
+            originalHeight: img.height,
+          );
+          if (!identical(conv, _conv) || _disposed) return;
+          context.onConversationChanged();
+          _persistSoon();
+          _changed();
+          unawaited(compactImages());
+        })
+        .catchError((Object e) => debugPrint('saving ${img.kind} image failed: $e'));
+    _changed();
+    return target;
+  }
+
+  /// Forgets the camera frame kept for delegations (camera closed).
+  void clearContextImage(String kind) {
+    final Object? b = _backend;
+    if (b is ContextImageSink) b.setContextImage(kind, null);
   }
 
   /// Lowers screenshot tiers (in the live context where the backend can
@@ -762,7 +838,21 @@ class TurnPipeline extends ChangeNotifier {
       return;
     }
     _awaitingResponse = true;
-    b.sendText(t);
+    final cam = cameraImage?.call();
+    if (cam != null) attachContextImage(cam);
+    final pre = beforeTypedTurn?.call(t);
+    if (pre == null) {
+      b.sendText(t);
+    } else {
+      pre
+          .then((sent) => sent ?? t, onError: (Object e) {
+            _addSystem('Media context failed: $e', meta: {'type': 'error'});
+            return t;
+          })
+          .then((sent) {
+            if (!_disposed && identical(_backend, b)) b.sendText(sent);
+          });
+    }
     _persistSoon();
     _changed();
   }

@@ -267,6 +267,16 @@ static void my_application_activate(GApplication* application) {
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   fl_dart_project_set_dart_entrypoint_arguments(
       project, self->dart_entrypoint_arguments);
+  // Renderer: Skia over OpenGL by default, WOI_RENDERER=impeller for Impeller.
+  // Measured on Mesa llvmpipe (qa/perf_scenarios.sh, 30 s): idle 18% -> 4%
+  // CPU, scroll 431% -> 222%; Impeller has no raster cache and its SDF
+  // text/shadow shaders are expensive in software GL. The media viewer
+  // windows (created by desktop_multi_window) stay on Impeller: video in a
+  // Skia viewer could not be checked on the llvmpipe test display, where fvp
+  // output is black with either renderer.
+  if (g_strcmp0(g_getenv("WOI_RENDERER"), "impeller") != 0) {
+    fl_dart_project_set_enable_impeller(project, FALSE);
+  }
 
   FlView* view = fl_view_new(project);
   GdkRGBA background_color;

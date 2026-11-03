@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:woi/core/voice/voice_backend.dart';
 import 'package:woi/platform/app_paths.dart';
 import 'package:woi/platform/audio_io.dart';
+import 'package:woi/platform/camera.dart';
 import 'package:woi/platform/files.dart';
 import 'package:woi/platform/input_control.dart';
 import 'package:woi/platform/linux/linux_files.dart';
@@ -354,5 +355,59 @@ Future<void> waitFor(bool Function() cond, {Duration timeout = const Duration(se
   while (!cond()) {
     if (sw.elapsed > timeout) throw TimeoutException('waitFor timed out${reason == null ? '' : ': $reason'}');
     await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
+}
+
+// ----------------------------------------------------------------- camera
+
+/// Minimal JPEG (SOI, SOF0 with [w]x[h], SOS, [payload] entropy bytes, EOI);
+/// enough for [jpegSize] and the stream splitter, not for decoding.
+Uint8List fakeJpeg(int w, int h, {List<int> payload = const [1, 2, 3, 0xFF, 0x00, 4]}) => Uint8List.fromList([
+  0xFF, 0xD8, //
+  0xFF, 0xE0, 0x00, 0x06, 0x4A, 0x46, 0x49, 0x46, // APP0 "JFIF"
+  0xFF, 0xC0, 0x00, 0x0B, 0x08, h >> 8, h & 0xFF, w >> 8, w & 0xFF, 0x01, 0x01, 0x11, 0x00,
+  0xFF, 0xDA, 0x00, 0x08, 0x01, 0x01, 0x00, 0x00, 0x3F, 0x00,
+  ...payload,
+  0xFF, 0xD9,
+]);
+
+/// Camera driven by the test: [open] starts "streaming" [frame].
+class FakeCamera extends CameraService {
+  final _active = ValueNotifier(false);
+  final _frames = ValueNotifier<CameraFrame?>(null);
+  int opens = 0, closes = 0;
+  bool fail = false;
+
+  @override
+  ValueListenable<bool> get active => _active;
+  @override
+  ValueListenable<CameraFrame?> get frames => _frames;
+  @override
+  String? get lastError => fail ? 'no camera' : null;
+
+  void push({int w = 1280, int h = 720, DateTime? at}) =>
+      _frames.value = CameraFrame(jpeg: fakeJpeg(w, h), width: w, height: h, capturedAt: at ?? DateTime.now());
+
+  @override
+  Future<void> open() async {
+    opens++;
+    if (fail) throw CameraException('No camera at /dev/video0');
+    _active.value = true;
+    push();
+  }
+
+  @override
+  Future<void> close() async {
+    closes++;
+    _active.value = false;
+    _frames.value = null;
+  }
+}
+
+extension FakeCameraJpeg on FakeCamera {
+  void pushJpeg(Uint8List jpeg) {
+    final s = jpegSize(jpeg)!;
+    (frames as ValueNotifier<CameraFrame?>).value =
+        CameraFrame(jpeg: jpeg, width: s.$1, height: s.$2, capturedAt: DateTime.now());
   }
 }

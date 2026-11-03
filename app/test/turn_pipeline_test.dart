@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
@@ -9,12 +10,15 @@ import 'package:woi/core/context/compressor.dart';
 import 'package:woi/core/context/context_manager.dart';
 import 'package:woi/core/context/image_tiers.dart';
 import 'package:woi/core/delegate/delegate_backend.dart';
+import 'package:woi/core/media/media_context.dart';
 import 'package:woi/core/models/message.dart';
 import 'package:woi/core/pipeline/turn_pipeline.dart';
 import 'package:woi/core/settings/settings.dart';
 import 'package:woi/core/storage/history_store.dart';
+import 'package:woi/core/voice/context_images.dart';
 import 'package:woi/core/voice/mock_voice_backend.dart';
 import 'package:woi/core/voice/voice_backend.dart';
+import 'package:woi/platform/camera.dart' show jpegSize;
 import 'package:woi/tools/builtin_tools.dart';
 import 'package:woi/tools/tool_registry.dart';
 
@@ -651,4 +655,153 @@ void main() {
     expect(wavs, 1);
     await h.dispose();
   });
+
+  group('camera frames', () {
+    Future<(Harness, FakeCamera)> withCamera({bool replace = false, bool autoScreenshot = true}) async {
+      final h = await Harness.create(
+        options: PipelineOptions(
+          screenshotDelay: const Duration(milliseconds: 50),
+          cameraReplacesScreenshot: replace,
+          autoScreenshot: autoScreenshot,
+        ),
+      );
+      final cam = FakeCamera();
+      await cam.open();
+      h.pipeline.cameraImage = () {
+        final f = cam.latest();
+        return f == null ? null : ContextImage.camera(f);
+      };
+      return (h, cam);
+    }
+
+    test('adds: a spoken turn gets the screenshot and the camera frame', () async {
+      final (h, cam) = await withCamera();
+      h.scripted.emit(const SpeechStarted());
+      await waitFor(() => h.scripted.images.length == 2);
+      expect(h.fp.screen.captureTimes, hasLength(1));
+      final camImg = h.scripted.images.firstWhere((i) => i.$2!.contains('Live camera frame'));
+      expect(jpegSize(camImg.$1), (1280, 720));
+      await waitFor(() => h.conv.messages.where((m) => m.image != null).length == 2);
+      final camMsg = h.conv.messages.singleWhere((m) => m.meta['type'] == 'camera');
+      expect(camMsg.meta[ContextImageMeta.kind], 'camera');
+      expect(camMsg.image!.path, endsWith('.jpg'));
+      expect(imageLabel(camMsg), 'Camera frame');
+      expect(ofKind(h.conv, MessageKind.user).single.image, isNotNull, reason: 'screenshot stays on the turn');
+      await cam.close();
+      await h.dispose();
+    });
+
+    test('replaces: only the camera frame, on the user turn itself', () async {
+      final (h, cam) = await withCamera(replace: true);
+      h.scripted.emit(const SpeechStarted());
+      await waitFor(() => h.scripted.images.isNotEmpty);
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      expect(h.scripted.images, hasLength(1));
+      expect(h.fp.screen.captureTimes, isEmpty);
+      final user = ofKind(h.conv, MessageKind.user).single;
+      await waitFor(() => user.image != null);
+      expect(user.meta[ContextImageMeta.kind], 'camera');
+      await cam.close();
+      await h.dispose();
+    });
+
+    test('camera on with auto-screenshot off still attaches frames; off attaches nothing', () async {
+      final (h, cam) = await withCamera(autoScreenshot: false);
+      h.scripted.emit(const SpeechStarted());
+      await waitFor(() => h.scripted.images.isNotEmpty);
+      expect(h.fp.screen.captureTimes, isEmpty);
+      h.scripted.emit(const SpeechStopped());
+      await cam.close();
+      h.scripted.emit(const SpeechStarted());
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      expect(h.scripted.images, hasLength(1));
+      await h.dispose();
+    });
+
+    test('typed turns carry the frame before the text', () async {
+      final (h, cam) = await withCamera();
+      h.pipeline.sendText('what do you see?');
+      expect(h.scripted.images, hasLength(1), reason: 'sent synchronously, before the text');
+      expect(h.scripted.texts.single, 'what do you see?');
+      expect(h.pipeline.contextImagesSent, 1);
+      await cam.close();
+      await h.dispose();
+    });
+
+    test('frames tier like screenshots', () async {
+      final h = await Harness.create(
+        images: (store) => ImageCompactor(
+          policy: const ImageTierPolicy(rawRecentTurns: 0),
+          downscale: (png, w, h) async => Uint8List.fromList(png.take(8).toList()),
+          describe: (png, note) async => 'A person at a desk.',
+          save: store.saveImage,
+        ),
+      );
+      final cam = FakeCamera();
+      await cam.open();
+      for (var i = 0; i < 9; i++) {
+        h.pipeline.attachContextImage(ContextImage.camera(cam.latest()!));
+      }
+      await waitFor(() => h.conv.messages.where((m) => m.image != null).length == 9);
+      await h.pipeline.compactImages();
+      final frames = h.conv.messages.where((m) => m.image != null).toList();
+      expect(frames.map(imageTierOf), [
+        ImageTier.described,
+        ...List.filled(5, ImageTier.reduced),
+        ...List.filled(3, ImageTier.full),
+      ]);
+      final described = h.scripted.replaced.singleWhere((x) => x.$3 != null && x.$2 == null);
+      expect(described.$3, startsWith('Earlier camera frame from'));
+      expect(h.scripted.replaced.firstWhere((x) => x.$2 != null).$3, startsWith('Camera frame from'));
+      await cam.close();
+      await h.dispose();
+    });
+
+    test('backends that cannot take images keep the frame for delegations', () async {
+      final h = await Harness.create(backend: () => _SinkBackend());
+      final cam = FakeCamera();
+      await cam.open();
+      h.pipeline.attachContextImage(ContextImage.camera(cam.latest()!));
+      final b = h.lastBackend! as _SinkBackend;
+      expect(b.images, isEmpty);
+      expect(b.slots['camera']!.note, contains('Live camera frame'));
+      h.pipeline.clearContextImage('camera');
+      expect(b.slots, isEmpty);
+      await h.dispose();
+    });
+  });
+
+  group('typed media questions', () {
+    test('the hook runs before the text is sent and can extend it', () async {
+      final h = await Harness.create();
+      final gate = Completer<String?>();
+      h.pipeline.beforeTypedTurn = (t) => t.contains('image') ? gate.future : null;
+      h.pipeline.sendText('hello');
+      expect(h.scripted.texts, ['hello']);
+      h.pipeline.sendText("what's in this image");
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(h.scripted.texts, ['hello'], reason: 'waits for the media');
+      gate.complete("what's in this image\n[media attached]");
+      await waitFor(() => h.scripted.texts.length == 2);
+      expect(h.scripted.texts.last, contains('[media attached]'));
+      expect(ofKind(h.conv, MessageKind.user).last.text, "what's in this image", reason: 'transcript keeps the typed text');
+      await h.dispose();
+    });
+
+    test('a failing hook still sends the text', () async {
+      final h = await Harness.create();
+      h.pipeline.beforeTypedTurn = (t) => Future<String?>.error(StateError('ffmpeg missing'));
+      h.pipeline.sendText('what is this song?');
+      await waitFor(() => h.scripted.texts.isNotEmpty);
+      expect(h.scripted.texts.single, 'what is this song?');
+      expect(h.conv.messages.any((m) => m.text.contains('ffmpeg missing')), isTrue);
+      await h.dispose();
+    });
+  });
+}
+
+class _SinkBackend extends ScriptedBackend implements ContextImageSink {
+  final slots = <String, DelegationImage>{};
+  @override
+  void setContextImage(String slot, DelegationImage? image) => image == null ? slots.remove(slot) : slots[slot] = image;
 }

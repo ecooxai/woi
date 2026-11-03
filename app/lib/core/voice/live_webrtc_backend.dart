@@ -10,10 +10,12 @@ import '../audio/playback_clock.dart';
 import '../audio/wav.dart';
 import '../auth/auth.dart';
 import '../context/context_manager.dart';
+import '../media/media_context.dart' show isMediaQuestion, cameraCommand;
 import '../net/realtime_socket.dart';
 import '../notes/pinned_note.dart';
 import '../pipeline/vad.dart';
 import '../settings/settings.dart' show kLiveVoices, kLiveDefaultVoice;
+import 'context_images.dart';
 import 'context_sync.dart';
 import 'delegation_executor.dart';
 import 'live_rtc_transport.dart';
@@ -91,7 +93,8 @@ class LiveConnectTimings {
 ///   [ToolCall], answered with [sendToolResult]) so confirmations and the
 ///   transcript UI work as usual; the result goes back with
 ///   `delegation.context.append` and the voice model speaks it.
-class LiveWebRtcBackend extends VoiceBackend implements ManagedAudioBackend, LiveContextSync, PinnedNoteSync {
+class LiveWebRtcBackend extends VoiceBackend
+    implements ManagedAudioBackend, LiveContextSync, PinnedNoteSync, ContextImageSink {
   LiveWebRtcBackend({
     required this.transportFactory,
     RealtimeConnector? sideband,
@@ -195,6 +198,13 @@ class LiveWebRtcBackend extends VoiceBackend implements ManagedAudioBackend, Liv
 
   // ---- images (for delegation) and pending tool calls
   DelegationImage? _latestImage;
+
+  /// Camera frame / media image per slot, for delegations.
+  final Map<String, DelegationImage> _contextImages = {};
+
+  @override
+  void setContextImage(String slot, DelegationImage? image) =>
+      image == null ? _contextImages.remove(slot) : _contextImages[slot] = image;
   final Map<String, Completer<String>> _pendingTools = {};
   int _toolSeq = 0;
 
@@ -270,6 +280,7 @@ class LiveWebRtcBackend extends VoiceBackend implements ManagedAudioBackend, Liv
       tools: config.tools,
       runTool: toolRunner ?? _runToolViaPipeline,
       latestScreenshot: () => _latestImage,
+      contextImages: () => _contextImages.values.toList(),
       contextNote: _delegationNote,
       environment: () => config.environment,
       pinnedNote: () => _pinnedNote,
@@ -827,7 +838,7 @@ class LiveWebRtcBackend extends VoiceBackend implements ManagedAudioBackend, Liv
     final ex = _executor;
     // Typed text never starts a delegation on gpt-live, so action requests
     // are carried out here and the model only voices the real outcome.
-    if (ex != null && looksLikeAction(t)) {
+    if (ex != null && (looksLikeAction(t) || _asksAboutContextImages(t))) {
       _runTypedAction(t, ex);
       return;
     }
@@ -835,6 +846,13 @@ class LiveWebRtcBackend extends VoiceBackend implements ManagedAudioBackend, Liv
     // the model answer (the 'developer' channel is read silently; §3.2).
     _appendContext('The user typed (instead of speaking): $t');
   }
+
+  /// "what do you see?" with the camera on, "what's in this image" with
+  /// media open: only the delegation model can look, so it answers.
+  bool _asksAboutContextImages(String t) =>
+      isMediaQuestion(t) ||
+      cameraCommand(t) != null ||
+      (_contextImages.containsKey('camera') && DelegationExecutor.needsScreen(t));
 
   void _appendContext(String text) => _send({
     'type': 'session.context.append',

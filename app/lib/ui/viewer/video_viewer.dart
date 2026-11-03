@@ -39,7 +39,7 @@ class VideoViewerBody extends StatefulWidget {
 }
 
 @visibleForTesting
-class VideoViewerBodyState extends State<VideoViewerBody> {
+class VideoViewerBodyState extends State<VideoViewerBody> implements PlaybackProbe {
   late final VideoPlayerController _c =
       widget.controllerFactory?.call(widget.path) ?? VideoPlayerController.file(File(widget.path));
   final _focus = FocusNode(debugLabel: 'video');
@@ -69,9 +69,17 @@ class VideoViewerBodyState extends State<VideoViewerBody> {
   }
 
   @override
+  Duration get position => _c.value.position;
+  @override
+  Duration? get duration => _c.value.isInitialized ? _c.value.duration : null;
+  @override
+  bool get playing => _c.value.isPlaying;
+
+  @override
   void initState() {
     super.initState();
     _commands = viewerCommands.stream.listen(_onCommand);
+    activePlayback = this;
     _c.addListener(_onValue);
     _c
         .initialize()
@@ -113,6 +121,7 @@ class VideoViewerBodyState extends State<VideoViewerBody> {
   @override
   void dispose() {
     _commands?.cancel();
+    if (identical(activePlayback, this)) activePlayback = null;
     _hideTimer?.cancel();
     _c.removeListener(_onValue);
     _c.dispose();

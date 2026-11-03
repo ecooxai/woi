@@ -46,6 +46,7 @@ class _WoiAppState extends State<WoiApp> with WidgetsBindingObserver {
     _controller.addListener(_syncTheme);
     _controller.init();
     _debugShowFromEnv();
+    _debugCameraFromEnv();
     _frameLogFromEnv();
   }
 
@@ -78,6 +79,18 @@ class _WoiAppState extends State<WoiApp> with WidgetsBindingObserver {
         }
         await Future<void>.delayed(const Duration(milliseconds: 1500));
       }
+    }());
+  }
+
+  /// Debug hook: `WOI_DEBUG_CAMERA=1` opens the camera once the app is ready
+  /// (perf scenario "camera").
+  void _debugCameraFromEnv() {
+    if (Platform.environment['WOI_DEBUG_CAMERA'] != '1') return;
+    unawaited(() async {
+      while (!_controller.ready) {
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+      }
+      debugPrint('debug camera -> ${await _controller.setCamera(true)}');
     }());
   }
 
