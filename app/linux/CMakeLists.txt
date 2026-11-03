@@ -107,6 +107,19 @@ foreach(bundled_library ${PLUGIN_BUNDLED_LIBRARIES})
     COMPONENT Runtime)
 endforeach(bundled_library)
 
+# Bundle the pinned Codex CLI into lib/codex (never committed; see
+# tool/bundle_codex.sh for where it comes from). A missing binary only warns.
+install(CODE "
+  execute_process(
+    COMMAND bash \"${CMAKE_CURRENT_SOURCE_DIR}/../tool/bundle_codex.sh\"
+      \"${INSTALL_BUNDLE_LIB_DIR}/codex\" \"${PROJECT_BINARY_DIR}/codex-cache\"
+      \"${CMAKE_SYSTEM_PROCESSOR}\"
+    RESULT_VARIABLE woi_codex_rc)
+  if(NOT woi_codex_rc EQUAL 0)
+    message(WARNING \"bundle_codex.sh failed (\${woi_codex_rc}): no bundled codex\")
+  endif()
+  " COMPONENT Runtime)
+
 # Copy the native assets provided by the build.dart from all packages.
 set(NATIVE_ASSETS_DIR "${PROJECT_BUILD_DIR}native_assets/linux/")
 install(DIRECTORY "${NATIVE_ASSETS_DIR}"
