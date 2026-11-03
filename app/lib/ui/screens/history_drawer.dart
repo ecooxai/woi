@@ -38,8 +38,14 @@ class _HistoryDrawerState extends State<HistoryDrawer> {
   Widget build(BuildContext context) {
     final c = widget.controller;
     final currentId = c.pipeline.conversation.id;
+    final w = MediaQuery.sizeOf(context).width;
     return Drawer(
-      width: 360,
+      width: w < 420 ? w * 0.88 : 360,
+      backgroundColor: WoiColors.bg1.withValues(alpha: 0.96),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.horizontal(right: Radius.circular(WoiRadii.xl)),
+        side: BorderSide(color: WoiColors.stroke),
+      ),
       child: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -48,12 +54,21 @@ class _HistoryDrawerState extends State<HistoryDrawer> {
               padding: const EdgeInsets.fromLTRB(20, 16, 12, 8),
               child: Row(
                 children: [
-                  Text('History', style: display(20)),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('CONVERSATIONS', style: eyebrow()),
+                      const SizedBox(height: 2),
+                      Semantics(header: true, child: Text('History', style: display(22))),
+                    ],
+                  ),
                   const Spacer(),
                   FilledButton.tonalIcon(
-                    onPressed: () async {
-                      await c.newConversation();
-                      if (context.mounted) Navigator.pop(context);
+                    style: FilledButton.styleFrom(minimumSize: const Size(0, kTouchTarget)),
+                    // Close first: starting a conversation reconnects the session.
+                    onPressed: () {
+                      Navigator.pop(context);
+                      c.newConversation();
                     },
                     icon: const Icon(Icons.add, size: 18),
                     label: const Text('New'),
@@ -61,7 +76,7 @@ class _HistoryDrawerState extends State<HistoryDrawer> {
                 ],
               ),
             ),
-            const Divider(),
+            const Divider(color: WoiColors.stroke),
             Expanded(
               child: FutureBuilder<List<ConversationSummary>>(
                 future: _items,
@@ -70,7 +85,14 @@ class _HistoryDrawerState extends State<HistoryDrawer> {
                   final items = snap.data!;
                   if (items.isEmpty) {
                     return Center(
-                      child: Text('No saved conversations yet', style: body(13, color: WoiColors.textDim)),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.forum_outlined, size: 36, color: WoiColors.textFaint),
+                          const SizedBox(height: 10),
+                          Text('No saved conversations yet', style: body(13, color: WoiColors.textDim)),
+                        ],
+                      ),
                     );
                   }
                   return ListView.builder(
@@ -82,16 +104,20 @@ class _HistoryDrawerState extends State<HistoryDrawer> {
                       return Padding(
                         padding: const EdgeInsets.symmetric(vertical: 2),
                         child: ListTile(
+                          minTileHeight: 60,
                           selected: current,
                           selectedTileColor: WoiColors.cyan.withValues(alpha: 0.08),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(WoiRadii.md),
+                            side: BorderSide(color: current ? WoiColors.cyan.withValues(alpha: 0.3) : Colors.transparent),
+                          ),
                           leading: Icon(
                             current ? Icons.graphic_eq : Icons.chat_bubble_outline,
                             size: 20,
                             color: current ? WoiColors.cyan : WoiColors.textDim,
                           ),
                           title: Text(
-                            it.title,
+                            displayTitle(it.title),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: body(14, weight: FontWeight.w500),
@@ -101,14 +127,14 @@ class _HistoryDrawerState extends State<HistoryDrawer> {
                             style: body(12, color: WoiColors.textFaint),
                           ),
                           trailing: IconButton(
-                            tooltip: 'Delete',
+                            tooltip: 'Delete conversation',
                             icon: const Icon(Icons.delete_outline, size: 20),
                             onPressed: () async {
                               final ok = await showDialog<bool>(
                                 context: context,
                                 builder: (ctx) => AlertDialog(
                                   title: const Text('Delete conversation?'),
-                                  content: Text('"${it.title}" and its audio/screenshots will be removed.'),
+                                  content: Text('"${displayTitle(it.title)}" and its audio/screenshots will be removed.'),
                                   actions: [
                                     TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
                                     FilledButton(
@@ -124,9 +150,9 @@ class _HistoryDrawerState extends State<HistoryDrawer> {
                               }
                             },
                           ),
-                          onTap: () async {
-                            await c.openConversation(it.id);
-                            if (context.mounted) Navigator.pop(context);
+                          onTap: () {
+                            Navigator.pop(context);
+                            c.openConversation(it.id);
                           },
                         ),
                       );
@@ -140,4 +166,14 @@ class _HistoryDrawerState extends State<HistoryDrawer> {
       ),
     );
   }
+}
+
+/// Conversation titles from voice-only turns are placeholders like
+/// "[5.0 s of speech]"; show something friendlier.
+String displayTitle(String t) {
+  final s = t.trim();
+  if (s.isEmpty) return 'New conversation';
+  final m = RegExp(r'^\[(\d+(?:\.\d+)?) s of speech\]$').firstMatch(s);
+  if (m != null) return 'Voice conversation · ${m.group(1)} s';
+  return s;
 }

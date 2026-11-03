@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/app_controller.dart';
 import '../../core/auth/auth.dart';
@@ -8,10 +11,18 @@ import '../../core/settings/settings.dart';
 import '../../core/voice/backend_factory.dart';
 import '../theme.dart';
 import '../widgets/context_meter.dart';
+import '../widgets/empty_state.dart' show KeyCap;
 import '../widgets/glass.dart';
 
-/// All user settings. Changes apply immediately (text fields after a short
-/// pause) and persist to ~/.local/share/woi/settings.json.
+/// Suggestions for the free-text model fields (any model id is accepted).
+const kCompressionModels = ['gpt-6-luna', 'gpt-6.1-sol'];
+const kDelegateModels = ['gpt-6.1-sol', 'gpt-6-luna'];
+
+enum _TestState { idle, testing, ok, failed }
+
+/// All user settings, grouped in sections with descriptions. Desktop gets a
+/// section rail; phone a single column. Changes apply immediately (text
+/// fields after a short pause) and persist to ~/.local/share/woi/settings.json.
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key, required this.controller});
   final AppController controller;
@@ -25,16 +36,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late final _apiKey = TextEditingController(text: _s.apiKey);
   late final _compressionModel = TextEditingController(text: _s.compressionModel);
   late final _delegateModel = TextEditingController(text: _s.delegateModel);
+  final _scroll = ScrollController();
   bool _showKey = false;
   Timer? _debounce;
+  _TestState _test = _TestState.idle;
+  String? _testMessage;
+  int _active = 0;
+  late final List<GlobalKey> _keys = List.generate(6, (_) => GlobalKey());
+
+  AppController get c => widget.controller;
 
   void _apply(AppSettings next, {bool debounce = false}) {
     setState(() => _s = next);
     _debounce?.cancel();
     if (debounce) {
-      _debounce = Timer(const Duration(milliseconds: 700), () => widget.controller.updateSettings(_s));
+      _debounce = Timer(const Duration(milliseconds: 700), () => c.updateSettings(_s));
     } else {
-      widget.controller.updateSettings(next);
+      c.updateSettings(next);
     }
   }
 
@@ -42,213 +60,511 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void dispose() {
     if (_debounce?.isActive ?? false) {
       _debounce!.cancel();
-      widget.controller.updateSettings(_s);
+      c.updateSettings(_s);
     }
     _apiKey.dispose();
     _compressionModel.dispose();
     _delegateModel.dispose();
+    _scroll.dispose();
     super.dispose();
   }
 
+  // --------------------------------------------------------- test connection
+
+  Future<void> _testConnection() async {
+    setState(() {
+      _test = _TestState.testing;
+      _testMessage = null;
+    });
+    String msg;
+    var ok = false;
+    try {
+      if (_s.authMode == AuthMode.codex) {
+        final creds = await c.authManager.credentials(forceRefresh: false).timeout(const Duration(seconds: 15));
+        await c.refreshCodexAuth();
+        if (creds == null || creds.bearerToken.isEmpty) {
+          msg = 'No Codex login found. Run `codex login` first.';
+        } else {
+          final exp = creds.expiresAt;
+          ok = exp == null || exp.isAfter(DateTime.now());
+          msg = ok
+              ? 'Codex credentials OK${exp != null ? ' · token valid until ${_hm(exp.toLocal())}' : ''}'
+              : 'Codex token expired; refresh failed.';
+        }
+      } else {
+        final creds = await resolveCredentials(AuthMode.apiKey, _apiKey.text);
+        if (creds == null) {
+          msg = 'No API key. Paste one above or set \$OPENAI_API_KEY.';
+        } else {
+          final client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
+          try {
+            final req = await client.getUrl(Uri.parse('https://api.openai.com/v1/models'));
+            req.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${creds.bearerToken}');
+            final res = await req.close().timeout(const Duration(seconds: 15));
+            final text = await res.transform(utf8.decoder).join();
+            if (res.statusCode == 200) {
+              ok = true;
+              final n = (jsonDecode(text) as Map)['data'];
+              msg = 'Connected · ${n is List ? '${n.length} models available' : 'key accepted'}';
+            } else {
+              String? err;
+              try {
+                err = ((jsonDecode(text) as Map)['error'] as Map?)?['message'] as String?;
+              } catch (_) {}
+              msg = 'HTTP ${res.statusCode}${err != null ? ' · $err' : ''}';
+            }
+          } finally {
+            client.close(force: true);
+          }
+        }
+      }
+    } on TimeoutException {
+      msg = 'Timed out. Check your network.';
+    } catch (e) {
+      msg = '$e';
+    }
+    if (!mounted) return;
+    setState(() {
+      _test = ok ? _TestState.ok : _TestState.failed;
+      _testMessage = msg;
+    });
+  }
+
+  static String _hm(DateTime t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
+  // ------------------------------------------------------------------ build
+
+  static const _sections = [
+    (Icons.cloud_outlined, 'Connection', 'How Woi reaches the voice model, and with which credentials.'),
+    (Icons.graphic_eq_rounded, 'Voice', 'The speech model and the voice Woi answers with.'),
+    (Icons.memory_rounded, 'Context & models', 'When long conversations get summarized, and which models do background work.'),
+    (Icons.shield_outlined, 'Screen & safety', 'Screenshots sent with your turns and what needs your approval.'),
+    (Icons.keyboard_alt_outlined, 'Shortcuts', 'Keyboard controls on desktop.'),
+    (Icons.info_outline_rounded, 'About', 'Runtime details for troubleshooting.'),
+  ];
+
   @override
   Widget build(BuildContext context) {
-    final wide = MediaQuery.sizeOf(context).width >= 900;
-    final sections = [
-      _section('Connection', Icons.cloud_outlined, [
-        _label('Voice backend'),
-        RadioGroup<BackendMode>(
-          groupValue: _s.backendMode,
-          onChanged: (v) => _apply(_s.copyWith(backendMode: v)),
-          child: Column(
-            children: [
-              for (final m in BackendMode.values)
-                RadioListTile<BackendMode>(
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                  value: m,
-                  title: Text(m.label, style: body(14)),
-                  subtitle: Text(_backendHint(m), style: body(12, color: WoiColors.textDim)),
-                ),
-            ],
+    final width = MediaQuery.sizeOf(context).width;
+    final wide = width >= 900;
+    final bodies = [_connection(wide), _voice(wide), _context(wide), _screen(wide), _shortcuts(), _about()];
+    final list = ListView(
+      controller: _scroll,
+      padding: EdgeInsets.fromLTRB(wide ? 8 : 12, 8, wide ? 28 : 12, 40),
+      children: [
+        for (var i = 0; i < bodies.length; i++)
+          Padding(
+            key: _keys[i],
+            padding: const EdgeInsets.only(bottom: 16),
+            child: _section(i, bodies[i]),
           ),
-        ),
-        const SizedBox(height: 12),
-        if (_s.authMode == AuthMode.codex) _codexStatus() else _apiKeyField(),
-        const SizedBox(height: 18),
-        if (_s.backendMode == BackendMode.gptLive) ...[
-          _dropdown('gpt-live model', _s.voiceModel, kVoiceModels, (v) => _apply(_s.copyWith(voiceModel: v))),
-          const SizedBox(height: 14),
-        ],
-        _dropdown(
-          _s.backendMode == BackendMode.gptLive ? 'Realtime model (fallback)' : 'Realtime model',
-          _s.realtimeModel,
-          kRealtimeModels,
-          (v) => _apply(_s.copyWith(realtimeModel: v)),
-        ),
-        const SizedBox(height: 14),
-        _dropdown('Voice', _s.voice, kVoices, (v) => _apply(_s.copyWith(voice: v))),
-      ]),
-      _section('Context & models', Icons.memory, [
-        _label('Compaction threshold'),
-        Row(
-          children: [
-            Expanded(
-              child: Slider(
-                min: 2000,
-                max: 100000,
-                divisions: 49,
-                value: _s.compressionThreshold.clamp(2000, 100000).toDouble(),
-                label: formatTokens(_s.compressionThreshold),
-                onChanged: (v) => setState(() => _s = _s.copyWith(compressionThreshold: v.round())),
-                onChangeEnd: (v) => _apply(_s.copyWith(compressionThreshold: v.round())),
-              ),
-            ),
-            SizedBox(
-              width: 72,
-              child: Text(
-                '${formatTokens(_s.compressionThreshold)} tok',
-                textAlign: TextAlign.right,
-                style: mono(13, color: WoiColors.cyan),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        _textField(
-          'Compression model',
-          _compressionModel,
-          'gpt-6-luna',
-          (v) => _apply(_s.copyWith(compressionModel: v.trim().isEmpty ? 'gpt-6-luna' : v.trim()), debounce: true),
-        ),
-        const SizedBox(height: 14),
-        _textField(
-          'Delegate model',
-          _delegateModel,
-          'gpt-6.1-sol',
-          (v) => _apply(_s.copyWith(delegateModel: v.trim().isEmpty ? 'gpt-6.1-sol' : v.trim()), debounce: true),
-        ),
-      ]),
-      _section('Screen & safety', Icons.shield_outlined, [
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: Text('Auto-screenshot when I speak', style: body(14)),
-          subtitle: Text(
-            'Captures the screen shortly after speech starts and sends it with your turn.',
-            style: body(12, color: WoiColors.textDim),
-          ),
-          value: _s.autoScreenshot,
-          onChanged: (v) => _apply(_s.copyWith(autoScreenshot: v)),
-        ),
-        _label('Screenshot delay'),
-        Row(
-          children: [
-            Expanded(
-              child: Slider(
-                min: 0,
-                max: 4000,
-                divisions: 40,
-                value: _s.screenshotDelayMs.clamp(0, 4000).toDouble(),
-                label: '${(_s.screenshotDelayMs / 1000).toStringAsFixed(1)} s',
-                onChanged: _s.autoScreenshot
-                    ? (v) => setState(() => _s = _s.copyWith(screenshotDelayMs: v.round()))
-                    : null,
-                onChangeEnd: (v) => _apply(_s.copyWith(screenshotDelayMs: v.round())),
-              ),
-            ),
-            SizedBox(
-              width: 72,
-              child: Text(
-                '${(_s.screenshotDelayMs / 1000).toStringAsFixed(1)} s',
-                textAlign: TextAlign.right,
-                style: mono(13, color: WoiColors.cyan),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: Text('Confirm before running shell commands', style: body(14)),
-          subtitle: Text(
-            'File writes always require approval with a diff preview.',
-            style: body(12, color: WoiColors.textDim),
-          ),
-          value: _s.confirmBeforeBash,
-          onChanged: (v) => _apply(_s.copyWith(confirmBeforeBash: v)),
-        ),
-      ]),
-      _section('About', Icons.info_outline, [
-        _kv('Voice backend', widget.controller.pipeline.backend?.runtimeType.toString() ?? '—'),
-        _kv('Audio', widget.controller.platform.audio.description),
-        _kv('Data folder', widget.controller.platform.paths.dataDir),
-      ]),
-    ];
+      ],
+    );
 
-    return Scaffold(
-      appBar: AppBar(title: Text('Settings', style: display(20))),
-      body: WoiBackdrop(
-        child: SafeArea(
-          child: ListView(
-            padding: EdgeInsets.symmetric(horizontal: wide ? 32 : 12, vertical: 12),
-            children: [
-              Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 1100),
-                  child: wide
-                      ? Wrap(
-                          spacing: 20,
-                          runSpacing: 20,
-                          children: [for (final s in sections) SizedBox(width: 520, child: s)],
-                        )
-                      : Column(
-                          children: [
-                            for (final s in sections) Padding(padding: const EdgeInsets.only(bottom: 14), child: s),
-                          ],
-                        ),
+    return CallbackShortcuts(
+      bindings: {const SingleActivator(LogicalKeyboardKey.escape): () => Navigator.of(context).maybePop()},
+      child: Scaffold(
+        body: WoiBackdrop(
+          child: SafeArea(
+            child: Column(
+              children: [
+                Padding(
+                  padding: EdgeInsets.fromLTRB(wide ? 20 : 6, 10, 16, 6),
+                  child: Row(
+                    children: [
+                      GlassIconButton(
+                        icon: Icons.arrow_back_rounded,
+                        tooltip: 'Back (Esc)',
+                        size: wide ? 40 : kTouchTarget,
+                        onPressed: () => Navigator.of(context).maybePop(),
+                      ),
+                      const SizedBox(width: 14),
+                      Text('Settings', style: display(wide ? 24 : 20)),
+                      const Spacer(),
+                      if (wide) Text('Changes save automatically', style: body(12, color: WoiColors.textFaint)),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+                Expanded(
+                  child: wide
+                      ? Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 1180),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Padding(padding: const EdgeInsets.fromLTRB(20, 8, 12, 20), child: _rail()),
+                                Expanded(
+                                  child: NotificationListener<ScrollNotification>(
+                                    onNotification: (_) {
+                                      _syncSection();
+                                      return false;
+                                    },
+                                    child: list,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      : list,
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _section(String title, IconData icon, List<Widget> children) => GlassPanel(
-    padding: const EdgeInsets.all(20),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          children: [
-            Icon(icon, size: 18, color: WoiColors.cyan),
-            const SizedBox(width: 10),
-            Text(title, style: display(16)),
-          ],
-        ),
-        const SizedBox(height: 16),
-        ...children,
-      ],
+  void _syncSection() {
+    var best = 0;
+    for (var i = 0; i < _keys.length; i++) {
+      final box = _keys[i].currentContext?.findRenderObject() as RenderBox?;
+      if (box == null || !box.attached) continue;
+      if (box.localToGlobal(Offset.zero).dy < 220) best = i;
+    }
+    if (best != _active) setState(() => _active = best);
+  }
+
+  void _jump(int i) {
+    setState(() => _active = i);
+    final ctx = _keys[i].currentContext;
+    if (ctx != null) {
+      Scrollable.ensureVisible(ctx, duration: WoiMotion.slow, curve: WoiMotion.emphasized);
+    }
+  }
+
+  Widget _rail() => SizedBox(
+    width: 220,
+    child: GlassPanel(
+      padding: const EdgeInsets.all(8),
+      radius: WoiRadii.lg,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (var i = 0; i < _sections.length; i++)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Material(
+                type: MaterialType.transparency,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(WoiRadii.md),
+                  onTap: () => _jump(i),
+                  child: AnimatedContainer(
+                    duration: WoiMotion.fast,
+                    height: 44,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(WoiRadii.md),
+                      color: i == _active ? WoiColors.cyan.withValues(alpha: 0.12) : Colors.transparent,
+                      border: Border.all(
+                        color: i == _active ? WoiColors.cyan.withValues(alpha: 0.35) : Colors.transparent,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(_sections[i].$1, size: 18, color: i == _active ? WoiColors.cyan : WoiColors.textDim),
+                        const SizedBox(width: 12),
+                        Text(
+                          _sections[i].$2,
+                          style: body(
+                            14,
+                            weight: i == _active ? FontWeight.w600 : FontWeight.w400,
+                            color: i == _active ? WoiColors.text : WoiColors.textDim,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     ),
   );
 
-  Widget _label(String s) => Padding(
-    padding: const EdgeInsets.only(bottom: 8),
-    child: Text(
-      s.toUpperCase(),
-      style: body(11, weight: FontWeight.w700, color: WoiColors.textFaint).copyWith(letterSpacing: 1.4),
+  Widget _section(int i, List<Widget> children) {
+    final (icon, title, desc) = _sections[i];
+    return GlassPanel(
+      padding: const EdgeInsets.fromLTRB(22, 20, 22, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: WoiColors.cyan.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, size: 18, color: WoiColors.cyan),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Semantics(header: true, child: Text(title, style: display(17))),
+                    const SizedBox(height: 2),
+                    Text(desc, style: body(12.5, color: WoiColors.textDim)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          for (var k = 0; k < children.length; k++) ...[
+            if (k > 0) const Divider(height: 1, color: WoiColors.stroke),
+            children[k],
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Label + description on the left, control on the right (stacked on phone).
+  Widget _row(bool wide, String title, String desc, Widget control, {double controlWidth = 300}) {
+    final text = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: body(14, weight: FontWeight.w500)),
+        const SizedBox(height: 3),
+        Text(desc, style: body(12.5, color: WoiColors.textDim, height: 1.35)),
+      ],
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      child: wide
+          ? Row(
+              children: [
+                Expanded(child: text),
+                const SizedBox(width: 24),
+                SizedBox(width: controlWidth, child: control),
+              ],
+            )
+          : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [text, const SizedBox(height: 10), control]),
+    );
+  }
+
+  // --------------------------------------------------------------- sections
+
+  List<Widget> _connection(bool wide) => [
+    Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: RadioGroup<BackendMode>(
+        groupValue: _s.backendMode,
+        onChanged: (v) => v == null ? null : _apply(_s.copyWith(backendMode: v)),
+        child: Column(
+          children: [
+            for (final m in BackendMode.values)
+              RadioListTile<BackendMode>(
+                contentPadding: EdgeInsets.zero,
+                value: m,
+                title: Text(m.label, style: body(14, weight: FontWeight.w500)),
+                subtitle: Text(_backendHint(m), style: body(12.5, color: WoiColors.textDim)),
+              ),
+          ],
+        ),
+      ),
     ),
+    if (_s.authMode == AuthMode.codex)
+      _row(wide, 'Codex login', 'Read from ~/.codex/auth.json and refreshed automatically.', _codexStatus(), controlWidth: 340)
+    else
+      _row(wide, 'API key', 'Stored locally in settings.json. Leave empty to use \$OPENAI_API_KEY.', _apiKeyField(), controlWidth: 340),
+    _row(wide, 'Test connection', 'Checks the credentials against the API without starting a session.', _testButton(), controlWidth: 340),
+  ];
+
+  List<Widget> _voice(bool wide) => [
+    if (_s.backendMode == BackendMode.gptLive)
+      _row(
+        wide,
+        'gpt-live model',
+        'Speech-to-speech model used over WebRTC.',
+        _dropdown('gpt-live model', _s.voiceModel, kVoiceModels, (v) => _apply(_s.copyWith(voiceModel: v))),
+      ),
+    _row(
+      wide,
+      _s.backendMode == BackendMode.gptLive ? 'Realtime model (fallback)' : 'Realtime model',
+      'Used for the WebSocket realtime backends.',
+      _dropdown('Realtime model', _s.realtimeModel, kRealtimeModels, (v) => _apply(_s.copyWith(realtimeModel: v))),
+    ),
+    _row(
+      wide,
+      'Voice',
+      'Applies from the next session; the current one reconnects.',
+      _dropdown('Voice', _s.voice, kVoices, (v) => _apply(_s.copyWith(voice: v))),
+    ),
+  ];
+
+  List<Widget> _context(bool wide) => [
+    _row(
+      wide,
+      'Compaction threshold',
+      'When the estimated context passes this many tokens, older turns are summarized into a short memory.',
+      _slider(
+        value: _s.compressionThreshold.clamp(2000, 100000).toDouble(),
+        min: 2000,
+        max: 100000,
+        divisions: 49,
+        label: '${formatTokens(_s.compressionThreshold)} tok',
+        semantic: 'Compaction threshold',
+        onChanged: (v) => setState(() => _s = _s.copyWith(compressionThreshold: v.round())),
+        onChangeEnd: (v) => _apply(_s.copyWith(compressionThreshold: v.round())),
+      ),
+      controlWidth: 340,
+    ),
+    _row(
+      wide,
+      'Compression model',
+      'Writes the summary when the context is compacted.',
+      _modelField('Compression model', _compressionModel, kCompressionModels, 'gpt-6-luna', (v) {
+        _apply(_s.copyWith(compressionModel: v), debounce: true);
+      }),
+    ),
+    _row(
+      wide,
+      'Delegate model',
+      'Runs longer multi-step tasks Woi hands off in the background.',
+      _modelField('Delegate model', _delegateModel, kDelegateModels, 'gpt-6.1-sol', (v) {
+        _apply(_s.copyWith(delegateModel: v), debounce: true);
+      }),
+    ),
+  ];
+
+  List<Widget> _screen(bool wide) => [
+    _row(
+      wide,
+      'Auto-screenshot when I speak',
+      'Captures the screen shortly after speech starts and sends it with your turn.',
+      Align(
+        alignment: wide ? Alignment.centerRight : Alignment.centerLeft,
+        child: Switch(value: _s.autoScreenshot, onChanged: (v) => _apply(_s.copyWith(autoScreenshot: v))),
+      ),
+      controlWidth: 120,
+    ),
+    _row(
+      wide,
+      'Screenshot delay',
+      'Wait after you start speaking, so menus or pages you just opened have rendered.',
+      _slider(
+        value: _s.screenshotDelayMs.clamp(0, 4000).toDouble(),
+        min: 0,
+        max: 4000,
+        divisions: 40,
+        label: '${(_s.screenshotDelayMs / 1000).toStringAsFixed(1)} s',
+        semantic: 'Screenshot delay',
+        onChanged: _s.autoScreenshot ? (v) => setState(() => _s = _s.copyWith(screenshotDelayMs: v.round())) : null,
+        onChangeEnd: (v) => _apply(_s.copyWith(screenshotDelayMs: v.round())),
+      ),
+      controlWidth: 340,
+    ),
+    _row(
+      wide,
+      'Confirm shell commands',
+      'Ask before running any bash command. File edits always show a diff for approval.',
+      Align(
+        alignment: wide ? Alignment.centerRight : Alignment.centerLeft,
+        child: Switch(value: _s.confirmBeforeBash, onChanged: (v) => _apply(_s.copyWith(confirmBeforeBash: v))),
+      ),
+      controlWidth: 120,
+    ),
+  ];
+
+  List<Widget> _shortcuts() {
+    const items = [
+      (['Space'], 'Hold to talk (push-to-talk mode, when not typing)'),
+      (['Esc'], 'Interrupt Woi · reject a confirmation · close dialogs'),
+      (['Enter'], 'Approve a confirmation · send a message'),
+      (['Shift', 'Enter'], 'New line in the message box'),
+      (['Ctrl', 'K'], 'Focus the message box'),
+      (['Ctrl', ','], 'Open settings'),
+      (['Ctrl', 'N'], 'New conversation'),
+    ];
+    return [
+      Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Column(
+          children: [
+            for (final (keys, label) in items)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 130,
+                      child: Wrap(spacing: 4, children: [for (final k in keys) KeyCap(k)]),
+                    ),
+                    Expanded(child: Text(label, style: body(13.5, color: WoiColors.textDim))),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    ];
+  }
+
+  List<Widget> _about() => [
+    Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Column(
+        children: [
+          _kv('Voice backend', c.pipeline.backend?.runtimeType.toString() ?? '—'),
+          _kv('Audio', c.platform.audio.description),
+          _kv('Data folder', c.platform.paths.dataDir),
+        ],
+      ),
+    ),
+  ];
+
+  // ---------------------------------------------------------------- widgets
+
+  Widget _slider({
+    required double value,
+    required double min,
+    required double max,
+    required int divisions,
+    required String label,
+    required String semantic,
+    required ValueChanged<double>? onChanged,
+    required ValueChanged<double> onChangeEnd,
+  }) => Row(
+    children: [
+      Expanded(
+        child: Slider(
+          min: min,
+          max: max,
+          divisions: divisions,
+          value: value,
+          label: label,
+          semanticFormatterCallback: (_) => '$semantic $label',
+          onChanged: onChanged,
+          onChangeEnd: onChangeEnd,
+        ),
+      ),
+      Container(
+        width: 84,
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: WoiColors.cyan.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: WoiColors.cyan.withValues(alpha: 0.25)),
+        ),
+        child: Text(label, style: mono(13, color: WoiColors.cyan).copyWith(fontFeatures: kTabular)),
+      ),
+    ],
   );
 
   Widget _kv(String k, String v) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 4),
+    padding: const EdgeInsets.symmetric(vertical: 5),
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(
-          width: 130,
-          child: Text(k, style: body(13, color: WoiColors.textDim)),
-        ),
+        SizedBox(width: 130, child: Text(k, style: body(13, color: WoiColors.textDim))),
         Expanded(child: SelectableText(v, style: mono(12.5))),
       ],
     ),
@@ -258,73 +574,136 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final items = {...options, value}.toList();
     return DropdownButtonFormField<String>(
       initialValue: value,
+      isExpanded: true,
       decoration: InputDecoration(labelText: label),
-      items: [
-        for (final o in items)
-          DropdownMenuItem(
-            value: o,
-            child: Text(o, style: body(14)),
-          ),
-      ],
+      borderRadius: BorderRadius.circular(WoiRadii.md),
+      dropdownColor: WoiColors.bg2,
+      items: [for (final o in items) DropdownMenuItem(value: o, child: Text(o, style: mono(13.5)))],
       onChanged: (v) => v == null ? null : onChanged(v),
+    );
+  }
+
+  /// Free-text model id with a suggestions menu.
+  Widget _modelField(
+    String label,
+    TextEditingController ctl,
+    List<String> suggestions,
+    String fallback,
+    ValueChanged<String> onChanged,
+  ) {
+    void set(String v) => onChanged(v.trim().isEmpty ? fallback : v.trim());
+    return TextField(
+      controller: ctl,
+      style: mono(13.5),
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: fallback,
+        suffixIcon: PopupMenuButton<String>(
+          tooltip: 'Suggestions',
+          icon: const Icon(Icons.arrow_drop_down_rounded),
+          onSelected: (v) {
+            ctl.text = v;
+            set(v);
+          },
+          itemBuilder: (_) => [
+            for (final s in suggestions) PopupMenuItem(value: s, child: Text(s, style: mono(13.5))),
+          ],
+        ),
+      ),
+      onChanged: set,
     );
   }
 
   String _backendHint(BackendMode m) => switch (m) {
     BackendMode.gptLive =>
       GptLiveHook.isRegistered
-          ? 'Lowest latency. Codex login.'
+          ? 'Lowest latency, over WebRTC. Uses your Codex login.'
           : 'Lowest latency. Codex login. Not in this build yet: falls back to Direct realtime.',
     BackendMode.direct => 'WebSocket realtime with tools, images and token usage. Codex login.',
     BackendMode.apiKey => 'WebSocket realtime billed to your OpenAI API key.',
   };
 
-  Widget _textField(String label, TextEditingController c, String hint, ValueChanged<String> onChanged) => TextField(
-    controller: c,
-    style: mono(13.5),
-    decoration: InputDecoration(labelText: label, hintText: hint),
-    onChanged: onChanged,
-  );
-
   Widget _apiKeyField() => TextField(
     controller: _apiKey,
     obscureText: !_showKey,
+    obscuringCharacter: '•',
     autocorrect: false,
     enableSuggestions: false,
     style: mono(13.5),
     decoration: InputDecoration(
       labelText: 'API key',
-      hintText: 'sk-…  (or leave empty to use \$OPENAI_API_KEY)',
+      hintText: 'sk-…',
+      prefixIcon: const Icon(Icons.key_rounded, size: 18),
       suffixIcon: IconButton(
+        tooltip: _showKey ? 'Hide key' : 'Show key',
         onPressed: () => setState(() => _showKey = !_showKey),
         icon: Icon(_showKey ? Icons.visibility_off : Icons.visibility),
       ),
     ),
-    onChanged: (v) => _apply(_s.copyWith(apiKey: v.trim()), debounce: true),
+    onChanged: (v) {
+      _test = _TestState.idle;
+      _apply(_s.copyWith(apiKey: v.trim()), debounce: true);
+    },
   );
 
+  Widget _testButton() {
+    final (color, icon) = switch (_test) {
+      _TestState.idle => (WoiColors.cyan, Icons.network_check_rounded),
+      _TestState.testing => (WoiColors.cyan, null),
+      _TestState.ok => (WoiColors.mint, Icons.check_circle_rounded),
+      _TestState.failed => (WoiColors.red, Icons.error_outline_rounded),
+    };
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size(0, kTouchTarget),
+            foregroundColor: color,
+            side: BorderSide(color: color.withValues(alpha: 0.5)),
+          ),
+          onPressed: _test == _TestState.testing ? null : _testConnection,
+          icon: icon == null
+              ? SizedBox.square(dimension: 16, child: CircularProgressIndicator(strokeWidth: 2, color: color))
+              : Icon(icon, size: 18),
+          label: Text(_test == _TestState.testing ? 'Testing…' : 'Test connection'),
+        ),
+        AnimatedSize(
+          duration: WoiMotion.medium,
+          child: _testMessage == null
+              ? const SizedBox(width: double.infinity)
+              : Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Semantics(
+                    liveRegion: true,
+                    child: Text(_testMessage!, style: body(12.5, color: color)),
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+
   Widget _codexStatus() {
-    final info = widget.controller.codexAuth;
+    final info = c.codexAuth;
     final ok = info?.isAvailable ?? false;
     final color = ok ? WoiColors.mint : WoiColors.amber;
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(WoiRadii.md),
         border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
       child: Row(
         children: [
-          Icon(ok ? Icons.verified_user_outlined : Icons.warning_amber_rounded, color: color),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(info?.summary ?? 'Codex auth not loaded', style: body(13, color: WoiColors.text)),
-          ),
+          Icon(ok ? Icons.verified_user_outlined : Icons.warning_amber_rounded, color: color, size: 20),
+          const SizedBox(width: 10),
+          Expanded(child: Text(info?.summary ?? 'Codex auth not loaded', style: body(13))),
           IconButton(
             tooltip: 'Reload ~/.codex/auth.json',
             onPressed: () async {
-              await widget.controller.refreshCodexAuth();
+              await c.refreshCodexAuth();
               if (mounted) setState(() {});
             },
             icon: const Icon(Icons.refresh),

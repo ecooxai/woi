@@ -5,13 +5,17 @@ import 'package:flutter/services.dart';
 
 import '../../core/app_controller.dart';
 import '../../core/context/context_manager.dart';
+import '../../core/models/message.dart';
 import '../../core/pipeline/turn_pipeline.dart';
 import '../../core/settings/settings.dart';
 import '../theme.dart';
+import '../widgets/banner.dart';
 import '../widgets/context_meter.dart';
 import '../widgets/controls.dart';
+import '../widgets/empty_state.dart';
 import '../widgets/glass.dart';
 import '../widgets/message_tile.dart';
+import '../widgets/status_chip.dart';
 import '../widgets/voice_orb.dart';
 import 'history_drawer.dart';
 import 'settings_screen.dart';
@@ -28,7 +32,15 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
+  final _composerFocus = FocusNode(debugLabel: 'composer');
+  final _banners = BannerController();
   StreamSubscription<ContextCompacted>? _compactSub;
+
+  bool _wasConnected = false;
+  SessionStatus? _lastStatus;
+
+  /// Phone: bottom bar shows the text composer instead of the mic.
+  bool _phoneTyping = false;
 
   AppController get c => widget.controller;
   TurnPipeline get pipeline => c.pipeline;
@@ -37,14 +49,43 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _compactSub = pipeline.compactionEvents.listen(_onCompacted);
+    pipeline.addListener(_onPipeline);
+    _onPipeline();
     HardwareKeyboard.instance.addHandler(_onKey);
   }
 
   @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_onKey);
+    pipeline.removeListener(_onPipeline);
     _compactSub?.cancel();
+    _composerFocus.dispose();
+    _banners.dispose();
     super.dispose();
+  }
+
+  void _onPipeline() {
+    final s = pipeline.status;
+    if (s == _lastStatus) return;
+    final prev = _lastStatus;
+    _lastStatus = s;
+    if (s == SessionStatus.connected) {
+      _wasConnected = true;
+      _banners.dismiss('link');
+    } else if (s == SessionStatus.error && prev != SessionStatus.error) {
+      _banners.show(
+        BannerData(
+          id: 'link',
+          icon: Icons.wifi_off_rounded,
+          color: WoiColors.red,
+          title: 'Voice session failed',
+          message: pipeline.statusDetail ?? 'The realtime connection could not be established.',
+          actionLabel: 'Retry',
+          onAction: pipeline.connect,
+          autoDismiss: null,
+        ),
+      );
+    }
   }
 
   bool get _typing {
@@ -53,17 +94,33 @@ class _HomeScreenState extends State<HomeScreen> {
     return ctx.widget is EditableText || ctx.findAncestorWidgetOfExactType<EditableText>() != null;
   }
 
-  /// Space = push-to-talk (when not typing), Esc = interrupt the assistant.
+  /// Global shortcuts. Space = push-to-talk (when not typing), Esc =
+  /// interrupt, Ctrl+K = type, Ctrl+, = settings, Ctrl+N = new chat.
   bool _onKey(KeyEvent e) {
     if (!mounted || ModalRoute.of(context)?.isCurrent != true) return false;
-    if (e.logicalKey == LogicalKeyboardKey.space && !_typing && c.settings.micMode == MicMode.pushToTalk) {
+    final key = e.logicalKey;
+    final ctrl = HardwareKeyboard.instance.isControlPressed || HardwareKeyboard.instance.isMetaPressed;
+    if (key == LogicalKeyboardKey.space && !_typing && !ctrl && c.settings.micMode == MicMode.pushToTalk) {
       if (e is KeyDownEvent) pipeline.pttDown();
       if (e is KeyUpEvent) pipeline.pttUp();
       return true;
     }
-    if (e is KeyDownEvent && e.logicalKey == LogicalKeyboardKey.escape && !_typing) {
+    if (e is! KeyDownEvent) return false;
+    if (ctrl && key == LogicalKeyboardKey.keyK) {
+      _focusComposer();
+      return true;
+    }
+    if (ctrl && key == LogicalKeyboardKey.comma) {
+      _openSettings();
+      return true;
+    }
+    if (ctrl && key == LogicalKeyboardKey.keyN) {
+      c.newConversation();
+      return true;
+    }
+    if (key == LogicalKeyboardKey.escape && !_typing) {
       final ph = pipeline.phase;
-      if (ph == AssistantPhase.speaking || ph == AssistantPhase.thinking) {
+      if (ph == AssistantPhase.speaking || ph == AssistantPhase.thinking || ph == AssistantPhase.toolRunning) {
         pipeline.interrupt();
         return true;
       }
@@ -71,51 +128,74 @@ class _HomeScreenState extends State<HomeScreen> {
     return false;
   }
 
+  void _focusComposer() {
+    setState(() => _phoneTyping = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _composerFocus.requestFocus());
+  }
+
   void _onCompacted(ContextCompacted e) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        behavior: SnackBarBehavior.floating,
-        width: 460,
-        duration: const Duration(seconds: 4),
-        content: Row(
-          children: [
-            const Icon(Icons.compress, color: WoiColors.violet, size: 18),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                'Context compacted  ${formatTokens(e.tokensBefore)} → ${formatTokens(e.tokensAfter)}  '
-                '(${e.compactedMessages} messages)',
-                style: body(13),
-              ),
-            ),
-          ],
-        ),
+    _banners.show(
+      BannerData(
+        id: 'compaction',
+        icon: Icons.compress_rounded,
+        color: WoiColors.violet,
+        title: compactionBannerText(formatTokens(e.tokensBefore), formatTokens(e.tokensAfter)),
+        message: '${e.compactedMessages} earlier messages were summarized.',
       ),
     );
   }
 
-  void _openSettings() =>
-      Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => SettingsScreen(controller: c)));
+  void _openSettings() => Navigator.of(context).push(
+    PageRouteBuilder<void>(
+      transitionDuration: WoiMotion.slow,
+      reverseTransitionDuration: WoiMotion.medium,
+      pageBuilder: (_, _, _) => SettingsScreen(controller: c),
+      transitionsBuilder: (context, a, _, child) {
+        final curved = CurvedAnimation(parent: a, curve: WoiMotion.emphasized);
+        return FadeTransition(
+          opacity: curved,
+          child: SlideTransition(
+            position: Tween(begin: const Offset(0, 0.04), end: Offset.zero).animate(curved),
+            child: child,
+          ),
+        );
+      },
+    ),
+  );
+
+  void _openHistory() => _scaffoldKey.currentState?.openDrawer();
+
+  OrbMode get _orbMode =>
+      orbModeFor(pipeline.phase, status: pipeline.status, compacting: c.contextManager.compressing);
+
+  bool get _connected => pipeline.status == SessionStatus.connected;
+  bool get _canStop {
+    final ph = pipeline.phase;
+    return ph == AssistantPhase.speaking || ph == AssistantPhase.thinking || ph == AssistantPhase.toolRunning;
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      key: _scaffoldKey,
-      endDrawer: HistoryDrawer(controller: c),
-      body: WoiBackdrop(
-        child: SafeArea(
-          child: LayoutBuilder(
-            builder: (context, box) {
-              final wide = box.maxWidth >= kWideBreakpoint;
-              return ListenableBuilder(
-                listenable: Listenable.merge([c, pipeline]),
-                builder: (context, _) => wide ? _wide(box) : _narrow(box),
-              );
-            },
+    return LayoutBuilder(
+      builder: (context, outer) {
+        final wide = outer.maxWidth >= kWideBreakpoint;
+        return Scaffold(
+          key: _scaffoldKey,
+          resizeToAvoidBottomInset: true,
+          drawer: HistoryDrawer(controller: c),
+          drawerEdgeDragWidth: wide ? null : 32,
+          body: ListenableBuilder(
+            listenable: Listenable.merge([c, pipeline, c.contextManager]),
+            builder: (context, _) => WoiBackdrop(
+              accent: orbModeColor(_orbMode),
+              child: SafeArea(
+                child: LayoutBuilder(builder: (context, box) => wide ? _wide(box) : _narrow(box)),
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -131,14 +211,14 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              SizedBox(width: box.maxWidth >= 1300 ? 380 : 330, child: _sidePanel()),
+              SizedBox(width: box.maxWidth >= 1300 ? 380 : 340, child: _sidePanel()),
               const SizedBox(width: 20),
               Expanded(
                 child: GlassPanel(
                   padding: EdgeInsets.zero,
                   child: Column(
                     children: [
-                      Expanded(child: _transcript(maxBubble: 680)),
+                      Expanded(child: _transcriptArea(maxBubble: 700, wide: true)),
                       Padding(padding: const EdgeInsets.fromLTRB(20, 8, 20, 18), child: _composer()),
                     ],
                   ),
@@ -152,168 +232,168 @@ class _HomeScreenState extends State<HomeScreen> {
   );
 
   Widget _narrow(BoxConstraints box) {
-    final orbSize = (box.maxHeight * 0.2).clamp(110.0, 170.0);
+    final empty = pipeline.conversation.messages.isEmpty;
+    final keyboardUp = MediaQuery.viewInsetsOf(context).bottom > 0;
+    final orbSize = empty && !keyboardUp ? (box.maxHeight * 0.3).clamp(150.0, 240.0) : 76.0;
     return Column(
       children: [
-        Padding(padding: const EdgeInsets.fromLTRB(12, 8, 8, 0), child: _header(wide: false)),
-        SizedBox(
-          height: orbSize + 8,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              RepaintBoundary(
-                child: VoiceOrb(
-                  phase: pipeline.phase,
-                  micLevel: pipeline.micLevel,
-                  outputLevel: pipeline.outputLevel,
-                  size: orbSize,
-                ),
-              ),
-              const SizedBox(width: 6),
-              Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _phaseText(),
-                  const SizedBox(height: 10),
-                  MicModeSelector(mode: c.settings.micMode, onChanged: c.setMicMode, compact: true),
-                ],
-              ),
-            ],
-          ),
+        Padding(padding: const EdgeInsets.fromLTRB(4, 4, 6, 0), child: _header(wide: false)),
+        AnimatedSize(
+          duration: WoiMotion.slow,
+          curve: WoiMotion.emphasized,
+          child: empty && !keyboardUp ? _phoneHero(orbSize) : _phoneStrip(orbSize),
         ),
-        Expanded(child: _transcript(maxBubble: box.maxWidth * 0.84)),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
-          child: Column(
-            children: [
-              if (c.settings.micMode == MicMode.pushToTalk) ...[
-                PushToTalkButton(pipeline: pipeline),
-                const SizedBox(height: 10),
-              ],
-              _composer(),
-            ],
-          ),
-        ),
+        Expanded(child: _transcriptArea(maxBubble: box.maxWidth * 0.86, wide: false)),
+        _phoneBottomBar(),
       ],
     );
   }
 
   // ------------------------------------------------------------------ parts
 
+  Widget _logo(double size) => Semantics(
+    header: true,
+    label: 'Woi',
+    child: ExcludeSemantics(
+      child: ShaderMask(
+        shaderCallback: (r) =>
+            const LinearGradient(colors: [WoiColors.cyan, WoiColors.violet, WoiColors.magenta]).createShader(r),
+        child: Text('WOI', style: display(size, weight: FontWeight.w700, color: Colors.white, spacing: 6)),
+      ),
+    ),
+  );
+
+  Widget _statusChip({required bool compact}) => ConnectionStatusChip(
+    state: linkStateFor(pipeline.status, wasConnected: _wasConnected),
+    model: c.activeVoiceModel,
+    backend: c.activeBackendMode,
+    voice: c.settings.voice,
+    detail: pipeline.statusDetail,
+    onRetry: pipeline.connect,
+    compact: compact,
+  );
+
   Widget _header({required bool wide}) {
-    final (statusColor, statusLabel) = switch (pipeline.status) {
-      SessionStatus.connected => (WoiColors.mint, 'live'),
-      SessionStatus.connecting => (WoiColors.amber, 'connecting'),
-      SessionStatus.disconnected => (WoiColors.textDim, 'offline'),
-      SessionStatus.error => (WoiColors.red, 'error'),
-    };
-    final backendName = pipeline.backend?.runtimeType.toString().replaceAll('VoiceBackend', '') ?? '';
+    if (!wide) {
+      return Row(
+        children: [
+          GlassIconButton(icon: Icons.menu_rounded, tooltip: 'History', onPressed: _openHistory, size: kTouchTarget),
+          const SizedBox(width: 4),
+          _logo(20),
+          const SizedBox(width: 10),
+          Flexible(child: _statusChip(compact: true)),
+          const Spacer(),
+          ContextMeter(
+            manager: c.contextManager,
+            conversation: pipeline.conversation,
+            style: ContextMeterStyle.ring,
+            onCompact: c.compactNow,
+          ),
+          GlassIconButton(
+            icon: Icons.tune_rounded,
+            tooltip: 'Settings',
+            onPressed: _openSettings,
+            size: kTouchTarget,
+          ),
+        ],
+      );
+    }
     return Row(
       children: [
-        ShaderMask(
-          shaderCallback: (r) =>
-              const LinearGradient(colors: [WoiColors.cyan, WoiColors.violet, WoiColors.magenta]).createShader(r),
-          child: Text(
-            'WOI',
-            style: display(wide ? 26 : 22, weight: FontWeight.w700, color: Colors.white, spacing: 6),
-          ),
-        ),
-        const SizedBox(width: 14),
-        Tooltip(
-          message: [
-            if (backendName.isNotEmpty) 'Backend: $backendName',
-            '${c.activeVoiceModel} · ${c.settings.voice}',
-            ?pipeline.statusDetail,
-          ].join('\n'),
-          child: Pill(
-            label: wide && backendName.isNotEmpty ? '$statusLabel · $backendName' : statusLabel,
-            color: statusColor,
-            icon: Icons.circle,
-            dense: !wide,
-          ),
-        ),
+        GlassIconButton(icon: Icons.menu_rounded, tooltip: 'History', onPressed: _openHistory),
+        const SizedBox(width: 12),
+        _logo(26),
+        const SizedBox(width: 18),
+        Flexible(child: _statusChip(compact: false)),
         const Spacer(),
-        if (wide)
-          Text(
-            pipeline.conversation.title,
-            style: body(13, color: WoiColors.textDim),
-            overflow: TextOverflow.ellipsis,
-          ),
-        const SizedBox(width: 16),
-        ContextMeter(manager: c.contextManager, compact: true),
-        const SizedBox(width: 8),
-        if (pipeline.status == SessionStatus.error || pipeline.status == SessionStatus.disconnected)
-          IconButton(tooltip: 'Reconnect', onPressed: pipeline.connect, icon: const Icon(Icons.refresh)),
-        IconButton(
-          tooltip: 'New conversation',
-          onPressed: c.newConversation,
-          icon: const Icon(Icons.add_comment_outlined),
+        ContextMeter(
+          manager: c.contextManager,
+          conversation: pipeline.conversation,
+          style: ContextMeterStyle.bar,
+          onCompact: c.compactNow,
         ),
-        IconButton(
-          tooltip: 'History',
-          onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
-          icon: const Icon(Icons.history),
-        ),
-        IconButton(tooltip: 'Settings', onPressed: _openSettings, icon: const Icon(Icons.tune)),
+        const SizedBox(width: 18),
+        GlassIconButton(icon: Icons.add_comment_outlined, tooltip: 'New conversation (Ctrl+N)', onPressed: c.newConversation),
+        const SizedBox(width: 6),
+        GlassIconButton(icon: Icons.tune_rounded, tooltip: 'Settings (Ctrl+,)', onPressed: _openSettings),
       ],
     );
   }
 
-  Widget _phaseText() {
-    final ph = pipeline.phase;
+  Widget _modeLabel({double size = 20}) {
+    final m = _orbMode;
     return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 200),
+      duration: WoiMotion.medium,
+      transitionBuilder: (c, a) => FadeTransition(
+        opacity: a,
+        child: SlideTransition(
+          position: Tween(begin: const Offset(0, 0.3), end: Offset.zero).animate(a),
+          child: c,
+        ),
+      ),
       child: Text(
-        phaseLabel(ph),
-        key: ValueKey(ph),
-        style: display(18, color: phaseColor(ph)),
+        orbModeLabel(m),
+        key: ValueKey(m),
+        style: display(size, color: orbModeColor(m), spacing: 0.6),
       ),
     );
   }
 
+  Widget _orb(double size) => RepaintBoundary(
+    child: VoiceOrb(mode: _orbMode, micLevel: pipeline.micLevel, outputLevel: pipeline.outputLevel, size: size),
+  );
+
   Widget _sidePanel() {
     final s = c.settings;
     return GlassPanel(
-      padding: const EdgeInsets.fromLTRB(22, 20, 22, 22),
+      padding: const EdgeInsets.fromLTRB(22, 18, 22, 20),
+      glow: orbModeColor(_orbMode),
       child: LayoutBuilder(
         builder: (context, box) {
-          final orb = (box.maxHeight * 0.45).clamp(160.0, box.maxWidth - 20);
+          final orb = (box.maxHeight * 0.5).clamp(160.0, box.maxWidth);
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              Row(
+                children: [
+                  Text('VOICE', style: eyebrow()),
+                  const Spacer(),
+                  Text(
+                    s.voice.toUpperCase(),
+                    style: eyebrow(color: WoiColors.violet.withValues(alpha: 0.9)),
+                  ),
+                ],
+              ),
               Expanded(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    RepaintBoundary(
-                      child: VoiceOrb(
-                        phase: pipeline.phase,
-                        micLevel: pipeline.micLevel,
-                        outputLevel: pipeline.outputLevel,
-                        size: orb,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    _phaseText(),
+                    SizedBox.square(dimension: orb, child: _orb(orb)),
                     const SizedBox(height: 4),
-                    Text(switch (s.micMode) {
-                      MicMode.handsFree => 'Just talk. Interrupt any time.',
-                      MicMode.pushToTalk => 'Hold the button or Space to talk.',
-                      MicMode.muted => 'Microphone is off. Type below.',
-                    }, style: body(13, color: WoiColors.textDim)),
+                    _modeLabel(),
+                    const SizedBox(height: 6),
+                    Text(
+                      micModeHint(s.micMode),
+                      textAlign: TextAlign.center,
+                      style: body(13, color: WoiColors.textDim),
+                    ),
                   ],
                 ),
               ),
-              Center(
-                child: MicModeSelector(mode: s.micMode, onChanged: c.setMicMode),
+              Center(child: MicModeSelector(mode: s.micMode, onChanged: c.setMicMode)),
+              AnimatedSize(
+                duration: WoiMotion.medium,
+                curve: WoiMotion.curve,
+                child: s.micMode == MicMode.pushToTalk
+                    ? Padding(padding: const EdgeInsets.only(top: 12), child: PushToTalkButton(pipeline: pipeline))
+                    : const SizedBox(width: double.infinity),
               ),
-              if (s.micMode == MicMode.pushToTalk) ...[
-                const SizedBox(height: 12),
-                PushToTalkButton(pipeline: pipeline),
-              ],
-              const SizedBox(height: 22),
-              ContextMeter(manager: c.contextManager, onCompact: c.compactNow),
+              const SizedBox(height: 18),
+              ContextMeter(
+                manager: c.contextManager,
+                conversation: pipeline.conversation,
+                onCompact: c.compactNow,
+              ),
               const SizedBox(height: 14),
               Wrap(
                 spacing: 8,
@@ -333,12 +413,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     color: s.confirmBeforeBash ? WoiColors.mint : WoiColors.amber,
                     dense: true,
                   ),
-                  Pill(
-                    label: c.activeVoiceModel,
-                    icon: Icons.record_voice_over_outlined,
-                    color: WoiColors.violet,
-                    dense: true,
-                  ),
                 ],
               ),
             ],
@@ -348,51 +422,266 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _transcript({required double maxBubble}) {
-    final msgs = pipeline.conversation.messages;
-    if (msgs.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
+  Widget _phoneHero(double size) => Padding(
+    padding: const EdgeInsets.only(top: 4),
+    child: Column(
+      children: [
+        SizedBox.square(dimension: size, child: _orb(size)),
+        _modeLabel(size: 18),
+      ],
+    ),
+  );
+
+  Widget _phoneStrip(double size) => Padding(
+    padding: const EdgeInsets.fromLTRB(12, 0, 16, 2),
+    child: Row(
+      children: [
+        SizedBox.square(dimension: size, child: _orb(size)),
+        const SizedBox(width: 4),
+        Expanded(
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('Say something.', style: display(22)),
-              const SizedBox(height: 8),
+              _modeLabel(size: 16),
+              const SizedBox(height: 2),
               Text(
-                'Try "take a screenshot", "run uname -a", "list my home folder" or "what is on my screen?"',
-                textAlign: TextAlign.center,
-                style: body(14, color: WoiColors.textDim),
+                micModeHint(c.settings.micMode),
+                style: body(12, color: WoiColors.textDim),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
         ),
+      ],
+    ),
+  );
+
+  Widget _phoneBottomBar() {
+    final s = c.settings;
+    final stop = _canStop
+        ? Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: _StopPill(onTap: pipeline.interrupt),
+          )
+        : const SizedBox.shrink();
+    final bar = _phoneTyping
+        ? Row(
+            key: const ValueKey('typing'),
+            children: [
+              Expanded(child: _composer(phone: true)),
+              const SizedBox(width: 8),
+              GlassIconButton(
+                icon: Icons.mic_none_rounded,
+                tooltip: 'Back to voice',
+                size: kTouchTarget + 4,
+                onPressed: () {
+                  _composerFocus.unfocus();
+                  setState(() => _phoneTyping = false);
+                },
+              ),
+            ],
+          )
+        : SizedBox(
+            key: const ValueKey('voice'),
+            height: 84,
+            child: Row(
+              children: [
+                GlassIconButton(
+                  icon: Icons.keyboard_alt_outlined,
+                  tooltip: 'Type a message',
+                  size: kTouchTarget + 4,
+                  onPressed: _focusComposer,
+                ),
+                Expanded(
+                  child: Center(
+                    child: MicButton(
+                      mode: s.micMode,
+                      held: pipeline.pttHeld,
+                      onModeChanged: c.setMicMode,
+                      onPttDown: pipeline.pttDown,
+                      onPttUp: pipeline.pttUp,
+                      level: pipeline.micLevel,
+                      enabled: _connected,
+                    ),
+                  ),
+                ),
+                _MicModeMenu(mode: s.micMode, onChanged: c.setMicMode),
+              ],
+            ),
+          );
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AnimatedSwitcher(duration: WoiMotion.medium, child: _canStop ? stop : const SizedBox.shrink()),
+          GlassPanel(
+            radius: 30,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            child: AnimatedSwitcher(
+              duration: WoiMotion.medium,
+              switchInCurve: WoiMotion.emphasized,
+              transitionBuilder: (c, a) => FadeTransition(
+                opacity: a,
+                child: ScaleTransition(scale: Tween(begin: 0.96, end: 1.0).animate(a), child: c),
+              ),
+              child: bar,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _transcriptArea({required double maxBubble, required bool wide}) {
+    return Stack(
+      children: [
+        Positioned.fill(child: _transcript(maxBubble: maxBubble, wide: wide)),
+        Positioned(
+          top: 10,
+          left: 10,
+          right: 10,
+          child: Center(child: BannerStack(controller: _banners)),
+        ),
+      ],
+    );
+  }
+
+  Widget _transcript({required double maxBubble, required bool wide}) {
+    final msgs = pipeline.conversation.messages;
+    if (msgs.isEmpty) {
+      return Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: EmptyState(
+            subtitle: switch (c.settings.micMode) {
+              MicMode.handsFree => 'Just start talking — or try one of these.',
+              MicMode.pushToTalk => wide ? 'Hold Space to talk — or try one of these.' : 'Hold the mic to talk — or try one of these.',
+              MicMode.muted => 'Microphone is off. Type below or tap a suggestion.',
+            },
+            onHint: pipeline.sendText,
+            showShortcuts: wide,
+            enabled: _connected,
+          ),
+        ),
       );
+    }
+    // Latest screenshot at or before each message (for click markers).
+    final shots = List<ImageAttachment?>.filled(msgs.length, null);
+    ImageAttachment? last;
+    for (var i = 0; i < msgs.length; i++) {
+      shots[i] = last;
+      final img = msgs[i].image;
+      if (img != null) last = img;
     }
     return ListView.builder(
       reverse: true,
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      padding: EdgeInsets.fromLTRB(wide ? 22 : 12, 16, wide ? 22 : 12, 8),
       itemCount: msgs.length,
       itemBuilder: (context, i) {
-        final m = msgs[msgs.length - 1 - i];
+        final idx = msgs.length - 1 - i;
+        final m = msgs[idx];
         return MessageTile(
           key: ValueKey(m.id),
           message: m,
           audio: c.platform.audio,
           viewer: c.platform.viewer,
           maxBubbleWidth: maxBubble,
+          screenshot: m.kind == MessageKind.tool ? shots[idx] : null,
         );
       },
     );
   }
 
-  Widget _composer() {
-    final ph = pipeline.phase;
+  Widget _composer({bool phone = false}) {
     return Composer(
-      enabled: pipeline.status == SessionStatus.connected,
-      showStop: ph == AssistantPhase.speaking || ph == AssistantPhase.thinking,
+      focusNode: _composerFocus,
+      enabled: _connected,
+      showStop: !phone && _canStop,
       onStop: pipeline.interrupt,
       onSend: pipeline.sendText,
+      hint: phone ? 'Message Woi' : 'Message Woi…  (Ctrl+K)',
     );
   }
+}
+
+class _StopPill extends StatelessWidget {
+  const _StopPill({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    button: true,
+    label: 'Stop Woi',
+    excludeSemantics: true,
+    child: Material(
+      type: MaterialType.transparency,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(99),
+        onTap: onTap,
+        child: Container(
+          constraints: const BoxConstraints(minHeight: kTouchTarget),
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(99),
+            color: WoiColors.red.withValues(alpha: 0.14),
+            border: Border.all(color: WoiColors.red.withValues(alpha: 0.5)),
+            boxShadow: [BoxShadow(color: WoiColors.red.withValues(alpha: 0.25), blurRadius: 18)],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.stop_rounded, color: WoiColors.red),
+              const SizedBox(width: 6),
+              Text('Stop', style: body(14, weight: FontWeight.w600, color: WoiColors.red)),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+class _MicModeMenu extends StatelessWidget {
+  const _MicModeMenu({required this.mode, required this.onChanged});
+  final MicMode mode;
+  final ValueChanged<MicMode> onChanged;
+
+  @override
+  Widget build(BuildContext context) => PopupMenuButton<MicMode>(
+    tooltip: 'Microphone mode',
+    initialValue: mode,
+    onSelected: onChanged,
+    position: PopupMenuPosition.over,
+    itemBuilder: (context) => [
+      for (final m in MicMode.values)
+        PopupMenuItem(
+          value: m,
+          height: kTouchTarget,
+          child: Row(
+            children: [
+              Icon(micModeIcon(m), size: 20, color: m == mode ? WoiColors.cyan : WoiColors.textDim),
+              const SizedBox(width: 12),
+              Text(switch (m) {
+                MicMode.handsFree => 'Hands-free',
+                MicMode.pushToTalk => 'Push to talk',
+                MicMode.muted => 'Muted',
+              }, style: body(14, weight: m == mode ? FontWeight.w600 : FontWeight.w400)),
+            ],
+          ),
+        ),
+    ],
+    child: Container(
+      width: kTouchTarget + 4,
+      height: kTouchTarget + 4,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: WoiColors.glass,
+        border: Border.all(color: WoiColors.stroke),
+      ),
+      child: Icon(micModeIcon(mode), size: 22, color: WoiColors.textDim),
+    ),
+  );
 }
