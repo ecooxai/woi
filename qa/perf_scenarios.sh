@@ -10,6 +10,7 @@
 #             idle10 = 10 min idle (RSS growth check)
 #
 # Env: DISPLAY (default :11), SECS (seconds per scenario, default 60),
+#      SANDBOX (default /tmp/woi-perf-sandbox), PNAME (process name, default woi-perf),
 #      SIZE (window size, default "1600 900").
 # Each scenario starts the app fresh with HOME and XDG_DATA_HOME in a
 # sandbox seeded by qa/lib/make_perf_seed.py (200-message chat + notes);
@@ -24,7 +25,9 @@ export DISPLAY=${DISPLAY:-:11}
 SECS=${SECS:-60}
 SIZE=${SIZE:-1600 900}
 REAL_HOME=$HOME
-SANDBOX=/tmp/woi-perf-sandbox
+SANDBOX=${SANDBOX:-/tmp/woi-perf-sandbox}
+# Process/binary name (<= 15 chars); change it to run beside another perf run.
+PNAME=${PNAME:-woi-perf}
 mkdir -p "$OUT"
 APP_PID=""
 
@@ -46,9 +49,9 @@ launch() {
   rm -rf "$data" && mkdir -p "$data/woi"
   python3 "$QA_DIR/lib/make_perf_seed.py" "$data/woi" --messages 200 --notes 8 >/dev/null
   printf '{"micMode": "%s", "autoScreenshot": false}\n' "$mic" >"$data/woi/settings.json"
-  ln -sf "$BIN" "$SANDBOX/woi-perf"
+  ln -sf "$BIN" "$SANDBOX/$PNAME"
   (cd "$SANDBOX" && exec env HOME="$SANDBOX" CODEX_HOME="$REAL_HOME/.codex" XDG_DATA_HOME="$data" "$@" \
-    "$SANDBOX/woi-perf" >"$OUT/app-$name.log" 2>&1) &
+    "$SANDBOX/$PNAME" >"$OUT/app-$name.log" 2>&1) &
   APP_PID=$!
   local wid="" t=0
   while [ -z "$wid" ] && [ $t -lt 60 ]; do
@@ -64,7 +67,7 @@ launch() {
 
 stop_app() { kill "$APP_PID" 2>/dev/null; wait "$APP_PID" 2>/dev/null; APP_PID=""; sleep 1; }
 
-monitor() { "$QA_DIR/perf_monitor.sh" -d "$1" -l "$2" -c '^woi-perf$' -o "$OUT/$2.csv" >/dev/null; }
+monitor() { "$QA_DIR/perf_monitor.sh" -d "$1" -l "$2" -c "^$PNAME\$" -o "$OUT/$2.csv" >/dev/null; }
 
 center() {
   local w h
