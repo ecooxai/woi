@@ -27,6 +27,7 @@
 - Iter 0 (scaffold + research): UI, platform layer, tools, mock backend; protocol verified; 10 TTS fixtures. Score 22/100.
 - Iter 1 (direct WS backend, Responses compressor+delegate, live 9/9): 48/100.
 - Iter 2 (gpt-live live 10/10, premium UI desktop+phone): 64/100. Defects: missing user transcripts, context accounting, black viewer, ~2.7s latency.
+- Iter 3 (transcripts bound per turn, unified context meter, viewer GL fix, thinking cue; QA harness 58% on pre-fix build): 68/100.
 
 ## Spec: image compaction (user requirement, 2026-11-02)
 When compaction runs, screenshots/images are tiered by recency:
