@@ -62,7 +62,8 @@ class LinuxAudioIO implements AudioIO {
   @override
   Future<MicStream> openMic() async {
     final (exe, args) = _captureCommand();
-    final proc = await Process.start(exe, args);
+    final (e, a) = withDefaultSigpipe(exe, args);
+    final proc = await Process.start(e, a);
     return _LinuxMic(proc);
   }
 

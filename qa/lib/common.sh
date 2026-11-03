@@ -37,6 +37,17 @@ qa_audio_setup() {
   qa_log "audio: modules $(tr '\n' ' ' <"$QA_OUT/state.modules"); default source/sink -> qa_virtual_mic/qa_speaker"
 }
 
+# The harness shares the real desktop: if the default source/sink were switched
+# away from the QA devices (by a person, or a device change) the app would hear
+# the real mic and play to the real speakers. Log it and switch back.
+qa_audio_reassert() {
+  local src sink; src=$(pactl get-default-source) sink=$(pactl get-default-sink)
+  if [ "$src" != qa_virtual_mic ] || [ "$sink" != qa_speaker ]; then
+    qa_log "WARNING default audio devices were changed outside the harness ($src / $sink); restoring QA devices"
+    pactl set-default-source qa_virtual_mic; pactl set-default-sink qa_speaker
+  fi
+}
+
 qa_audio_teardown() {
   local m
   if [ -f "$QA_OUT/state.modules" ]; then
@@ -176,10 +187,13 @@ qa_app_alive() { kill -0 "$APP_PID" 2>/dev/null; }
 
 qa_stop_app() {
   [ -n "${APP_PID:-}" ] || return 0
+  # direct children too (pw-record, pw-play): they outlived the app before
+  local kids; kids=$(pgrep -P "$APP_PID")
   kill "$APP_PID" 2>/dev/null
   local t=0
   while kill -0 "$APP_PID" 2>/dev/null && [ $t -lt 15 ]; do sleep 0.3; t=$((t + 1)); done
   kill -9 "$APP_PID" 2>/dev/null
+  [ -n "$kids" ] && kill $kids 2>/dev/null
   APP_PID=""
 }
 

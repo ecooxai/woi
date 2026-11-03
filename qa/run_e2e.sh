@@ -72,6 +72,7 @@ run_fixture() {
   local geom; geom=$(qa_app_geom)
   [ "$geom" != "${APP_W}x${APP_H}" ] && qa_log "app window is $geom (expected ${APP_W}x${APP_H}); re-placing"
   qa_place_app $APP_X $APP_Y $APP_W $APP_H
+  qa_audio_reassert
   local lines0; lines0=$(wc -l <"$APP_LOG")
   qa_log "play $tag"
   paplay -d qa_fixture_sink "$wav"
@@ -163,6 +164,19 @@ prep_click_target() {
   xdotool mousemove 1500 150   # away from the centre, so a click is visible
 }
 
+# "|word|word..." from the titles of visible top-level windows (words of 5+
+# letters), plus "browser" when a web browser is visible.
+visible_words() {
+  local wid names="" classes=""
+  for wid in $(xdotool search --onlyvisible --name . 2>/dev/null); do
+    names+=" $(xdotool getwindowname "$wid" 2>/dev/null)"
+    classes+=" $(xprop -id "$wid" WM_CLASS 2>/dev/null)"
+  done
+  echo "$names" | grep -oE '[A-Za-z]{5,}' | grep -viE '^(window|untitled|google|mozilla)$' |
+    sort -u | sed 's/^/|/' | tr -d '\n'
+  echo "$classes" | grep -qiE 'chrom|firefox|brave|vivaldi' && echo -n '|browser'
+}
+
 # X input idle time in ms. Reported with the click/type checks because the
 # harness drives the real :0 display: a person using it moves the pointer and
 # focus while the fixture runs, which fails those checks without an app fault.
@@ -222,8 +236,13 @@ barge() {
   local stop_ms; stop_ms=$($LAT stop "$SPK" "$onset" 1.5)
   local resumed; resumed=$($LAT first "$SPK" "$(echo "$onset + $stop_ms/1000 + 1.5" | bc)" 10)
   qa_shot "$APP_WID" "${tag}_after" >/dev/null
-  local ok=FAIL; [ "$stop_ms" -le 500 ] && ok=PASS
-  result "$mode" 11_barge_in "$lat" 0 "$ok" "audio stopped ${stop_ms}ms after 'Stop' onset; next audio after stop: ${resumed}ms"
+  local ok=FAIL note=""
+  # Detection alone needs 80 ms of voiced audio, so 0 means the reply had
+  # already gone silent before "Stop" (a stalled or finished reply), not a
+  # barge-in.
+  if [ "$stop_ms" -le 0 ]; then note=" (reply was already silent before the onset)"
+  elif [ "$stop_ms" -le 500 ]; then ok=PASS; fi
+  result "$mode" 11_barge_in "$lat" 0 "$ok" "audio stopped ${stop_ms}ms after 'Stop' onset$note; next audio after stop: ${resumed}ms"
 }
 
 # ------------------------------------------------------------------ phases
@@ -267,13 +286,17 @@ phase_live() {
   ok=FAIL; cmp -s "$QA_SANDBOX/notes.txt" "$QA_OUT/notes_after_approve.txt" && [ "$LAST_DIALOG" = 1 ] && ok=PASS
   result $mode 06_edit_reject "$LAST_LAT" "$LAST_DIALOG" $ok "file unchanged after Esc: $(cmp -s "$QA_SANDBOX/notes.txt" "$QA_OUT/notes_after_approve.txt" && echo yes || echo no)"
 
+  # Other windows on the real :0 display (a browser someone is using) are on
+  # screen too, so their titles count as visible things as well.
+  local seen; seen=$(visible_words)
   run_fixture $mode 07_whats_on_screen "$FIX/07_whats_on_screen.wav"
   # The reply must name something that is really on screen: the target xterm
   # (title WOI-QA-TARGET, banner "Woi QA click/type target", the typed
-  # "hello world"), the backdrop banner, or Woi's own window / conversation.
+  # "hello world"), the backdrop banner, Woi's own window / conversation, or
+  # another visible window.
   local said; said=$(grep 'assistant:' "$QA_OUT/log_${mode}_07_whats_on_screen.txt" | tr '\n' ' ')
   ok=FAIL
-  echo "$said" | grep -qiE 'hello,? world|WOI-QA|QA (target|run)|click/type|backdrop|run in progress|terminal|xterm|woi|conversation|chat|notes|buy milk' && ok=PASS
+  echo "$said" | grep -qiE "hello,? world|WOI-QA|QA (target|run)|click/type|backdrop|run in progress|terminal|xterm|woi|conversation|chat|notes|buy milk$seen" && ok=PASS
   result $mode 07_whats_on_screen "$LAST_LAT" "$LAST_DIALOG" $ok "$(echo "$said" | cut -c1-200)"
 
   # delegate_task (gpt-6.1-sol) writes the script via write_file (approval),
@@ -440,6 +463,13 @@ phase_barge_only() {
   fi
   qa_place_app $APP_X $APP_Y $APP_W $APP_H
   sleep 2
+  if [ "${BARGE_VIEWER:-0}" = 1 ]; then
+    # open (and close) a media viewer first, as the full live phase does
+    run_fixture $mode 13_show_image "$QFIX/13_show_image.wav"
+    local v; v=$(wait_viewer ${mode}_13_show_image); local vok=FAIL; [[ $v == window:* ]] && vok=PASS
+    result $mode 13_show_image "$LAST_LAT" "$LAST_DIALOG" $vok "$v"
+    close_viewers
+  fi
   barge $mode
   sleep 3
   transcripts $mode

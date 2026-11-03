@@ -18,6 +18,28 @@ String? which(String name) {
   return _whichCache[name] = null;
 }
 
+bool? _envDefaultSignal;
+
+/// Runs [exe] with SIGPIPE back at its default action (via
+/// `env --default-signal=PIPE`, GNU coreutils 8.31+) when that is available.
+///
+/// The Dart VM ignores SIGPIPE and an ignored disposition survives exec, so a
+/// child that writes to our stdout pipe (pw-record) would otherwise only get
+/// EPIPE after Woi dies and keep running, holding the microphone open forever.
+(String, List<String>) withDefaultSigpipe(String exe, List<String> args) {
+  _envDefaultSignal ??= () {
+    final env = which('env');
+    if (env == null) return false;
+    try {
+      return Process.runSync(env, ['--default-signal=PIPE', 'true']).exitCode == 0;
+    } catch (_) {
+      return false;
+    }
+  }();
+  if (!_envDefaultSignal!) return (exe, args);
+  return (which('env')!, ['--default-signal=PIPE', exe, ...args]);
+}
+
 /// X display to target; defaults to :0 when DISPLAY is unset.
 String x11Display() {
   final d = Platform.environment['DISPLAY'];
