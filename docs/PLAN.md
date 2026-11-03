@@ -44,3 +44,22 @@ When compaction runs, screenshots/images are tiered by recency:
 ## Backlog (next iteration)
 - BUG: run_bash with cwd "~" fails — expand ~ / $HOME in all path args (run_bash cwd, read/show/edit/list paths).
 - gpt-realtime-2 live 9/9: eos→first audio median 1967ms (vs 2614ms on 1.5); speaks preamble before tool call.
+
+## Spec: note-focused assistant (user requirement, 2026-11-02)
+- Every chat has a Markdown note. Starting a new chat opens the note editor by default.
+- Note editor: Markdown editing with live preview/toggle, headings/checklists/code, autosave per chat (stored with the conversation).
+- The user can switch between the Note view and the Chat history view (tabs / segmented control; on wide desktop a
+  split view with both visible is allowed, with a toggle). Keyboard: Ctrl+1 note, Ctrl+2 chat.
+- Both the AI and the user can write to the note. AI tools: read_note, update_note (append / replace section by heading /
+  replace all / check off item). AI edits to the note do NOT need confirmation (unlike files), but are highlighted briefly
+  and undoable (Ctrl+Z / an "AI edited" chip with undo).
+- The note content is sent to the AI EVERY TURN as pinned context (never compacted or summarized; it's counted in the context
+  meter as its own segment). Direct mode: refresh the pinned note item / instructions before each response.
+  gpt-live: include it in the delegation context and in the session/reconnect startup context; voice model must know it exists.
+- System prompt: the assistant proactively records important info (decisions, todos, facts, file paths) in the note.
+
+## Spec: in-app media viewing (user requirement, 2026-11-02)
+- show_file for image / video / audio / text ALWAYS renders inside Woi's own view or its own viewer window. Never launch
+  external apps (no VLC/xdg-open). Video needs an embedded player that works on Linux without sudo installs
+  (candidates: fvp (bundled mdk), media_kit (needs libmpv), or an ffmpeg-decode-to-texture fallback), portable to
+  Android/macOS/iOS later.
