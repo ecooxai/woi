@@ -99,3 +99,10 @@ When compaction runs, screenshots/images are tiered by recency:
   bundled codex CLI + login flow (Linux).
 - Iter 6: Android port + system assistant + codex arm64 + on-device testing.
 - Iter 7+: polish, QA, perf, scoring toward 99.
+
+## Decision 2026-11-03: bundled codex CLI (spike verified, research/codex-cli/CODEX_CLI.md)
+- Bundle codex 0.166.0 (x64 on Linux; arm64 as lib/arm64-v8a/libcodex.so on Android, ~+113 MB APK) — user requirement,
+  and also usable in the built-in terminal. Login: `BROWSER=true codex login`, parse stderr URL regex and port line,
+  app-side timeout + GET /cancel; fallback --device-auth. Android needs in-app CONNECT proxy (HTTPS_PROXY) for DNS,
+  SSL_CERT_FILE = concatenated /apex/com.android.conscrypt/cacerts, HOME/TMPDIR/CODEX_HOME pre-created,
+  foreground service during login.
