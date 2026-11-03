@@ -116,13 +116,17 @@ class WoiSession(ctx: Context) : VoiceInteractionSession(ctx) {
             putExtra(EXTRA_APP, appName)
             putExtra(EXTRA_TEXT, screenText)
             putExtra(EXTRA_T0, shownAt)
-            addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
+        // A plain start reaches the existing singleTask MainActivity (one
+        // Flutter engine). startAssistantActivity() would create a second
+        // MainActivity in an "assistant" task, i.e. a second engine and app
+        // state in the same process; only use it if the plain start fails.
         try {
-            startAssistantActivity(i)
+            context.startActivity(i)
         } catch (e: Exception) {
-            Log.w(WoiBridge.TAG, "startAssistantActivity failed", e)
-            context.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            Log.w(WoiBridge.TAG, "startActivity from session failed; using startAssistantActivity", e)
+            try { startAssistantActivity(i) } catch (e2: Exception) { Log.w(WoiBridge.TAG, "startAssistantActivity failed", e2) }
         }
         hide()
     }
