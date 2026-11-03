@@ -68,13 +68,26 @@ class VideoViewerBodyState extends State<VideoViewerBody> {
         });
   }
 
+  String? _sig;
+  int _posTick = -1;
+
+  /// Rebuilds only when something visible changes: playback state, or the
+  /// position at 10 Hz while the controls are shown. (The video frames
+  /// themselves come through the texture, without rebuilds.)
   void _onValue() {
+    if (!mounted) return;
     final v = _c.value;
     if (v.hasError && _error == null) {
       setState(() => _error = v.errorDescription ?? 'playback error');
       return;
     }
-    if (mounted) setState(() {});
+    final sig =
+        '${v.isInitialized}|${v.isPlaying}|${v.isBuffering}|${v.isCompleted}|${v.size}|${v.volume}|${v.duration}';
+    final tick = _controlsVisible || !v.isPlaying ? v.position.inMilliseconds ~/ 100 : -1;
+    if (sig == _sig && tick == _posTick) return;
+    _sig = sig;
+    _posTick = tick;
+    setState(() {});
   }
 
   @override
@@ -266,8 +279,7 @@ class VideoViewerBodyState extends State<VideoViewerBody> {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: Colors.black.withValues(alpha: 0.45),
-                  border: Border.all(color: WoiColors.magenta.withValues(alpha: 0.7), width: 1.5),
-                  boxShadow: [BoxShadow(color: WoiColors.magenta.withValues(alpha: 0.35), blurRadius: 30)],
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.5), width: 1.5),
                 ),
                 child: const Icon(Icons.play_arrow_rounded, size: 52, color: Colors.white),
               ),

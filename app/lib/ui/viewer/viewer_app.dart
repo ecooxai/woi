@@ -348,7 +348,10 @@ class _AudioViewerBodyState extends State<AudioViewerBody> with SingleTickerProv
   String? _error;
   List<double>? _peaks;
   Duration? _duration;
-  late final Ticker _ticker = createTicker((d) => setState(() => _elapsed = d));
+  // Progress repaints at ~15 Hz, not every frame.
+  late final Ticker _ticker = createTicker((d) {
+    if (d - _elapsed >= const Duration(milliseconds: 66)) setState(() => _elapsed = d);
+  });
   Duration _elapsed = Duration.zero;
 
   @override

@@ -167,29 +167,17 @@ class WoiBanner extends StatelessWidget {
         onDismissed: (_) => onDismiss(),
         child: Container(
           decoration: BoxDecoration(
-            color: WoiColors.bg2.withValues(alpha: 0.92),
+            color: WoiColors.bg1,
             borderRadius: BorderRadius.circular(WoiRadii.md),
-            border: Border.all(color: c.withValues(alpha: 0.4)),
-            boxShadow: [
-              BoxShadow(color: c.withValues(alpha: 0.18), blurRadius: 24, spreadRadius: -4),
-              const BoxShadow(color: Color(0x66000000), blurRadius: 18, offset: Offset(0, 8)),
-            ],
+            border: Border.all(color: WoiColors.stroke),
+            boxShadow: [BoxShadow(color: WoiColors.shadow, blurRadius: 12, offset: const Offset(0, 4))],
           ),
           clipBehavior: Clip.antiAlias,
           child: IntrinsicHeight(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Container(
-                  width: 3,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [c, c.withValues(alpha: 0.3)],
-                    ),
-                  ),
-                ),
+                Container(width: 3, color: c),
                 const SizedBox(width: 12),
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 12),

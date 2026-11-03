@@ -344,27 +344,8 @@ class _MarkdownViewState extends State<MarkdownView> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (b.level == 1)
-                ShaderMask(
-                  shaderCallback: (r) =>
-                      LinearGradient(colors: [WoiColors.text, WoiColors.cyan, WoiColors.violet]).createShader(r),
-                  child: Text.rich(TextSpan(children: _spans(b.text, style.copyWith(color: Colors.white)))),
-                )
-              else
-                Text.rich(TextSpan(children: _spans(b.text, style))),
-              if (b.level <= 2)
-                Container(
-                  margin: const EdgeInsets.only(top: 8),
-                  height: 1,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        (b.level == 1 ? WoiColors.cyan : WoiColors.violet).withValues(alpha: 0.45),
-                        Colors.transparent,
-                      ],
-                    ),
-                  ),
-                ),
+              Text.rich(TextSpan(children: _spans(b.text, style))),
+              if (b.level <= 2) Container(margin: const EdgeInsets.only(top: 8), height: 1, color: WoiColors.stroke),
             ],
           ),
         );
@@ -397,9 +378,7 @@ class _MarkdownViewState extends State<MarkdownView> {
         return Container(
           margin: const EdgeInsets.symmetric(vertical: 16),
           height: 1,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(colors: [Colors.transparent, WoiColors.strokeStrong, Colors.transparent]),
-          ),
+          color: WoiColors.stroke,
         );
       case MdBlockKind.code:
         return _code(b);
@@ -432,11 +411,10 @@ class _MarkdownViewState extends State<MarkdownView> {
               height: 18,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(5),
-                gradient: checked ? LinearGradient(colors: [WoiColors.mint, WoiColors.cyan]) : null,
-                border: Border.all(color: checked ? Colors.transparent : WoiColors.strokeStrong, width: 1.5),
-                boxShadow: checked ? [BoxShadow(color: WoiColors.mint.withValues(alpha: 0.35), blurRadius: 10)] : null,
+                color: checked ? WoiColors.cyan : null,
+                border: Border.all(color: checked ? WoiColors.cyan : WoiColors.strokeStrong, width: 1.5),
               ),
-              child: checked ? Icon(Icons.check_rounded, size: 14, color: WoiColors.bg0) : null,
+              child: checked ? Icon(Icons.check_rounded, size: 14, color: WoiColors.onAccent) : null,
             ),
           ),
         ),
