@@ -440,6 +440,7 @@ class _SeekBarState extends State<SeekBar> {
             onHorizontalDragEnd: (_) => widget.onChangeEnd(_last),
             child: SizedBox(
               height: 22,
+              width: double.infinity,
               child: CustomPaint(painter: _SeekPainter(widget.fraction, widget.buffered, _hover)),
             ),
           ),
