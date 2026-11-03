@@ -430,7 +430,9 @@ class TurnPipeline extends ChangeNotifier {
   void _localOnset() {
     if (_userSpeaking || !_assistantAudible) return;
     localOnsets++;
-    debugPrint('barge-in: local onset (echo gain ${_onset.echoGain.toStringAsFixed(2)})');
+    debugPrint(
+      'barge-in: local onset (echo gain ${_onset.echoGain.toStringAsFixed(2)}) t=${DateTime.now().millisecondsSinceEpoch}',
+    );
     if (_bargeIn()) _beginHold(null);
     _changed();
   }

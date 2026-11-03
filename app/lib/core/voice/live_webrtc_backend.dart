@@ -606,7 +606,7 @@ class LiveWebRtcBackend extends VoiceBackend implements ManagedAudioBackend, Liv
       _mute();
     } else if (_speakerMuted) {
       _speakerMuted = false;
-      _rtc?.setSpeakerEnabled(true);
+      _speaker(true, 'new assistant turn');
     }
     // Full duplex: once the assistant takes the floor the user turn is over.
     if (_userSpeaking) _userStopped();
@@ -880,14 +880,15 @@ class LiveWebRtcBackend extends VoiceBackend implements ManagedAudioBackend, Liv
   /// user talks; locally we silence the remote track until the next turn.
   @override
   void cancelResponse() {
-    if (!_assistantOpen && !_player.isPlaying) return;
-    _interrupted = true;
+    // The caller heard the assistant: mute even when no turn is tracked as
+    // open (turn events can lag the audio); the next turn unmutes.
+    if (_assistantOpen || _player.isPlaying) _interrupted = true;
     _mute();
   }
 
   void _mute() {
     _speakerMuted = true;
-    _rtc?.setSpeakerEnabled(false);
+    _speaker(false, 'mute');
     _player.clock.reset();
   }
 
@@ -915,8 +916,14 @@ class LiveWebRtcBackend extends VoiceBackend implements ManagedAudioBackend, Liv
     _replyHeld = hold;
     if (!hold && _assistantOpen && _speakerMuted && !_interrupted && !_dropTurn) {
       _speakerMuted = false;
-      _rtc?.setSpeakerEnabled(true);
+      _speaker(true, 'hold released');
     }
+  }
+
+  /// Remote track on/off, logged with wall-clock ms (barge-in timing in QA).
+  void _speaker(bool on, String why) {
+    _rtc?.setSpeakerEnabled(on);
+    debugPrint('gpt-live speaker ${on ? 'on' : 'off'} ($why) t=${DateTime.now().millisecondsSinceEpoch}');
   }
 
   // ------------------------------------------------------- managed audio

@@ -28,7 +28,11 @@ class UiConfirmationService implements ConfirmationService {
       if (ctx == null || !ctx.mounted) return false;
       final cue = onShow?.call().catchError((Object e) => debugPrint('approval cue: $e'));
       if (cue != null) unawaited(cue);
-      return (await show(ctx)) ?? false;
+      // The QA harness detects dialogs from this line (qa/run_e2e.sh).
+      debugPrint('approval dialog shown');
+      final approved = (await show(ctx)) ?? false;
+      debugPrint('approval dialog closed: approved=$approved');
+      return approved;
     });
     _tail = result.then((_) {}, onError: (_) {});
     return result.catchError((_) => false);

@@ -82,7 +82,10 @@ run_fixture() {
     sleep 0.5; waited=$((waited + 1))
     qa_app_alive || { qa_log "APP DIED during $tag"; break; }
     local b; b=$(qa_brightness "$APP_WID")
-    if [ "$LAST_DIALOG" = 0 ] && awk -v b="$b" -v p="$prev" 'BEGIN{exit !(b < 0.62 * p)}'; then
+    # The app logs "approval dialog shown"; the brightness drop is a fallback
+    # (a fading-in dialog can dim over two samples and slip past it).
+    if [ "$LAST_DIALOG" = 0 ] && { tail -n +$((lines0 + 1)) "$APP_LOG" | grep -q 'approval dialog shown' ||
+       awk -v b="$b" -v p="$prev" 'BEGIN{exit !(b < 0.62 * p)}'; }; then
       LAST_DIALOG=1
       sleep 0.6
       qa_shot "$APP_WID" "${tag}_dialog" >/dev/null
