@@ -198,7 +198,7 @@ check_type() {
   local typed; typed=$(tr -d '\000' <"$QA_SANDBOX/typed.txt")
   qa_shot "$TARGET_WID" "$1_03_type_target" 500 >/dev/null
   local ok=FAIL; echo "$typed" | grep -qi 'hello,\? world' && ok=PASS
-  result "$1" 03_type_hello_world "$LAST_LAT" "$LAST_DIALOG" "$ok" "typed=$(printf %q "$typed")$(user_idle)"
+  result "$1" 03_type_hello_world "$LAST_LAT" "$LAST_DIALOG" "$ok" "typed=$(printf %q "$typed") active=$(a=$(xdotool getactivewindow 2>/dev/null); [ "$a" = "$TARGET_WID" ] && echo target || echo "$a")$(user_idle)"
 }
 
 log_has() { grep -qiE "$1" "$QA_OUT/log_$2.txt" 2>/dev/null; }
@@ -382,7 +382,13 @@ phase_compact() {
   qa_wait_log 'gpt-live connected' 40 || return 1
   sleep 2
   local i f n=0
-  for f in "$FIX/01_hello.wav" "$QFIX/12_mars_facts.wav" "$FIX/07_whats_on_screen.wav" "$QFIX/12_mars_facts.wav" "$FIX/01_hello.wav" "$QFIX/12_mars_facts.wav"; do
+  # Compaction only runs once the context is over the threshold AND the older
+  # turns would free >= 25% of the conversational tokens, so with short replies
+  # six turns are sometimes not enough: keep talking (up to 10 turns) until it
+  # has been applied.
+  for f in "$FIX/01_hello.wav" "$QFIX/12_mars_facts.wav" "$FIX/07_whats_on_screen.wav" "$QFIX/12_mars_facts.wav" "$FIX/01_hello.wav" "$QFIX/12_mars_facts.wav" \
+           "$FIX/07_whats_on_screen.wav" "$QFIX/12_mars_facts.wav" "$FIX/01_hello.wav" "$QFIX/12_mars_facts.wav"; do
+    [ $n -ge 6 ] && grep -qE 'compaction applied' "$APP_LOG" && break
     n=$((n + 1))
     run_fixture $mode "turn$n" "$f" approve 6
     result $mode "turn$n" "$LAST_LAT" 0 "$( [ "$LAST_LAT" != -1 ] && echo PASS || echo FAIL)" "$(basename "$f")"
@@ -391,7 +397,7 @@ phase_compact() {
   transcripts $mode
   local ok=FAIL
   grep -qE 'compaction applied|Context compacted' "$APP_LOG" "$QA_OUT/transcripts-$mode.txt" && ok=PASS
-  result $mode banner - - $ok "$(grep -E 'compaction' "$APP_LOG" | head -2 | tr '\n' ' ' | cut -c1-250)"
+  result $mode banner - - $ok "after $n turns: $(grep -E 'compaction' "$APP_LOG" | head -2 | tr '\n' ' ' | cut -c1-250)"
   qa_stop_app
 }
 
