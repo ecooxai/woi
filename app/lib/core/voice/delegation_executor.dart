@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import '../../platform/key_chords.dart';
 import '../auth/auth.dart';
 import '../notes/pinned_note.dart';
 import '../responses/responses_client.dart';
@@ -237,10 +238,15 @@ class DelegationExecutor {
       'Show, open, view or play a file: show_file. Never change files with run_bash: read_file, then edit_file '
       '(the user approves a diff). '
       'click_screen coordinates are pixels of the attached screenshot. '
+      'Keys or shortcuts in another app (copy, paste, select all, "press ctrl c", escape): send_keys; it targets the '
+      'app the user was using (never Woi), or `window` when the user names one ("in the xterm" -> window "xterm"). '
       'For complex work (writing code, analysis, long text) call delegate_task; when the user wants code or text '
       'written or saved, say so in the task (it saves files with write_file). '
       'The conversation note is attached: answer questions from it, record decisions, todos, facts and '
-      'paths with update_note (no approval needed). '
+      'paths with update_note or note_control (append/insert/replace/delete_text); edits show a short preview and '
+      'apply themselves. Other notes (new, switch, rename, delete, list) and the note\'s undo/redo: note_control. '
+      'Woi itself (switch view note/chat/terminal/split, settings such as theme, voice, mic mode, terminal tabs, the '
+      'media viewer, apply/reject the edit preview, "undo that" = your last note or file edit): app_control. '
       'Never press keys, click or type for a stop, cancel or never-mind request: do nothing. '
       'If no tool fits, answer in one short sentence. Never claim something was done unless a tool result shows it.';
 
@@ -335,6 +341,126 @@ class DelegationExecutor {
     return body;
   }
 
+  static final _politePrefix = RegExp(
+    r'^\s*(?:(?:ok(?:ay)?|please|now|so|and|then|hey|woi|can you|could you|would you)[\s,]+)*',
+    caseSensitive: false,
+  );
+  static final _windowSuffix = RegExp(
+    r'\s+(?:in|into|on|inside)\s+(?:the\s+)?([\w .-]+?)(?:\s+(?:window|app|application|terminal window))?$',
+    caseSensitive: false,
+  );
+  static final _pressRequest = RegExp(
+    r'^(?:press|hit|push|tap|send)(?:\s+the)?\s+(.+?)(?:\s+(?:keys?|button|shortcut|combination|combo))?$',
+    caseSensitive: false,
+  );
+  static final _keyActions = <(RegExp, List<KeyAction>)>[
+    (RegExp(r'^copy\s+(?:all|everything)(?:\s+(?:the\s+)?text)?$'), [KeyAction.selectAll, KeyAction.copy]),
+    (RegExp(r'^copy(?:\s+(?:that|this|it|the\s+selection|selection|the\s+selected\s+text|the\s+text))?$'), [KeyAction.copy]),
+    (RegExp(r'^paste(?:\s+(?:that|this|it|the\s+clipboard|clipboard))?(?:\s+here)?$'), [KeyAction.paste]),
+    (RegExp(r'^cut(?:\s+(?:that|this|it|the\s+selection|selection))?$'), [KeyAction.cut]),
+    (RegExp(r'^(?:select|highlight|mark)\s+(?:all|everything)(?:\s+(?:the\s+)?text)?$'), [KeyAction.selectAll]),
+    (RegExp(r'^(?:press\s+)?esc(?:ape)?$'), [KeyAction.escape]),
+  ];
+
+  /// App-control calls for plain requests ("undo that", "switch to
+  /// terminal", "dark mode", "add buy milk to my note"), as (tool, args).
+  static List<(String, Map<String, Object?>)>? appFastPath(String request) {
+    var t = request.trim().toLowerCase().replaceAll(RegExp(r'[.!?]+$'), '').trim();
+    t = t.replaceFirst(RegExp(r"^(?:(?:ok(?:ay)?|hey|woi|please|now|so|and|then)[\s,]+)*"), '');
+    t = t.replaceFirst(RegExp(r"^(?:(?:can|could|would|will)\s+you\s+(?:please\s+)?|go\s+ahead\s+and\s+)"), '');
+    t = t.replaceFirst(RegExp(r'\s+please$'), '').trim();
+    if (RegExp(r"^(?:undo|revert|take back|roll back)(?:\s+(?:it|that|this|the (?:last )?(?:edit|change)|your (?:last )?(?:edit|change)))?$").hasMatch(t)) {
+      return [('app_control', {'action': 'undo_edit'})];
+    }
+    if (RegExp(r'^(?:apply|accept|approve)(?:\s+(?:it|that|the (?:edit|change)))?(?:\s+now)?$').hasMatch(t)) {
+      return [('app_control', {'action': 'apply_edit'})];
+    }
+    if (RegExp(r'^(?:reject|discard|decline)(?:\s+(?:it|that|the (?:edit|change)))?$|^cancel the (?:edit|change)$').hasMatch(t)) {
+      return [('app_control', {'action': 'reject_edit'})];
+    }
+    final view = RegExp(
+      r'^(?:switch|go|change|flip|jump)\s+(?:back\s+)?to\s+(?:the\s+)?(terminal|chat|note|notes|split|side by side)(?:\s+(?:view|tab|panel|screen|mode))?$'
+      r'|^(?:show|open)\s+(?:me\s+)?(?:the\s+)?(terminal|chat|split)(?:\s+(?:view|tab|panel|screen))?$'
+      r'|^(?:show|open)\s+(?:me\s+)?(?:the\s+)?(note|notes)\s+(?:view|tab|panel|screen)$',
+    ).firstMatch(t);
+    if (view != null) {
+      final v = view.group(1) ?? view.group(2) ?? view.group(3)!;
+      return [('app_control', {'action': 'show_view', 'view': v})];
+    }
+    final theme = RegExp(
+      r'^(?:(?:change|set|switch|make|turn|put)\s+(?:the\s+)?(?:theme|app|woi|it|appearance|colou?rs?)?\s*(?:to|into|in)?\s*(?:the\s+)?)?'
+      r'(dark|light|system)(?:\s+(?:mode|theme))?$'
+      r'|^(?:change|set|switch)\s+(?:the\s+)?theme\s+to\s+(?:the\s+)?(dark|light|system)(?:\s+(?:mode|theme|one))?$'
+      r'|^(?:switch|go|change)\s+to\s+(dark|light|system)\s+(?:mode|theme)$',
+    ).firstMatch(t);
+    if (theme != null && RegExp(r'theme|mode|change|set|switch|make|turn|put').hasMatch(t)) {
+      final v = theme.group(1) ?? theme.group(2) ?? theme.group(3)!;
+      return [('app_control', {'action': 'set_setting', 'key': 'theme', 'value': v})];
+    }
+    final mic = RegExp(r'^(?:mute|unmute)\s+(?:the\s+)?(?:mic|microphone)$').firstMatch(t);
+    if (mic != null) {
+      final on = t.startsWith('un');
+      return [('app_control', {'action': 'set_setting', 'key': 'mic_mode', 'value': on ? 'hands_free' : 'muted'})];
+    }
+    if (RegExp(r'^(?:start|create|make|open)\s+(?:a\s+)?new\s+note$|^new note$').hasMatch(t)) {
+      return [('note_control', {'action': 'new'})];
+    }
+    if (RegExp(r'^(?:open|start|create)\s+(?:a\s+)?new\s+(?:terminal|shell)(?:\s+tab)?$|^new\s+terminal\s+tab$').hasMatch(t)) {
+      return [('app_control', {'action': 'terminal_new'})];
+    }
+    // "add 'buy milk' to my note" (original casing for the text).
+    final add = RegExp(
+      r'''^(?:(?:ok(?:ay)?|please|now)[\s,]+)*(?:add|append|put|write(?:\s+down)?|jot(?:\s+down)?)\s+(.+?)\s+(?:to|in|into|on|at the end of)\s+(?:my|the|this)\s+(?:note|notes|todo list|to-do list|list|shopping list)$''',
+      caseSensitive: false,
+    ).firstMatch(request.trim().replaceAll(RegExp(r'[.!?]+$'), ''));
+    if (add != null) {
+      var text = add.group(1)!.trim();
+      final q = RegExp(r'''^["'‘“](.+)["'’”]$''').firstMatch(text);
+      if (q != null) text = q.group(1)!.trim();
+      if (text.isEmpty || text.length > 200 || RegExp(r'\b(?:that|this|it|the (?:summary|result|answer|output))$').hasMatch(text.toLowerCase())) {
+        return null; // refers to something: let the model write it
+      }
+      if (!text.contains('\n') && !RegExp(r'^[-*#]|^\d+[.)]').hasMatch(text)) text = '- $text';
+      return [('note_control', {'action': 'append', 'text': text})];
+    }
+    return null;
+  }
+
+  /// `send_keys` calls for a plain key request ("press ctrl c", "copy that",
+  /// "paste", "select all and copy in the xterm", "press escape"), or null.
+  /// Undo/redo are not here: "undo that" undoes Woi's own last edit.
+  static List<Map<String, Object?>>? keysFastPath(String request) {
+    var t = request.trim().replaceAll(RegExp(r'[\s.!?]+$'), '').replaceFirst(_politePrefix, '');
+    t = t.replaceAll(RegExp(r'\s+(?:please|for me|now)$', caseSensitive: false), '');
+    t = t.replaceAll(RegExp(r'\s+(?:to|into)\s+(?:the\s+)?clipboard$', caseSensitive: false), '');
+    String? window;
+    final w = _windowSuffix.firstMatch(t);
+    if (w != null) {
+      window = w[1]!.trim();
+      t = t.substring(0, w.start).trim();
+    }
+    if (t.isEmpty) return null;
+    Map<String, Object?> call(Map<String, Object?> a) => {...a, 'window': ?window};
+    final press = _pressRequest.firstMatch(t);
+    if (press != null) {
+      final keys = press[1]!.trim();
+      try {
+        parseKeySequence(keys);
+      } on FormatException {
+        return null;
+      }
+      return [call({'keys': keys})];
+    }
+    final out = <Map<String, Object?>>[];
+    for (final part in t.toLowerCase().split(RegExp(r'\s*(?:,|\band then\b|\bthen\b|\band\b)\s*'))) {
+      if (part.isEmpty) continue;
+      final hit = _keyActions.where((a) => a.$1.hasMatch(part)).firstOrNull;
+      if (hit == null) return null;
+      out.addAll([for (final a in hit.$2) call({'action': a.wire})]);
+    }
+    return out.isEmpty ? null : out;
+  }
+
   int _seq = 0;
 
   Future<DelegationReport> execute(String request, {String? id}) async {
@@ -393,6 +519,38 @@ class DelegationExecutor {
         ..steps = 0
         ..firstToolCall = run.startedAt
         ..toolsDone = run.doneAt
+        ..resultText = _summarize(report, const []);
+      return;
+    }
+    // Fast path: "undo that", "switch to terminal", "dark mode", "add X to my note".
+    final appCalls = appFastPath(request);
+    if (appCalls != null && appCalls.every((c) => tools.any((t) => t.name == c.$1))) {
+      final n = report.tools.length;
+      for (final (i, (name, a)) in appCalls.indexed) {
+        await _exec(report, sw, name, jsonEncode(a), 'app${i}_${report.id}');
+        if (!report.tools.last.ok) break;
+      }
+      report
+        ..model = 'fast-path'
+        ..steps = 0
+        ..firstToolCall = report.tools[n].startedAt
+        ..toolsDone = report.tools.last.doneAt
+        ..resultText = _summarize(report, const []);
+      return;
+    }
+    // Fast path: "copy that", "press ctrl c", "select all and copy".
+    final keyCalls = keysFastPath(request);
+    if (keyCalls != null && tools.any((t) => t.name == 'send_keys')) {
+      final n = report.tools.length;
+      for (final (i, a) in keyCalls.indexed) {
+        await _exec(report, sw, 'send_keys', jsonEncode(a), 'fast${i}_${report.id}');
+        if (!report.tools.last.ok) break;
+      }
+      report
+        ..model = 'fast-path'
+        ..steps = 0
+        ..firstToolCall = report.tools[n].startedAt
+        ..toolsDone = report.tools.last.doneAt
         ..resultText = _summarize(report, const []);
       return;
     }
@@ -574,7 +732,8 @@ final _actionRequest = RegExp(
   r"create|make|delete|remove|rename|move|copy|list|read|find|search|look\s+up|press|hit|scroll|close|"
   r"save|take|capture|launch|start|stop\s+the|install|download|go\s+to|navigate|select|drag|paste|"
   r"append|add|insert|replace|change|set|turn|switch|maximi[sz]e|minimi[sz]e|focus|check|count|send|"
-  r"fill|submit|upload|zip|unzip|extract|print|cd|ls|cat|grep|mkdir|touch)\b",
+  r"fill|submit|upload|zip|unzip|extract|print|cd|ls|cat|grep|mkdir|touch|undo|redo|apply|reject|cut|"
+  r"highlight|resume|seek|skip|rewind|use|new|tap|push)\b",
   caseSensitive: false,
 );
 

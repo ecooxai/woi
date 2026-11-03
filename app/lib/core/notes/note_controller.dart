@@ -137,6 +137,20 @@ class NoteController extends ChangeNotifier {
     return r;
   }
 
+  /// Applies a computed [NoteEditResult] (voice text edits) like
+  /// [applyEdit]: undoable and highlighted.
+  void applyResult(NoteEditResult r, {NoteEditSource source = NoteEditSource.ai}) {
+    final before = text;
+    if (r.text == before) return;
+    _pushUndo(source);
+    _redo.clear();
+    _lastUserEdit = null;
+    if (source == NoteEditSource.ai) {
+      _lastAi = AiNoteEdit(start: r.start, end: r.end, before: before, summary: r.summary, seq: ++_aiSeq);
+    }
+    _set(r.text);
+  }
+
   /// Reverts the latest AI edit (the chip's Undo). Later user typing inside
   /// the note is lost only if it happened after the AI edit; the revert is
   /// itself undoable.

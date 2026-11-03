@@ -18,7 +18,7 @@ class _HistoryDrawerState extends State<HistoryDrawer> {
 
   Future<List<ConversationSummary>> _load() async {
     await widget.controller.history.flush(widget.controller.pipeline.conversation);
-    return widget.controller.listConversations();
+    return widget.controller.actions.listNotes();
   }
 
   void _reload() => setState(() => _items = _load());
@@ -68,7 +68,7 @@ class _HistoryDrawerState extends State<HistoryDrawer> {
                     // Close first: starting a conversation reconnects the session.
                     onPressed: () {
                       Navigator.pop(context);
-                      c.newConversation();
+                      c.actions.newNote();
                     },
                     icon: const Icon(Icons.add, size: 18),
                     label: const Text('New'),
@@ -145,14 +145,14 @@ class _HistoryDrawerState extends State<HistoryDrawer> {
                                 ),
                               );
                               if (ok == true) {
-                                await c.deleteConversation(it.id);
+                                await c.actions.deleteNoteById(it.id);
                                 _reload();
                               }
                             },
                           ),
                           onTap: () {
                             Navigator.pop(context);
-                            c.openConversation(it.id);
+                            c.actions.openNote(it.id);
                           },
                         ),
                       );

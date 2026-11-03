@@ -75,6 +75,8 @@ class TurnPipeline extends ChangeNotifier {
     required this.options,
     this.onScreenshotCaptured,
     this.imageCompactor,
+    this.onTurnStart,
+    this.localCommand,
   }) : _conv = conversation {
     context.attach(conversation);
     _compactionSub = context.compactions.listen(_onCompacted);
@@ -89,6 +91,15 @@ class TurnPipeline extends ChangeNotifier {
   final SessionConfigBuilder sessionConfig;
   PipelineOptions Function() options;
   void Function(Screenshot shot)? onScreenshotCaptured;
+
+  /// A user turn starts (speech or typed text), e.g. to remember the app
+  /// the user was in as the default `send_keys` target.
+  void Function()? onTurnStart;
+
+  /// User text handled locally without the model ("apply" / "reject" while
+  /// an edit preview is pending, typed "undo that"). Returns true when
+  /// handled; a spoken one then also drops the model's reply to it.
+  bool Function(String text, {required bool typed})? localCommand;
 
   /// Screenshot tiers (newest full, then ⅕ size, then described).
   final ImageCompactor? imageCompactor;
@@ -531,6 +542,7 @@ class TurnPipeline extends ChangeNotifier {
     final interrupted = _bargeIn();
     _dropUntil = null;
     _userSpeaking = true;
+    onTurnStart?.call();
     debugPrint('user speech start (interrupted=$interrupted) t=${DateTime.now().millisecondsSinceEpoch}');
     _utterancePcm.clear();
     // A known item id continues that turn (the backend saw one turn across a
@@ -729,8 +741,15 @@ class TurnPipeline extends ChangeNotifier {
     _bargeIn();
     _releaseHold();
     _dropUntil = null;
+    onTurnStart?.call();
     final m = _addMessage(Message(kind: MessageKind.user, text: t));
     _conv.touch();
+    if (localCommand?.call(t, typed: true) ?? false) {
+      _stopHandled.add(m.id);
+      _persistSoon();
+      _changed();
+      return;
+    }
     if (isStopPhrase(t)) {
       // Typed "stop": handled locally, nothing is sent.
       _stopHandled.add(m.id);
@@ -803,7 +822,11 @@ class TurnPipeline extends ChangeNotifier {
         }
         _conv.touch();
         context.onConversationChanged();
-        if (identical(m, _holdMsg)) {
+        final local =
+            !_stopHandled.contains(m.id) && _isLatestUser(m) && (localCommand?.call(m.text, typed: false) ?? false);
+        if (local) {
+          _onStopPhrase(m);
+        } else if (identical(m, _holdMsg)) {
           _checkHold(done: true);
         } else if (isStopPhrase(m.text) && !_stopHandled.contains(m.id) && _isLatestUser(m)) {
           _onStopPhrase(m);

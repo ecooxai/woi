@@ -6,6 +6,7 @@ import '../../platform/linux/linux_audio_io.dart';
 import '../../platform/linux/linux_media_viewer.dart';
 import '../../platform/media_viewer.dart';
 import 'video_viewer.dart';
+import 'viewer_commands.dart';
 import 'viewer_app.dart';
 
 /// Runs the viewer engine of a secondary window. The runner hides the window
@@ -24,6 +25,19 @@ void runViewer(MediaItem first, {MethodChannel window = const MethodChannel('woi
   WindowController.fromCurrentEngine()
       .then(
         (c) => c.setWindowMethodHandler((call) async {
+          if (call.method == LinuxMediaViewer.controlMethod) {
+            final args = (call.arguments as Map).cast<String, Object?>();
+            final cmd = ViewerCommand.values.asNameMap()[args['command']];
+            final item = current.value;
+            if (cmd == null || item == null) return false;
+            if (cmd == ViewerCommand.close) {
+              await window.invokeMethod<void>('close').catchError((Object _) {});
+              return true;
+            }
+            if (item.kind != MediaKind.video || !viewerCommands.hasListener) return false;
+            viewerCommands.add((cmd, (args['seconds'] as num?)?.toDouble() ?? 0));
+            return true;
+          }
           if (call.method != LinuxMediaViewer.openMethod) return null;
           final item = MediaItem.fromJson((call.arguments as Map).cast());
           current.value = item;

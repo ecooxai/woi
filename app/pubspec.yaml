@@ -105,3 +105,9 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+# flutter_pty 0.4.2 with Woi patches (third_party/flutter_pty, see "Woi patch"
+# comments): no slave/master fd leak per PTY, output EOF before release.
+dependency_overrides:
+  flutter_pty:
+    path: third_party/flutter_pty

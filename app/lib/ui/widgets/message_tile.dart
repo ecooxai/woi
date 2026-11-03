@@ -455,6 +455,7 @@ const _toolIcons = <String, IconData>{
   'click_screen': Icons.ads_click,
   'type_text': Icons.keyboard,
   'key_combo': Icons.keyboard_command_key,
+  'send_keys': Icons.keyboard_command_key,
   'run_bash': Icons.terminal,
   'read_file': Icons.description_outlined,
   'list_dir': Icons.folder_open,
@@ -464,6 +465,8 @@ const _toolIcons = <String, IconData>{
   'delegate_task': Icons.hub_outlined,
   'read_note': Icons.sticky_note_2_outlined,
   'update_note': Icons.edit_note,
+  'note_control': Icons.sticky_note_2_outlined,
+  'app_control': Icons.tune_rounded,
 };
 
 String toolTitle(String name) => switch (name) {
@@ -471,6 +474,7 @@ String toolTitle(String name) => switch (name) {
   'click_screen' => 'Click',
   'type_text' => 'Type text',
   'key_combo' => 'Key combo',
+  'send_keys' => 'Send keys',
   'run_bash' => 'Shell command',
   'read_file' => 'Read file',
   'list_dir' => 'List folder',
@@ -480,6 +484,8 @@ String toolTitle(String name) => switch (name) {
   'delegate_task' => 'Delegate task',
   'read_note' => 'Read note',
   'update_note' => 'Update note',
+  'note_control' => 'Note',
+  'app_control' => 'Woi',
   _ => name,
 };
 
@@ -501,10 +507,16 @@ String toolArgSummary(String name, String argsJson) {
     'read_file' || 'list_dir' || 'write_file' || 'edit_file' || 'show_file' => a['path'],
     'type_text' => '"${a['text']}"',
     'key_combo' => a['keys'],
+    'send_keys' => [a['keys'] ?? a['action'], if (a['window'] != null) '→ ${a['window']}'].join(' '),
     'click_screen' =>
       '(${a['x']}, ${a['y']})${a['double'] == true ? ' ×2' : ''}${a['button'] != null && a['button'] != 'left' ? ' ${a['button']}' : ''}',
     'delegate_task' => a['task'],
     'read_note' => '',
+    'note_control' || 'app_control' => [
+      '${a['action'] ?? ''}'.replaceAll('_', ' '),
+      for (final k in ['view', 'key', 'value', 'name', 'title', 'command', 'tab', 'path', 'find', 'text', 'seconds'])
+        if (a[k] != null) '${a[k]}',
+    ].join(' '),
     'update_note' => switch (a['mode']) {
       'check_item' => '${a['checked'] == false ? 'uncheck' : 'check'} "${a['item'] ?? ''}"',
       'replace_section' => 'section "${a['heading'] ?? ''}"',

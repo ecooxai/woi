@@ -56,7 +56,7 @@ class _InputBarState extends State<InputBar> {
           trailing: MicButton(
             mode: s.micMode,
             held: pipeline.pttHeld,
-            onModeChanged: c.setMicMode,
+            onModeChanged: c.actions.setMicMode,
             onPttDown: pipeline.pttDown,
             onPttUp: pipeline.pttUp,
             enabled: connected,
@@ -87,8 +87,8 @@ class _InputBarState extends State<InputBar> {
             ),
             const Spacer(),
             phone
-                ? MicModeMenu(mode: s.micMode, onChanged: c.setMicMode)
-                : MicModeSelector(mode: s.micMode, onChanged: c.setMicMode, compact: true, itemSize: 28),
+                ? MicModeMenu(mode: s.micMode, onChanged: c.actions.setMicMode)
+                : MicModeSelector(mode: s.micMode, onChanged: c.actions.setMicMode, compact: true, itemSize: 28),
             SizedBox(width: phone ? 0 : 12),
             ContextMeter(
               manager: c.contextManager,

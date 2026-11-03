@@ -67,9 +67,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _s = next);
     _debounce?.cancel();
     if (debounce) {
-      _debounce = Timer(const Duration(milliseconds: 700), () => c.updateSettings(_s));
+      _debounce = Timer(const Duration(milliseconds: 700), () => c.actions.updateSettings(_s));
     } else {
-      c.updateSettings(next);
+      c.actions.updateSettings(next);
     }
   }
 
@@ -77,7 +77,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void dispose() {
     if (_debounce?.isActive ?? false) {
       _debounce!.cancel();
-      c.updateSettings(_s);
+      c.actions.updateSettings(_s);
     }
     _apiKey.dispose();
     _compressionModel.dispose();
@@ -577,7 +577,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _row(
       wide,
       'Confirm shell commands',
-      'Ask before running any bash command. File edits always show a diff for approval.',
+      'Ask before running any bash command (and commands typed into terminal tabs by voice).',
       Align(
         alignment: wide ? Alignment.centerRight : Alignment.centerLeft,
         child: Switch(
@@ -586,6 +586,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       ),
       controlWidth: 120,
+    ),
+    _choices<int>(
+      wide,
+      id: 'edit-delay',
+      title: 'AI edits',
+      desc: 'Note and file edits show an inline diff first. They apply after the countdown unless you reject them '
+          '(Esc, "reject"); "undo that" reverts the last one.',
+      options: kEditApplyDelays,
+      value: _s.editApplyDelay,
+      onChanged: (v) => _apply(_s.copyWith(editApplyDelay: v)),
+      label: (v) => v == kRequireApproval ? 'Require approval' : (v == 0 ? 'Apply at once' : 'After $v s'),
+      columns: 5,
     ),
     _row(
       wide,

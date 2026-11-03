@@ -74,6 +74,12 @@ const kLiveVoices = [
 ];
 const kLiveDefaultVoice = 'cove';
 
+/// [AppSettings.editApplyDelay] value: edits wait for an explicit Apply.
+const kRequireApproval = -1;
+
+/// Choices for [AppSettings.editApplyDelay] (seconds).
+const kEditApplyDelays = [0, 3, 5, 10, kRequireApproval];
+
 class AppSettings {
   const AppSettings({
     this.backendMode = BackendMode.gptLive,
@@ -97,6 +103,7 @@ class AppSettings {
     this.imageScaledCount = 5,
     this.imageScaleDivisor = 5,
     this.theme = AppTheme.light,
+    this.editApplyDelay = 5,
   });
 
   final BackendMode backendMode;
@@ -142,6 +149,11 @@ class AppSettings {
   /// UI colour theme (light by default).
   final AppTheme theme;
 
+  /// Seconds an AI note/file edit preview counts down before it applies
+  /// itself (one of [kEditApplyDelays]); [kRequireApproval] = wait for an
+  /// explicit Apply.
+  final int editApplyDelay;
+
   /// The voice used by the current backend mode.
   String get activeVoice => backendMode == BackendMode.gptLive ? liveVoice : voice;
 
@@ -172,6 +184,7 @@ class AppSettings {
     int? imageScaledCount,
     int? imageScaleDivisor,
     AppTheme? theme,
+    int? editApplyDelay,
   }) => AppSettings(
     backendMode: backendMode ?? this.backendMode,
     apiKey: apiKey ?? this.apiKey,
@@ -194,6 +207,7 @@ class AppSettings {
     imageScaledCount: imageScaledCount ?? this.imageScaledCount,
     imageScaleDivisor: imageScaleDivisor ?? this.imageScaleDivisor,
     theme: theme ?? this.theme,
+    editApplyDelay: editApplyDelay ?? this.editApplyDelay,
   );
 
   /// Whether a change requires reconnecting the live session.
@@ -227,6 +241,7 @@ class AppSettings {
     'imageScaledCount': imageScaledCount,
     'imageScaleDivisor': imageScaleDivisor,
     'theme': theme.name,
+    'editApplyDelay': editApplyDelay,
   };
 
   factory AppSettings.fromJson(Map<String, Object?> j) {
@@ -263,6 +278,9 @@ class AppSettings {
       imageScaledCount: i('imageScaledCount', d.imageScaledCount).clamp(0, 100),
       imageScaleDivisor: i('imageScaleDivisor', d.imageScaleDivisor).clamp(2, 10),
       theme: AppTheme.values.asNameMap()[j['theme']] ?? d.theme,
+      editApplyDelay: kEditApplyDelays.contains(i('editApplyDelay', d.editApplyDelay))
+          ? i('editApplyDelay', d.editApplyDelay)
+          : d.editApplyDelay,
     );
   }
 }

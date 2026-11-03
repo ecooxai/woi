@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../core/app_actions.dart';
 import '../../core/app_controller.dart';
 import '../../core/context/context_manager.dart';
 import '../../core/models/message.dart';
@@ -15,12 +16,15 @@ import '../terminal/terminal_panel.dart';
 import '../theme.dart';
 import '../widgets/banner.dart';
 import '../widgets/context_meter.dart';
+import '../widgets/edit_review_card.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/glass.dart';
 import '../widgets/message_tile.dart';
 import '../widgets/input_bar.dart';
 import 'history_drawer.dart';
 import 'settings_screen.dart';
+
+export '../../core/app_actions.dart' show HomeView;
 
 const kWideBreakpoint = 1000.0;
 
@@ -29,9 +33,6 @@ const kPhoneBreakpoint = 640.0;
 
 /// Width from which the note and the chat can be shown side by side.
 const kSplitBreakpoint = 1280.0;
-
-/// The two main views of a conversation.
-enum HomeView { note, chat, terminal }
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, required this.controller});
@@ -49,11 +50,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
   SessionStatus? _lastStatus;
 
-  /// Note or chat; a new (empty) conversation opens on its note.
-  late HomeView _view = pipeline.conversation.messages.isEmpty ? HomeView.note : HomeView.chat;
+  /// Note, chat or terminal: owned by [AppActions] (voice can switch it).
+  HomeView get _view => c.actions.view.value;
+  set _view(HomeView v) => c.actions.view.value = v;
 
   /// Wide desktop: note and chat side by side.
-  bool _split = false;
+  bool get _split => c.actions.split.value;
   double _width = 0;
   String? _convId;
 
@@ -72,6 +74,10 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    // A new (empty) conversation opens on its note.
+    _view = pipeline.conversation.messages.isEmpty ? HomeView.note : HomeView.chat;
+    c.actions.view.addListener(_onViewChanged);
+    c.actions.split.addListener(_onViewChanged);
     _compactSub = pipeline.compactionEvents.listen(_onCompacted);
     pipeline.addListener(_onPipeline);
     _onPipeline();
@@ -84,6 +90,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    c.actions.view.removeListener(_onViewChanged);
+    c.actions.split.removeListener(_onViewChanged);
     HardwareKeyboard.instance.removeHandler(_onKey);
     c.notes.removeListener(_onNotes);
     pipeline.removeListener(_onPipeline);
@@ -95,32 +103,27 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Switches between the note, the chat and the terminal (Ctrl+1/2/3).
   void setView(HomeView v) {
-    if (v == HomeView.terminal) {
-      setState(() {
-        _split = false;
-        _view = v;
-      });
-      return;
-    }
-    if (_splitActive) {
+    if (_splitActive && v != HomeView.terminal) {
       // Both visible: just focus the requested side.
       if (v == HomeView.note) _noteBadge = false;
       setState(() {});
       return;
     }
-    setState(() {
-      _view = v;
-      if (v == HomeView.note) _noteBadge = false;
-      if (v == HomeView.chat) _seenMessages = pipeline.conversation.messages.length;
-    });
+    c.actions.showView(v);
   }
 
   void toggleSplit() {
     if (_width < kSplitBreakpoint) return;
+    c.actions.toggleSplit();
+  }
+
+  /// The view changed (buttons, shortcuts or voice): clear the badges of
+  /// whatever is visible now.
+  void _onViewChanged() {
+    if (!mounted) return;
     setState(() {
-      _split = !_split;
-      _noteBadge = false;
-      _seenMessages = pipeline.conversation.messages.length;
+      if (_view == HomeView.note || _splitActive) _noteBadge = false;
+      if (_view == HomeView.chat || _splitActive) _seenMessages = pipeline.conversation.messages.length;
     });
   }
 
@@ -226,8 +229,15 @@ class _HomeScreenState extends State<HomeScreen> {
       return true;
     }
     if (ctrl && key == LogicalKeyboardKey.keyN && !inTerminal) {
-      c.newConversation();
+      c.actions.newNote();
       return true;
+    }
+    // A pending edit preview: Enter applies (unless typing something), Esc rejects.
+    if (c.review.hasPending && !ctrl) {
+      if (key == LogicalKeyboardKey.escape && !inTerminal) return c.review.reject();
+      if ((key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.numpadEnter) && _enterApplies()) {
+        return c.review.apply();
+      }
     }
     if (key == LogicalKeyboardKey.escape && !_typing) {
       final ph = pipeline.phase;
@@ -248,7 +258,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final nav = Navigator.of(context);
     if (ctrl && key == LogicalKeyboardKey.keyN) {
       nav.popUntil((r) => r.isFirst);
-      c.newConversation();
+      c.actions.newNote();
       return true;
     }
     if (ctrl && key == LogicalKeyboardKey.comma) return true;
@@ -260,6 +270,17 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   bool _settingsOpen = false;
+
+  /// Enter decides an edit preview unless it would type into something:
+  /// only when no text field has focus, or the composer is empty.
+  bool _enterApplies() {
+    if (!_typing) return true;
+    if (!_composerFocus.hasFocus) return false;
+    final ctx = FocusManager.instance.primaryFocus?.context;
+    final w = ctx?.widget;
+    final field = w is EditableText ? w : ctx?.findAncestorWidgetOfExactType<EditableText>();
+    return field != null && field.controller.text.trim().isEmpty;
+  }
 
   void _focusComposer() => _composerFocus.requestFocus();
 
@@ -322,6 +343,7 @@ class _HomeScreenState extends State<HomeScreen> {
           child: LayoutBuilder(
             builder: (context, box) {
               _width = box.maxWidth;
+              c.actions.splitAvailable = _width >= kSplitBreakpoint;
               final phone = _phone;
               final pad = phone ? 8.0 : 16.0;
               return Column(
@@ -342,7 +364,14 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Center(
                       child: ConstrainedBox(
                         constraints: BoxConstraints(maxWidth: _splitActive ? double.infinity : 980),
-                        child: InputBar(controller: c, focusNode: _composerFocus, phone: phone),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            EditReviewCard(review: c.review, maxDiffHeight: phone ? 160 : 220),
+                            InputBar(controller: c, focusNode: _composerFocus, phone: phone),
+                          ],
+                        ),
                       ),
                     ),
                   ),

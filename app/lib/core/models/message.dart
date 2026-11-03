@@ -164,6 +164,7 @@ class Conversation {
     DateTime? updatedAt,
     List<Message>? messages,
     this.summary,
+    this.customTitle = false,
   }) : id = id ?? newId('c'),
        createdAt = createdAt ?? DateTime.now(),
        updatedAt = updatedAt ?? DateTime.now(),
@@ -177,6 +178,9 @@ class Conversation {
 
   /// Rolling summary produced by context compaction.
   String? summary;
+
+  /// [title] was set by the user (rename): never derived from the note.
+  bool customTitle;
 
   Message add(Message m) {
     messages.add(m);
@@ -211,6 +215,7 @@ class Conversation {
     'createdAt': createdAt.toIso8601String(),
     'updatedAt': updatedAt.toIso8601String(),
     if (summary != null) 'summary': summary,
+    if (customTitle) 'customTitle': true,
     'messages': [
       for (final m in messages)
         if (!(m.streaming && m.text.isEmpty && m.tool == null)) m.toJson(),
@@ -223,6 +228,7 @@ class Conversation {
     createdAt: DateTime.tryParse(j['createdAt'] as String? ?? ''),
     updatedAt: DateTime.tryParse(j['updatedAt'] as String? ?? ''),
     summary: j['summary'] as String?,
+    customTitle: j['customTitle'] == true,
     messages: [
       for (final m in (j['messages'] as List? ?? const []))
         if (m is Map) Message.fromJson(m.cast<String, Object?>()),
