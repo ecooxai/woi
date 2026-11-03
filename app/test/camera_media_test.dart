@@ -89,13 +89,17 @@ void main() {
       expect(out.map(jpegSize), [(8, 8)]);
     });
 
-    test('linux camera copies MJPEG (no decode) and keeps ~6 of 30 fps', () {
+    test('linux camera copies MJPEG (no decode) and thins it to <= 8 fps by time', () {
       final c = LinuxCameraService(device: '/dev/videoX');
       final a = c.mjpegArgs();
       expect(a, containsAllInOrder(['-input_format', 'mjpeg', '-c:v', 'copy']));
-      expect(a, contains(r'noise=drop=mod(n\,5),mjpeg2jpeg'));
+      // Time-based thinning (8 fps → keep when pts reaches the deadline, next
+      // deadline 0.1125 s later), so a camera that slows down in the dark
+      // still gives every frame it has instead of every 5th.
+      expect(a, contains(r'noise=drop=if(gte(pts*tb\,ld(0))\,st(0\,pts*tb+0.1125)*0\,1),mjpeg2jpeg'));
+      expect(a.join(' '), isNot(contains('mod(n')));
       expect(a.join(' '), contains('1280x720'));
-      expect(c.yuyvArgs(), contains('fps=6'));
+      expect(c.yuyvArgs(), contains('fps=8'));
     });
 
     test('linux camera: open on a missing device fails cleanly and stays off', () async {

@@ -7,9 +7,14 @@ import 'package:flutter/foundation.dart';
 import '../camera.dart';
 
 /// V4L2 camera through ffmpeg. The camera's own MJPEG stream is copied
-/// without decoding (`-c:v copy`), thinned to [fps] with the `noise` bitstream
-/// filter and made self-contained with `mjpeg2jpeg` (webcam MJPEG omits the
-/// Huffman tables). ffmpeg therefore costs close to nothing; the UI decodes
+/// without decoding (`-c:v copy`), thinned to at most [fps] by timestamp with
+/// the `noise` bitstream filter and made self-contained with `mjpeg2jpeg`
+/// (webcam MJPEG omits the Huffman tables).
+///
+/// The thinning is time based, not "every Nth frame": with auto exposure in
+/// aperture-priority mode and `exposure_dynamic_framerate` on, a webcam in a
+/// dim room lowers its own rate (30 → ~7 fps here), and keeping every 5th
+/// frame of that gave the ~1.5 fps preview seen in iter6. ffmpeg therefore costs close to nothing; the UI decodes
 /// only the preview at [previewWidth]. Devices without MJPEG fall back to
 /// YUYV at 640x480, encoded to JPEG by ffmpeg.
 class LinuxCameraService extends CameraService {
@@ -18,7 +23,7 @@ class LinuxCameraService extends CameraService {
     this.width = 1280,
     this.height = 720,
     this.sourceFps = 30,
-    this.fps = 6,
+    this.fps = 8,
     this.ffmpeg = 'ffmpeg',
   });
 
@@ -29,7 +34,7 @@ class LinuxCameraService extends CameraService {
   /// Frame rate the device delivers (MJPEG 1280x720 is 30 fps on most webcams).
   final int sourceFps;
 
-  /// Frames kept per second.
+  /// Most frames kept per second (fewer when the device delivers fewer).
   final int fps;
   final String ffmpeg;
 
@@ -51,12 +56,15 @@ class LinuxCameraService extends CameraService {
   /// ffmpeg arguments for the MJPEG copy path.
   @visibleForTesting
   List<String> mjpegArgs() {
-    final keepEvery = (sourceFps / fps).round().clamp(1, 30);
+    // Keep a frame when its time reaches the stored deadline (var 0), then
+    // move the deadline 0.9 frame intervals on (slack for timestamp jitter).
+    final interval = (0.9 / fps.clamp(1, 60)).toStringAsFixed(4);
+    final drop = r'if(gte(pts*tb\,ld(0))\,st(0\,pts*tb+' '$interval' r')*0\,1)';
     return [
       '-hide_banner', '-loglevel', 'error', '-nostdin', //
       '-f', 'v4l2', '-input_format', 'mjpeg', '-video_size', '${width}x$height', '-framerate', '$sourceFps',
       '-i', device, '-an', '-c:v', 'copy',
-      '-bsf:v', keepEvery > 1 ? 'noise=drop=mod(n\\,$keepEvery),mjpeg2jpeg' : 'mjpeg2jpeg',
+      '-bsf:v', 'noise=drop=$drop,mjpeg2jpeg',
       '-f', 'image2pipe', 'pipe:1',
     ];
   }
