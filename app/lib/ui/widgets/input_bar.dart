@@ -44,7 +44,12 @@ class _InputBarState extends State<InputBar> {
         final canStop = ph == AssistantPhase.speaking || ph == AssistantPhase.thinking || ph == AssistantPhase.toolRunning;
         final s = c.settings;
         final phone = widget.phone;
-        final mode = voiceModeFor(ph, status: status, compacting: c.contextManager.compressing);
+        final mode = voiceModeFor(
+          ph,
+          status: status,
+          compacting: c.contextManager.compressing,
+          reconnecting: pipeline.reconnecting,
+        );
 
         final composer = Composer(
           focusNode: widget.focusNode,
@@ -77,7 +82,7 @@ class _InputBarState extends State<InputBar> {
             _dot(),
             Flexible(
               child: ConnectionStatusChip(
-                state: linkStateFor(status, wasConnected: _wasConnected),
+                state: linkStateFor(status, wasConnected: _wasConnected, reconnecting: pipeline.reconnecting),
                 model: c.activeVoiceModel,
                 backend: c.activeBackendMode,
                 voice: s.activeVoice,

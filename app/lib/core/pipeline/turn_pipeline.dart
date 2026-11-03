@@ -173,6 +173,36 @@ class TurnPipeline extends ChangeNotifier {
   final Set<String> _stopHandled = {};
   Timer? _phaseTicker;
   AssistantPhase _lastPhase = AssistantPhase.offline;
+  // Last sign of life of the turn (backend event, typed text, end of speech,
+  // tool result): "thinking" with nothing in flight settles after a while.
+  DateTime _lastTurnActivity = DateTime.now();
+
+  /// How long "Thinking…" may last with nothing in flight (no tool, no reply,
+  /// backend not busy) before the phase settles back to listening/idle. A
+  /// local fast-path turn whose outcome the model chose not to voice would
+  /// otherwise keep it forever.
+  Duration settleAfter = const Duration(seconds: 10);
+
+  // ---- automatic reconnect (the live connection dropped, e.g. WS 1006)
+  bool _reconnecting = false;
+  int _reconnectAttempt = 0;
+  Timer? _reconnectTimer;
+
+  /// Reconnect attempts after a dropped connection, with exponential backoff
+  /// from [reconnectBaseDelay] (capped at 30 s). Context is restored by
+  /// [connect] (summary + recent turns in the new session config).
+  int maxAutoReconnects = 6;
+  Duration reconnectBaseDelay = const Duration(seconds: 1);
+
+  /// Error codes of a [BackendError] that mean "the connection dropped" (as
+  /// opposed to a configuration or auth problem), so a reconnect may help.
+  static const reconnectableCodes = {'connection_lost', 'reconnect_failed'};
+
+  /// Reconnecting on its own after a drop (the status line says so).
+  bool get reconnecting => _reconnecting;
+
+  /// Number of successful automatic reconnects (diagnostics/tests).
+  int autoReconnects = 0;
 
   /// Counters for diagnostics/tests.
   int bargeIns = 0;
@@ -219,6 +249,24 @@ class TurnPipeline extends ChangeNotifier {
 
   bool _disposed = false;
 
+  void _touchTurn() => _lastTurnActivity = DateTime.now();
+
+  /// Ends a "Thinking…" that nothing will end: no tool running, no reply
+  /// streaming or audible, the user not talking, no reply held back and the
+  /// backend has nothing in flight, for [settleAfter].
+  void _settleIfStale() {
+    if (!_awaitingResponse || _status != SessionStatus.connected) return;
+    if (_toolsRunning > 0 || _userSpeaking || _assistantMsg != null || _assistantAudible || _holding) return;
+    if (_backend?.busy ?? false) {
+      _touchTurn();
+      return;
+    }
+    if (DateTime.now().difference(_lastTurnActivity) < settleAfter) return;
+    debugPrint('phase: no reply after ${settleAfter.inSeconds}s with nothing in flight; settling');
+    _awaitingResponse = false;
+    _changed();
+  }
+
   void _changed() {
     if (_disposed) return;
     _lastPhase = phase;
@@ -233,11 +281,14 @@ class TurnPipeline extends ChangeNotifier {
     await connect();
     await setMicMode(options().micMode);
     _phaseTicker ??= Timer.periodic(const Duration(milliseconds: 120), (_) {
+      _settleIfStale();
       if (phase != _lastPhase) _changed();
     });
   }
 
   Future<void> connect() async {
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
     if (_micManaged) await _closeMic();
     await _disconnectBackend();
     _status = SessionStatus.connecting;
@@ -552,6 +603,13 @@ class TurnPipeline extends ChangeNotifier {
 
   void _onSpeechStarted({String? itemId}) {
     if (_userSpeaking) return;
+    if (_micMode == MicMode.muted) {
+      // The mic is off, so this is not the user (gpt-live opens a server
+      // "user turn" for typed context, noise or echo): no barge-in, no phase
+      // change, no empty bubble.
+      debugPrint('speech start ignored: mic muted');
+      return;
+    }
     _earconTimer?.cancel();
     _earconTimer = null;
     final interrupted = _bargeIn();
@@ -621,6 +679,7 @@ class TurnPipeline extends ChangeNotifier {
     debugPrint('user speech stop t=${DateTime.now().millisecondsSinceEpoch}');
     // The orb switches to "thinking" right here, before any server event.
     _awaitingResponse = true;
+    _touchTurn();
     _scheduleThinkingEarcon();
     final msg = _currentUtterance;
     _currentUtterance = null;
@@ -838,6 +897,7 @@ class TurnPipeline extends ChangeNotifier {
       return;
     }
     _awaitingResponse = true;
+    _touchTurn();
     final cam = cameraImage?.call();
     if (cam != null) attachContextImage(cam);
     final pre = beforeTypedTurn?.call(t);
@@ -875,6 +935,7 @@ class TurnPipeline extends ChangeNotifier {
   }
 
   void _handle(BackendEvent e) {
+    _touchTurn();
     final assistantSide =
         e is AssistantTranscriptDelta || e is AssistantTranscriptDone || e is AssistantAudioDelta || e is ResponseDone;
     if (assistantSide && !_discardUntilDone) {
@@ -944,7 +1005,12 @@ class TurnPipeline extends ChangeNotifier {
         _runTool(callId, name, argsJson);
       case Usage(:final totalContextTokens):
         context.onUsage(totalContextTokens);
-      case BackendError(:final message, :final fatal):
+      case BackendError(:final message, :final fatal, :final code):
+        if (fatal && reconnectableCodes.contains(code) && maxAutoReconnects > 0) {
+          _addSystem('$message; reconnecting…', meta: {'type': 'reconnect'});
+          _scheduleReconnect(message);
+          return;
+        }
         _addSystem(message, meta: {'type': 'error'});
         if (fatal) {
           _status = SessionStatus.error;
@@ -1037,6 +1103,7 @@ class TurnPipeline extends ChangeNotifier {
     info.resultJson = outcome.json;
     info.finishedAt = DateTime.now();
     _toolsRunning--;
+    _touchTurn();
     if (_disposed) return;
     if (identical(b, _backend)) b?.sendToolResult(callId, outcome.json);
     context.onConversationChanged();
@@ -1112,7 +1179,54 @@ class TurnPipeline extends ChangeNotifier {
       store.save(_conv).catchError((Object e) => debugPrint('saving conversation failed: $e'));
 
   /// Stops audio, closes the session and flushes history.
+  // ------------------------------------------------------------ reconnect
+
+  /// The connection dropped: tear the dead session down now (whatever was in
+  /// flight is gone) and connect again after a backoff, without the user
+  /// pressing Retry.
+  void _scheduleReconnect(String why) {
+    if (_disposed) return;
+    _reconnecting = true;
+    _resetTurnState();
+    _status = SessionStatus.connecting;
+    statusDetail = why;
+    final ms = reconnectBaseDelay.inMilliseconds * (1 << _reconnectAttempt.clamp(0, 10));
+    final delay = Duration(milliseconds: ms.clamp(0, 30000));
+    debugPrint('voice connection lost ($why); reconnect #${_reconnectAttempt + 1} in ${delay.inMilliseconds}ms');
+    _reconnectTimer?.cancel();
+    _reconnectTimer = Timer(delay, () => unawaited(_autoReconnect()));
+    _changed();
+  }
+
+  Future<void> _autoReconnect() async {
+    _reconnectTimer = null;
+    if (_disposed || !_reconnecting) return;
+    _reconnectAttempt++;
+    final micMode = _micMode;
+    await connect();
+    if (_disposed) return;
+    if (_status == SessionStatus.connected) {
+      _reconnecting = false;
+      _reconnectAttempt = 0;
+      autoReconnects++;
+      if (micMode != MicMode.muted && _mic == null) await setMicMode(micMode);
+      debugPrint('voice reconnected (context restored)');
+      _addSystem('Reconnected', meta: {'type': 'reconnect'});
+      _changed();
+    } else if (_reconnectAttempt < maxAutoReconnects) {
+      _scheduleReconnect(statusDetail ?? 'connect failed');
+    } else {
+      _reconnecting = false;
+      _reconnectAttempt = 0;
+      _status = SessionStatus.error;
+      _addSystem('Could not reconnect: ${statusDetail ?? 'unknown error'}', meta: {'type': 'error'});
+      _changed();
+    }
+  }
+
   Future<void> shutdown() async {
+    _reconnectTimer?.cancel();
+    _reconnecting = false;
     _phaseTicker?.cancel();
     _screenshotTimer?.cancel();
     await _compactionSub?.cancel();

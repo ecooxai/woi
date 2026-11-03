@@ -771,6 +771,112 @@ void main() {
     });
   });
 
+  group('phase settles (iter6)', () {
+    test('a typed fast-path turn whose outcome is never voiced settles back to listening', () async {
+      final h = await Harness.create();
+      h.pipeline.settleAfter = const Duration(milliseconds: 300);
+      h.pipeline.sendText('switch to terminal');
+      expect(h.pipeline.phase, AssistantPhase.thinking);
+      // The fast path runs a tool through the pipeline; the model then says nothing.
+      h.scripted.emit(const ToolCall('dlg_1', 'get_clipboard', '{}'));
+      await waitFor(() => h.scripted.toolResults.isNotEmpty);
+      expect(h.pipeline.phase, AssistantPhase.thinking);
+      await waitFor(() => h.pipeline.phase == AssistantPhase.listening, timeout: const Duration(seconds: 2));
+      await h.dispose();
+    });
+
+    test('a spoken turn with no reply settles too; a busy backend keeps thinking', () async {
+      final h = await Harness.create();
+      h.pipeline.settleAfter = const Duration(milliseconds: 250);
+      h.scripted
+        ..busyFlag = true
+        ..emit(const SpeechStarted(itemId: 'u1'))
+        ..emit(const SpeechStopped(itemId: 'u1'));
+      expect(h.pipeline.phase, AssistantPhase.thinking);
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      expect(h.pipeline.phase, AssistantPhase.thinking, reason: 'a delegation is still running');
+      h.scripted.busyFlag = false;
+      await waitFor(() => h.pipeline.phase == AssistantPhase.listening, timeout: const Duration(seconds: 2));
+      await h.dispose();
+    });
+
+    test('a ResponseDone with no reply (backend settle) ends thinking at once', () async {
+      final h = await Harness.create();
+      h.pipeline.sendText('open camera');
+      expect(h.pipeline.phase, AssistantPhase.thinking);
+      h.scripted.emit(const ResponseDone());
+      await waitFor(() => h.pipeline.phase == AssistantPhase.listening, timeout: const Duration(seconds: 1));
+      await h.dispose();
+    });
+
+    test('speech start while the mic is muted is ignored (no barge-in, no phase change)', () async {
+      final h = await Harness.create();
+      await h.pipeline.setMicMode(MicMode.muted);
+      // The assistant is talking.
+      h.scripted
+        ..emit(const AssistantTranscriptDelta('Here is a long story'))
+        ..emit(AssistantAudioDelta(pcm(400)));
+      expect(h.pipeline.phase, AssistantPhase.speaking);
+      final users = ofKind(h.conv, MessageKind.user).length;
+      h.scripted.emit(const SpeechStarted(itemId: 'server_turn'));
+      expect(h.pipeline.phase, AssistantPhase.speaking);
+      expect(h.pipeline.bargeIns, 0);
+      expect(h.scripted.cancels, 0);
+      expect(ofKind(h.conv, MessageKind.user).length, users);
+      h.scripted.emit(const SpeechStopped(itemId: 'server_turn'));
+      expect(h.pipeline.phase, isNot(AssistantPhase.thinking));
+      await h.dispose();
+    });
+  });
+
+  group('auto reconnect (iter6)', () {
+    test('a dropped connection reconnects with backoff, shows reconnecting, no Retry needed', () async {
+      final h = await Harness.create();
+      h.pipeline.reconnectBaseDelay = const Duration(milliseconds: 50);
+      final first = h.scripted;
+      h.pipeline.sendText('hello');
+      first.emit(const BackendError('gpt-live connection lost (1006)', code: 'connection_lost', fatal: true));
+      expect(h.pipeline.reconnecting, isTrue);
+      expect(h.pipeline.status, SessionStatus.connecting);
+      expect(h.pipeline.phase, AssistantPhase.offline);
+      await waitFor(() => h.pipeline.status == SessionStatus.connected && !h.pipeline.reconnecting);
+      expect(identical(h.lastBackend, first), isFalse);
+      expect(first.closed, isTrue);
+      expect(h.scripted.config, isNotNull);
+      expect(h.pipeline.autoReconnects, 1);
+      expect(h.pipeline.phase, AssistantPhase.listening);
+      expect(h.conv.messages.where((m) => m.text == 'Reconnected'), hasLength(1));
+      await h.dispose();
+    });
+
+    test('failed attempts back off and retry; after the last one the error stays (Retry)', () async {
+      var n = 0;
+      final h = await Harness.create(
+        backend: () {
+          n++;
+          return ScriptedBackend()..connectError = n >= 2 ? StateError('network down') : null;
+        },
+      );
+      h.pipeline
+        ..reconnectBaseDelay = const Duration(milliseconds: 20)
+        ..maxAutoReconnects = 3;
+      h.scripted.emit(const BackendError('lost', code: 'connection_lost', fatal: true));
+      await waitFor(() => !h.pipeline.reconnecting, timeout: const Duration(seconds: 3));
+      expect(n, 4, reason: 'initial connect + 3 attempts');
+      expect(h.pipeline.status, SessionStatus.error);
+      expect(h.conv.messages.last.text, contains('Could not reconnect'));
+      await h.dispose();
+    });
+
+    test('a non-connection fatal error does not reconnect', () async {
+      final h = await Harness.create();
+      h.scripted.emit(const BackendError('invalid model', code: 'invalid_request', fatal: true));
+      expect(h.pipeline.reconnecting, isFalse);
+      expect(h.pipeline.status, SessionStatus.error);
+      await h.dispose();
+    });
+  });
+
   group('typed media questions', () {
     test('the hook runs before the text is sent and can extend it', () async {
       final h = await Harness.create();

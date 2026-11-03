@@ -468,6 +468,37 @@ void main() {
     });
   });
 
+  group('iter6: settle and drops', () {
+    test('a result the model never voices settles the turn (ResponseDone); a voiced one does not double-settle', () async {
+      final r = _Rig();
+      r.backend.settleAfterResult = const Duration(milliseconds: 80);
+      await r.connect();
+      r.backend.sendText('thanks');
+      expect(r.backend.busy, isTrue, reason: 'waiting for the model to answer');
+      await waitFor(() => r.of<ResponseDone>().isNotEmpty, timeout: const Duration(seconds: 1));
+      expect(r.backend.busy, isFalse);
+      // Voiced: the assistant turn opens in time, so the timer does nothing extra.
+      final before = r.of<ResponseDone>().length;
+      r.backend.sendText('and again');
+      r.ws.outputWords('Sure.', 0);
+      await _tick(200);
+      expect(r.of<ResponseDone>().length, lessThanOrEqualTo(before + 1));
+      await r.dispose();
+    });
+
+    test('an unexpected sideband close (1006) is a reconnectable connection_lost', () async {
+      final r = _Rig();
+      await r.connect();
+      await r.ws.close(1006);
+      await _tick();
+      final err = r.of<BackendError>().single;
+      expect(err.code, 'connection_lost');
+      expect(err.fatal, isTrue);
+      expect(err.message, contains('1006'));
+      await r.dispose();
+    });
+  });
+
   group('delegation', () {
     test('delegation.created → ToolCall → sendToolResult → delegation.context.append', () async {
       final r = _Rig(

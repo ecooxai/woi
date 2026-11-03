@@ -7,8 +7,9 @@ import '../theme.dart';
 /// Connection state as shown to the user.
 enum LinkState { connected, connecting, reconnecting, offline, error }
 
-LinkState linkStateFor(SessionStatus s, {required bool wasConnected}) => switch (s) {
+LinkState linkStateFor(SessionStatus s, {required bool wasConnected, bool reconnecting = false}) => switch (s) {
   SessionStatus.connected => LinkState.connected,
+  _ when reconnecting => LinkState.reconnecting,
   SessionStatus.connecting => wasConnected ? LinkState.reconnecting : LinkState.connecting,
   SessionStatus.disconnected => LinkState.offline,
   SessionStatus.error => LinkState.error,

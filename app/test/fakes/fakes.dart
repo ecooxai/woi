@@ -297,12 +297,25 @@ class ScriptedBackend extends VoiceBackend {
 
   void emit(BackendEvent e) => _events.add(e);
 
+  /// What [busy] reports (work in flight).
+  bool busyFlag = false;
+  @override
+  bool get busy => busyFlag;
+
+  /// When set, [connect] throws it (reconnect tests).
+  Object? connectError;
+
   @override
   bool get hasServerVad => serverVad;
   @override
   Stream<BackendEvent> get events => _events.stream;
   @override
-  Future<void> connect(SessionConfig config) async => this.config = config;
+  Future<void> connect(SessionConfig config) async {
+    final e = connectError;
+    if (e != null) throw e;
+    this.config = config;
+  }
+
   @override
   void sendAudio(Uint8List pcm16) => audioBytes += pcm16.length;
   @override
