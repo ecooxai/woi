@@ -50,8 +50,9 @@ wait_log() { # pattern timeout_s
   until grep -qE "$1" "$OUT/app.log"; do
     sleep 0.5; t=$((t + 1))
     kill -0 "$APP_PID" 2>/dev/null || { echo "app exited" >&2; return 1; }
-    [ $t -ge $(($2 * 2)) ] && { echo "timeout waiting for /$1/" >&2; return 1; }
+    if [ $t -ge $(($2 * 2)) ]; then echo "timeout waiting for /$1/" >&2; return 1; fi
   done
+  return 0
 }
 shot() { import -window root "$OUT/$1.png" && echo "screenshot $OUT/$1.png" >&2; }
 
@@ -69,11 +70,12 @@ if wait_log 'gpt-live connected' 30; then
     sleep 4
     shot "$f"
   done
-  for _ in 1 2 3 4 5 6; do grep -q 'gpt-live assistant:' "$OUT/app.log" && break; sleep 1; done
+  sleep 6
+  shot 05_show_readme_later # the viewer window takes a moment to render
 else
   STATUS=1
 fi
-xdotool search --pid "$APP_PID" --name . getwindowname %@ 2>/dev/null | sed 's/^/window: /'
+xdotool search --pid "$APP_PID" getwindowname %@ 2>/dev/null | sed 's/^/window: /'
 echo "---- app log (gpt-live / delegation / errors)"
 grep -E 'gpt-live|delegation|webrtc|rror|xception' "$OUT/app.log" | cut -c1-300
 grep -q 'gpt-live user: .*[Hh]ello' "$OUT/app.log" || STATUS=1
