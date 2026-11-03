@@ -39,6 +39,8 @@ dependencies:
   flutter_webrtc: ^1.6.3
   fvp: ^0.39.1
   video_player: ^2.14.1
+  flutter_pty: ^0.4.2
+  xterm: ^4.0.0
 dev_dependencies:
   flutter_test:
     sdk: flutter
