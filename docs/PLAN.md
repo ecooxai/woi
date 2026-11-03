@@ -28,6 +28,7 @@
 - Iter 1 (direct WS backend, Responses compressor+delegate, live 9/9): 48/100.
 - Iter 2 (gpt-live live 10/10, premium UI desktop+phone): 64/100. Defects: missing user transcripts, context accounting, black viewer, ~2.7s latency.
 - Iter 3 (transcripts bound per turn, unified context meter, viewer GL fix, thinking cue; QA harness 58% on pre-fix build): 68/100.
+- Iter 4 (notes + Markdown editor, in-app fvp video, barge-in fix live 438ms/direct 232ms, screenshot tiers, approvals, orphan mic fix; QA 17/19 full, 18/19 with compact re-run, extras 3/3; latency live median 1.77s): 76/100. Gaps: UI still heavy/dark, no terminal/login, direct latency 3.5s, no Android.
 
 ## Spec: image compaction (user requirement, 2026-11-02)
 When compaction runs, screenshots/images are tiered by recency:
