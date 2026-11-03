@@ -37,6 +37,8 @@ dependencies:
   path: ^1.9.1
   desktop_multi_window: ^0.3.1
   flutter_webrtc: ^1.6.3
+  fvp: ^0.39.1
+  video_player: ^2.14.1
 dev_dependencies:
   flutter_test:
     sdk: flutter

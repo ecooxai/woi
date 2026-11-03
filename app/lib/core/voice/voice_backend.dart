@@ -36,6 +36,7 @@ class SessionConfig {
     this.credentials,
     this.priorContext,
     this.recentContext,
+    this.pinnedNote,
   });
 
   final String model;
@@ -52,6 +53,10 @@ class SessionConfig {
   /// conversation). Backends that cannot replay items (gpt-live) put it in
   /// the startup instructions.
   final String? recentContext;
+
+  /// The conversation note, pinned in the context every turn (never
+  /// compacted). See [PinnedNoteSync] for how backends keep it current.
+  final String? pinnedNote;
 }
 
 /// Events emitted by a [VoiceBackend].

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import '../auth/auth.dart';
+import '../notes/pinned_note.dart';
 import '../responses/responses_client.dart';
 import 'voice_backend.dart';
 
@@ -195,6 +196,7 @@ class DelegationExecutor {
     required this.runTool,
     this.latestScreenshot,
     this.contextNote,
+    this.pinnedNote,
     this.fastModel = 'gpt-6-luna',
     this.reasoningEffort = 'low',
     this.maxSteps = 4,
@@ -211,6 +213,9 @@ class DelegationExecutor {
   /// Conversation memory (the compaction summary) given to the model with
   /// each request, so a compacted conversation still resolves "that file".
   final String? Function()? contextNote;
+
+  /// The conversation note (pinned, current at every delegation).
+  final String? Function()? pinnedNote;
 
   /// Model for the tool loop. Complex work is escalated by the model itself
   /// through `delegate_task` (the app's DelegateBackend, gpt-6.1-sol).
@@ -229,10 +234,12 @@ class DelegationExecutor {
       '(the user approves a diff). '
       'click_screen coordinates are pixels of the attached screenshot. '
       'For complex work (writing code, analysis, long text) call delegate_task. '
+      'The conversation note is attached: answer questions from it, record decisions, todos, facts and '
+      'paths with update_note (no approval needed). '
       'If no tool fits, answer in one short sentence.';
 
   /// Tools whose result the model must see before it can act or answer.
-  static const observeTools = {'take_screenshot', 'list_dir', 'read_file'};
+  static const observeTools = {'take_screenshot', 'list_dir', 'read_file', 'read_note'};
 
   /// Read-only shell commands (locating / inspecting files).
   static final _lookupCommand = RegExp(
@@ -443,10 +450,12 @@ class DelegationExecutor {
 
   Map<String, Object?> _userMessage(String text, DelegationImage? shot) {
     final note = contextNote?.call()?.trim();
+    final pinned = pinnedNote?.call();
     return {
       'type': 'message',
       'role': 'user',
       'content': [
+        if (pinned != null) {'type': 'input_text', 'text': pinnedNoteBlock(pinned)},
         if (note != null && note.isNotEmpty)
           {'type': 'input_text', 'text': 'Conversation memory (background only):\n$note'},
         if (shot != null) {'type': 'input_image', 'image_url': 'data:image/png;base64,${base64Encode(shot.png)}'},

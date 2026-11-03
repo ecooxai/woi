@@ -66,10 +66,14 @@ class ContextParts {
     required this.compactedMessages,
     required this.total,
     required this.measured,
+    this.pinned = 0,
   });
 
   /// Instructions and tool definitions (voice session and delegation).
   final int overhead;
+
+  /// The conversation note, pinned every turn and never compacted.
+  final int pinned;
   final int summary;
   final int text;
   final int images;
@@ -85,11 +89,12 @@ class ContextParts {
   /// [total] is anchored on a backend usage report.
   final bool measured;
 
-  int get estimated => overhead + summary + text + images + audio + tools;
+  int get estimated => overhead + pinned + summary + text + images + audio + tools;
 }
 
 class _Baseline {
-  _Baseline(this.tokens, this.ids, this.summaryTokens, this.scale);
+  _Baseline(this.tokens, this.ids, this.summaryTokens, this.scale, [this.pinned = 0]);
+  final int pinned;
   final int tokens;
   final Set<String> ids;
   final int summaryTokens;
@@ -155,6 +160,17 @@ class ContextManager extends ChangeNotifier {
   double get fill => threshold <= 0 ? 0 : estimatedTokens / threshold;
   ContextAccounting get accounting => _accounting;
   int get overheadTokens => _overhead;
+
+  int _pinned = 0;
+
+  /// Tokens of the pinned conversation note: counted every turn, never
+  /// compacted (not part of what a compaction can free).
+  int get pinnedTokens => _pinned;
+  set pinnedTokens(int v) {
+    if (v == _pinned) return;
+    _pinned = v;
+    notifyListeners();
+  }
 
   /// Whether the total is anchored on a backend usage report.
   bool get measured => _accounting == ContextAccounting.usage && _baseline != null;
@@ -223,7 +239,7 @@ class ContextManager extends ChangeNotifier {
     final c = _conv;
     if (c == null) return 0;
     final latest = _latestImageId(c);
-    var t = _overhead + _summaryTokens();
+    var t = _overhead + _pinned + _summaryTokens();
     for (final m in c.messages) {
       if (!m.compacted) t += _cost(m, latest);
     }
@@ -246,7 +262,7 @@ class ContextManager extends ChangeNotifier {
         delta += _cost(m, null);
       }
     }
-    return math.max(0, b.tokens + (delta * b.scale).round());
+    return math.max(0, b.tokens + (delta * b.scale).round() + _pinned - b.pinned);
   }
 
   /// Breakdown for the meter; parts are calibrated like [estimatedTokens].
@@ -280,6 +296,7 @@ class ContextManager extends ChangeNotifier {
     int k(int v) => (v * s).round();
     return ContextParts(
       overhead: _overhead,
+      pinned: _pinned,
       summary: k(_summaryTokens()),
       text: k(text),
       images: k(images),
@@ -304,8 +321,8 @@ class ContextManager extends ChangeNotifier {
       ids.add(m.id);
       items += _cost(m, null);
     }
-    final scale = items <= 0 ? 1.0 : ((contextTokens - _overhead) / items).clamp(0.5, 4.0).toDouble();
-    _baseline = _Baseline(contextTokens, ids, _summaryTokens(), scale);
+    final scale = items <= 0 ? 1.0 : ((contextTokens - _overhead - _pinned) / items).clamp(0.5, 4.0).toDouble();
+    _baseline = _Baseline(contextTokens, ids, _summaryTokens(), scale, _pinned);
     notifyListeners();
     maybeCompress();
   }
@@ -364,7 +381,7 @@ class ContextManager extends ChangeNotifier {
     final batch = _compactable();
     if (batch.isEmpty) return null;
     // Not worth a model call (and a session swap) if it barely helps.
-    if (!force && _gain(batch) < (before - _overhead) * minGain) return null;
+    if (!force && _gain(batch) < (before - _overhead - _pinned) * minGain) return null;
     _compressing = true;
     notifyListeners();
     return _run(_conv!, batch);
@@ -398,7 +415,7 @@ class ContextManager extends ChangeNotifier {
         return;
       }
       lastError = null;
-      final substantial = before - after >= (before - _overhead) * minGain / 2;
+      final substantial = before - after >= (before - _overhead - _pinned) * minGain / 2;
       if (!substantial) debugPrint('context: compaction only freed ${before - after} of $before tokens');
       _compactions.add(
         ContextCompacted(
