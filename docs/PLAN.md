@@ -113,3 +113,13 @@ When compaction runs, screenshots/images are tiered by recency:
   app-private storage (same schema as codex so refresh logic is shared). Foreground service during login if needed.
 - Linux: same native login code path when ~/.codex/auth.json is missing/invalid; codex CLI still bundled on Linux
   (user asked earlier) for use in the built-in terminal. Supersedes the Android part of the previous decision.
+
+## Spec batch 2026-11-03 #2 (user)
+- Minimal UI: REMOVE the decorative effect area above the editor (orb panel / glow / particles); no heavy decorative
+  animations. Status (connection, listening/thinking/speaking, tool activity) is shown INSIDE the bottom input bar.
+- Editor top bar: a "Run" button — sends the current line (cursor line, or selection if any) to the AI as a user turn.
+- Testing happens on the embedded nested display DISPLAY=:11 (Xephyr 1600x900 + openbox, kept running; started by CTO:
+  `DISPLAY=:0 Xephyr :11 -screen 1600x1000 -resizeable -ac -nolisten tcp` then `DISPLAY=:11 openbox`). Never on :0.
+- PERFORMANCE FIRST: monitor CPU and RAM of all woi processes (main + viewer sub-windows) during idle, listening,
+  speaking, typing in editor, scrolling history. Targets: idle CPU < 2% of one core, active voice < 15%, RSS < 300 MB,
+  no leaks over a 10-min session, 60 fps scrolling. Script: qa/perf_monitor.sh (pidstat/ps sampling → CSV + summary).
