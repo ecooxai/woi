@@ -164,6 +164,7 @@ class AppController extends ChangeNotifier {
     autoScreenshot: _settings.autoScreenshot,
     screenshotDelay: Duration(milliseconds: _settings.screenshotDelayMs),
     micMode: _settings.micMode,
+    thinkingEarcon: _settings.thinkingEarcon,
   );
 
   Future<SessionConfig> _sessionConfig(Conversation c) async {

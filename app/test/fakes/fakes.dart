@@ -66,12 +66,25 @@ class FakePcmPlayer implements PcmPlayer {
 class FakeAudioIO implements AudioIO {
   FakeMic? mic;
   final player = FakePcmPlayer();
+
+  /// Players opened after [player] (e.g. the thinking earcon's).
+  final extraPlayers = <FakePcmPlayer>[];
+  bool _playerOpened = false;
   final playedFiles = <String>[];
 
   @override
   Future<MicStream> openMic() async => mic = FakeMic();
   @override
-  Future<PcmPlayer> openPlayer() async => player;
+  Future<PcmPlayer> openPlayer() async {
+    if (!_playerOpened) {
+      _playerOpened = true;
+      return player;
+    }
+    final p = FakePcmPlayer();
+    extraPlayers.add(p);
+    return p;
+  }
+
   @override
   Future<ClipPlayback> playFile(String path) async {
     playedFiles.add(path);

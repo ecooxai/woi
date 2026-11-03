@@ -137,7 +137,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   static const _sections = [
     (Icons.cloud_outlined, 'Connection', 'How Woi reaches the voice model, and with which credentials.'),
     (Icons.graphic_eq_rounded, 'Voice', 'The speech model and the voice Woi answers with.'),
-    (Icons.memory_rounded, 'Context & models', 'When long conversations get summarized, and which models do background work.'),
+    (
+      Icons.memory_rounded,
+      'Context & models',
+      'When long conversations get summarized, and which models do background work.',
+    ),
     (Icons.shield_outlined, 'Screen & safety', 'Screenshots sent with your turns and what needs your approval.'),
     (Icons.keyboard_alt_outlined, 'Shortcuts', 'Keyboard controls on desktop.'),
     (Icons.info_outline_rounded, 'About', 'Runtime details for troubleshooting.'),
@@ -153,11 +157,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       padding: EdgeInsets.fromLTRB(wide ? 8 : 12, 8, wide ? 28 : 12, 40),
       children: [
         for (var i = 0; i < bodies.length; i++)
-          Padding(
-            key: _keys[i],
-            padding: const EdgeInsets.only(bottom: 16),
-            child: _section(i, bodies[i]),
-          ),
+          Padding(key: _keys[i], padding: const EdgeInsets.only(bottom: 16), child: _section(i, bodies[i])),
       ],
     );
 
@@ -345,7 +345,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 SizedBox(width: controlWidth, child: control),
               ],
             )
-          : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [text, const SizedBox(height: 10), control]),
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [text, const SizedBox(height: 10), control],
+            ),
     );
   }
 
@@ -371,10 +374,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     ),
     if (_s.authMode == AuthMode.codex)
-      _row(wide, 'Codex login', 'Read from ~/.codex/auth.json and refreshed automatically.', _codexStatus(), controlWidth: 340)
+      _row(
+        wide,
+        'Codex login',
+        'Read from ~/.codex/auth.json and refreshed automatically.',
+        _codexStatus(),
+        controlWidth: 340,
+      )
     else
-      _row(wide, 'API key', 'Stored locally in settings.json. Leave empty to use \$OPENAI_API_KEY.', _apiKeyField(), controlWidth: 340),
-    _row(wide, 'Test connection', 'Checks the credentials against the API without starting a session.', _testButton(), controlWidth: 340),
+      _row(
+        wide,
+        'API key',
+        'Stored locally in settings.json. Leave empty to use \$OPENAI_API_KEY.',
+        _apiKeyField(),
+        controlWidth: 340,
+      ),
+    _row(
+      wide,
+      'Test connection',
+      'Checks the credentials against the API without starting a session.',
+      _testButton(),
+      controlWidth: 340,
+    ),
   ];
 
   List<Widget> _voice(bool wide) => [
@@ -441,7 +462,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'Captures the screen shortly after speech starts and sends it with your turn.',
       Align(
         alignment: wide ? Alignment.centerRight : Alignment.centerLeft,
-        child: Switch(value: _s.autoScreenshot, onChanged: (v) => _apply(_s.copyWith(autoScreenshot: v))),
+        child: Switch(
+          value: _s.autoScreenshot,
+          onChanged: (v) => _apply(_s.copyWith(autoScreenshot: v)),
+        ),
       ),
       controlWidth: 120,
     ),
@@ -463,11 +487,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ),
     _row(
       wide,
+      'Thinking chime',
+      'A soft chime when you stop speaking, while Woi works on the reply.',
+      Align(
+        alignment: wide ? Alignment.centerRight : Alignment.centerLeft,
+        child: Switch(
+          value: _s.thinkingEarcon,
+          onChanged: (v) => _apply(_s.copyWith(thinkingEarcon: v)),
+        ),
+      ),
+      controlWidth: 120,
+    ),
+    _row(
+      wide,
       'Confirm shell commands',
       'Ask before running any bash command. File edits always show a diff for approval.',
       Align(
         alignment: wide ? Alignment.centerRight : Alignment.centerLeft,
-        child: Switch(value: _s.confirmBeforeBash, onChanged: (v) => _apply(_s.copyWith(confirmBeforeBash: v))),
+        child: Switch(
+          value: _s.confirmBeforeBash,
+          onChanged: (v) => _apply(_s.copyWith(confirmBeforeBash: v)),
+        ),
       ),
       controlWidth: 120,
     ),
@@ -493,11 +533,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 padding: const EdgeInsets.symmetric(vertical: 6),
                 child: Row(
                   children: [
-                    SizedBox(
-                      width: 130,
-                      child: Wrap(spacing: 4, children: [for (final k in keys) KeyCap(k)]),
+                    SizedBox(width: 130, child: Wrap(spacing: 4, children: [for (final k in keys) KeyCap(k)])),
+                    Expanded(
+                      child: Text(label, style: body(13.5, color: WoiColors.textDim)),
                     ),
-                    Expanded(child: Text(label, style: body(13.5, color: WoiColors.textDim))),
                   ],
                 ),
               ),
@@ -554,7 +593,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           borderRadius: BorderRadius.circular(8),
           border: Border.all(color: WoiColors.cyan.withValues(alpha: 0.25)),
         ),
-        child: Text(label, style: mono(13, color: WoiColors.cyan).copyWith(fontFeatures: kTabular)),
+        child: Text(
+          label,
+          style: mono(13, color: WoiColors.cyan).copyWith(fontFeatures: kTabular),
+        ),
       ),
     ],
   );
@@ -564,7 +606,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(width: 130, child: Text(k, style: body(13, color: WoiColors.textDim))),
+        SizedBox(
+          width: 130,
+          child: Text(k, style: body(13, color: WoiColors.textDim)),
+        ),
         Expanded(child: SelectableText(v, style: mono(12.5))),
       ],
     ),
@@ -578,7 +623,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       decoration: InputDecoration(labelText: label),
       borderRadius: BorderRadius.circular(WoiRadii.md),
       dropdownColor: WoiColors.bg2,
-      items: [for (final o in items) DropdownMenuItem(value: o, child: Text(o, style: mono(13.5)))],
+      items: [
+        for (final o in items)
+          DropdownMenuItem(
+            value: o,
+            child: Text(o, style: mono(13.5)),
+          ),
+      ],
       onChanged: (v) => v == null ? null : onChanged(v),
     );
   }
@@ -606,7 +657,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
             set(v);
           },
           itemBuilder: (_) => [
-            for (final s in suggestions) PopupMenuItem(value: s, child: Text(s, style: mono(13.5))),
+            for (final s in suggestions)
+              PopupMenuItem(
+                value: s,
+                child: Text(s, style: mono(13.5)),
+              ),
           ],
         ),
       ),

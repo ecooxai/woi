@@ -24,7 +24,8 @@ void main() {
 
     test('compacting shows unless someone is talking', () {
       expect(orbModeFor(AssistantPhase.listening, compacting: true), OrbMode.compacting);
-      expect(orbModeFor(AssistantPhase.thinking, compacting: true), OrbMode.compacting);
+      expect(orbModeFor(AssistantPhase.thinking, compacting: true), OrbMode.thinking);
+      expect(orbModeFor(AssistantPhase.toolRunning, compacting: true), OrbMode.tool);
       expect(orbModeFor(AssistantPhase.speaking, compacting: true), OrbMode.speaking);
       expect(orbModeFor(AssistantPhase.userSpeaking, compacting: true), OrbMode.hearing);
     });

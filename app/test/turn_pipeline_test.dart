@@ -1,6 +1,9 @@
 import 'dart:convert';
+import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:woi/core/audio/earcon.dart';
 import 'package:woi/core/context/compressor.dart';
 import 'package:woi/core/context/context_manager.dart';
 import 'package:woi/core/delegate/delegate_backend.dart';
@@ -182,7 +185,10 @@ void main() {
       expect(users[0].image, isNotNull);
       await waitFor(() => users[0].audio != null);
       expect(users[1].text, 'second');
-      expect(h.conv.messages.indexOf(users[0]), lessThan(h.conv.messages.indexWhere((m) => m.kind == MessageKind.assistant)));
+      expect(
+        h.conv.messages.indexOf(users[0]),
+        lessThan(h.conv.messages.indexWhere((m) => m.kind == MessageKind.assistant)),
+      );
       await h.dispose();
     });
 
@@ -264,6 +270,50 @@ void main() {
       await waitFor(() => user.audio != null, reason: 'utterance wav saved');
       expect(user.audio!.durationMs, greaterThan(300));
       await h.dispose();
+    });
+  });
+
+  group('thinking feedback', () {
+    test('orb shows thinking on end of speech; the earcon is off by default', () async {
+      final h = await Harness.create();
+      h.scripted.emit(const SpeechStarted(itemId: 'u1'));
+      h.scripted.emit(const SpeechStopped(itemId: 'u1'));
+      expect(h.pipeline.phase, AssistantPhase.thinking, reason: 'before any server event');
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(h.pipeline.earconsPlayed, 0);
+      expect(h.fp.audio.extraPlayers, isEmpty);
+      await h.dispose();
+    });
+
+    test('earcon plays on its own player while waiting, not when the reply already started', () async {
+      final h = await Harness.create(options: const PipelineOptions(autoScreenshot: false, thinkingEarcon: true));
+      // Main player opened by the pipeline first.
+      h.scripted.emit(const SpeechStarted(itemId: 'u1'));
+      h.scripted.emit(const SpeechStopped(itemId: 'u1'));
+      await waitFor(() => h.pipeline.earconsPlayed == 1);
+      final chime = h.fp.audio.extraPlayers.single;
+      expect(chime.written.length, thinkingEarconPcm().length);
+      expect(h.player.written.length, 0, reason: 'never mixed into assistant audio');
+      expect(h.pipeline.phase, AssistantPhase.thinking, reason: 'the chime is not assistant speech');
+
+      // Reply starts immediately: no chime.
+      h.scripted.emit(const SpeechStarted(itemId: 'u2'));
+      h.scripted.emit(const SpeechStopped(itemId: 'u2'));
+      h.scripted.emit(const AssistantTranscriptDelta('Sure.'));
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(h.pipeline.earconsPlayed, 1);
+      await h.dispose();
+    });
+
+    test('earcon is quiet and short', () {
+      final pcm = thinkingEarconPcm();
+      expect(pcm.length / kVoiceBytesPerSecond, lessThan(0.25));
+      final bd = ByteData.sublistView(pcm);
+      var peak = 0;
+      for (var i = 0; i + 1 < pcm.length; i += 2) {
+        peak = math.max(peak, bd.getInt16(i, Endian.little).abs());
+      }
+      expect(peak, inInclusiveRange(1000, 32767 ~/ 10));
     });
   });
 
@@ -382,7 +432,9 @@ void main() {
       expect(note.kind, MessageKind.system);
       expect(
         note.text,
-        startsWith('Context compacted: ${formatTokenCount(e.tokensBefore)} → ${formatTokenCount(e.tokensAfter)} tokens'),
+        startsWith(
+          'Context compacted: ${formatTokenCount(e.tokensBefore)} → ${formatTokenCount(e.tokensAfter)} tokens',
+        ),
       );
       expect(h.conv.summary, isNotNull);
       await h.dispose();

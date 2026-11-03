@@ -294,11 +294,12 @@ void main() {
   });
 
   group('compaction swap (applySummary)', () {
-    String instructionsOf(_Rig r, int call) =>
-        (r.server.calls[call].$3['session']! as Map)['instructions'] as String;
+    String instructionsOf(_Rig r, int call) => (r.server.calls[call].$3['session']! as Map)['instructions'] as String;
 
     test('waits for the reply to end, prepares a muted call with summary + recent turns, then swaps', () async {
-      final r = _Rig(turns: [const DelegationModelTurn(text: 'ok', calls: [])]);
+      final r = _Rig(
+        turns: [const DelegationModelTurn(text: 'ok', calls: [])],
+      );
       await r.connect();
       final old = r.ws;
       final oldRtc = r.rtc;

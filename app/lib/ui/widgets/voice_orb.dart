@@ -13,11 +13,11 @@ import '../theme.dart';
 enum OrbMode { offline, connecting, idle, listening, hearing, thinking, speaking, tool, compacting }
 
 /// Maps pipeline state to an orb mode. Compaction is shown only while
-/// nobody is talking, so it never hides speech feedback.
+/// idle or listening, so it never hides speech, thinking or tool feedback.
 OrbMode orbModeFor(AssistantPhase phase, {SessionStatus status = SessionStatus.connected, bool compacting = false}) {
   if (status == SessionStatus.connecting) return OrbMode.connecting;
   if (status != SessionStatus.connected) return OrbMode.offline;
-  if (compacting && phase != AssistantPhase.userSpeaking && phase != AssistantPhase.speaking) {
+  if (compacting && (phase == AssistantPhase.idle || phase == AssistantPhase.listening)) {
     return OrbMode.compacting;
   }
   return switch (phase) {
@@ -418,7 +418,11 @@ class _OrbPainter extends CustomPainter {
         false,
         _stroke(k == 0 ? r * 0.045 : r * 0.028)
           ..shader = SweepGradient(
-            colors: [p.a.withValues(alpha: 0), p.a.withValues(alpha: 0.9 * s.arcs), p.c.withValues(alpha: s.arcs)],
+            colors: [
+              p.a.withValues(alpha: 0),
+              p.a.withValues(alpha: 0.9 * s.arcs),
+              p.c.withValues(alpha: s.arcs),
+            ],
             stops: const [0, 0.85, 1],
             transform: GradientRotation(start),
           ).createShader(rect),
@@ -551,7 +555,10 @@ class _OrbPainter extends CustomPainter {
       r * 0.38,
       Paint()
         ..shader = RadialGradient(
-          colors: [Colors.white.withValues(alpha: 0.55 * lit), Colors.white.withValues(alpha: 0)],
+          colors: [
+            Colors.white.withValues(alpha: 0.55 * lit),
+            Colors.white.withValues(alpha: 0),
+          ],
         ).createShader(Rect.fromCircle(center: hl, radius: r * 0.38)),
     );
   }
@@ -560,7 +567,11 @@ class _OrbPainter extends CustomPainter {
     for (final rp in s.ripples) {
       final k = ((s.t - rp.born) / 1.6).clamp(0.0, 1.0);
       final rr = r * (1.05 + 1.4 * Curves.easeOutCubic.transform(k));
-      canvas.drawCircle(c, rr, _stroke(r * 0.025 * (1 - k))..color = p.c.withValues(alpha: 0.55 * (1 - k) * rp.strength));
+      canvas.drawCircle(
+        c,
+        rr,
+        _stroke(r * 0.025 * (1 - k))..color = p.c.withValues(alpha: 0.55 * (1 - k) * rp.strength),
+      );
     }
   }
 

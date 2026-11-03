@@ -47,6 +47,7 @@ class AppSettings {
     this.confirmBeforeBash = true,
     this.micMode = MicMode.handsFree,
     this.imageTokenCost = 765,
+    this.thinkingEarcon = false,
   });
 
   final BackendMode backendMode;
@@ -69,6 +70,9 @@ class AppSettings {
   /// Heuristic context cost of one screenshot, in tokens.
   final int imageTokenCost;
 
+  /// Soft chime at the end of the user's speech while the reply is coming.
+  final bool thinkingEarcon;
+
   AuthMode get authMode => backendMode.authMode;
 
   AppSettings copyWith({
@@ -85,6 +89,7 @@ class AppSettings {
     bool? confirmBeforeBash,
     MicMode? micMode,
     int? imageTokenCost,
+    bool? thinkingEarcon,
   }) => AppSettings(
     backendMode: backendMode ?? this.backendMode,
     apiKey: apiKey ?? this.apiKey,
@@ -99,6 +104,7 @@ class AppSettings {
     confirmBeforeBash: confirmBeforeBash ?? this.confirmBeforeBash,
     micMode: micMode ?? this.micMode,
     imageTokenCost: imageTokenCost ?? this.imageTokenCost,
+    thinkingEarcon: thinkingEarcon ?? this.thinkingEarcon,
   );
 
   /// Whether a change requires reconnecting the live session.
@@ -123,6 +129,7 @@ class AppSettings {
     'confirmBeforeBash': confirmBeforeBash,
     'micMode': micMode.name,
     'imageTokenCost': imageTokenCost,
+    'thinkingEarcon': thinkingEarcon,
   };
 
   factory AppSettings.fromJson(Map<String, Object?> j) {
@@ -151,6 +158,7 @@ class AppSettings {
       confirmBeforeBash: b('confirmBeforeBash', d.confirmBeforeBash),
       micMode: MicMode.values.asNameMap()[j['micMode']] ?? d.micMode,
       imageTokenCost: i('imageTokenCost', d.imageTokenCost),
+      thinkingEarcon: b('thinkingEarcon', d.thinkingEarcon),
     );
   }
 }

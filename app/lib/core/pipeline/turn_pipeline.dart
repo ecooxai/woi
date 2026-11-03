@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import '../../platform/audio_io.dart';
 import '../../platform/screen_capture.dart';
 import '../../tools/tool_registry.dart';
+import '../audio/earcon.dart';
 import '../audio/wav.dart';
 import '../context/context_manager.dart';
 import '../models/message.dart';
@@ -20,7 +21,6 @@ enum SessionStatus { disconnected, connecting, connected, error }
 
 enum AssistantPhase { offline, idle, listening, userSpeaking, thinking, toolRunning, speaking }
 
-/// Runtime knobs read on every turn (backed by AppSettings in the app).
 /// Fixed context of a session: instructions and tool definitions, plus the
 /// delegation prompt for gpt-live (whose tools run in a delegation model).
 int contextOverhead(SessionConfig cfg, ContextAccounting accounting) {
@@ -32,17 +32,23 @@ int contextOverhead(SessionConfig cfg, ContextAccounting accounting) {
   return t;
 }
 
+/// Runtime knobs read on every turn (backed by AppSettings in the app).
 class PipelineOptions {
   const PipelineOptions({
     this.autoScreenshot = true,
     this.screenshotDelay = const Duration(milliseconds: 1200),
     this.maxScreenshotWidth = 1280,
     this.micMode = MicMode.handsFree,
+    this.thinkingEarcon = false,
   });
   final bool autoScreenshot;
   final Duration screenshotDelay;
   final int maxScreenshotWidth;
   final MicMode micMode;
+
+  /// Play [thinkingEarconPcm] when the user stops speaking and the reply
+  /// has not started yet.
+  final bool thinkingEarcon;
 }
 
 typedef SessionConfigBuilder = Future<SessionConfig> Function(Conversation c);
@@ -104,6 +110,8 @@ class TurnPipeline extends ChangeNotifier {
   Uint8List? _lastUtterancePcm;
   final Set<String> _screenshotStarted = {};
   Timer? _screenshotTimer;
+  Timer? _earconTimer;
+  PcmPlayer? _earconPlayer;
   Message? _assistantMsg;
   final PcmBuffer _assistantPcm = PcmBuffer();
   bool _awaitingResponse = false;
@@ -222,6 +230,8 @@ class TurnPipeline extends ChangeNotifier {
   }
 
   void _resetTurnState() {
+    _earconTimer?.cancel();
+    _earconTimer = null;
     _screenshotTimer?.cancel();
     _screenshotTimer = null;
     _userSpeaking = false;
@@ -353,6 +363,8 @@ class TurnPipeline extends ChangeNotifier {
 
   void _onSpeechStarted({String? itemId}) {
     if (_userSpeaking) return;
+    _earconTimer?.cancel();
+    _earconTimer = null;
     _bargeIn();
     _userSpeaking = true;
     _utterancePcm.clear();
@@ -386,10 +398,34 @@ class TurnPipeline extends ChangeNotifier {
     _changed();
   }
 
+  /// Optional latency mask: a soft chime shortly after the end of speech,
+  /// unless the reply already started (or the user resumed). Played on its
+  /// own player so it never counts as assistant audio.
+  void _scheduleThinkingEarcon() {
+    if (!options().thinkingEarcon) return;
+    _earconTimer?.cancel();
+    _earconTimer = Timer(const Duration(milliseconds: 120), () async {
+      _earconTimer = null;
+      if (_disposed || phase != AssistantPhase.thinking) return;
+      try {
+        final p = _earconPlayer ??= await audio.openPlayer();
+        if (!_disposed) p.write(thinkingEarconPcm());
+        earconsPlayed++;
+      } catch (e) {
+        debugPrint('thinking earcon: $e');
+      }
+    });
+  }
+
+  /// Number of thinking earcons played (tests/diagnostics).
+  int earconsPlayed = 0;
+
   void _onSpeechStopped() {
     if (!_userSpeaking) return;
     _userSpeaking = false;
+    // The orb switches to "thinking" right here, before any server event.
     _awaitingResponse = true;
+    _scheduleThinkingEarcon();
     final msg = _currentUtterance;
     _currentUtterance = null;
     // Utterance shorter than the delay: grab the screen now so the image
@@ -699,6 +735,7 @@ class TurnPipeline extends ChangeNotifier {
     await _closeMic();
     await _disconnectBackend();
     await _player?.close();
+    await _earconPlayer?.close();
     await store.flush(_conv);
     await _compactionEvents.close();
     _levelsChanged.dispose();
