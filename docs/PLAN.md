@@ -128,3 +128,20 @@ When compaction runs, screenshots/images are tiered by recency:
   while OFFLINE+MUTED — the animated voice orb repaints every frame. Rule: zero running tickers/animations when idle;
   any animation only while actively listening/speaking, throttled, inside RepaintBoundary. :11 is a good canary because
   every frame costs real CPU there. Merge gate: idle woi on :11 < 5% CPU, RSS < 300 MB.
+
+## Spec batch 2026-11-03 #3 (user)
+Linux first (finish), then Android:
+- Camera: user says "open camera" → camera on (live preview tile in the UI); while on, attach the latest camera frame
+  to every user turn (like screenshots, same compaction tiers). "close camera" stops it. Linux: v4l2 (/dev/video*).
+- Key events: tool `send_keys` (e.g. "ctrl+c", "esc", "ctrl+v", "ctrl+a", "alt+tab") to a target window, default =
+  the current/active window (not Woi). Linux: xdotool key --window. Android: AccessibilityService global/IME actions.
+- Every app function is voice-controllable: note edit/insert/replace/undo/redo/new/switch/rename/delete, switch views
+  (note/chat/terminal), open settings values (model, theme, voice), mic mode, camera, terminal tab new/run/close,
+  viewer open/close/pause/seek. Expose as tools / delegation fast paths.
+- Edits: note edits AND other-file edits auto-apply after 5 s (diff preview with countdown; user can Reject/Apply now
+  by click or voice "cancel"/"apply"). Undo works for applied edits (note undo stack + file backup restore).
+- Media context: when an image/audio/video is open in the viewer and the user asks about it, send it: image as image,
+  audio as audio (or transcript), video → current playing frame as an image (+ timestamp).
+Android (after Linux): default assistant (VoiceInteractionService, long-press home, always send assist screenshot),
+"open with"/share-target intents for image/audio/video/text files, screen share (MediaProjection continuous frames per
+turn), send key events to the current app (esc/back, ctrl+c copy, paste, select all) via AccessibilityService.
