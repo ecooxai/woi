@@ -152,10 +152,12 @@ qa_launch_app() {
   [ -n "$settings" ] && printf '%s\n' "$settings" >"$data/woi/settings.json"
   APP_LOG="$QA_OUT/app-$name.log"
   ln -sf "$QA_BIN" "$QA_OUT/woi-qa"
+  # stdbuf: stdout to a file is block-buffered and the tail was lost when the
+  # app is stopped; line buffering keeps the log complete.
   # HOME points at the sandbox: the app resolves relative paths (and `~`)
   # against $HOME, not the working directory. CODEX_HOME keeps the real login.
   (cd "$QA_SANDBOX" && exec env HOME="$QA_SANDBOX" CODEX_HOME="$QA_REAL_HOME/.codex" \
-    XDG_DATA_HOME="$data" "$QA_OUT/woi-qa" >"$APP_LOG" 2>&1) &
+    XDG_DATA_HOME="$data" stdbuf -oL -eL "$QA_OUT/woi-qa" >"$APP_LOG" 2>&1) &
   APP_PID=$!
   qa_track_pid "$APP_PID"
   APP_WID="" ; local t=0

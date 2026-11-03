@@ -50,7 +50,30 @@ void main() {
           break;
         }
       }
-      expect(firedAt, inInclusiveRange(4, 7));
+      expect(firedAt, inInclusiveRange(3, 7));
+    });
+
+    test('"stop" over playback with no echo fires within ~120 ms of the onset', () {
+      final d = BargeInDetector();
+      // 2 s of assistant speech; the mic is silent (no echo path).
+      for (var i = 0; i < 100; i++) {
+        d.onPlayback(tone(0.2 + 0.3 * (i % 7) / 7, phase: i * 480));
+        expect(d.process(tone(0), audible: true), isFalse);
+      }
+      // RMS per 10 ms of research/fixtures/10_stop.wav from its onset: "S"
+      // rising to 0.066, 40 ms "t" closure, vowel (tone amplitude = rms * √2).
+      final s = [0.001, 0.005, 0.012, 0.022, 0.037, 0.05, 0.062, 0.066, 0.054, 0.048, 0.041, 0.025];
+      final frames = [...s, 0.002, 0.001, 0.003, 0.002, ...List.filled(10, 0.2)];
+      var firedMs = -1;
+      for (var i = 0; i < frames.length; i++) {
+        d.onPlayback(tone(0.4, ms: 10, phase: i * 240));
+        if (d.process(tone(frames[i] * sqrt2, ms: 10, hz: 160, phase: i * 240), audible: true)) {
+          firedMs = (i + 1) * 10;
+          break;
+        }
+      }
+      // Speech is above the 0.02 floor from 30 ms on.
+      expect(firedMs, inInclusiveRange(80, 130));
     });
 
     test('fires once per reply and re-arms after silence', () {

@@ -610,6 +610,9 @@ class LiveWebRtcBackend extends VoiceBackend implements ManagedAudioBackend, Liv
     _emittedUntilMs = startMs;
     _interrupted = false;
     _dropTurn = _dropping;
+    debugPrint(
+      'gpt-live turn open (muted=$_speakerMuted held=$_replyHeld drop=$_dropTurn) t=${DateTime.now().millisecondsSinceEpoch}',
+    );
     if (_dropTurn) {
       _interrupted = true;
       _mute();

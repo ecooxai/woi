@@ -77,19 +77,22 @@ run_fixture() {
   paplay -d qa_fixture_sink "$wav"
   local t_end; t_end=$(date +%s.%N)
   LAST_DIALOG=0
+  local handled=0 shown
   local prev; prev=$(qa_brightness "$APP_WID") ; local t_last=$t_end waited=0
   while :; do
     sleep 0.5; waited=$((waited + 1))
     qa_app_alive || { qa_log "APP DIED during $tag"; break; }
     local b; b=$(qa_brightness "$APP_WID")
-    # The app logs "approval dialog shown"; the brightness drop is a fallback
+    # The app logs "approval dialog shown" (one per dialog: a delegated task
+    # can ask several times); the brightness drop is a fallback for the first
     # (a fading-in dialog can dim over two samples and slip past it).
-    if [ "$LAST_DIALOG" = 0 ] && { tail -n +$((lines0 + 1)) "$APP_LOG" | grep -q 'approval dialog shown' ||
-       awk -v b="$b" -v p="$prev" 'BEGIN{exit !(b < 0.62 * p)}'; }; then
+    shown=$(tail -n +$((lines0 + 1)) "$APP_LOG" | grep -c 'approval dialog shown')
+    if [ "$shown" -gt "$handled" ] || { [ "$handled" = 0 ] && awk -v b="$b" -v p="$prev" 'BEGIN{exit !(b < 0.62 * p)}'; }; then
+      handled=$((handled + 1)); [ "$shown" -gt "$handled" ] && handled=$shown
       LAST_DIALOG=1
       sleep 0.6
-      qa_shot "$APP_WID" "${tag}_dialog" >/dev/null
-      qa_log "approval dialog in $tag after $((waited / 2))s (active window $(xdotool getactivewindow 2>/dev/null), app $APP_WID) -> $action"
+      qa_shot "$APP_WID" "${tag}_dialog$( [ $handled -gt 1 ] && echo $handled)" >/dev/null
+      qa_log "approval dialog #$handled in $tag after $((waited / 2))s (active window $(xdotool getactivewindow 2>/dev/null), app $APP_WID) -> $action"
       qa_focus_app
       case $action in
         reject) xdotool key Escape ;;
@@ -101,6 +104,9 @@ run_fixture() {
     fi
     prev=$b
     if [ $waited -ge $((max * 2)) ]; then qa_log "max wait reached in $tag"; break; fi
+    # WAIT_LOG: not done before this pattern shows up in the app log (e.g. the
+    # end of a long delegation that is silent for a while)
+    if [ -n "${WAIT_LOG:-}" ] && ! tail -n +$((lines0 + 1)) "$APP_LOG" | grep -qE "$WAIT_LOG"; then continue; fi
     # done when there was a reply and nothing has been heard for $quiet s
     if [ "$($LAT first "$SPK" "$t_end")" != -1 ] && [ "$($LAT quiet "$SPK" "$t_last" "$quiet")" = 1 ] &&
        [ $waited -ge $((quiet * 2)) ]; then break; fi
@@ -184,6 +190,14 @@ transcripts() { python3 "$QA_DIR/lib/summarize.py" "$QA_OUT/data-$1" >"$QA_OUT/t
 barge() {
   local mode=$1 tag="$1_barge"
   qa_place_app $APP_X $APP_Y $APP_W $APP_H
+  if [ "${BARGE_PRE:-0}" = 1 ]; then
+    # iter4c sequence: the request itself interrupts a reply that is playing
+    qa_log "play $tag pre (long story, then interrupt it with the same request)"
+    paplay -d qa_fixture_sink "$QFIX/11_long_story.wav"
+    local tp; tp=$(date +%s.%N) t=0
+    while [ "$($LAT first "$SPK" "$tp")" = -1 ] && [ $t -lt 60 ]; do sleep 0.5; t=$((t + 1)); done
+    sleep 3
+  fi
   qa_log "play $tag (long story)"
   paplay -d qa_fixture_sink "$QFIX/11_long_story.wav"
   local t_end; t_end=$(date +%s.%N) t=0
@@ -249,16 +263,30 @@ phase_live() {
   result $mode 06_edit_reject "$LAST_LAT" "$LAST_DIALOG" $ok "file unchanged after Esc: $(cmp -s "$QA_SANDBOX/notes.txt" "$QA_OUT/notes_after_approve.txt" && echo yes || echo no)"
 
   run_fixture $mode 07_whats_on_screen "$FIX/07_whats_on_screen.wav"
-  result $mode 07_whats_on_screen "$LAST_LAT" "$LAST_DIALOG" REVIEW "$(grep 'assistant:' "$QA_OUT/log_${mode}_07_whats_on_screen.txt" | tail -1 | cut -c1-200)"
+  # The reply must name something that is really on screen: the target xterm
+  # (title WOI-QA-TARGET, banner "Woi QA click/type target", the typed
+  # "hello world"), the backdrop banner, or Woi's own window / conversation.
+  local said; said=$(grep 'assistant:' "$QA_OUT/log_${mode}_07_whats_on_screen.txt" | tr '\n' ' ')
+  ok=FAIL
+  echo "$said" | grep -qiE 'hello,? world|WOI-QA|QA (target|run)|click/type|backdrop|run in progress|terminal|xterm|woi|conversation|chat|notes|buy milk' && ok=PASS
+  result $mode 07_whats_on_screen "$LAST_LAT" "$LAST_DIALOG" $ok "$(echo "$said" | cut -c1-200)"
 
-  run_fixture $mode 08_complex_task "$FIX/08_complex_task.wav" approve 25 150
-  ok=FAIL; log_has 'delegation' ${mode}_08_complex_task && ok=REVIEW
-  result $mode 08_complex_task "$LAST_LAT" "$LAST_DIALOG" $ok "$(grep -m1 'delegation' "$QA_OUT/log_${mode}_08_complex_task.txt" | cut -c1-220)"
+  # delegate_task (gpt-6.1-sol) writes the script via write_file (approval),
+  # may ask to run a check (approval), then the result is voiced. The
+  # delegation is silent for minutes, so wait for its log line, then quiet.
+  local py0; py0=$(ls "$QA_SANDBOX"/*.py 2>/dev/null | wc -l)
+  WAIT_LOG='live delegation "[^"]*complex task' run_fixture $mode 08_complex_task "$FIX/08_complex_task.wav" approve 10 300
+  local py1; py1=$(ls -t "$QA_SANDBOX"/*.py 2>/dev/null | head -1)
+  local dl; dl=$(grep -m1 'live delegation "[^"]*complex task' "$QA_OUT/log_${mode}_08_complex_task.txt")
+  local said08; said08=$(sed -n '/live delegation "[^"]*complex task/,$p' "$QA_OUT/log_${mode}_08_complex_task.txt" | grep -m1 'assistant:' | cut -c1-120)
+  ok=FAIL
+  [[ $dl == *delegate_task* ]] && [ "$(ls "$QA_SANDBOX"/*.py 2>/dev/null | wc -l)" -gt "$py0" ] && [ "$LAST_DIALOG" = 1 ] && [ -n "$said08" ] && ok=PASS
+  result $mode 08_complex_task "$LAST_LAT" "$LAST_DIALOG" $ok "file=$(basename "${py1:-none}") $(echo "$dl" | grep -oE 'tools=\[[^]]*\]|tools_done=[0-9]+ms' | tr '\n' ' ')reply: $said08"
 
   run_fixture $mode 09_play_video "$FIX/09_play_video.wav"
   v=$(wait_viewer ${mode}_09_play_video)
-  # VLC instead of the in-app viewer is a finding, not a failure of the fixture
-  ok=FAIL; [[ $v == window:* && $v != *blank ]] && ok=PASS; [[ $v == external:* ]] && ok=REVIEW
+  # in-app (fvp) viewer window only; an external player is a failure
+  ok=FAIL; [[ $v == window:* && $v != *blank ]] && ok=PASS
   result $mode 09_play_video "$LAST_LAT" "$LAST_DIALOG" $ok "$v"
   close_viewers
 
@@ -355,7 +383,7 @@ phase_media() {
   result $mode 13_show_image "$LAST_LAT" "$LAST_DIALOG" $ok "$v"
   close_viewers
   run_fixture $mode 09_play_video "$FIX/09_play_video.wav"
-  v=$(wait_viewer ${mode}_09_play_video); ok=FAIL; [[ $v == window:* && $v != *blank ]] && ok=PASS; [[ $v == external:* ]] && ok=REVIEW
+  v=$(wait_viewer ${mode}_09_play_video); ok=FAIL; [[ $v == window:* && $v != *blank ]] && ok=PASS
   result $mode 09_play_video "$LAST_LAT" "$LAST_DIALOG" $ok "$v"
   close_viewers
   qa_reset_notes; cp "$QA_SANDBOX/notes.txt" "$QA_OUT/notes_orig.txt"
@@ -395,6 +423,24 @@ phase_ux() {
   qa_stop_app
 }
 
+# livebarge / directbarge: only the barge-in measurement (quick iteration)
+phase_barge_only() {
+  local mode=$1
+  if [ "$mode" = live ]; then
+    qa_launch_app $mode || return 1
+    qa_wait_log 'gpt-live connected' 40 || { result $mode connect -1 0 FAIL "no gpt-live connection"; return 1; }
+  else
+    qa_launch_app $mode '{"backendMode":"direct"}' || return 1
+    sleep 8
+  fi
+  qa_place_app $APP_X $APP_Y $APP_W $APP_H
+  sleep 2
+  barge $mode
+  sleep 3
+  transcripts $mode
+  qa_stop_app
+}
+
 for ph in $PHASES; do
   case $ph in
     live) phase_live ;;
@@ -403,6 +449,8 @@ for ph in $PHASES; do
     ux) phase_ux ;;
     media) phase_media ;;
     barge) ;; # runs inside live/direct
+    livebarge) phase_barge_only live ;;
+    directbarge) phase_barge_only direct ;;
     *) echo "unknown phase $ph" >&2 ;;
   esac
 done

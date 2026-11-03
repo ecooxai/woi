@@ -274,7 +274,7 @@ class DelegationExecutor {
 
   static final _showRequest = RegExp(
     r'^\s*(?:please\s+)?(?:show|open|view|display|play)(?:\s+me)?(?:\s+the)?'
-    r'(?:\s+(?:file|video|movie|clip|image|picture|photo|song|audio|track|document))?'
+    r'(?:\s+(?:file|video|movie|clip|image|picture|photo|song|audio|sound|track|document)){0,2}'
     r'(?:\s+(?:called|named))?\s+(.+?)[\s.!?]*$',
     caseSensitive: false,
   );

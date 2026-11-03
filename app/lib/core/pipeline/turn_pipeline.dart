@@ -496,6 +496,8 @@ class TurnPipeline extends ChangeNotifier {
     stopsHandled++;
     debugPrint('stop phrase "${m.text.trim()}": stopping locally');
     _held.clear();
+    // Drop first: releasing the hold before it un-muted gpt-live for a moment.
+    _backend?.stopAndDrop();
     _endHold();
     _out?.stop();
     final a = _assistantMsg;
@@ -508,7 +510,6 @@ class TurnPipeline extends ChangeNotifier {
     _finishAssistant(interrupted: true);
     _discardUntilDone = false;
     _dropUntil = DateTime.now().add(const Duration(seconds: 4));
-    _backend?.stopAndDrop();
     _awaitingResponse = false;
     _changed();
   }
@@ -530,6 +531,7 @@ class TurnPipeline extends ChangeNotifier {
     final interrupted = _bargeIn();
     _dropUntil = null;
     _userSpeaking = true;
+    debugPrint('user speech start (interrupted=$interrupted) t=${DateTime.now().millisecondsSinceEpoch}');
     _utterancePcm.clear();
     // A known item id continues that turn (the backend saw one turn across a
     // pause): keep one message with one clip and one screenshot.
@@ -587,6 +589,7 @@ class TurnPipeline extends ChangeNotifier {
   void _onSpeechStopped() {
     if (!_userSpeaking) return;
     _userSpeaking = false;
+    debugPrint('user speech stop t=${DateTime.now().millisecondsSinceEpoch}');
     // The orb switches to "thinking" right here, before any server event.
     _awaitingResponse = true;
     _scheduleThinkingEarcon();

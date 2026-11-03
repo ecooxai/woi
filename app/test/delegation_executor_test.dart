@@ -185,6 +185,8 @@ void main() {
     expect(DelegationExecutor.showFastPath('Show me the file README.md.'), 'README.md');
     expect(DelegationExecutor.showFastPath('Play the video demo dot mp four'), 'demo.mp4');
     expect(DelegationExecutor.showFastPath('Open ~/Pictures/cat.png'), '~/Pictures/cat.png');
+    expect(DelegationExecutor.showFastPath('Play the audio file tone dot wav'), 'tone.wav');
+    expect(DelegationExecutor.showFastPath('Show me the image file sample dot png.'), 'sample.png');
     expect(DelegationExecutor.showFastPath('Show me what is on the screen'), isNull);
     expect(DelegationExecutor.showFastPath('Open Firefox'), isNull);
 

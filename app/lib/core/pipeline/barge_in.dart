@@ -14,15 +14,16 @@ import '../audio/wav.dart';
 /// mic energy well above the echo that the current playback level predicts.
 class BargeInDetector {
   BargeInDetector({
-    this.onsetMs = 120,
+    this.onsetMs = 80,
     this.minThreshold = 0.02,
     this.noiseMultiplier = 3.5,
     this.echoMargin = 2.5,
     this.warmupMs = 300,
-    this.maxGapMs = 20,
+    this.maxGapMs = 60,
   });
 
-  /// Voiced time needed to fire (gaps up to [maxGapMs] are bridged).
+  /// Voiced time needed to fire (gaps up to [maxGapMs] are bridged, so the
+  /// closure of a stop consonant, the "t" in "stop", does not restart it).
   final int onsetMs;
   final double minThreshold;
   final double noiseMultiplier;
@@ -104,9 +105,12 @@ class BargeInDetector {
     final ref = max(_refRms, 1e-4);
     final thr = thresholdFor(_refRms);
     final loud = rms >= thr;
-    if (!loud) {
+    if (rms < thr * 0.5) {
       // Pure echo (+ noise): learn its gain. Peaks are followed quickly so the
-      // threshold never sits below the loudest echo seen recently.
+      // threshold never sits below the loudest echo seen recently. Frames just
+      // under the threshold are not learned: they are usually the rising edge
+      // of the user's own speech, and learning them raised the threshold right
+      // when the user started talking (barge-in fired 300-400 ms late).
       final ratio = min(rms / ref, 2.0);
       _echoGain = ratio > _echoGain ? _echoGain * 0.7 + ratio * 0.3 : _echoGain * 0.998 + ratio * 0.002;
       _learnedMs += _frameMs;
