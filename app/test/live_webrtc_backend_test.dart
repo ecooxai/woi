@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:woi/core/app_controller.dart' show kAssistantInstructions, kLiveInstructions;
 import 'package:woi/core/auth/auth.dart';
 import 'package:woi/core/context/compressor.dart';
 import 'package:woi/core/context/context_manager.dart';
@@ -321,6 +322,20 @@ void main() {
       expect(text, contains('failed'));
       expect(r.model.requests.first.input.toString(), contains('Run ls in my home folder'));
       await r.dispose();
+    });
+
+    test('delegation result note flags failures and forbids repeated filler', () {
+      final ok = DelegationReport(id: 'a', request: 'x')..resultText = 'Done. show_file(path="README.md") -> ok';
+      final bad = DelegationReport(id: 'b', request: 'x')..resultText = 'Not fully done. run_bash(...) -> error';
+      expect(LiveWebRtcBackend.delegationResultNote(ok), isNot(contains('NOT')));
+      expect(LiveWebRtcBackend.delegationResultNote(bad), contains('did NOT fully succeed'));
+      expect(LiveWebRtcBackend.delegationResultNote(bad), contains('Do not repeat'));
+    });
+
+    test('assistant identity is Woi', () {
+      expect(kAssistantInstructions, contains('Your name is Woi'));
+      expect(kAssistantInstructions, contains('Never call yourself ChatGPT, Aurora'));
+      expect(kLiveInstructions, contains('every time'));
     });
 
     test('looksLikeAction', () {

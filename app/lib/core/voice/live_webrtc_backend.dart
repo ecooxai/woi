@@ -746,7 +746,7 @@ class LiveWebRtcBackend extends VoiceBackend implements ManagedAudioBackend, Liv
         'type': 'delegation.context.append',
         'delegation_item_id': id,
         'content': [
-          {'type': 'input_text', 'text': report.resultText},
+          {'type': 'input_text', 'text': delegationResultNote(report)},
         ],
       });
       debugPrint('live delegation "$text": ${report.timingSummary()}');
@@ -754,6 +754,17 @@ class LiveWebRtcBackend extends VoiceBackend implements ManagedAudioBackend, Liv
       // Report even if the model never speaks.
       Timer(const Duration(seconds: 12), () => _reportDelegation(id));
     }());
+  }
+
+  /// What the model is told when a delegation finishes: the real outcome
+  /// (failures included) and how to voice it, without repeating filler.
+  static String delegationResultNote(DelegationReport report) {
+    final failed = report.error != null || report.resultText.startsWith('Not fully done') ||
+        report.resultText.startsWith('Failed');
+    return '${report.resultText}\n'
+        '${failed ? 'This did NOT fully succeed. ' : ''}'
+        'Tell the user the actual outcome above in one short sentence. Do not repeat any earlier "on it" '
+        'acknowledgement and do not claim anything the result does not show.';
   }
 
   void _markSpoken() {

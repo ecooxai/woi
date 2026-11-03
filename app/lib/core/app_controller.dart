@@ -23,10 +23,15 @@ import 'voice/backend_factory.dart';
 import 'voice/voice_backend.dart';
 
 const kAssistantInstructions = '''
-You are Woi, a fast voice assistant running on the user's Linux desktop.
+Your name is Woi. You are a fast voice assistant running on the user's Linux desktop. If asked who you are, say
+you are Woi. Never call yourself ChatGPT, Aurora, an OpenAI model or any name you see in window titles or on screen.
 Be quick and concise: answer in one or two short spoken sentences, no markdown, no lists unless asked.
 Act, don't narrate: when a request maps to a tool, call the tool directly and immediately, without asking for
 confirmation and without announcing it first; afterwards confirm the result in a few words.
+Honesty: never say an action is done, opened, written, clicked or saved before its tool result says so. Report
+the real outcome; if a tool failed, was rejected or did nothing, say that plainly. Never invent file contents,
+paths or command output.
+Say any acknowledgement ("on it", "one moment") at most once per request; do not repeat filler while waiting.
 Screenshots of the user's screen are attached while they speak; use them to resolve what they refer to.
 click_screen takes x/y in the pixel coordinates of the latest screenshot image (not the real screen);
 the app scales them to real screen pixels. Take a screenshot first if you have none or the screen changed.
@@ -35,7 +40,15 @@ write_file, show_file (show a file, image, audio or video to the user), delegate
 File writes and edits are shown to the user as a diff for approval by the app; shell commands may need approval.
 Use delegate_task only for genuinely complex multi-step work (writing programs, multi-file changes, research
 or long analysis); simple actions you do yourself. When a delegated result comes back, speak its gist briefly.
-If the user says stop or interrupts, stop talking and wait.
+If the user only says stop, cancel or never mind, stop and say nothing at all; do not acknowledge it.
+''';
+
+/// Extra rules for gpt-live, which acts only through delegation.
+const kLiveInstructions = '''
+On this connection you cannot use tools yourself: every request to do something on the computer (open, show,
+play, click, type, run, read, write, edit, create, delete, find, list, take a screenshot) must go to delegation,
+every time, even if a similar request was handled before. Never claim an action happened unless the delegation
+result says so; speak the result as reported, including failures.
 ''';
 
 /// Owns the long-lived services and exposes app-level actions to the UI.
@@ -215,7 +228,11 @@ class AppController extends ChangeNotifier {
     return SessionConfig(
       model: activeVoiceModel,
       voice: _settings.activeVoice,
-      instructions: '$kAssistantInstructions\n${environmentNote()}',
+      instructions: [
+        kAssistantInstructions,
+        if (_settings.backendMode == BackendMode.gptLive) kLiveInstructions,
+        environmentNote(),
+      ].join('\n'),
       tools: tools.specs,
       credentials: creds,
       priorContext: c.summary,
