@@ -118,6 +118,7 @@ class TerminalSession extends ChangeNotifier {
   void _detached(int code) {
     _exitCode = code;
     _proc = null;
+    if (_disposed) return;
     // Let the last output drain before the footer.
     Future<void>.delayed(const Duration(milliseconds: 30), () {
       _out?.cancel();

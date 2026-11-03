@@ -77,6 +77,7 @@ class AppSettings {
     this.screenshotDelayMs = 1200,
     this.autoScreenshot = true,
     this.confirmBeforeBash = true,
+    this.runBashInTerminal = false,
     this.micMode = MicMode.handsFree,
     this.imageTokenCost = 765,
     this.thinkingEarcon = false,
@@ -102,6 +103,9 @@ class AppSettings {
   final int screenshotDelayMs;
   final bool autoScreenshot;
   final bool confirmBeforeBash;
+
+  /// run_bash runs visibly in the terminal's AI tab (output still returned).
+  final bool runBashInTerminal;
   final MicMode micMode;
 
   /// Heuristic context cost of one screenshot, in tokens.
@@ -144,6 +148,7 @@ class AppSettings {
     int? screenshotDelayMs,
     bool? autoScreenshot,
     bool? confirmBeforeBash,
+    bool? runBashInTerminal,
     MicMode? micMode,
     int? imageTokenCost,
     bool? thinkingEarcon,
@@ -164,6 +169,7 @@ class AppSettings {
     screenshotDelayMs: screenshotDelayMs ?? this.screenshotDelayMs,
     autoScreenshot: autoScreenshot ?? this.autoScreenshot,
     confirmBeforeBash: confirmBeforeBash ?? this.confirmBeforeBash,
+    runBashInTerminal: runBashInTerminal ?? this.runBashInTerminal,
     micMode: micMode ?? this.micMode,
     imageTokenCost: imageTokenCost ?? this.imageTokenCost,
     thinkingEarcon: thinkingEarcon ?? this.thinkingEarcon,
@@ -195,6 +201,7 @@ class AppSettings {
     'screenshotDelayMs': screenshotDelayMs,
     'autoScreenshot': autoScreenshot,
     'confirmBeforeBash': confirmBeforeBash,
+    'runBashInTerminal': runBashInTerminal,
     'micMode': micMode.name,
     'imageTokenCost': imageTokenCost,
     'thinkingEarcon': thinkingEarcon,
@@ -229,6 +236,7 @@ class AppSettings {
       screenshotDelayMs: i('screenshotDelayMs', d.screenshotDelayMs).clamp(0, 10000),
       autoScreenshot: b('autoScreenshot', d.autoScreenshot),
       confirmBeforeBash: b('confirmBeforeBash', d.confirmBeforeBash),
+      runBashInTerminal: b('runBashInTerminal', d.runBashInTerminal),
       micMode: MicMode.values.asNameMap()[j['micMode']] ?? d.micMode,
       imageTokenCost: i('imageTokenCost', d.imageTokenCost),
       thinkingEarcon: b('thinkingEarcon', d.thinkingEarcon),

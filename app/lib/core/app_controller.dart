@@ -25,6 +25,7 @@ import 'pipeline/turn_pipeline.dart';
 import 'responses/responses_client.dart';
 import 'settings/settings.dart';
 import 'storage/history_store.dart';
+import 'terminal/terminal_hub.dart';
 import 'voice/backend_factory.dart';
 import 'voice/pinned_context.dart';
 import 'voice/voice_backend.dart';
@@ -152,6 +153,10 @@ class AppController extends ChangeNotifier {
   late final ContextManager contextManager;
   late final ToolRegistry tools;
   late final ToolEnvironment toolEnv;
+
+  /// Built-in terminal tabs (Ctrl+3). Nothing runs until the view opens or
+  /// the AI runs a command with "Run in terminal" on.
+  late final TerminalHub terminals = TerminalHub(workingDirectory: () => platform.files.workspaceDir);
   late final TurnPipeline pipeline;
 
   AppSettings _settings = const AppSettings();
@@ -189,6 +194,7 @@ class AppController extends ChangeNotifier {
         delegate: delegate,
         settings: () => _settings,
         onScreenshot: (shot, note) => p.attachScreenshot(shot, note: note),
+        terminalShell: TerminalShell(terminals),
       );
       tools = ToolRegistry()
         ..registerAll(builtinTools(toolEnv))
@@ -350,5 +356,6 @@ class AppController extends ChangeNotifier {
   Future<void> shutdown() async {
     await notes.flush();
     if (_ready) await pipeline.shutdown();
+    terminals.dispose();
   }
 }
