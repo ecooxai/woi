@@ -166,8 +166,8 @@ void main() {
       final app = r.ws.ofType('input_audio_buffer.append').single;
       expect(base64Decode(app['audio'] as String), hasLength(960));
 
-      r.ws.push({'type': 'input_audio_buffer.speech_started'});
-      r.ws.push({'type': 'input_audio_buffer.speech_stopped'});
+      r.ws.push({'type': 'input_audio_buffer.speech_started', 'item_id': 'u1'});
+      r.ws.push({'type': 'input_audio_buffer.speech_stopped', 'item_id': 'u1'});
       r.ws.push({'type': 'conversation.item.input_audio_transcription.delta', 'item_id': 'u1', 'delta': 'hel'});
       r.ws.push({
         'type': 'conversation.item.input_audio_transcription.completed',
@@ -195,6 +195,10 @@ void main() {
       expect(r.of<SpeechStopped>(), hasLength(1));
       expect(r.of<UserTranscriptDelta>().single.text, 'hel');
       expect(r.of<UserTranscriptDone>().single.text, 'hello');
+      // item_id ties speech and (late) transcription to one user turn.
+      expect(r.of<SpeechStarted>().single.itemId, 'u1');
+      expect(r.of<UserTranscriptDelta>().single.itemId, 'u1');
+      expect(r.of<UserTranscriptDone>().single.itemId, 'u1');
       expect(r.of<AssistantAudioDelta>().single.pcm16, hasLength(4800));
       expect(r.of<AssistantTranscriptDelta>().single.text, 'Hi');
       expect(r.of<AssistantTranscriptDone>().single.text, 'Hi');

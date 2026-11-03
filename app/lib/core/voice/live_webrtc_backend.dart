@@ -186,6 +186,15 @@ class LiveWebRtcBackend implements VoiceBackend, ManagedAudioBackend {
   // ---- user speech state
   late final EnergyVad _vad = EnergyVad(stopMs: vadStopMs);
   bool _userSpeaking = false;
+  // Client key of the user turn the pipeline is filling. It stays open across
+  // VAD pauses until the server finishes the turn or the assistant takes the
+  // floor, so one spoken turn is one message.
+  String? _openUserKey;
+  int _userSeq = 0;
+  // Server user turn id → client key; transcripts can complete after the
+  // assistant started answering.
+  final Map<String, String> _keyByTurn = {};
+  String? _transcriptKey;
   final Set<_ManagedMic> _mics = {};
   bool _inputEnabled = true;
 
@@ -335,9 +344,10 @@ class LiveWebRtcBackend implements VoiceBackend, ManagedAudioBackend {
         final a = ev['audio'];
         if (a is String) _onInputEcho(base64Decode(a));
       case 'input_transcript.added':
-        _userStarted();
+        // Words of the user turn in progress (no turn id on this event).
+        final key = _transcriptKey ?? _openUserKey ?? _userStarted();
         final t = _itemText(ev);
-        if (t.isNotEmpty) _emit(UserTranscriptDelta(t));
+        if (t.isNotEmpty) _emit(UserTranscriptDelta(t, itemId: key));
       case 'output_transcript.added':
         _openAssistant(_int(ev['start_ms']));
         final t = _itemText(ev);
@@ -346,7 +356,7 @@ class LiveWebRtcBackend implements VoiceBackend, ManagedAudioBackend {
       case 'turn.created':
         final turn = _map(ev['turn']);
         if (turn['role'] == 'user') {
-          _userStarted();
+          _bindUserTurn('${turn['id'] ?? ''}');
         } else if (turn['role'] == 'assistant') {
           _openAssistant(_int(turn['start_ms']));
         }
@@ -355,8 +365,12 @@ class LiveWebRtcBackend implements VoiceBackend, ManagedAudioBackend {
         final text = '${turn['transcript'] ?? ''}'.trim();
         if (text.isNotEmpty) debugPrint('gpt-live ${turn['role']}: $text');
         if (turn['role'] == 'user') {
-          if (_userSpeaking) _userStopped();
-          _emit(UserTranscriptDone(text));
+          final id = '${turn['id'] ?? ''}';
+          final key = _keyByTurn.remove(id) ?? _transcriptKey ?? _openUserKey ?? 'user_${++_userSeq}';
+          if (_userSpeaking && key == _openUserKey) _userStopped();
+          if (_transcriptKey == key) _transcriptKey = null;
+          if (_openUserKey == key) _openUserKey = null;
+          _emit(UserTranscriptDone(text, itemId: key));
         } else if (turn['role'] == 'assistant') {
           _closeAssistant(_int(turn['end_ms']), text);
         }
@@ -404,6 +418,13 @@ class LiveWebRtcBackend implements VoiceBackend, ManagedAudioBackend {
     }
     // Full duplex: once the assistant takes the floor the user turn is over.
     if (_userSpeaking) _userStopped();
+    final open = _openUserKey;
+    _openUserKey = null;
+    if (open != null && !_keyByTurn.containsValue(open)) {
+      // Local VAD fired but the server never opened a user turn (echo or
+      // noise): close the empty message.
+      _emit(UserTranscriptDone('', itemId: open, noSpeech: true));
+    }
     _flushAssistantAudio();
   }
 
@@ -462,17 +483,37 @@ class LiveWebRtcBackend implements VoiceBackend, ManagedAudioBackend {
     }
   }
 
-  void _userStarted() {
-    if (_userSpeaking) return;
+  /// Starts (or resumes) the open user turn; returns its key.
+  String _userStarted() {
+    final key = _openUserKey ??= 'user_${++_userSeq}';
+    if (_userSpeaking) return key;
     _userSpeaking = true;
     final dm = _delegationModel;
     if (dm is ResponsesDelegationModel) unawaited(dm.warmUpIfIdle());
-    _emit(const SpeechStarted());
+    _emit(SpeechStarted(itemId: key));
+    return key;
   }
 
   void _userStopped() {
     _userSpeaking = false;
-    _emit(const SpeechStopped());
+    _emit(SpeechStopped(itemId: _openUserKey));
+  }
+
+  /// Ties server user turn [turnId] to the open client turn (opening one if
+  /// needed). A second server turn while the first is still unfinished gets
+  /// its own key/message.
+  String _bindUserTurn(String turnId) {
+    final existing = _keyByTurn[turnId];
+    if (existing != null) return existing;
+    final open = _openUserKey;
+    if (open != null && _keyByTurn.containsValue(open)) {
+      if (_userSpeaking) _userStopped();
+      _openUserKey = null;
+    }
+    final key = _userStarted();
+    if (turnId.isNotEmpty) _keyByTurn[turnId] = key;
+    _transcriptKey = key;
+    return key;
   }
 
   // ---- delegation

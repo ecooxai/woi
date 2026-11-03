@@ -83,6 +83,13 @@ class TurnPipeline extends ChangeNotifier {
   final PcmBuffer _utterancePcm = PcmBuffer();
   final PcmRing _preRoll = PcmRing(kVoiceBytesPerSecond * 3 ~/ 10); // 300 ms
   final List<Message> _awaitingTranscript = [];
+  // User turn id (backend item id) → its message, so late transcripts and
+  // resumed speech land in the right message.
+  final Map<String, Message> _userByItem = {};
+  // Audio of the latest utterance, kept so a resumed turn gets one clip.
+  String? _lastUtteranceId;
+  Uint8List? _lastUtterancePcm;
+  final Set<String> _screenshotStarted = {};
   Timer? _screenshotTimer;
   Message? _assistantMsg;
   final PcmBuffer _assistantPcm = PcmBuffer();
@@ -208,6 +215,9 @@ class TurnPipeline extends ChangeNotifier {
     _currentUtterance = null;
     _utterancePcm.clear();
     _awaitingTranscript.clear();
+    _userByItem.clear();
+    _lastUtteranceId = null;
+    _lastUtterancePcm = null;
     _finishAssistant(interrupted: _assistantMsg != null);
     _awaitingResponse = false;
     _discardUntilDone = false;
@@ -327,19 +337,33 @@ class TurnPipeline extends ChangeNotifier {
     _finishAssistant(interrupted: true);
   }
 
-  void _onSpeechStarted() {
+  void _onSpeechStarted({String? itemId}) {
     if (_userSpeaking) return;
     _bargeIn();
     _userSpeaking = true;
     _utterancePcm.clear();
+    // A known item id continues that turn (the backend saw one turn across a
+    // pause): keep one message with one clip and one screenshot.
+    final resumed = itemId == null ? null : _userByItem[itemId];
+    final msg = resumed != null && _conv.messages.contains(resumed)
+        ? resumed
+        : Message(kind: MessageKind.user, streaming: true);
+    if (identical(msg, resumed)) {
+      msg.streaming = true;
+      final prev = _lastUtteranceId == msg.id ? _lastUtterancePcm : null;
+      if (prev != null) _utterancePcm.add(prev);
+      if (!_awaitingTranscript.contains(msg)) _awaitingTranscript.add(msg);
+    } else {
+      if (itemId != null) _userByItem[itemId] = msg;
+      _awaitingTranscript.add(msg);
+      _addMessage(msg);
+    }
     _utterancePcm.add(_preRoll.drain());
-    final msg = Message(kind: MessageKind.user, streaming: true);
     _currentUtterance = msg;
-    _awaitingTranscript.add(msg);
-    _addMessage(msg);
     final opts = options();
     _screenshotTimer?.cancel();
-    if (opts.autoScreenshot) {
+    _screenshotTimer = null;
+    if (opts.autoScreenshot && msg.image == null && !_screenshotStarted.contains(msg.id)) {
       _screenshotTimer = Timer(opts.screenshotDelay, () {
         _screenshotTimer = null;
         _captureFor(msg);
@@ -362,6 +386,10 @@ class TurnPipeline extends ChangeNotifier {
       _captureFor(msg);
     }
     final pcm = _utterancePcm.takeBytes();
+    if (msg != null) {
+      _lastUtteranceId = msg.id;
+      _lastUtterancePcm = pcm;
+    }
     if (msg != null && pcm.isNotEmpty) {
       store
           .saveAudio(msg.id, pcm)
@@ -379,6 +407,7 @@ class TurnPipeline extends ChangeNotifier {
   }
 
   Future<void> _captureFor(Message msg) async {
+    _screenshotStarted.add(msg.id);
     try {
       final shot = await screen.capture(maxWidth: options().maxScreenshotWidth);
       await attachScreenshot(shot, note: 'Screen when the user spoke.', to: msg);
@@ -446,20 +475,26 @@ class TurnPipeline extends ChangeNotifier {
 
   void _handle(BackendEvent e) {
     switch (e) {
-      case SpeechStarted():
-        _onSpeechStarted();
+      case SpeechStarted(:final itemId):
+        _onSpeechStarted(itemId: itemId);
       case SpeechStopped():
         _onSpeechStopped();
-      case UserTranscriptDelta(:final text):
-        final m = _userForTranscript();
+      case UserTranscriptDelta(:final text, :final itemId):
+        final m = _userForTranscript(itemId);
         m.text += text;
         _persistSoon();
         _changed();
-      case UserTranscriptDone(:final text):
-        final m = _userForTranscript();
+      case UserTranscriptDone(:final text, :final itemId, :final noSpeech):
+        final m = _userForTranscript(itemId);
         if (text.isNotEmpty) m.text = text;
-        if (_awaitingTranscript.isNotEmpty) _awaitingTranscript.removeAt(0);
+        _awaitingTranscript.remove(m);
         if (!identical(m, _currentUtterance)) m.streaming = false;
+        if (noSpeech && m.text.isEmpty && m.image == null && !identical(m, _currentUtterance)) {
+          // The server never heard a user turn here (echo/noise picked up
+          // by the local VAD): drop the empty bubble.
+          _conv.messages.remove(m);
+          _userByItem.removeWhere((_, v) => identical(v, m));
+        }
         _conv.touch();
         context.onConversationChanged();
         _persistSoon();
@@ -503,10 +538,21 @@ class TurnPipeline extends ChangeNotifier {
     }
   }
 
-  Message _userForTranscript() {
-    if (_awaitingTranscript.isNotEmpty) return _awaitingTranscript.first;
+  /// The user message a transcript belongs to: the one bound to [itemId],
+  /// else the oldest unbound one still waiting (speech_started without an id,
+  /// or a missed event), else a new message.
+  Message _userForTranscript(String? itemId) {
+    if (itemId != null) {
+      final bound = _userByItem[itemId];
+      if (bound != null && _conv.messages.contains(bound)) return bound;
+      final bindable = _awaitingTranscript.where((m) => !_userByItem.containsValue(m));
+      if (bindable.isNotEmpty) return _userByItem[itemId] = bindable.first;
+    } else if (_awaitingTranscript.isNotEmpty) {
+      return _awaitingTranscript.first;
+    }
     final m = Message(kind: MessageKind.user, streaming: true);
     _awaitingTranscript.add(m);
+    if (itemId != null) _userByItem[itemId] = m;
     return _addMessage(m);
   }
 

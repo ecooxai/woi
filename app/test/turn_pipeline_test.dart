@@ -146,6 +146,86 @@ void main() {
     });
   });
 
+  group('user transcripts', () {
+    test('partial transcript streams into the message, then finalizes', () async {
+      final h = await Harness.create();
+      h.scripted.emit(const SpeechStarted(itemId: 'item_1'));
+      h.scripted.emit(const UserTranscriptDelta('open the ', itemId: 'item_1'));
+      h.scripted.emit(const UserTranscriptDelta('file', itemId: 'item_1'));
+      final user = ofKind(h.conv, MessageKind.user).single;
+      expect(user.text, 'open the file');
+      expect(user.streaming, isTrue);
+      h.scripted.emit(const SpeechStopped(itemId: 'item_1'));
+      h.scripted.emit(const UserTranscriptDone('Open the file.', itemId: 'item_1'));
+      expect(user.text, 'Open the file.');
+      expect(user.streaming, isFalse);
+      await h.dispose();
+    });
+
+    test('late transcription after the reply started stays with its screenshot and audio', () async {
+      final h = await Harness.create(options: const PipelineOptions(screenshotDelay: Duration(milliseconds: 20)));
+      h.scripted.emit(const SpeechStarted(itemId: 'item_a'));
+      await h.speak(300);
+      await waitFor(() => h.scripted.images.isNotEmpty);
+      h.scripted.emit(const SpeechStopped(itemId: 'item_a'));
+      // The model answers (and calls a tool) before transcription completes.
+      h.scripted.emit(const AssistantTranscriptDelta('Sure, '));
+      h.scripted.emit(const ResponseDone());
+      // Next turn starts before the first transcript arrives.
+      h.scripted.emit(const SpeechStarted(itemId: 'item_b'));
+      h.scripted.emit(const SpeechStopped(itemId: 'item_b'));
+      h.scripted.emit(const UserTranscriptDone('second', itemId: 'item_b'));
+      h.scripted.emit(const UserTranscriptDone('first', itemId: 'item_a'));
+      final users = ofKind(h.conv, MessageKind.user).toList();
+      expect(users, hasLength(2));
+      expect(users[0].text, 'first');
+      expect(users[0].image, isNotNull);
+      await waitFor(() => users[0].audio != null);
+      expect(users[1].text, 'second');
+      expect(h.conv.messages.indexOf(users[0]), lessThan(h.conv.messages.indexWhere((m) => m.kind == MessageKind.assistant)));
+      await h.dispose();
+    });
+
+    test('a resumed turn id continues the same message with one screenshot', () async {
+      final h = await Harness.create(options: const PipelineOptions(screenshotDelay: Duration(milliseconds: 10)));
+      h.scripted.emit(const SpeechStarted(itemId: 'user_1'));
+      await h.speak(200);
+      await waitFor(() => h.scripted.images.isNotEmpty);
+      h.scripted.emit(const SpeechStopped(itemId: 'user_1'));
+      h.scripted.emit(const SpeechStarted(itemId: 'user_1'));
+      await h.speak(200);
+      h.scripted.emit(const SpeechStopped(itemId: 'user_1'));
+      h.scripted.emit(const UserTranscriptDone('one long sentence', itemId: 'user_1'));
+      final user = ofKind(h.conv, MessageKind.user).single;
+      expect(user.text, 'one long sentence');
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      expect(h.scripted.images, hasLength(1));
+      await waitFor(() => (user.audio?.durationMs ?? 0) >= 400);
+      await h.dispose();
+    });
+
+    test('noSpeech closes an empty false start without a bubble', () async {
+      final h = await Harness.create(options: const PipelineOptions(autoScreenshot: false));
+      h.scripted.emit(const SpeechStarted(itemId: 'user_9'));
+      h.scripted.emit(const SpeechStopped(itemId: 'user_9'));
+      h.scripted.emit(const UserTranscriptDone('', itemId: 'user_9', noSpeech: true));
+      expect(ofKind(h.conv, MessageKind.user), isEmpty);
+      await h.dispose();
+    });
+
+    test('transcripts without ids still pair in order', () async {
+      final h = await Harness.create(options: const PipelineOptions(autoScreenshot: false));
+      h.scripted.emit(const SpeechStarted());
+      h.scripted.emit(const SpeechStopped());
+      h.scripted.emit(const SpeechStarted());
+      h.scripted.emit(const SpeechStopped());
+      h.scripted.emit(const UserTranscriptDone('a'));
+      h.scripted.emit(const UserTranscriptDone('b'));
+      expect(ofKind(h.conv, MessageKind.user).map((m) => m.text), ['a', 'b']);
+      await h.dispose();
+    });
+  });
+
   group('mic', () {
     test('streams mic audio continuously; muted stops forwarding', () async {
       final h = await Harness.create();

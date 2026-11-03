@@ -52,14 +52,25 @@ sealed class BackendEvent {
   const BackendEvent();
 }
 
+/// Partial user transcript. [itemId] names the user turn it belongs to (the
+/// conversation item id in direct mode, a client turn key for gpt-live); the
+/// pipeline uses it to keep words, screenshot and audio in one message even
+/// when the transcription arrives after the assistant started replying.
 class UserTranscriptDelta extends BackendEvent {
-  const UserTranscriptDelta(this.text);
+  const UserTranscriptDelta(this.text, {this.itemId});
   final String text;
+  final String? itemId;
 }
 
+/// Final user transcript (replaces the partial text); see [UserTranscriptDelta].
 class UserTranscriptDone extends BackendEvent {
-  const UserTranscriptDone(this.text);
+  const UserTranscriptDone(this.text, {this.itemId, this.noSpeech = false});
   final String text;
+  final String? itemId;
+
+  /// The server saw no user turn for [itemId] (a local VAD false start); an
+  /// empty message without a screenshot may be dropped.
+  final bool noSpeech;
 }
 
 class AssistantTranscriptDelta extends BackendEvent {
@@ -92,12 +103,16 @@ class Usage extends BackendEvent {
   final int totalContextTokens;
 }
 
+/// The user started talking. A repeated [itemId] continues that turn (e.g.
+/// a short pause the server treats as one turn) instead of opening a new one.
 class SpeechStarted extends BackendEvent {
-  const SpeechStarted();
+  const SpeechStarted({this.itemId});
+  final String? itemId;
 }
 
 class SpeechStopped extends BackendEvent {
-  const SpeechStopped();
+  const SpeechStopped({this.itemId});
+  final String? itemId;
 }
 
 class BackendError extends BackendEvent {

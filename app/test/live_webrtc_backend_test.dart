@@ -162,6 +162,53 @@ void main() {
       await r.dispose();
     });
 
+    test('user turn key: VAD pauses merge, late transcript keeps its key, false starts close', () async {
+      final r = _Rig();
+      await r.connect();
+      final ws = r.ws;
+      // Local VAD opens the turn, pauses, resumes: same key.
+      ws.micEcho(pcm(500));
+      ws.micEcho(pcm(400, amplitude: 8000));
+      await _tick();
+      ws.micEcho(pcm(800));
+      await _tick();
+      ws.micEcho(pcm(400, amplitude: 8000));
+      await _tick();
+      ws.micEcho(pcm(800));
+      await _tick();
+      final starts = r.of<SpeechStarted>();
+      expect(starts, hasLength(2));
+      expect(starts[1].itemId, starts[0].itemId);
+      final key = starts[0].itemId!;
+      ws.turn('created', 'user', 500, 0, '');
+      ws.inputWords('open the', 600);
+      await _tick();
+      expect(r.of<UserTranscriptDelta>().single.itemId, key);
+      // Assistant answers before the user turn is finalized.
+      ws.outputWords('Sure.', 2000);
+      ws.turn('created', 'assistant', 2000, 0, 'Sure.');
+      await _tick();
+      ws.turn('done', 'user', 500, 1900, 'Open the file.');
+      await _tick();
+      final done = r.of<UserTranscriptDone>().single;
+      expect(done.itemId, key);
+      expect(done.text, 'Open the file.');
+      // A VAD false start that the server never turns into a user turn is
+      // closed (noSpeech) when the assistant takes the floor.
+      ws.turn('done', 'assistant', 2000, 2400, 'Sure.');
+      await _tick(700);
+      ws.micEcho(pcm(400, amplitude: 8000));
+      await _tick();
+      final falseKey = r.of<SpeechStarted>().last.itemId;
+      expect(falseKey, isNot(key));
+      ws.outputWords('Anything else?', 3000);
+      await _tick();
+      final closed = r.of<UserTranscriptDone>().last;
+      expect(closed.itemId, falseKey);
+      expect(closed.noSpeech, isTrue);
+      await r.dispose();
+    });
+
     test('assistant turn closes on a timer if the last audio never arrives', () async {
       final r = _Rig();
       await r.connect();

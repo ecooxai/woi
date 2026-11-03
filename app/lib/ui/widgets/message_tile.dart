@@ -150,6 +150,9 @@ class _Bubble extends StatelessWidget {
           _TypingDots(color: accent, label: isUser ? 'listening' : null)
         else if (isSpeechPlaceholder(m.text))
           _VoiceLabel(text: m.text, color: accent)
+        else if (isUser && m.streaming && m.text.isNotEmpty)
+          // Live partial transcript; finalized when the transcription completes.
+          Text(m.text, style: body(15, height: 1.5, color: WoiColors.textDim).copyWith(fontStyle: FontStyle.italic))
         else if (m.text.isNotEmpty)
           SelectableText(m.text, style: body(15, height: 1.5, color: WoiColors.text)),
         if (m.audio != null || m.interrupted || !m.streaming) ...[

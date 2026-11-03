@@ -512,12 +512,12 @@ class RealtimeWsBackend implements VoiceBackend, LiveContextSync {
         // the played position is frozen right now.
         _interruptPlayback();
         _userSpeaking = true;
-        _emit(const SpeechStarted());
+        _emit(SpeechStarted(itemId: ev['item_id'] as String?));
       case 'input_audio_buffer.speech_stopped':
         _userSpeaking = false;
         // Server VAD creates the response, which includes any tool output.
         if (_pendingCalls.isEmpty) _wantResponse = false;
-        _emit(const SpeechStopped());
+        _emit(SpeechStopped(itemId: ev['item_id'] as String?));
 
       case 'conversation.item.added' || 'conversation.item.created':
         _onItemAdded(ev);
@@ -531,14 +531,17 @@ class RealtimeWsBackend implements VoiceBackend, LiveContextSync {
         if (it != null) it.text = '${it.text} [interrupted]';
 
       case 'conversation.item.input_audio_transcription.delta':
+        // Transcription runs asynchronously and usually finishes after the
+        // response (or its function call) has started; item_id ties it back
+        // to the user's turn.
         final d = ev['delta'] as String? ?? '';
-        if (d.isNotEmpty) _emit(UserTranscriptDelta(d));
+        if (d.isNotEmpty) _emit(UserTranscriptDelta(d, itemId: ev['item_id'] as String?));
       case 'conversation.item.input_audio_transcription.completed':
         final t = (ev['transcript'] as String? ?? '').trim();
         _itemById(ev['item_id'] as String?)?.text = t;
-        _emit(UserTranscriptDone(t));
+        _emit(UserTranscriptDone(t, itemId: ev['item_id'] as String?));
       case 'conversation.item.input_audio_transcription.failed':
-        _emit(const UserTranscriptDone(''));
+        _emit(UserTranscriptDone('', itemId: ev['item_id'] as String?));
 
       case 'response.created':
         final r = (ev['response'] as Map?)?.cast<String, Object?>();
