@@ -62,24 +62,37 @@ static void window_method_cb(FlMethodChannel* channel, FlMethodCall* call,
       }
     }
     response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+  } else if (g_strcmp0(fl_method_call_get_name(call), "present") == 0) {
+    // Raise and focus this window (approval dialogs); returns the X11 window
+    // id so the caller can fall back to xdotool if the WM ignores the hint.
+    GtkWidget* toplevel = gtk_widget_get_toplevel(view);
+    int64_t xid = 0;
+    if (GTK_IS_WINDOW(toplevel)) {
+      guint32 ts = GDK_CURRENT_TIME;
+#ifdef GDK_WINDOWING_X11
+      GdkWindow* gdk_window = gtk_widget_get_window(toplevel);
+      if (gdk_window != nullptr && GDK_IS_X11_WINDOW(gdk_window)) {
+        ts = gdk_x11_get_server_time(gdk_window);
+        xid = static_cast<int64_t>(gdk_x11_window_get_xid(gdk_window));
+      }
+#endif
+      gtk_window_deiconify(GTK_WINDOW(toplevel));
+      gtk_window_present_with_time(GTK_WINDOW(toplevel), ts);
+    }
+    g_autoptr(FlValue) result = fl_value_new_int(xid);
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(result));
   } else {
     response = FL_METHOD_RESPONSE(fl_method_not_implemented_response_new());
   }
   fl_method_call_respond(call, response, nullptr);
 }
 
-static void secondary_window_created(FlPluginRegistry* registry) {
-  fl_register_plugins(registry);
-
+// Registers "woi/window" (setTitle, present) on the engine of [registry].
+static FlView* register_window_channel(FlPluginRegistry* registry) {
   g_autoptr(FlPluginRegistrar) registrar =
       fl_plugin_registry_get_registrar_for_plugin(registry, "WoiWindow");
   FlView* view = fl_plugin_registrar_get_view(registrar);
-  if (view == nullptr) return;
-
-  GdkRGBA background_color;
-  gdk_rgba_parse(&background_color, "#05070D");
-  fl_view_set_background_color(view, &background_color);
-
+  if (view == nullptr) return nullptr;
   g_autoptr(FlStandardMethodCodec) codec = fl_standard_method_codec_new();
   FlMethodChannel* channel = fl_method_channel_new(
       fl_plugin_registrar_get_messenger(registrar), "woi/window",
@@ -89,6 +102,18 @@ static void secondary_window_created(FlPluginRegistry* registry) {
   // The channel lives as long as the view.
   g_object_set_data_full(G_OBJECT(view), "woi-window-channel", channel,
                          g_object_unref);
+  return view;
+}
+
+static void secondary_window_created(FlPluginRegistry* registry) {
+  fl_register_plugins(registry);
+
+  FlView* view = register_window_channel(registry);
+  if (view == nullptr) return;
+
+  GdkRGBA background_color;
+  gdk_rgba_parse(&background_color, "#05070D");
+  fl_view_set_background_color(view, &background_color);
 
   GtkWidget* toplevel = gtk_widget_get_toplevel(GTK_WIDGET(view));
   if (GTK_IS_WINDOW(toplevel)) {
@@ -167,6 +192,7 @@ static void my_application_activate(GApplication* application) {
   gtk_widget_realize(GTK_WIDGET(view));
 
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));
+  register_window_channel(FL_PLUGIN_REGISTRY(view));
 
   // Every secondary window (media viewer) runs its own engine and needs the
   // plugins registered as well.

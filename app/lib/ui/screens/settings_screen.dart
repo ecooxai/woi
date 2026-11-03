@@ -165,53 +165,57 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     return CallbackShortcuts(
       bindings: {const SingleActivator(LogicalKeyboardKey.escape): () => Navigator.of(context).maybePop()},
-      child: Scaffold(
-        body: WoiBackdrop(
-          child: SafeArea(
-            child: Column(
-              children: [
-                Padding(
-                  padding: EdgeInsets.fromLTRB(wide ? 20 : 6, 10, 16, 6),
-                  child: Row(
-                    children: [
-                      GlassIconButton(
-                        icon: Icons.arrow_back_rounded,
-                        tooltip: 'Back (Esc)',
-                        size: wide ? 40 : kTouchTarget,
-                        onPressed: () => Navigator.of(context).maybePop(),
-                      ),
-                      const SizedBox(width: 14),
-                      Text('Settings', style: display(wide ? 24 : 20)),
-                      const Spacer(),
-                      if (wide) Text('Changes save automatically', style: body(12, color: WoiColors.textFaint)),
-                    ],
+      // Focus inside the route so Esc reaches the shortcut.
+      child: Focus(
+        autofocus: true,
+        child: Scaffold(
+          body: WoiBackdrop(
+            child: SafeArea(
+              child: Column(
+                children: [
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(wide ? 20 : 6, 10, 16, 6),
+                    child: Row(
+                      children: [
+                        GlassIconButton(
+                          icon: Icons.arrow_back_rounded,
+                          tooltip: 'Back (Esc)',
+                          size: wide ? 40 : kTouchTarget,
+                          onPressed: () => Navigator.of(context).maybePop(),
+                        ),
+                        const SizedBox(width: 14),
+                        Text('Settings', style: display(wide ? 24 : 20)),
+                        const Spacer(),
+                        if (wide) Text('Changes save automatically', style: body(12, color: WoiColors.textFaint)),
+                      ],
+                    ),
                   ),
-                ),
-                Expanded(
-                  child: wide
-                      ? Center(
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 1180),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Padding(padding: const EdgeInsets.fromLTRB(20, 8, 12, 20), child: _rail()),
-                                Expanded(
-                                  child: NotificationListener<ScrollNotification>(
-                                    onNotification: (_) {
-                                      _syncSection();
-                                      return false;
-                                    },
-                                    child: list,
+                  Expanded(
+                    child: wide
+                        ? Center(
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 1180),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Padding(padding: const EdgeInsets.fromLTRB(20, 8, 12, 20), child: _rail()),
+                                  Expanded(
+                                    child: NotificationListener<ScrollNotification>(
+                                      onNotification: (_) {
+                                        _syncSection();
+                                        return false;
+                                      },
+                                      child: list,
+                                    ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
-                          ),
-                        )
-                      : list,
-                ),
-              ],
+                          )
+                        : list,
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -472,12 +476,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.only(right: 6),
-                child: _dropdown(
-                  label,
-                  '$value',
-                  [for (final o in {...options, value}) '$o'],
-                  (v) => _apply(set(int.parse(v))),
-                ),
+                child: _dropdown(label, '$value', [
+                  for (final o in {...options, value}) '$o',
+                ], (v) => _apply(set(int.parse(v)))),
               ),
             ),
         ],

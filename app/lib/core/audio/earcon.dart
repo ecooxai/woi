@@ -11,6 +11,13 @@ Uint8List? _thinking;
 /// barge-in.
 Uint8List thinkingEarconPcm() => _thinking ??= _render(const [(587.33, 0, 90), (880.0, 70, 120)], peak: 0.08);
 
+Uint8List? _attention;
+
+/// Rising three-note cue played when an approval dialog needs the user
+/// (PCM16, 24 kHz mono, ~330 ms, louder than the thinking chime).
+Uint8List attentionEarconPcm() =>
+    _attention ??= _render(const [(659.25, 0, 120), (880.0, 100, 120), (1174.66, 200, 130)], peak: 0.12);
+
 Uint8List _render(List<(double hz, int startMs, int durMs)> notes, {required double peak}) {
   var endMs = 0;
   for (final n in notes) {

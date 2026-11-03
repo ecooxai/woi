@@ -7,14 +7,12 @@ import 'package:woi/ui/confirmations.dart';
 import 'package:woi/ui/theme.dart';
 import 'package:woi/ui/widgets/diff_view.dart';
 
-FileWriteRequest _req({String? old = 'a\nb\nc\n', String next = 'a\nB\nc\nd\n'}) => FileWriteRequest(
-  path: '/tmp/demo.dart',
-  oldContent: old,
-  newContent: next,
-  diff: diffLines(old ?? '', next),
-);
+FileWriteRequest _req({String? old = 'a\nb\nc\n', String next = 'a\nB\nc\nd\n'}) =>
+    FileWriteRequest(path: '/tmp/demo.dart', oldContent: old, newContent: next, diff: diffLines(old ?? '', next));
 
 void main() {
+  serviceTests();
+
   Future<bool?> open(WidgetTester tester, Widget Function() dialog, {Size size = const Size(1400, 900)}) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -80,7 +78,10 @@ void main() {
   });
 
   testWidgets('command dialog: Enter approves, Esc rejects', (tester) async {
-    expect(await resultAfterKey(tester, LogicalKeyboardKey.enter, () => const CommandConfirmDialog(command: 'ls')), isTrue);
+    expect(
+      await resultAfterKey(tester, LogicalKeyboardKey.enter, () => const CommandConfirmDialog(command: 'ls')),
+      isTrue,
+    );
     expect(
       await resultAfterKey(tester, LogicalKeyboardKey.escape, () => const CommandConfirmDialog(command: 'rm -rf x')),
       isFalse,
@@ -117,8 +118,10 @@ void main() {
         home: Builder(
           builder: (context) => Scaffold(
             body: TextButton(
-              onPressed: () async =>
-                  result = await showDialog<bool>(context: context, builder: (_) => EditConfirmDialog(request: _req())),
+              onPressed: () async => result = await showDialog<bool>(
+                context: context,
+                builder: (_) => EditConfirmDialog(request: _req()),
+              ),
               child: const Text('open'),
             ),
           ),
@@ -140,5 +143,37 @@ void main() {
     expect(changed, hasLength(1), reason: rows.map((r) => '${r.left?.text}|${r.right?.text}').join(', '));
     expect(changed.single.left!.text, 'b');
     expect(changed.single.right!.text, 'B');
+  });
+}
+
+void serviceTests() {
+  testWidgets('service: closes Settings-like routes, cues, then asks', (tester) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final key = GlobalKey<NavigatorState>();
+    var cues = 0;
+    final service = UiConfirmationService(key, onShow: () async => cues++);
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: key,
+        theme: buildWoiTheme(),
+        home: const Scaffold(body: Text('home')),
+      ),
+    );
+    key.currentState!.push(MaterialPageRoute<void>(builder: (_) => const Scaffold(body: Text('settings'))));
+    await tester.pumpAndSettle();
+    expect(find.text('settings'), findsOneWidget);
+
+    bool? result;
+    service.confirmCommand('rm -rf /tmp/x').then((r) => result = r);
+    await tester.pumpAndSettle();
+    expect(cues, 1);
+    expect(find.text('settings'), findsNothing, reason: 'the dialog must not render over Settings');
+    expect(find.byType(CommandConfirmDialog), findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(result, isFalse);
+    expect(find.text('home'), findsOneWidget);
   });
 }

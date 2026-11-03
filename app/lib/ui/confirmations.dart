@@ -12,15 +12,22 @@ import 'widgets/empty_state.dart' show KeyHint;
 /// Shows approval dialogs one at a time. Anything that cannot be shown is
 /// rejected (fail closed).
 class UiConfirmationService implements ConfirmationService {
-  UiConfirmationService(this.navigatorKey);
+  UiConfirmationService(this.navigatorKey, {this.onShow});
 
   final GlobalKey<NavigatorState> navigatorKey;
+
+  /// Called as a dialog opens (raise/focus the window, play a cue).
+  final Future<void> Function()? onShow;
   Future<void> _tail = Future.value();
 
   Future<bool> _serial(Future<bool?> Function(BuildContext ctx) show) {
     final result = _tail.then((_) async {
+      // Approvals open on the home screen, never on top of Settings.
+      navigatorKey.currentState?.popUntil((r) => r.isFirst);
       final ctx = navigatorKey.currentContext;
       if (ctx == null || !ctx.mounted) return false;
+      final cue = onShow?.call().catchError((Object e) => debugPrint('approval cue: $e'));
+      if (cue != null) unawaited(cue);
       return (await show(ctx)) ?? false;
     });
     _tail = result.then((_) {}, onError: (_) {});
@@ -201,8 +208,12 @@ class _EditConfirmDialogState extends State<EditConfirmDialog> {
                     padding: const EdgeInsets.only(bottom: 6),
                     child: Row(
                       children: [
-                        Expanded(child: Text('BEFORE', style: eyebrow(color: WoiColors.red))),
-                        Expanded(child: Text('AFTER', style: eyebrow(color: WoiColors.mint))),
+                        Expanded(
+                          child: Text('BEFORE', style: eyebrow(color: WoiColors.red)),
+                        ),
+                        Expanded(
+                          child: Text('AFTER', style: eyebrow(color: WoiColors.mint)),
+                        ),
                       ],
                     ),
                   ),

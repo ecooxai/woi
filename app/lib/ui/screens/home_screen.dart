@@ -97,7 +97,8 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Global shortcuts. Space = push-to-talk (when not typing), Esc =
   /// interrupt, Ctrl+K = type, Ctrl+, = settings, Ctrl+N = new chat.
   bool _onKey(KeyEvent e) {
-    if (!mounted || ModalRoute.of(context)?.isCurrent != true) return false;
+    if (!mounted) return false;
+    if (ModalRoute.of(context)?.isCurrent != true) return _onKeyOverSettings(e);
     final key = e.logicalKey;
     final ctrl = HardwareKeyboard.instance.isControlPressed || HardwareKeyboard.instance.isMetaPressed;
     if (key == LogicalKeyboardKey.space && !_typing && !ctrl && c.settings.micMode == MicMode.pushToTalk) {
@@ -128,6 +129,28 @@ class _HomeScreenState extends State<HomeScreen> {
     return false;
   }
 
+  /// Settings (or a route above it) is on top: Esc closes the top route,
+  /// Ctrl+N goes home and starts a new chat, Ctrl+, does nothing.
+  bool _onKeyOverSettings(KeyEvent e) {
+    if (e is! KeyDownEvent || !_settingsOpen) return false;
+    final key = e.logicalKey;
+    final ctrl = HardwareKeyboard.instance.isControlPressed || HardwareKeyboard.instance.isMetaPressed;
+    final nav = Navigator.of(context);
+    if (ctrl && key == LogicalKeyboardKey.keyN) {
+      nav.popUntil((r) => r.isFirst);
+      c.newConversation();
+      return true;
+    }
+    if (ctrl && key == LogicalKeyboardKey.comma) return true;
+    if (key == LogicalKeyboardKey.escape && !_typing) {
+      nav.maybePop();
+      return true;
+    }
+    return false;
+  }
+
+  bool _settingsOpen = false;
+
   void _focusComposer() {
     setState(() => _phoneTyping = true);
     WidgetsBinding.instance.addPostFrameCallback((_) => _composerFocus.requestFocus());
@@ -146,28 +169,35 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _openSettings() => Navigator.of(context).push(
-    PageRouteBuilder<void>(
-      transitionDuration: WoiMotion.slow,
-      reverseTransitionDuration: WoiMotion.medium,
-      pageBuilder: (_, _, _) => SettingsScreen(controller: c),
-      transitionsBuilder: (context, a, _, child) {
-        final curved = CurvedAnimation(parent: a, curve: WoiMotion.emphasized);
-        return FadeTransition(
-          opacity: curved,
-          child: SlideTransition(
-            position: Tween(begin: const Offset(0, 0.04), end: Offset.zero).animate(curved),
-            child: child,
-          ),
-        );
-      },
-    ),
+  Future<void> _openSettings() async {
+    if (_settingsOpen) return;
+    _settingsOpen = true;
+    try {
+      await Navigator.of(context).push(_settingsRoute());
+    } finally {
+      _settingsOpen = false;
+    }
+  }
+
+  Route<void> _settingsRoute() => PageRouteBuilder<void>(
+    transitionDuration: WoiMotion.slow,
+    reverseTransitionDuration: WoiMotion.medium,
+    pageBuilder: (_, _, _) => SettingsScreen(controller: c),
+    transitionsBuilder: (context, a, _, child) {
+      final curved = CurvedAnimation(parent: a, curve: WoiMotion.emphasized);
+      return FadeTransition(
+        opacity: curved,
+        child: SlideTransition(
+          position: Tween(begin: const Offset(0, 0.04), end: Offset.zero).animate(curved),
+          child: child,
+        ),
+      );
+    },
   );
 
   void _openHistory() => _scaffoldKey.currentState?.openDrawer();
 
-  OrbMode get _orbMode =>
-      orbModeFor(pipeline.phase, status: pipeline.status, compacting: c.contextManager.compressing);
+  OrbMode get _orbMode => orbModeFor(pipeline.phase, status: pipeline.status, compacting: c.contextManager.compressing);
 
   bool get _connected => pipeline.status == SessionStatus.connected;
   bool get _canStop {
@@ -189,9 +219,7 @@ class _HomeScreenState extends State<HomeScreen> {
             listenable: Listenable.merge([c, pipeline, c.contextManager]),
             builder: (context, _) => WoiBackdrop(
               accent: orbModeColor(_orbMode),
-              child: SafeArea(
-                child: LayoutBuilder(builder: (context, box) => wide ? _wide(box) : _narrow(box)),
-              ),
+              child: SafeArea(child: LayoutBuilder(builder: (context, box) => wide ? _wide(box) : _narrow(box))),
             ),
           ),
         );
@@ -258,7 +286,10 @@ class _HomeScreenState extends State<HomeScreen> {
       child: ShaderMask(
         shaderCallback: (r) =>
             const LinearGradient(colors: [WoiColors.cyan, WoiColors.violet, WoiColors.magenta]).createShader(r),
-        child: Text('WOI', style: display(size, weight: FontWeight.w700, color: Colors.white, spacing: 6)),
+        child: Text(
+          'WOI',
+          style: display(size, weight: FontWeight.w700, color: Colors.white, spacing: 6),
+        ),
       ),
     ),
   );
@@ -289,12 +320,7 @@ class _HomeScreenState extends State<HomeScreen> {
             style: ContextMeterStyle.ring,
             onCompact: c.compactNow,
           ),
-          GlassIconButton(
-            icon: Icons.tune_rounded,
-            tooltip: 'Settings',
-            onPressed: _openSettings,
-            size: kTouchTarget,
-          ),
+          GlassIconButton(icon: Icons.tune_rounded, tooltip: 'Settings', onPressed: _openSettings, size: kTouchTarget),
         ],
       );
     }
@@ -313,7 +339,11 @@ class _HomeScreenState extends State<HomeScreen> {
           onCompact: c.compactNow,
         ),
         const SizedBox(width: 18),
-        GlassIconButton(icon: Icons.add_comment_outlined, tooltip: 'New conversation (Ctrl+N)', onPressed: c.newConversation),
+        GlassIconButton(
+          icon: Icons.add_comment_outlined,
+          tooltip: 'New conversation (Ctrl+N)',
+          onPressed: c.newConversation,
+        ),
         const SizedBox(width: 6),
         GlassIconButton(icon: Icons.tune_rounded, tooltip: 'Settings (Ctrl+,)', onPressed: _openSettings),
       ],
@@ -358,10 +388,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   Text('VOICE', style: eyebrow()),
                   const Spacer(),
-                  Text(
-                    s.activeVoice.toUpperCase(),
-                    style: eyebrow(color: WoiColors.violet.withValues(alpha: 0.9)),
-                  ),
+                  Text(s.activeVoice.toUpperCase(), style: eyebrow(color: WoiColors.violet.withValues(alpha: 0.9))),
                 ],
               ),
               Expanded(
@@ -380,20 +407,21 @@ class _HomeScreenState extends State<HomeScreen> {
                   ],
                 ),
               ),
-              Center(child: MicModeSelector(mode: s.micMode, onChanged: c.setMicMode)),
+              Center(
+                child: MicModeSelector(mode: s.micMode, onChanged: c.setMicMode),
+              ),
               AnimatedSize(
                 duration: WoiMotion.medium,
                 curve: WoiMotion.curve,
                 child: s.micMode == MicMode.pushToTalk
-                    ? Padding(padding: const EdgeInsets.only(top: 12), child: PushToTalkButton(pipeline: pipeline))
+                    ? Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: PushToTalkButton(pipeline: pipeline),
+                      )
                     : const SizedBox(width: double.infinity),
               ),
               const SizedBox(height: 18),
-              ContextMeter(
-                manager: c.contextManager,
-                conversation: pipeline.conversation,
-                onCompact: c.compactNow,
-              ),
+              ContextMeter(manager: c.contextManager, conversation: pipeline.conversation, onCompact: c.compactNow),
               const SizedBox(height: 14),
               Wrap(
                 spacing: 8,
@@ -538,7 +566,9 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _transcriptArea({required double maxBubble, required bool wide}) {
     return Stack(
       children: [
-        Positioned.fill(child: _transcript(maxBubble: maxBubble, wide: wide)),
+        Positioned.fill(
+          child: _transcript(maxBubble: maxBubble, wide: wide),
+        ),
         Positioned(
           top: 10,
           left: 10,
@@ -558,7 +588,8 @@ class _HomeScreenState extends State<HomeScreen> {
           child: EmptyState(
             subtitle: switch (c.settings.micMode) {
               MicMode.handsFree => 'Just start talking — or try one of these.',
-              MicMode.pushToTalk => wide ? 'Hold Space to talk — or try one of these.' : 'Hold the mic to talk — or try one of these.',
+              MicMode.pushToTalk =>
+                wide ? 'Hold Space to talk — or try one of these.' : 'Hold the mic to talk — or try one of these.',
               MicMode.muted => 'Microphone is off. Type below or tap a suggestion.',
             },
             onHint: pipeline.sendText,
@@ -635,7 +666,10 @@ class _StopPill extends StatelessWidget {
             children: [
               const Icon(Icons.stop_rounded, color: WoiColors.red),
               const SizedBox(width: 6),
-              Text('Stop', style: body(14, weight: FontWeight.w600, color: WoiColors.red)),
+              Text(
+                'Stop',
+                style: body(14, weight: FontWeight.w600, color: WoiColors.red),
+              ),
             ],
           ),
         ),

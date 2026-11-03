@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../core/app_controller.dart';
 import '../platform/media_viewer.dart';
 import '../platform/platform_services.dart';
+import '../platform/window_attention.dart';
 import 'confirmations.dart';
 import 'screens/home_screen.dart';
 import 'theme.dart';
@@ -30,7 +31,7 @@ class _WoiAppState extends State<WoiApp> with WidgetsBindingObserver {
   late final PlatformServices _platform = widget.platform ?? PlatformServices.forCurrentPlatform();
   late final AppController _controller = AppController(
     platform: _platform,
-    confirmations: UiConfirmationService(_navigatorKey),
+    confirmations: UiConfirmationService(_navigatorKey, onShow: WindowAttention(audio: _platform.audio).request),
   );
 
   @override
@@ -98,16 +99,16 @@ class _WoiAppState extends State<WoiApp> with WidgetsBindingObserver {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      VoiceOrb(
-                        mode: _controller.initError == null ? OrbMode.connecting : OrbMode.offline,
-                        size: 180,
-                      ),
+                      VoiceOrb(mode: _controller.initError == null ? OrbMode.connecting : OrbMode.offline, size: 180),
                       const SizedBox(height: 18),
                       ShaderMask(
-                        shaderCallback: (r) => const LinearGradient(
-                          colors: [WoiColors.cyan, WoiColors.violet, WoiColors.magenta],
-                        ).createShader(r),
-                        child: Text('WOI', style: display(30, weight: FontWeight.w700, color: Colors.white, spacing: 8)),
+                        shaderCallback: (r) =>
+                            const LinearGradient(colors: [WoiColors.cyan, WoiColors.violet, WoiColors.magenta])
+                                .createShader(r),
+                        child: Text(
+                          'WOI',
+                          style: display(30, weight: FontWeight.w700, color: Colors.white, spacing: 8),
+                        ),
                       ),
                       const SizedBox(height: 10),
                       if (_controller.initError == null)
