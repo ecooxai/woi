@@ -9,6 +9,7 @@ import 'screens/home_screen.dart';
 import 'theme.dart';
 import 'viewer/viewer_app.dart';
 import 'widgets/glass.dart';
+import 'widgets/voice_orb.dart';
 
 /// Root widget of the main window.
 class WoiApp extends StatefulWidget {
@@ -37,6 +38,7 @@ class _WoiAppState extends State<WoiApp> with WidgetsBindingObserver {
       final ctx = _navigatorKey.currentContext;
       if (ctx != null && ctx.mounted) await showMediaOverlay(ctx, item, _platform.audio);
     };
+    OrbShader.preload();
     _controller.init();
   }
 
@@ -67,16 +69,34 @@ class _WoiAppState extends State<WoiApp> with WidgetsBindingObserver {
           return Scaffold(
             body: WoiBackdrop(
               child: Center(
-                child: _controller.initError == null
-                    ? const CircularProgressIndicator()
-                    : Padding(
-                        padding: const EdgeInsets.all(32),
-                        child: Text(
+                child: Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      VoiceOrb(
+                        mode: _controller.initError == null ? OrbMode.connecting : OrbMode.offline,
+                        size: 180,
+                      ),
+                      const SizedBox(height: 18),
+                      ShaderMask(
+                        shaderCallback: (r) => const LinearGradient(
+                          colors: [WoiColors.cyan, WoiColors.violet, WoiColors.magenta],
+                        ).createShader(r),
+                        child: Text('WOI', style: display(30, weight: FontWeight.w700, color: Colors.white, spacing: 8)),
+                      ),
+                      const SizedBox(height: 10),
+                      if (_controller.initError == null)
+                        Text('Starting up…', style: body(13, color: WoiColors.textDim))
+                      else
+                        Text(
                           'Woi failed to start:\n${_controller.initError}',
                           textAlign: TextAlign.center,
                           style: body(14, color: WoiColors.red),
                         ),
-                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
           );

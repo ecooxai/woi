@@ -58,6 +58,9 @@ dev_dependencies:
 flutter:
   uses-material-design: true
 
+  shaders:
+    - shaders/orb.frag
+
   fonts:
     - family: Inter
       fonts:
