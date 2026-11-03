@@ -24,6 +24,17 @@ void runViewer(MediaItem first, {MethodChannel window = const MethodChannel('woi
   WindowController.fromCurrentEngine()
       .then(
         (c) => c.setWindowMethodHandler((call) async {
+          if (call.method == LinuxMediaViewer.stateMethod) {
+            final item = current.value;
+            if (item == null) return null;
+            final p = activePlayback;
+            return ViewerState(
+              item: item,
+              position: p?.position,
+              duration: p?.duration,
+              playing: p?.playing ?? false,
+            ).toJson();
+          }
           if (call.method != LinuxMediaViewer.openMethod) return null;
           final item = MediaItem.fromJson((call.arguments as Map).cast());
           current.value = item;

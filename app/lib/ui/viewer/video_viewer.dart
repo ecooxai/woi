@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 
+import '../../platform/media_viewer.dart';
 import '../theme.dart';
 
 /// Whether the media viewer is fullscreen (the viewer chrome hides itself).
@@ -37,7 +38,7 @@ class VideoViewerBody extends StatefulWidget {
 }
 
 @visibleForTesting
-class VideoViewerBodyState extends State<VideoViewerBody> {
+class VideoViewerBodyState extends State<VideoViewerBody> implements PlaybackProbe {
   late final VideoPlayerController _c =
       widget.controllerFactory?.call(widget.path) ?? VideoPlayerController.file(File(widget.path));
   final _focus = FocusNode(debugLabel: 'video');
@@ -50,8 +51,16 @@ class VideoViewerBodyState extends State<VideoViewerBody> {
   VideoPlayerController get controller => _c;
 
   @override
+  Duration get position => _c.value.position;
+  @override
+  Duration? get duration => _c.value.isInitialized ? _c.value.duration : null;
+  @override
+  bool get playing => _c.value.isPlaying;
+
+  @override
   void initState() {
     super.initState();
+    activePlayback = this;
     _c.addListener(_onValue);
     _c
         .initialize()
@@ -92,6 +101,7 @@ class VideoViewerBodyState extends State<VideoViewerBody> {
 
   @override
   void dispose() {
+    if (identical(activePlayback, this)) activePlayback = null;
     _hideTimer?.cancel();
     _c.removeListener(_onValue);
     _c.dispose();
