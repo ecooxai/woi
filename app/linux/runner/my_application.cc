@@ -16,6 +16,93 @@ struct _MyApplication {
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
 
+// GTK3 on X11 renders with GLX and leaves the window's GLX paint context
+// current on the main thread after every frame. Each FlView compiles its
+// compositor shaders with eglMakeCurrent() while it is being realized; under
+// libglvnd that fails while a GLX context is current on the same thread
+// ("Failed to setup compositor shaders, unable to make OpenGL context
+// current"), so every secondary window (desktop_multi_window media viewer)
+// came up black. The main window only worked because it is realized before
+// the first GTK paint. Drop the current GL context right before any FlView is
+// realized; GDK makes its context current again whenever it paints. The hook
+// is on "parent-set": GtkContainer emits it before it realizes the child,
+// whereas "realize" hooks only run after the class handler has already set up
+// OpenGL.
+static gboolean clear_gl_before_view_realize(GSignalInvocationHint* hint,
+                                             guint n_params,
+                                             const GValue* params,
+                                             gpointer data) {
+  if (n_params > 0 && G_VALUE_HOLDS_OBJECT(&params[0])) {
+    GObject* object = G_OBJECT(g_value_get_object(&params[0]));
+    if (object != nullptr && FL_IS_VIEW(object)) {
+      gdk_gl_context_clear_current();
+    }
+  }
+  return TRUE;  // keep the hook installed
+}
+
+// Secondary windows are created by desktop_multi_window with an empty title
+// and no background colour. "woi/window" lets the viewer engine set its title.
+static void window_method_cb(FlMethodChannel* channel, FlMethodCall* call,
+                             gpointer user_data) {
+  GtkWidget* view = GTK_WIDGET(user_data);
+  g_autoptr(FlMethodResponse) response = nullptr;
+  if (g_strcmp0(fl_method_call_get_name(call), "setTitle") == 0) {
+    FlValue* args = fl_method_call_get_args(call);
+    const gchar* title = args != nullptr &&
+                                 fl_value_get_type(args) == FL_VALUE_TYPE_STRING
+                             ? fl_value_get_string(args)
+                             : "Woi";
+    GtkWidget* toplevel = gtk_widget_get_toplevel(view);
+    if (GTK_IS_WINDOW(toplevel)) {
+      gtk_window_set_title(GTK_WINDOW(toplevel), title);
+      GtkWidget* bar = gtk_window_get_titlebar(GTK_WINDOW(toplevel));
+      if (bar != nullptr && GTK_IS_HEADER_BAR(bar)) {
+        gtk_header_bar_set_title(GTK_HEADER_BAR(bar), title);
+      }
+    }
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+  } else {
+    response = FL_METHOD_RESPONSE(fl_method_not_implemented_response_new());
+  }
+  fl_method_call_respond(call, response, nullptr);
+}
+
+static void secondary_window_created(FlPluginRegistry* registry) {
+  fl_register_plugins(registry);
+
+  g_autoptr(FlPluginRegistrar) registrar =
+      fl_plugin_registry_get_registrar_for_plugin(registry, "WoiWindow");
+  FlView* view = fl_plugin_registrar_get_view(registrar);
+  if (view == nullptr) return;
+
+  GdkRGBA background_color;
+  gdk_rgba_parse(&background_color, "#05070D");
+  fl_view_set_background_color(view, &background_color);
+
+  g_autoptr(FlStandardMethodCodec) codec = fl_standard_method_codec_new();
+  FlMethodChannel* channel = fl_method_channel_new(
+      fl_plugin_registrar_get_messenger(registrar), "woi/window",
+      FL_METHOD_CODEC(codec));
+  fl_method_channel_set_method_call_handler(channel, window_method_cb, view,
+                                            nullptr);
+  // The channel lives as long as the view.
+  g_object_set_data_full(G_OBJECT(view), "woi-window-channel", channel,
+                         g_object_unref);
+
+  GtkWidget* toplevel = gtk_widget_get_toplevel(GTK_WIDGET(view));
+  if (GTK_IS_WINDOW(toplevel)) {
+    gtk_window_set_title(GTK_WINDOW(toplevel), "Woi");
+  }
+  // Raise the viewer once Flutter has drawn into it.
+  g_signal_connect(view, "first-frame", G_CALLBACK(+[](FlView* v, gpointer) {
+                     GtkWidget* top = gtk_widget_get_toplevel(GTK_WIDGET(v));
+                     gtk_widget_show(top);
+                     if (GTK_IS_WINDOW(top)) gtk_window_present(GTK_WINDOW(top));
+                   }),
+                   nullptr);
+}
+
 // Called when first Flutter frame received.
 static void first_frame_cb(MyApplication* self, FlView* view) {
   gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
@@ -84,7 +171,7 @@ static void my_application_activate(GApplication* application) {
   // Every secondary window (media viewer) runs its own engine and needs the
   // plugins registered as well.
   desktop_multi_window_plugin_set_window_created_callback(
-      [](FlPluginRegistry* registry) { fl_register_plugins(registry); });
+      secondary_window_created);
 
   gtk_widget_grab_focus(GTK_WIDGET(view));
 }
@@ -112,9 +199,10 @@ static gboolean my_application_local_command_line(GApplication* application,
 
 // Implements GApplication::startup.
 static void my_application_startup(GApplication* application) {
-  // MyApplication* self = MY_APPLICATION(object);
-
-  // Perform any actions required at application startup.
+  // The widget class must be initialized before its signals can be looked up.
+  g_type_class_unref(g_type_class_ref(GTK_TYPE_WIDGET));
+  g_signal_add_emission_hook(g_signal_lookup("parent-set", GTK_TYPE_WIDGET), 0,
+                             clear_gl_before_view_realize, nullptr, nullptr);
 
   G_APPLICATION_CLASS(my_application_parent_class)->startup(application);
 }

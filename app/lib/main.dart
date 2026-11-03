@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'core/voice/live_register.dart';
 import 'platform/linux/linux_audio_io.dart';
@@ -16,6 +17,8 @@ void main(List<String> args) {
   if (args.length >= 3 && args[0] == 'multi_window' && args[2].startsWith(LinuxMediaViewer.windowTag)) {
     final json = jsonDecode(args[2].substring(LinuxMediaViewer.windowTag.length));
     final item = MediaItem.fromJson((json as Map).cast<String, Object?>());
+    // GTK ignores MaterialApp.title; the runner exposes the window title.
+    const MethodChannel('woi/window').invokeMethod<void>('setTitle', 'Woi - ${item.title}').catchError((Object _) {});
     runApp(ViewerApp(item: item, audio: LinuxAudioIO()));
     return;
   }

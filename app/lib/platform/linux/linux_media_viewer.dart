@@ -29,6 +29,10 @@ class LinuxMediaViewer extends MediaViewer {
     }
     if (useSecondaryWindow) {
       try {
+        // Shown at once (a hidden window is realized at 1x1 and the first
+        // draw then blocks waiting for a full-size frame). The runner paints
+        // the Woi background until Flutter's first frame and the viewer sets
+        // the title over "woi/window" (linux/runner/my_application.cc).
         final c = await WindowController.create(
           WindowConfiguration(arguments: '$windowTag${jsonEncode(item.toJson())}', hiddenAtLaunch: false),
         );

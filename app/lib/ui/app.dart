@@ -1,8 +1,11 @@
+import 'dart:async';
+import 'dart:io';
 import 'dart:ui' show AppExitResponse;
 
 import 'package:flutter/material.dart';
 
 import '../core/app_controller.dart';
+import '../platform/media_viewer.dart';
 import '../platform/platform_services.dart';
 import 'confirmations.dart';
 import 'screens/home_screen.dart';
@@ -40,6 +43,27 @@ class _WoiAppState extends State<WoiApp> with WidgetsBindingObserver {
     };
     OrbShader.preload();
     _controller.init();
+    _debugShowFromEnv();
+  }
+
+  /// Debug hook: `WOI_DEBUG_SHOW=/a.png:/b.txt` opens each file in the media
+  /// viewer shortly after start (used to verify the viewer window).
+  void _debugShowFromEnv() {
+    final spec = Platform.environment['WOI_DEBUG_SHOW'] ?? '';
+    final paths = spec.split(':').where((s) => s.trim().isNotEmpty).toList();
+    if (paths.isEmpty) return;
+    unawaited(() async {
+      await Future<void>.delayed(const Duration(seconds: 2));
+      for (final path in paths) {
+        try {
+          final s = await _platform.viewer.show(MediaItem(kind: MediaItem.kindForPath(path), path: path));
+          debugPrint('debug show $path -> ${s.name}');
+        } catch (e) {
+          debugPrint('debug show $path failed: $e');
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 1500));
+      }
+    }());
   }
 
   @override
