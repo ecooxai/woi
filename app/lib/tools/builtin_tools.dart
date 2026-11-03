@@ -276,7 +276,7 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
     ToolDefinition(
       spec: _spec(
         'show_file',
-        'Open a file for the user in a viewer popup (image, audio, video, or text/code).',
+        'Show a file to the user inside Woi (its own viewer window: image zoom, audio, embedded video player, text/code, rendered Markdown). Never opens external apps.',
         {
           'path': {'type': 'string'},
           'kind': {

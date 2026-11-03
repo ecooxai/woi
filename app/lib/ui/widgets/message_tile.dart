@@ -447,6 +447,8 @@ const _toolIcons = <String, IconData>{
   'edit_file': Icons.edit_note,
   'show_file': Icons.open_in_new,
   'delegate_task': Icons.hub_outlined,
+  'read_note': Icons.sticky_note_2_outlined,
+  'update_note': Icons.edit_note,
 };
 
 String toolTitle(String name) => switch (name) {
@@ -461,6 +463,8 @@ String toolTitle(String name) => switch (name) {
   'edit_file' => 'Edit file',
   'show_file' => 'Show file',
   'delegate_task' => 'Delegate task',
+  'read_note' => 'Read note',
+  'update_note' => 'Update note',
   _ => name,
 };
 
@@ -485,6 +489,13 @@ String toolArgSummary(String name, String argsJson) {
     'click_screen' =>
       '(${a['x']}, ${a['y']})${a['double'] == true ? ' ×2' : ''}${a['button'] != null && a['button'] != 'left' ? ' ${a['button']}' : ''}',
     'delegate_task' => a['task'],
+    'read_note' => '',
+    'update_note' => switch (a['mode']) {
+      'check_item' => '${a['checked'] == false ? 'uncheck' : 'check'} "${a['item'] ?? ''}"',
+      'replace_section' => 'section "${a['heading'] ?? ''}"',
+      'replace_all' => 'rewrite note',
+      _ => '${a['text'] ?? ''}'.split('\n').first,
+    },
     _ => a.isEmpty ? '' : argsJson,
   };
   return '${s ?? ''}';
