@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import '../core/auth/pkce_login.dart';
 import 'app_paths.dart';
 import 'audio_io.dart';
 import 'files.dart';
@@ -8,6 +9,8 @@ import 'linux/linux_platform.dart';
 import 'media_viewer.dart';
 import 'screen_capture.dart';
 import 'shell.dart';
+
+bool _always() => true;
 
 /// Every OS-specific capability the app uses. Ports (Android, macOS, iOS)
 /// provide their own implementation of each interface.
@@ -20,6 +23,11 @@ class PlatformServices {
     required this.shell,
     required this.files,
     required this.viewer,
+    this.urlOpener,
+    this.authPath,
+    this.autoScreenshot = _always,
+    this.deviceNote = '',
+    this.isMobile = false,
   });
 
   final AppPaths paths;
@@ -30,6 +38,24 @@ class PlatformServices {
   final Files files;
   final MediaViewer viewer;
 
+  /// Opens the sign-in page (null: [defaultUrlOpener], xdg-open).
+  final PlatformUrlOpener? urlOpener;
+
+  /// Where the ChatGPT login lives (null: `$CODEX_HOME` or `~/.codex/auth.json`).
+  final String? authPath;
+
+  /// Whether a screenshot is attached to each spoken turn right now (Android:
+  /// only while screen share runs).
+  final bool Function() autoScreenshot;
+
+  /// Extra facts for the model about the device (empty on the desktop).
+  final String deviceNote;
+
+  /// Phone/tablet: no sub-windows, touch targets, single-pane layout.
+  final bool isMobile;
+
+  /// Desktop platforms. Android needs async setup:
+  /// `createAndroidPlatform()` (platform/android/android_platform.dart).
   static PlatformServices forCurrentPlatform() {
     if (Platform.isLinux) return createLinuxPlatform();
     throw UnsupportedError('Woi currently supports Linux only (${Platform.operatingSystem} port pending).');

@@ -92,7 +92,7 @@ class AppController extends ChangeNotifier {
   }) : _backendOverride = backendFactory,
        _compressorOverride = compressor,
        _delegateOverride = delegate,
-       authManager = authManager ?? CodexAuthManager();
+       authManager = authManager ?? CodexAuthManager(path: platform.authPath);
 
   final PlatformServices platform;
   final ConfirmationService confirmations;
@@ -122,7 +122,8 @@ class AppController extends ChangeNotifier {
     final ws = platform.files.workspaceDir;
     return 'Environment: user name ${user.isEmpty ? 'unknown' : user}; home directory (\$HOME, ~) is $home; '
         'workspace directory (relative paths and the default shell cwd) is $ws. '
-        'Use exactly these paths; never invent others such as /home/oai or /home/user.';
+        'Use exactly these paths; never invent others such as /home/oai or /home/user.'
+        '${platform.deviceNote.isEmpty ? '' : ' ${platform.deviceNote}'}';
   }
 
   BackendSelection? _selection;
@@ -199,7 +200,7 @@ class AppController extends ChangeNotifier {
       _defaultWorkspace = platform.files.workspaceDir;
       _applyWorkspace();
       await history.init();
-      codexAuth = await CodexAuthInfo.load();
+      codexAuth = await CodexAuthInfo.load(path: authManager.path);
       _needsLogin = await _checkNeedsLogin();
       final conv = await history.loadLatest() ?? Conversation();
       await notes.open(conv.id);
@@ -287,7 +288,7 @@ class AppController extends ChangeNotifier {
   /// A login flow writing to the configured auth.json (never replacing a
   /// valid one).
   PkceLoginFlow createLoginFlow({PlatformUrlOpener? opener}) =>
-      PkceLoginFlow(authPath: authManager.path, opener: opener);
+      PkceLoginFlow(authPath: authManager.path, opener: opener ?? platform.urlOpener);
 
   /// Called by the login screen after "Sign in with ChatGPT" succeeded.
   Future<void> completeChatGptLogin() async {
@@ -336,7 +337,7 @@ class AppController extends ChangeNotifier {
   }
 
   PipelineOptions _pipelineOptions() => PipelineOptions(
-    autoScreenshot: _settings.autoScreenshot,
+    autoScreenshot: _settings.autoScreenshot && platform.autoScreenshot(),
     screenshotDelay: Duration(milliseconds: _settings.screenshotDelayMs),
     micMode: _settings.micMode,
     thinkingEarcon: _settings.thinkingEarcon,
@@ -404,7 +405,7 @@ class AppController extends ChangeNotifier {
   Future<void> setMicMode(MicMode mode) => updateSettings(_settings.copyWith(micMode: mode));
 
   Future<void> refreshCodexAuth() async {
-    codexAuth = await CodexAuthInfo.load();
+    codexAuth = await CodexAuthInfo.load(path: authManager.path);
     notifyListeners();
   }
 
