@@ -17,7 +17,7 @@ import 'voice_backend.dart';
 ///   `take a screenshot`, `run CMD`, `list DIR`, `read FILE`, `show FILE`,
 ///   `type TEXT`, `press KEYS`, `click X Y`, `write PATH: CONTENT`,
 ///   `delegate TASK`.
-class MockVoiceBackend implements VoiceBackend {
+class MockVoiceBackend extends VoiceBackend {
   MockVoiceBackend({
     this.serverVad = true,
     this.wordDelay = const Duration(milliseconds: 90),

@@ -167,6 +167,17 @@ abstract class VoiceBackend {
 
   void cancelResponse();
 
+  /// The user asked to stop ("stop", "cancel", "never mind"): cancel what is
+  /// playing and drop the reply the model makes to that request (no spoken
+  /// acknowledgement, no delegated action).
+  void stopAndDrop() => cancelResponse();
+
+  /// While held, the next reply must not become audible (the pipeline is
+  /// still deciding whether the user's interruption was just "stop").
+  /// Backends that play audio themselves implement this; for PCM backends the
+  /// pipeline buffers instead.
+  void setReplyHold(bool hold) {}
+
   Future<void> close();
 }
 

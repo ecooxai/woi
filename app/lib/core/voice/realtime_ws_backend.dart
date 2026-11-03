@@ -42,7 +42,7 @@ const _benignErrors = {
 /// * automatic reconnect that restores the summary and recent turns;
 /// * [applySummary]: compaction applied between responses with
 ///   `conversation.item.delete` (reconnect as a fallback).
-class RealtimeWsBackend implements VoiceBackend, LiveContextSync {
+class RealtimeWsBackend extends VoiceBackend implements LiveContextSync {
   RealtimeWsBackend({
     RealtimeConnector? connector,
     this.credentialsProvider,

@@ -90,7 +90,7 @@ class LiveConnectTimings {
 ///   [ToolCall], answered with [sendToolResult]) so confirmations and the
 ///   transcript UI work as usual; the result goes back with
 ///   `delegation.context.append` and the voice model speaks it.
-class LiveWebRtcBackend implements VoiceBackend, ManagedAudioBackend, LiveContextSync {
+class LiveWebRtcBackend extends VoiceBackend implements ManagedAudioBackend, LiveContextSync {
   LiveWebRtcBackend({
     required this.transportFactory,
     RealtimeConnector? sideband,
