@@ -124,3 +124,7 @@ When compaction runs, screenshots/images are tiered by recency:
 - PERFORMANCE FIRST: monitor CPU and RAM of all woi processes (main + viewer sub-windows) during idle, listening,
   speaking, typing in editor, scrolling history. Targets: idle CPU < 2% of one core, active voice < 15%, RSS < 300 MB,
   no leaks over a 10-min session, 60 fps scrolling. Script: qa/perf_monitor.sh (pidstat/ps sampling → CSV + summary).
+- Perf finding 2026-11-03 (CTO): pre-iter5 UI on :11 (Xephyr = Mesa llvmpipe software GL) burns ~321% CPU / ~900 MB RSS
+  while OFFLINE+MUTED — the animated voice orb repaints every frame. Rule: zero running tickers/animations when idle;
+  any animation only while actively listening/speaking, throttled, inside RepaintBoundary. :11 is a good canary because
+  every frame costs real CPU there. Merge gate: idle woi on :11 < 5% CPU, RSS < 300 MB.
