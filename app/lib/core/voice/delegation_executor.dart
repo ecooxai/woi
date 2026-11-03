@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import '../../platform/key_chords.dart';
 import '../auth/auth.dart';
 import '../notes/pinned_note.dart';
 import '../responses/responses_client.dart';
@@ -237,6 +238,8 @@ class DelegationExecutor {
       'Show, open, view or play a file: show_file. Never change files with run_bash: read_file, then edit_file '
       '(the user approves a diff). '
       'click_screen coordinates are pixels of the attached screenshot. '
+      'Keys or shortcuts in another app (copy, paste, select all, "press ctrl c", escape): send_keys; it targets the '
+      'app the user was using (never Woi), or `window` when the user names one ("in the xterm" -> window "xterm"). '
       'For complex work (writing code, analysis, long text) call delegate_task; when the user wants code or text '
       'written or saved, say so in the task (it saves files with write_file). '
       'The conversation note is attached: answer questions from it, record decisions, todos, facts and '
@@ -335,6 +338,62 @@ class DelegationExecutor {
     return body;
   }
 
+  static final _politePrefix = RegExp(
+    r'^\s*(?:(?:ok(?:ay)?|please|now|so|and|then|hey|woi|can you|could you|would you)[\s,]+)*',
+    caseSensitive: false,
+  );
+  static final _windowSuffix = RegExp(
+    r'\s+(?:in|into|on|inside)\s+(?:the\s+)?([\w .-]+?)(?:\s+(?:window|app|application|terminal window))?$',
+    caseSensitive: false,
+  );
+  static final _pressRequest = RegExp(
+    r'^(?:press|hit|push|tap|send)(?:\s+the)?\s+(.+?)(?:\s+(?:keys?|button|shortcut|combination|combo))?$',
+    caseSensitive: false,
+  );
+  static final _keyActions = <(RegExp, List<KeyAction>)>[
+    (RegExp(r'^copy\s+(?:all|everything)(?:\s+(?:the\s+)?text)?$'), [KeyAction.selectAll, KeyAction.copy]),
+    (RegExp(r'^copy(?:\s+(?:that|this|it|the\s+selection|selection|the\s+selected\s+text|the\s+text))?$'), [KeyAction.copy]),
+    (RegExp(r'^paste(?:\s+(?:that|this|it|the\s+clipboard|clipboard))?(?:\s+here)?$'), [KeyAction.paste]),
+    (RegExp(r'^cut(?:\s+(?:that|this|it|the\s+selection|selection))?$'), [KeyAction.cut]),
+    (RegExp(r'^(?:select|highlight|mark)\s+(?:all|everything)(?:\s+(?:the\s+)?text)?$'), [KeyAction.selectAll]),
+    (RegExp(r'^(?:press\s+)?esc(?:ape)?$'), [KeyAction.escape]),
+  ];
+
+  /// `send_keys` calls for a plain key request ("press ctrl c", "copy that",
+  /// "paste", "select all and copy in the xterm", "press escape"), or null.
+  /// Undo/redo are not here: "undo that" undoes Woi's own last edit.
+  static List<Map<String, Object?>>? keysFastPath(String request) {
+    var t = request.trim().replaceAll(RegExp(r'[\s.!?]+$'), '').replaceFirst(_politePrefix, '');
+    t = t.replaceAll(RegExp(r'\s+(?:please|for me|now)$', caseSensitive: false), '');
+    t = t.replaceAll(RegExp(r'\s+(?:to|into)\s+(?:the\s+)?clipboard$', caseSensitive: false), '');
+    String? window;
+    final w = _windowSuffix.firstMatch(t);
+    if (w != null) {
+      window = w[1]!.trim();
+      t = t.substring(0, w.start).trim();
+    }
+    if (t.isEmpty) return null;
+    Map<String, Object?> call(Map<String, Object?> a) => {...a, 'window': ?window};
+    final press = _pressRequest.firstMatch(t);
+    if (press != null) {
+      final keys = press[1]!.trim();
+      try {
+        parseKeySequence(keys);
+      } on FormatException {
+        return null;
+      }
+      return [call({'keys': keys})];
+    }
+    final out = <Map<String, Object?>>[];
+    for (final part in t.toLowerCase().split(RegExp(r'\s*(?:,|\band then\b|\bthen\b|\band\b)\s*'))) {
+      if (part.isEmpty) continue;
+      final hit = _keyActions.where((a) => a.$1.hasMatch(part)).firstOrNull;
+      if (hit == null) return null;
+      out.addAll([for (final a in hit.$2) call({'action': a.wire})]);
+    }
+    return out.isEmpty ? null : out;
+  }
+
   int _seq = 0;
 
   Future<DelegationReport> execute(String request, {String? id}) async {
@@ -393,6 +452,22 @@ class DelegationExecutor {
         ..steps = 0
         ..firstToolCall = run.startedAt
         ..toolsDone = run.doneAt
+        ..resultText = _summarize(report, const []);
+      return;
+    }
+    // Fast path: "copy that", "press ctrl c", "select all and copy".
+    final keyCalls = keysFastPath(request);
+    if (keyCalls != null && tools.any((t) => t.name == 'send_keys')) {
+      final n = report.tools.length;
+      for (final (i, a) in keyCalls.indexed) {
+        await _exec(report, sw, 'send_keys', jsonEncode(a), 'fast${i}_${report.id}');
+        if (!report.tools.last.ok) break;
+      }
+      report
+        ..model = 'fast-path'
+        ..steps = 0
+        ..firstToolCall = report.tools[n].startedAt
+        ..toolsDone = report.tools.last.doneAt
         ..resultText = _summarize(report, const []);
       return;
     }
@@ -574,7 +649,8 @@ final _actionRequest = RegExp(
   r"create|make|delete|remove|rename|move|copy|list|read|find|search|look\s+up|press|hit|scroll|close|"
   r"save|take|capture|launch|start|stop\s+the|install|download|go\s+to|navigate|select|drag|paste|"
   r"append|add|insert|replace|change|set|turn|switch|maximi[sz]e|minimi[sz]e|focus|check|count|send|"
-  r"fill|submit|upload|zip|unzip|extract|print|cd|ls|cat|grep|mkdir|touch)\b",
+  r"fill|submit|upload|zip|unzip|extract|print|cd|ls|cat|grep|mkdir|touch|undo|redo|apply|reject|cut|"
+  r"highlight|resume|seek|skip|rewind|use|new|tap|push)\b",
   caseSensitive: false,
 );
 

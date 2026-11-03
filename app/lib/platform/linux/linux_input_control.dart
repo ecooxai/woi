@@ -2,9 +2,15 @@ import 'dart:math';
 
 import '../input_control.dart';
 import 'exec_util.dart';
+import 'x11_key_target.dart';
 
 /// X11 input injection through xdotool.
 class LinuxInputControl implements InputControl {
+  LinuxInputControl({X11Windows? windows}) : targets = KeyTargetResolver(windows ?? XpropWindows());
+
+  /// Default `send_keys` target selection (active / remembered non-Woi window).
+  final KeyTargetResolver targets;
+
   String get _xdo => which('xdotool') ?? (throw MissingTool(['xdotool']));
 
   Future<String> _run(List<String> args) async {
@@ -60,6 +66,34 @@ class LinuxInputControl implements InputControl {
     final keys = combo.trim().split(RegExp(r'\s+')).where((s) => s.isNotEmpty).map(normalizeKeyCombo).toList();
     if (keys.isEmpty) return;
     await _run(['key', '--clearmodifiers', ...keys]);
+  }
+
+  @override
+  Future<SendKeysResult> sendKeys({String? keys, KeyAction? action, KeyTarget target = const KeyTarget()}) async {
+    if (keys == null && action == null) throw ArgumentError('keys or action required');
+    final List<KeyChord>? parsed = keys == null ? null : parseKeySequence(keys);
+    final (win, active) = await targets.resolve(target);
+    final chords = parsed ?? chordsForAction(action!, windowClass: win.wmClass);
+    final needsFocus = active?.id != win.id;
+    final restore = needsFocus && active != null && targets.isWoi(active) && shouldRestoreFocus(chords);
+    await _run(sendKeysArgs(chords, activate: needsFocus ? win.id : null, restore: restore ? active.id : null));
+    if (!needsFocus || !restore) targets.remembered = win.id;
+    return SendKeysResult(
+      chords: chords,
+      windowTitle: win.title,
+      windowClass: win.wmClass,
+      windowId: win.id,
+      activated: needsFocus,
+    );
+  }
+
+  @override
+  Future<void> rememberTargetWindow() async {
+    try {
+      await targets.remember();
+    } catch (_) {
+      // No xdotool / X: send_keys reports the problem when used.
+    }
   }
 
   @override

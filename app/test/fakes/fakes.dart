@@ -170,6 +170,19 @@ class FakeInput implements InputControl {
   Future<void> keyCombo(String combo) async => log.add('key $combo');
   @override
   Future<Point<int>> mouseLocation() async => location;
+
+  /// Target window class reported by [sendKeys] (e.g. "xterm XTerm").
+  String windowClass = 'gedit Gedit';
+  int remembered = 0;
+  @override
+  Future<SendKeysResult> sendKeys({String? keys, KeyAction? action, KeyTarget target = const KeyTarget()}) async {
+    final chords = keys != null ? parseKeySequence(keys) : chordsForAction(action!, windowClass: windowClass);
+    log.add('keys ${chords.join(' ')}${target.isDefault ? '' : ' @${target.window}'}');
+    return SendKeysResult(chords: chords, windowTitle: target.window ?? 'Untitled - gedit', windowClass: windowClass);
+  }
+
+  @override
+  Future<void> rememberTargetWindow() async => remembered++;
 }
 
 // ------------------------------------------------------------------ shell

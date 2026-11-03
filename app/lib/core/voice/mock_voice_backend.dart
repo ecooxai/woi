@@ -169,7 +169,7 @@ class MockVoiceBackend extends VoiceBackend {
       return ('type_text', {'text': m![1]!});
     }
     if ((m = RegExp(r'^press\s+(.+)$', caseSensitive: false).firstMatch(t)) != null) {
-      return ('key_combo', {'keys': m![1]!.trim()});
+      return ('send_keys', {'keys': m![1]!.trim()});
     }
     if ((m = RegExp(r'^click\s+(\d+)[\s,]+(\d+)', caseSensitive: false).firstMatch(t)) != null) {
       return ('click_screen', {'x': int.parse(m![1]!), 'y': int.parse(m[2]!)});

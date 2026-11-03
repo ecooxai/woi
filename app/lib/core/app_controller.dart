@@ -8,6 +8,7 @@ import '../platform/platform_services.dart';
 import '../tools/builtin_tools.dart';
 import '../tools/confirmation.dart';
 import '../tools/note_tools.dart';
+import '../tools/send_keys_tool.dart';
 import '../tools/tool_registry.dart';
 import 'auth/auth.dart';
 import 'auth/pkce_login.dart';
@@ -44,7 +45,7 @@ Say any acknowledgement ("on it", "one moment") at most once per request; do not
 Screenshots of the user's screen are attached while they speak; use them to resolve what they refer to.
 click_screen takes x/y in the pixel coordinates of the latest screenshot image (not the real screen);
 the app scales them to real screen pixels. Take a screenshot first if you have none or the screen changed.
-Tools: click_screen, type_text, key_combo, take_screenshot, run_bash, read_file, list_dir, edit_file,
+Tools: click_screen, type_text, send_keys, take_screenshot, run_bash, read_file, list_dir, edit_file,
 write_file, show_file (show a file, image, audio or video to the user inside Woi), read_note, update_note,
 delegate_task.
 File writes and edits are shown to the user as a diff for approval by the app; shell commands may need approval.
@@ -199,7 +200,9 @@ class AppController extends ChangeNotifier {
         terminalShell: TerminalShell(terminals),
       );
       tools = ToolRegistry()
-        ..registerAll(builtinTools(toolEnv))
+        // send_keys supersedes key_combo (targets the user's app, not Woi).
+        ..registerAll(builtinTools(toolEnv).where((t) => t.name != 'key_combo'))
+        ..register(sendKeysTool(platform.input))
         ..registerAll(noteTools(notes));
 
       p = TurnPipeline(
@@ -213,6 +216,7 @@ class AppController extends ChangeNotifier {
         sessionConfig: _sessionConfig,
         options: _pipelineOptions,
         onScreenshotCaptured: (s) => toolEnv.lastScreenshot = s,
+        onTurnStart: () => unawaited(platform.input.rememberTargetWindow()),
         imageCompactor: ImageCompactor(
           downscale: uiDownscale,
           describe: responsesDescriber(responses, model: () => _settings.compressionModel),
