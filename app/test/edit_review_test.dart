@@ -136,7 +136,9 @@ void main() {
       final r2 = EditReview(delaySeconds: () => kRequireApproval);
       final c2 = ReviewingConfirmations(inner: FakeConfirmations(), review: r2, history: history);
       final pending = files.write(g.path, 'gone\n', approve: c2.confirmFileWrite);
-      await Future<void>.delayed(Duration.zero);
+      for (var i = 0; i < 200 && !r2.hasPending; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
       expect(r2.current?.title, g.path);
       expect(r2.reject(), isTrue);
       final out = await pending;

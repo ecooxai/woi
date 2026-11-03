@@ -89,6 +89,11 @@ NoteEditResult deleteNoteText(String current, String find) {
     return NoteEditResult(text: out, start: start, end: start, summary: 'Deleted the line "$content"');
   }
   out = current.replaceRange(i, i + f.length, '');
-  if (i > 0 && i < out.length && out[i - 1] == ' ' && out[i] == ' ') out = out.replaceRange(i, i + 1, '');
-  return NoteEditResult(text: out, start: i, end: i, summary: 'Deleted "$f"');
+  // Collapse the gap left behind ("a  b" -> "a b", "milk \n" -> "milk\n").
+  var at = i;
+  if (at > 0 && out[at - 1] == ' ' && (at == out.length || out[at] == ' ' || out[at] == '\n')) {
+    out = out.replaceRange(at - 1, at, '');
+    at--;
+  }
+  return NoteEditResult(text: out, start: at, end: at, summary: 'Deleted "$f"');
 }

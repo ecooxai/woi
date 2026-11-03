@@ -11,6 +11,8 @@ void main() {
     home: Scaffold(body: Align(alignment: Alignment.bottomCenter, child: EditReviewCard(review: r))),
   );
 
+  Finder ring(String s) => find.descendant(of: find.byKey(const ValueKey('edit-review-countdown')), matching: find.text(s));
+
   PendingEdit edit({bool approval = false}) => PendingEdit(
     target: EditTarget.note,
     title: 'Note',
@@ -27,13 +29,14 @@ void main() {
     bool? applied;
     r.review(edit()).then((v) => applied = v);
     await t.pump();
-    expect(find.text('Note edit'), findsOneWidget);
+    await t.pump(const Duration(milliseconds: 50));
+    expect(find.textContaining('Note edit', findRichText: true), findsOneWidget);
     expect(find.textContaining('buy milk'), findsWidgets);
     expect(find.byKey(const ValueKey('edit-review-countdown')), findsOneWidget);
-    expect(find.text('5'), findsOneWidget);
+    expect(ring('5'), findsOneWidget);
     expect(find.text('Apply now'), findsOneWidget);
-    await t.pump(const Duration(milliseconds: 2100));
-    expect(find.text('3'), findsOneWidget);
+    await t.pump(const Duration(milliseconds: 2050));
+    expect(ring('3'), findsOneWidget);
     await t.pump(const Duration(seconds: 3));
     await t.pump(const Duration(milliseconds: 300));
     expect(applied, isTrue);
@@ -48,9 +51,10 @@ void main() {
     r.review(edit()).then((v) => a = v);
     r.review(edit()).then((v) => b = v);
     await t.pump();
-    expect(find.textContaining('+1 queued'), findsOneWidget);
+    await t.pump(const Duration(milliseconds: 300));
+    expect(find.textContaining('+1 queued', findRichText: true), findsOneWidget);
     await t.tap(find.byKey(const ValueKey('edit-review-reject')));
-    await t.pump();
+    await t.pump(const Duration(milliseconds: 300));
     expect(a, isFalse);
     await t.tap(find.byKey(const ValueKey('edit-review-apply')));
     await t.pump(const Duration(milliseconds: 300));
