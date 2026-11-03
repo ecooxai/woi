@@ -41,6 +41,39 @@ static gboolean clear_gl_before_view_realize(GSignalInvocationHint* hint,
   return TRUE;  // keep the hook installed
 }
 
+#ifdef GDK_WINDOWING_X11
+// When a viewer's X window is destroyed from outside (xkill-style tools,
+// `xdotool windowclose`), the engine's GL teardown afterwards gets a GLX
+// BadAccess/BadDrawable for the dead drawable, and GDK's default X error
+// handler exits the whole app. GLX errors are logged and ignored; every other
+// error goes to GDK's handler.
+static XErrorHandler gdk_x_error_handler = nullptr;
+static int glx_major_opcode = -1;
+
+static int woi_x_error(Display* display, XErrorEvent* event) {
+  if (glx_major_opcode >= 0 && event->request_code == glx_major_opcode) {
+    g_warning("Ignoring X error %d from GLX request %d.%d", event->error_code,
+              event->request_code, event->minor_code);
+    return 0;
+  }
+  return gdk_x_error_handler != nullptr ? gdk_x_error_handler(display, event)
+                                        : 0;
+}
+
+static void install_x_error_handler() {
+  GdkDisplay* display = gdk_display_get_default();
+  if (display == nullptr || !GDK_IS_X11_DISPLAY(display)) return;
+  Display* xdisplay = gdk_x11_display_get_xdisplay(display);
+  int event_base = 0, error_base = 0;
+  if (!XQueryExtension(xdisplay, "GLX", &glx_major_opcode, &event_base,
+                       &error_base)) {
+    glx_major_opcode = -1;
+    return;
+  }
+  gdk_x_error_handler = XSetErrorHandler(woi_x_error);
+}
+#endif
+
 // Secondary windows are created by desktop_multi_window with an empty title
 // and no background colour. "woi/window" lets the viewer engine set its title.
 static void window_method_cb(FlMethodChannel* channel, FlMethodCall* call,
@@ -81,13 +114,19 @@ static void window_method_cb(FlMethodChannel* channel, FlMethodCall* call,
     }
     g_autoptr(FlValue) result = fl_value_new_int(xid);
     response = FL_METHOD_RESPONSE(fl_method_success_response_new(result));
+  } else if (g_strcmp0(fl_method_call_get_name(call), "close") == 0) {
+    // Graceful close (delete-event, then destroy), as the WM close button
+    // does. The viewer uses it for Esc.
+    GtkWidget* toplevel = gtk_widget_get_toplevel(view);
+    if (GTK_IS_WINDOW(toplevel)) gtk_window_close(GTK_WINDOW(toplevel));
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
   } else {
     response = FL_METHOD_RESPONSE(fl_method_not_implemented_response_new());
   }
   fl_method_call_respond(call, response, nullptr);
 }
 
-// Registers "woi/window" (setTitle, present) on the engine of [registry].
+// Registers "woi/window" (setTitle, present, close) on the engine of [registry].
 static FlView* register_window_channel(FlPluginRegistry* registry) {
   g_autoptr(FlPluginRegistrar) registrar =
       fl_plugin_registry_get_registrar_for_plugin(registry, "WoiWindow");
@@ -118,6 +157,26 @@ static void secondary_window_created(FlPluginRegistry* registry) {
   GtkWidget* toplevel = gtk_widget_get_toplevel(GTK_WIDGET(view));
   if (GTK_IS_WINDOW(toplevel)) {
     gtk_window_set_title(GTK_WINDOW(toplevel), "Woi");
+  }
+  // Closing a viewer only hides it. Destroying a secondary FlView breaks GL
+  // for the main window: its next paint segfaults in gdk_cairo_draw_from_gl.
+  // The Dart side reuses the hidden viewer for the next file and is told
+  // "hidden" so it can stop playback.
+  if (GTK_IS_WINDOW(toplevel)) {
+    g_signal_connect(toplevel, "delete-event",
+                     G_CALLBACK(+[](GtkWidget* window, GdkEvent*,
+                                    gpointer data) -> gboolean {
+                       gtk_widget_hide(window);
+                       auto* channel = FL_METHOD_CHANNEL(g_object_get_data(
+                           G_OBJECT(data), "woi-window-channel"));
+                       if (channel != nullptr) {
+                         fl_method_channel_invoke_method(channel, "hidden",
+                                                         nullptr, nullptr,
+                                                         nullptr, nullptr);
+                       }
+                       return TRUE;
+                     }),
+                     view);
   }
   // Raise the viewer once Flutter has drawn into it.
   g_signal_connect(view, "first-frame", G_CALLBACK(+[](FlView* v, gpointer) {
@@ -193,6 +252,9 @@ static void my_application_activate(GApplication* application) {
 
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));
   register_window_channel(FL_PLUGIN_REGISTRY(view));
+#ifdef GDK_WINDOWING_X11
+  install_x_error_handler();
+#endif
 
   // Every secondary window (media viewer) runs its own engine and needs the
   // plugins registered as well.

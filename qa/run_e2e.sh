@@ -109,13 +109,15 @@ run_fixture() {
 }
 
 # The WM has no EWMH client list (wmctrl fails), so close via Escape in the
-# viewer, then a WM_DELETE close request; also kill external players.
+# viewer (the app hides it for reuse); also kill external players. No
+# `xdotool windowclose`: that is XDestroyWindow, which kills the whole app.
 close_viewers() {
-  local w
-  for w in $(qa_viewer_wids); do
-    xdotool windowactivate --sync "$w" key Escape 2>/dev/null; sleep 0.5
+  local w try
+  for try in 1 2; do
+    for w in $(qa_viewer_wids); do
+      xdotool windowactivate --sync "$w" key Escape 2>/dev/null; sleep 0.5
+    done
   done
-  for w in $(qa_viewer_wids); do xdotool windowclose "$w" 2>/dev/null; done
   qa_kill_players
   sleep 1
 }

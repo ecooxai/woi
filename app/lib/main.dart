@@ -1,25 +1,19 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import 'core/voice/live_register.dart';
-import 'platform/linux/linux_audio_io.dart';
 import 'platform/linux/linux_media_viewer.dart';
 import 'platform/media_viewer.dart';
 import 'ui/app.dart';
-import 'ui/viewer/viewer_app.dart';
+import 'ui/viewer/viewer_window.dart';
 
 void main(List<String> args) {
   WidgetsFlutterBinding.ensureInitialized();
 
   // desktop_multi_window starts sub-windows with ['multi_window', id, argument].
   if (args.length >= 3 && args[0] == 'multi_window' && args[2].startsWith(LinuxMediaViewer.windowTag)) {
-    final json = jsonDecode(args[2].substring(LinuxMediaViewer.windowTag.length));
-    final item = MediaItem.fromJson((json as Map).cast<String, Object?>());
-    // GTK ignores MaterialApp.title; the runner exposes the window title.
-    const MethodChannel('woi/window').invokeMethod<void>('setTitle', 'Woi - ${item.title}').catchError((Object _) {});
-    runApp(ViewerApp(item: item, audio: LinuxAudioIO()));
+    runViewer(MediaItem.fromJson((jsonDecode(args[2].substring(LinuxMediaViewer.windowTag.length)) as Map).cast()));
     return;
   }
   registerGptLive();

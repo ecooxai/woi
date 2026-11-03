@@ -18,6 +18,13 @@ class LinuxMediaViewer extends MediaViewer {
   /// Prefix of the window argument identifying a viewer window.
   static const windowTag = 'woi-viewer:';
 
+  /// Window method that shows another file in an existing (hidden) viewer.
+  static const openMethod = 'open';
+
+  /// The viewer window. Closing it only hides it (see ui/viewer/viewer_window.dart),
+  /// so later files reuse it.
+  WindowController? _window;
+
   @override
   Future<ViewerSurface> show(MediaItem item) async {
     if (item.kind == MediaKind.video && item.path != null) {
@@ -28,6 +35,18 @@ class LinuxMediaViewer extends MediaViewer {
       }
     }
     if (useSecondaryWindow) {
+      final reused = _window;
+      if (reused != null) {
+        try {
+          if (await reused.invokeMethod<bool>(openMethod, item.toJson()) == true) {
+            await reused.show();
+            return ViewerSurface.window;
+          }
+        } catch (e) {
+          debugPrint('Viewer window not reusable, opening a new one: $e');
+        }
+        _window = null;
+      }
       try {
         // Shown at once (a hidden window is realized at 1x1 and the first
         // draw then blocks waiting for a full-size frame). The runner paints
@@ -37,6 +56,7 @@ class LinuxMediaViewer extends MediaViewer {
           WindowConfiguration(arguments: '$windowTag${jsonEncode(item.toJson())}', hiddenAtLaunch: false),
         );
         await c.show();
+        _window = c;
         return ViewerSurface.window;
       } catch (e) {
         debugPrint('Secondary window unavailable, using overlay: $e');

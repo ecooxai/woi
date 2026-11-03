@@ -132,7 +132,7 @@ qa_center_target() {
 qa_shot() { # wid name [maxwidth]
   local wid=$1 name=$2 mw=${3:-900}
   mkdir -p "$QA_OUT/shots"
-  import -window "$wid" "$QA_OUT/shots/$name.png" 2>/dev/null || return 1
+  timeout 10 import -window "$wid" "$QA_OUT/shots/$name.png" 2>/dev/null || return 1
   convert "$QA_OUT/shots/$name.png" -resize "${mw}x>" -strip -quality 72 "$QA_OUT/shots/$name.jpg" 2>/dev/null
   echo "$QA_OUT/shots/$name.jpg"
 }
@@ -140,7 +140,7 @@ qa_shot() { # wid name [maxwidth]
 # Mean brightness (0..1) of a window; used to spot the modal barrier of an
 # approval dialog.
 qa_brightness() {
-  import -window "$1" -resize 64x64! -colorspace gray -format '%[fx:mean]' info: 2>/dev/null || echo 1
+  timeout 10 import -window "$1" -resize 64x64! -colorspace gray -format '%[fx:mean]' info: 2>/dev/null || echo 1
 }
 
 # ---------------------------------------------------------------- app
@@ -216,7 +216,7 @@ qa_shot_screen() { # wid name [maxwidth]
   local wid=$1 name=$2 mw=${3:-900}
   eval "$(xdotool getwindowgeometry --shell "$wid" 2>/dev/null)" || return 1
   xdotool windowraise "$wid" 2>/dev/null; sleep 0.5
-  import -window root -crop "${WIDTH}x${HEIGHT}+${X}+${Y}" +repage "$QA_OUT/shots/$name.png" 2>/dev/null || return 1
+  timeout 10 import -window root -crop "${WIDTH}x${HEIGHT}+${X}+${Y}" +repage "$QA_OUT/shots/$name.png" 2>/dev/null || return 1
   convert "$QA_OUT/shots/$name.png" -resize "${mw}x>" -strip -quality 72 "$QA_OUT/shots/$name.jpg" 2>/dev/null
   echo "$QA_OUT/shots/$name.jpg"
 }
