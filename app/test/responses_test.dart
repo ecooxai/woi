@@ -344,7 +344,7 @@ void main() {
       final s = createVoiceBackend(ctx(BackendMode.gptLive));
       expect(s.backend, isA<RealtimeWsBackend>());
       expect(s.mode, BackendMode.direct);
-      expect(s.model, 'gpt-realtime-1.5');
+      expect(s.model, 'gpt-realtime-2');
       expect(s.notice, contains('gpt-live'));
     });
 

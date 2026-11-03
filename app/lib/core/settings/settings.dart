@@ -15,7 +15,7 @@ enum MicMode {
 /// Which voice backend the app talks to.
 enum BackendMode {
   gptLive('gpt-live (WebRTC)'),
-  direct('Direct realtime (gpt-realtime-1.5)'),
+  direct('Direct realtime (gpt-realtime-2)'),
   apiKey('OpenAI API key');
 
   const BackendMode(this.label);
@@ -29,7 +29,7 @@ enum BackendMode {
 const kVoiceModels = ['gpt-live-1.1', 'gpt-live-1', 'gpt-live-1-codex'];
 
 /// Models that work on wss://api.openai.com/v1/realtime (§2.1).
-const kRealtimeModels = ['gpt-realtime-1.5', 'gpt-realtime', 'gpt-realtime-2', 'gpt-realtime-mini'];
+const kRealtimeModels = ['gpt-realtime-2', 'gpt-realtime-1.5', 'gpt-realtime', 'gpt-realtime-mini'];
 const kVoices = ['marin', 'cedar', 'alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse'];
 
 class AppSettings {
@@ -37,7 +37,7 @@ class AppSettings {
     this.backendMode = BackendMode.gptLive,
     this.apiKey = '',
     this.voiceModel = 'gpt-live-1.1',
-    this.realtimeModel = 'gpt-realtime-1.5',
+    this.realtimeModel = 'gpt-realtime-2',
     this.voice = 'marin',
     this.compressionThreshold = 10000,
     this.compressionModel = 'gpt-6-luna',

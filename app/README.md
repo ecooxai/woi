@@ -18,7 +18,7 @@ Pick the backend under **Settings → Voice backend**. `lib/core/voice/backend_f
 | Mode | Backend | Auth |
 |---|---|---|
 | **gpt-live (WebRTC)**, the default | Whatever is registered with `GptLiveHook` (the WebRTC backend, `live_*.dart`). If nothing is registered, Woi falls back to Direct realtime and shows an amber notice in the conversation. | ChatGPT login |
-| **Direct realtime (gpt-realtime-1.5)** | `RealtimeWsBackend` on `wss://api.openai.com/v1/realtime`. The model is configurable. | ChatGPT login |
+| **Direct realtime (gpt-realtime-2)** | `RealtimeWsBackend` on `wss://api.openai.com/v1/realtime`. The model is configurable. | ChatGPT login |
 | **OpenAI API key** | `RealtimeWsBackend` | API key from settings, or `OPENAI_API_KEY` |
 
 ### Auth (`lib/core/auth/auth.dart`)
