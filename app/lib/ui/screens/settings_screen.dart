@@ -555,6 +555,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
       controlWidth: 120,
     ),
+    _row(
+      wide,
+      'Run in terminal',
+      'Show the AI\'s shell commands in the terminal view (Ctrl+3, "AI" tab). The output is still returned to the AI.',
+      Align(
+        alignment: wide ? Alignment.centerRight : Alignment.centerLeft,
+        child: Switch(
+          key: const ValueKey('run-in-terminal-switch'),
+          value: _s.runBashInTerminal,
+          onChanged: (v) => _apply(_s.copyWith(runBashInTerminal: v)),
+        ),
+      ),
+      controlWidth: 120,
+    ),
   ];
 
   List<Widget> _shortcuts() {
@@ -566,6 +580,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       (['Ctrl', 'K'], 'Focus the message box'),
       (['Ctrl', ','], 'Open settings'),
       (['Ctrl', 'N'], 'New conversation'),
+      (['Ctrl', '3'], 'Terminal view'),
+      (['Ctrl', 'Shift', 'T'], 'New terminal tab (Ctrl+Shift+W closes it)'),
+      (['Ctrl', 'Shift', 'C'], 'Copy in the terminal (Ctrl+Shift+V pastes)'),
     ];
     return [
       Padding(

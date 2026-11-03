@@ -187,6 +187,28 @@ void main() {
       expect(confirm.commandRequests, isEmpty);
       expect(fp.shell.commands, ['echo hi']);
     });
+
+    test('"Run in terminal" routes run_bash to the terminal shell', () async {
+      final term = FakeShell();
+      env = ToolEnvironment(
+        platform: fp.services,
+        confirmations: confirm,
+        delegate: delegate,
+        settings: () => settings,
+        onScreenshot: (s, note) async {},
+        terminalShell: term,
+      );
+      registry = ToolRegistry()..registerAll(builtinTools(env));
+      settings = settings.copyWith(confirmBeforeBash: false);
+      await registry.dispatch('run_bash', '{"command":"echo pipe"}');
+      settings = settings.copyWith(runBashInTerminal: true);
+      final o = await registry.dispatch('run_bash', '{"command":"echo term"}');
+      expect(o.ok, isTrue);
+      expect(fp.shell.commands, ['echo pipe']);
+      expect(term.commands, ['echo term']);
+      expect(AppSettings.fromJson(settings.toJson()).runBashInTerminal, isTrue);
+      expect(const AppSettings().runBashInTerminal, isFalse);
+    });
   });
 
   group('files', () {

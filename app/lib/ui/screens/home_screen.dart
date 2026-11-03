@@ -10,6 +10,7 @@ import '../../core/pipeline/turn_pipeline.dart';
 import '../../core/settings/settings.dart';
 import '../../platform/media_viewer.dart';
 import '../notes/note_editor.dart';
+import '../terminal/terminal_panel.dart';
 import '../theme.dart';
 import '../widgets/banner.dart';
 import '../widgets/context_meter.dart';
@@ -28,7 +29,7 @@ const kWideBreakpoint = 1000.0;
 const kSplitBreakpoint = 1280.0;
 
 /// The two main views of a conversation.
-enum HomeView { note, chat }
+enum HomeView { note, chat, terminal }
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, required this.controller});
@@ -94,8 +95,15 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  /// Switches between the note and the chat (Ctrl+1 / Ctrl+2).
+  /// Switches between the note, the chat and the terminal (Ctrl+1/2/3).
   void setView(HomeView v) {
+    if (v == HomeView.terminal) {
+      setState(() {
+        _split = false;
+        _view = v;
+      });
+      return;
+    }
     if (_splitActive) {
       // Both visible: just focus the requested side.
       if (v == HomeView.note) _noteBadge = false;
@@ -143,7 +151,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _convId = conv.id;
       _seenMessages = conv.messages.length;
       _noteBadge = false;
-      if (conv.messages.isEmpty && _view != HomeView.note) {
+      if (conv.messages.isEmpty && _view == HomeView.chat) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) setState(() => _view = HomeView.note);
         });
@@ -176,12 +184,15 @@ class _HomeScreenState extends State<HomeScreen> {
   bool get _typing {
     final ctx = FocusManager.instance.primaryFocus?.context;
     if (ctx == null) return false;
-    return ctx.widget is EditableText || ctx.findAncestorWidgetOfExactType<EditableText>() != null;
+    return ctx.widget is EditableText ||
+        ctx.findAncestorWidgetOfExactType<EditableText>() != null ||
+        terminalHasFocus();
   }
 
   /// Global shortcuts. Space = push-to-talk (when not typing), Esc =
   /// interrupt, Ctrl+K = type, Ctrl+, = settings, Ctrl+N = new chat,
-  /// Ctrl+1 / Ctrl+2 = note / chat, Ctrl+\ = side by side.
+  /// Ctrl+1 / Ctrl+2 / Ctrl+3 = note / chat / terminal, Ctrl+\ = side by
+  /// side. Inside the terminal, Ctrl+K/N/\ and Esc go to the shell.
   bool _onKey(KeyEvent e) {
     if (!mounted) return false;
     if (ModalRoute.of(context)?.isCurrent != true) return _onKeyOverSettings(e);
@@ -193,8 +204,9 @@ class _HomeScreenState extends State<HomeScreen> {
       return true;
     }
     if (e is! KeyDownEvent) return false;
-    if (ctrl && key == LogicalKeyboardKey.keyK) {
-      if (_view == HomeView.note && !_splitActive && _width >= kWideBreakpoint) setView(HomeView.chat);
+    final inTerminal = terminalHasFocus();
+    if (ctrl && key == LogicalKeyboardKey.keyK && !inTerminal) {
+      if (_view != HomeView.chat && !_splitActive && _width >= kWideBreakpoint) setView(HomeView.chat);
       _focusComposer();
       return true;
     }
@@ -206,7 +218,11 @@ class _HomeScreenState extends State<HomeScreen> {
       setView(HomeView.chat);
       return true;
     }
-    if (ctrl && key == LogicalKeyboardKey.backslash) {
+    if (ctrl && (key == LogicalKeyboardKey.digit3 || key == LogicalKeyboardKey.numpad3)) {
+      setView(HomeView.terminal);
+      return true;
+    }
+    if (ctrl && key == LogicalKeyboardKey.backslash && !inTerminal) {
       toggleSplit();
       return true;
     }
@@ -214,7 +230,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _openSettings();
       return true;
     }
-    if (ctrl && key == LogicalKeyboardKey.keyN) {
+    if (ctrl && key == LogicalKeyboardKey.keyN && !inTerminal) {
       c.newConversation();
       return true;
     }
@@ -361,7 +377,11 @@ class _HomeScreenState extends State<HomeScreen> {
             duration: WoiMotion.medium,
             switchInCurve: WoiMotion.emphasized,
             transitionBuilder: _viewTransition,
-            child: _view == HomeView.note ? _notePanel() : chatPanel(),
+            child: switch (_view) {
+              HomeView.note => _notePanel(),
+              HomeView.chat => chatPanel(),
+              HomeView.terminal => TerminalPanel(key: const ValueKey('terminal-view'), hub: c.terminals),
+            },
           );
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
@@ -430,7 +450,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final empty = pipeline.conversation.messages.isEmpty;
     final keyboardUp = MediaQuery.viewInsetsOf(context).bottom > 0;
     final note = _view == HomeView.note;
-    final hero = empty && !keyboardUp && !note;
+    final term = _view == HomeView.terminal;
+    final hero = empty && !keyboardUp && !note && !term;
     final orbSize = hero ? (box.maxHeight * 0.3).clamp(150.0, 240.0) : (note ? 60.0 : 76.0);
     return Column(
       children: [
@@ -448,7 +469,7 @@ class _HomeScreenState extends State<HomeScreen> {
         AnimatedSize(
           duration: WoiMotion.slow,
           curve: WoiMotion.emphasized,
-          child: note && keyboardUp
+          child: (note || term) && keyboardUp
               ? const SizedBox(width: double.infinity)
               : (hero ? _phoneHero(orbSize) : _phoneStrip(orbSize)),
         ),
@@ -456,7 +477,13 @@ class _HomeScreenState extends State<HomeScreen> {
           child: AnimatedSwitcher(
             duration: WoiMotion.medium,
             transitionBuilder: _viewTransition,
-            child: note
+            child: term
+                ? Padding(
+                    key: const ValueKey('phone-terminal'),
+                    padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+                    child: TerminalPanel(hub: c.terminals, fontSize: 12),
+                  )
+                : note
                 ? Padding(
                     key: const ValueKey('phone-note'),
                     padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
@@ -999,7 +1026,11 @@ class ViewSwitch extends StatelessWidget {
   Widget build(BuildContext context) {
     Widget seg(HomeView v, IconData icon, String label, String keys, {Widget? badge}) {
       final on = !dimmed && v == view;
-      final color = v == HomeView.note ? WoiColors.mint : WoiColors.cyan;
+      final color = switch (v) {
+        HomeView.note => WoiColors.mint,
+        HomeView.chat => WoiColors.cyan,
+        HomeView.terminal => WoiColors.amber,
+      };
       final child = Tooltip(
         message: '$label ($keys)',
         child: Semantics(
@@ -1093,6 +1124,8 @@ class ViewSwitch extends StatelessWidget {
                   )
                 : null,
           ),
+          const SizedBox(width: 2),
+          seg(HomeView.terminal, Icons.terminal, 'Terminal', 'Ctrl+3'),
         ],
       ),
     );

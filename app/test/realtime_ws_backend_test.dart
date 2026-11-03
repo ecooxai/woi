@@ -508,8 +508,8 @@ void main() {
   });
 
   group('applySummary', () {
-    Future<_Rig> conversation() async {
-      final r = _Rig();
+    Future<_Rig> conversation({int keepRecentTurns = 2}) async {
+      final r = _Rig(keepRecentTurns: keepRecentTurns);
       await r.connect();
       for (var i = 1; i <= 4; i++) {
         r.userTurn('u$i', 'turn $i');
@@ -536,6 +536,16 @@ void main() {
       expect(r.backend.serverItemIds.first, startsWith('woi_ctx_'));
       expect(r.ws.items, r.backend.serverItemIds);
       expect(r.backend.appliedSummary, 'Facts: user is Alice.');
+      await r.dispose();
+    });
+
+    test('rule: by default the last 3 user turns stay on the server verbatim', () async {
+      expect(RealtimeWsBackend(credentialsProvider: () async => _creds).keepRecentTurns, 3);
+      final r = await conversation(keepRecentTurns: 3);
+      final res = await r.backend.applySummary('S');
+      expect(res.method, ContextApplyMethod.deletedItems);
+      expect(r.ws.ofType('conversation.item.delete').map((e) => e['item_id']), ['u1', 'a1']);
+      expect(r.backend.serverItemIds.skip(1), ['u2', 'a2', 'u3', 'a3', 'u4', 'a4']);
       await r.dispose();
     });
 

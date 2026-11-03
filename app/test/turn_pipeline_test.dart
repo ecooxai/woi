@@ -115,6 +115,8 @@ void main() {
       final sizes = <(int, int)>[];
       final h = await Harness.create(
         images: (store) => ImageCompactor(
+          // No user turns here; the raw-last-3-turns rule is tested in image_tiers_test.
+          policy: const ImageTierPolicy(rawRecentTurns: 0),
           downscale: (png, w, h) async {
             sizes.add((w, h));
             return Uint8List.fromList(png.take(16).toList());

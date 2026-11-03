@@ -10,6 +10,7 @@ import '../tools/confirmation.dart';
 import '../tools/note_tools.dart';
 import '../tools/tool_registry.dart';
 import 'auth/auth.dart';
+import 'auth/pkce_login.dart';
 import 'context/compressor.dart';
 import 'context/context_manager.dart';
 import 'context/image_tiers.dart';
@@ -25,6 +26,7 @@ import 'pipeline/turn_pipeline.dart';
 import 'responses/responses_client.dart';
 import 'settings/settings.dart';
 import 'storage/history_store.dart';
+import 'terminal/terminal_hub.dart';
 import 'voice/backend_factory.dart';
 import 'voice/pinned_context.dart';
 import 'voice/voice_backend.dart';
@@ -152,6 +154,10 @@ class AppController extends ChangeNotifier {
   late final ContextManager contextManager;
   late final ToolRegistry tools;
   late final ToolEnvironment toolEnv;
+
+  /// Built-in terminal tabs (Ctrl+3). Nothing runs until the view opens or
+  /// the AI runs a command with "Run in terminal" on.
+  late final TerminalHub terminals = TerminalHub(workingDirectory: () => platform.files.workspaceDir);
   late final TurnPipeline pipeline;
 
   AppSettings _settings = const AppSettings();
@@ -168,6 +174,7 @@ class AppController extends ChangeNotifier {
       _applyWorkspace();
       await history.init();
       codexAuth = await CodexAuthInfo.load();
+      _needsLogin = await _checkNeedsLogin();
       final conv = await history.loadLatest() ?? Conversation();
       await notes.open(conv.id);
       notes.onSaved = _onNoteSaved;
@@ -189,6 +196,7 @@ class AppController extends ChangeNotifier {
         delegate: delegate,
         settings: () => _settings,
         onScreenshot: (shot, note) => p.attachScreenshot(shot, note: note),
+        terminalShell: TerminalShell(terminals),
       );
       tools = ToolRegistry()
         ..registerAll(builtinTools(toolEnv))
@@ -214,11 +222,63 @@ class AppController extends ChangeNotifier {
       pipeline = p;
       _ready = true;
       notifyListeners();
-      await pipeline.start();
+      // Without credentials the voice session cannot connect: wait for the
+      // login screen.
+      if (!_needsLogin) await _startPipeline();
     } catch (e, st) {
       initError = e;
       debugPrint('init failed: $e\n$st');
       notifyListeners();
+    }
+  }
+
+  bool _needsLogin = false;
+  bool _pipelineStarted = false;
+
+  /// No usable ChatGPT login and no API key: the UI shows the login screen.
+  bool get needsLogin => _needsLogin;
+
+  Future<bool> _checkNeedsLogin() async {
+    final key = _settings.apiKey.trim().isNotEmpty || (Platform.environment['OPENAI_API_KEY'] ?? '').trim().isNotEmpty;
+    if (key) return false;
+    return !await hasValidCodexAuth(authManager.path);
+  }
+
+  Future<void> _startPipeline() async {
+    if (_pipelineStarted) return;
+    _pipelineStarted = true;
+    await pipeline.start();
+  }
+
+  /// A login flow writing to the configured auth.json (never replacing a
+  /// valid one).
+  PkceLoginFlow createLoginFlow({PlatformUrlOpener? opener}) =>
+      PkceLoginFlow(authPath: authManager.path, opener: opener);
+
+  /// Called by the login screen after "Sign in with ChatGPT" succeeded.
+  Future<void> completeChatGptLogin() async {
+    codexAuth = await CodexAuthInfo.load(path: authManager.path);
+    _needsLogin = false;
+    await _afterLogin(
+      _settings.backendMode == BackendMode.apiKey ? _settings.copyWith(backendMode: BackendMode.gptLive) : _settings,
+    );
+  }
+
+  /// Called by the login screen's "Use OpenAI API key" option.
+  Future<void> useApiKey(String key) async {
+    _needsLogin = false;
+    await _afterLogin(_settings.copyWith(backendMode: BackendMode.apiKey, apiKey: key.trim()));
+  }
+
+  Future<void> _afterLogin(AppSettings next) async {
+    notifyListeners();
+    if (!_pipelineStarted) {
+      _settings = next;
+      notifyListeners();
+      await _settingsStore.save(next);
+      await _startPipeline();
+    } else {
+      await updateSettings(next);
     }
   }
 
@@ -350,5 +410,6 @@ class AppController extends ChangeNotifier {
   Future<void> shutdown() async {
     await notes.flush();
     if (_ready) await pipeline.shutdown();
+    terminals.dispose();
   }
 }

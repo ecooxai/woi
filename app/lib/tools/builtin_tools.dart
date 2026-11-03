@@ -9,6 +9,7 @@ import '../platform/input_control.dart';
 import '../platform/media_viewer.dart';
 import '../platform/platform_services.dart';
 import '../platform/screen_capture.dart';
+import '../platform/shell.dart';
 import 'confirmation.dart';
 import 'tool_registry.dart';
 
@@ -20,9 +21,13 @@ class ToolEnvironment {
     required this.delegate,
     required this.settings,
     required this.onScreenshot,
+    this.terminalShell,
   });
 
   final PlatformServices platform;
+
+  /// Runs commands visibly in the terminal ("Run in terminal" setting).
+  final Shell? terminalShell;
   final ConfirmationService confirmations;
   final DelegateBackend delegate;
   final AppSettings Function() settings;
@@ -169,7 +174,9 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
             '${cwdArg == null ? '' : ' (from "$cwdArg")'}. HOME is ${p.files.homeDir}.',
           );
         }
-        final r = await p.shell.run(
+        final term = env.terminalShell;
+        final shell = term != null && env.settings().runBashInTerminal ? term : p.shell;
+        final r = await shell.run(
           cmd,
           timeout: Duration(seconds: args.integer('timeout_s', 30).clamp(1, 300)),
           workingDirectory: cwd,

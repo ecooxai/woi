@@ -272,6 +272,25 @@ void main() {
     expect(batch, hasLength(1));
   });
 
+  test('rule: by default the last 3 user turns (text + screenshots) are never compacted', () async {
+    final def = ContextManager(compressor: compressor, threshold: 1000, minInterval: Duration.zero);
+    final c = Conversation();
+    def.attach(c);
+    expect(def.keepRecentTurns, 3);
+    for (var i = 0; i < 3; i++) {
+      _turn(c, screenshot: true);
+    }
+    expect(def.maybeCompress(force: true), isNull, reason: 'only 3 turns: everything is raw');
+    _turn(c, screenshot: true);
+    c.add(Message(kind: MessageKind.system, text: 'screen', image: _img, meta: {'type': 'screenshot'}));
+    await def.maybeCompress(force: true);
+    final batch = compressor.calls.single;
+    expect(batch, [c.messages[0], c.messages[1]], reason: 'only the oldest turn');
+    expect(c.messages.skip(2).where((m) => m.compacted), isEmpty);
+    expect(c.messages.skip(2).where((m) => m.image != null), hasLength(4), reason: 'raw images kept');
+    def.dispose();
+  });
+
   test('recentTurns renders the kept turns as text', () async {
     for (var i = 0; i < 3; i++) {
       conv.add(Message(kind: MessageKind.user, text: 'question $i'));

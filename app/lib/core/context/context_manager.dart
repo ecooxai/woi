@@ -138,7 +138,7 @@ class ContextManager extends ChangeNotifier {
     this.compressionModel = 'gpt-6-luna',
     this.imageTokenCost = 765,
     this.audioTokensPerSecond = 10,
-    this.keepRecentTurns = 2,
+    this.keepRecentTurns = kRawRecentTurns,
     this.minGain = 0.25,
     this.minInterval = const Duration(seconds: 10),
   });
@@ -154,7 +154,8 @@ class ContextManager extends ChangeNotifier {
   int imageTokenCost;
   int audioTokensPerSecond;
 
-  /// User turns (with their replies, tools and screenshots) never compacted.
+  /// User turns (with their replies, tools and screenshots) never compacted
+  /// and always sent raw ([kRawRecentTurns], the product rule; tests lower it).
   int keepRecentTurns;
 
   /// Minimum share of the compressible context (total minus
@@ -388,12 +389,8 @@ class ContextManager extends ChangeNotifier {
   List<Message> _compactable() {
     final c = _conv;
     if (c == null) return const [];
-    final userIdx = [
-      for (var i = 0; i < c.messages.length; i++)
-        if (c.messages[i].kind == MessageKind.user && !c.messages[i].compacted) i,
-    ];
-    if (userIdx.length <= keepRecentTurns) return const [];
-    final cut = keepRecentTurns <= 0 ? c.messages.length : userIdx[userIdx.length - keepRecentTurns];
+    final cut = rawTurnsStart(c.messages, keepRecentTurns);
+    if (cut == 0) return const [];
     return [
       for (final m in c.messages.take(cut))
         if (!m.compacted && !m.streaming && !_uiOnly(m) && !_toolInFlight(m)) m,

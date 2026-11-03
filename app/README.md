@@ -57,7 +57,7 @@ Pick the backend under **Settings → Voice backend**. `lib/core/voice/backend_f
   for calls from the old socket are passed in as context.
 - **Compaction** (`LiveContextSync.applySummary`). Runs between responses and never
   interrupts playback:
-  - adds a system item holding the summary, placed before the last 2 user turns
+  - adds a system item holding the summary, placed before the last 3 user turns
     (`previous_item_id`, or `root`)
   - waits for `item.added`
   - deletes the older items with `conversation.item.delete`
@@ -77,7 +77,7 @@ declares its `contextAccounting`:
   prompts, summary, transcripts, typed text and tool output, plus the latest screenshot
   (the delegation input). Audio is not counted.
 
-When the context passes the threshold, compaction summarizes everything before the last 2
+When the context passes the threshold, compaction summarizes everything before the last 3
 user turns, screenshots included. `gpt-6-luna` describes the screenshots in words and
 they leave the context. Compaction is skipped if it would free less than 25% of the
 compressible part, and rejected if the summary is not smaller than what it replaces.
