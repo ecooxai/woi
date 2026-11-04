@@ -228,6 +228,25 @@ void main() {
       await done(t);
     });
 
+    testWidgets('copy menu opens under the button, Esc closes it and the editor keeps focus', (t) async {
+      await t.runAsync(() => notes.open('c1'));
+      notes.setText('# A\none');
+      await pump(t);
+      await t.tap(find.byKey(const ValueKey('note-editor-field')));
+      await t.pump();
+      final button = t.getRect(find.byKey(const ValueKey('note-copy')));
+      await t.tap(find.byKey(const ValueKey('note-copy')), buttons: kSecondaryButton);
+      await t.pumpAndSettle();
+      final first = t.getRect(find.byKey(const ValueKey('copy-note')));
+      expect(first.top, greaterThan(button.bottom), reason: 'below the toolbar button, not over it');
+      await t.sendKeyEvent(LogicalKeyboardKey.escape);
+      await t.pumpAndSettle();
+      expect(find.byKey(const ValueKey('copy-note')), findsNothing);
+      final field = t.widget<TextField>(find.byKey(const ValueKey('note-editor-field')));
+      expect(field.focusNode!.hasFocus, isTrue);
+      await done(t);
+    });
+
     testWidgets('toolbar fits a 360 px phone pane', (t) async {
       await t.runAsync(() => notes.open('c1'));
       await t.binding.setSurfaceSize(const Size(360, 740));

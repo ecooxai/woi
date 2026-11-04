@@ -188,6 +188,9 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
   late NoteViewMode _mode = widget.initialMode ?? _lastMode;
   final _formatMenu = MenuController();
   final _copyMenu = MenuController();
+  final _copyFirstItem = FocusNode(debugLabel: 'copy-menu-first');
+  bool _copyMenuRefocus = false;
+  static const _copyMenuWidth = 204.0;
 
   /// "Copied …" confirmation, cleared by [_copyTimer].
   String? _copyLabel;
@@ -238,6 +241,7 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
     _ctrl.removeListener(_onText);
     _ctrl.dispose();
     _focus.dispose();
+    _copyFirstItem.dispose();
     _previewFocus.dispose();
     _editScroll.dispose();
     _previewScroll.dispose();
@@ -938,14 +942,29 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
     final done = _copyLabel != null && !_copyFailed;
     Widget item(NoteCopyScope s, IconData icon, String label, {SingleActivator? shortcut}) => MenuItemButton(
       key: ValueKey('copy-${s.name}'),
+      focusNode: s == NoteCopyScope.note ? _copyFirstItem : null,
       leadingIcon: Icon(icon, size: 18),
       shortcut: shortcut,
       onPressed: () => copy(s),
       child: Text(label),
     );
-    void openMenu([Offset? at]) => _copyMenu.open(position: at);
+    // Under the button, right-aligned with it (a right-click at the pointer
+    // covered the toolbar and ran into the window edge). Focus moves into the
+    // menu so Esc and the arrow keys work, and goes back to the editor after.
+    void openMenu(BuildContext anchor) {
+      final size = (anchor.findRenderObject() as RenderBox?)?.size ?? Size.zero;
+      _copyMenuRefocus = _focus.hasFocus;
+      _copyMenu.open(position: Offset(size.width - _copyMenuWidth, size.height + 4));
+      WidgetsBinding.instance.addPostFrameCallback((_) => _copyFirstItem.requestFocus());
+    }
+
     return MenuAnchor(
       controller: _copyMenu,
+      style: const MenuStyle(minimumSize: WidgetStatePropertyAll(Size(_copyMenuWidth, 0))),
+      onClose: () {
+        if (_copyMenuRefocus && mounted) _focus.requestFocus();
+        _copyMenuRefocus = false;
+      },
       menuChildren: [
         item(NoteCopyScope.note, Icons.description_outlined, 'Copy note', shortcut: _copyNoteKey),
         const Divider(height: 9),
@@ -953,23 +972,25 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
         item(NoteCopyScope.paragraph, Icons.notes_rounded, 'Copy paragraph'),
         item(NoteCopyScope.section, Icons.title_rounded, 'Copy H1 section'),
       ],
-      child: GestureDetector(
-        onSecondaryTapUp: (d) => openMenu(d.localPosition),
-        child: Tooltip(
-          message: 'Copy note (Ctrl+Shift+C) · long-press or right-click: line, paragraph, section',
-          child: TextButton(
-            key: const ValueKey('note-copy'),
-            style: _quiet(height).copyWith(
-              foregroundColor: WidgetStatePropertyAll(done ? WoiColors.mint : WoiColors.textDim),
-            ),
-            onPressed: () => copy(NoteCopyScope.note),
-            onLongPress: openMenu,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(done ? Icons.check_rounded : Icons.content_copy_rounded, size: 17),
-                if (!_dense) ...[const SizedBox(width: 6), Text(done ? 'Copied' : 'Copy')],
-              ],
+      child: Builder(
+        builder: (anchor) => GestureDetector(
+          onSecondaryTapUp: (_) => openMenu(anchor),
+          child: Tooltip(
+            message: 'Copy note (Ctrl+Shift+C) · long-press or right-click: line, paragraph, section',
+            child: TextButton(
+              key: const ValueKey('note-copy'),
+              style: _quiet(height).copyWith(
+                foregroundColor: WidgetStatePropertyAll(done ? WoiColors.mint : WoiColors.textDim),
+              ),
+              onPressed: () => copy(NoteCopyScope.note),
+              onLongPress: () => openMenu(anchor),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(done ? Icons.check_rounded : Icons.content_copy_rounded, size: 17),
+                  if (!_dense) ...[const SizedBox(width: 6), Text(done ? 'Copied' : 'Copy')],
+                ],
+              ),
             ),
           ),
         ),
