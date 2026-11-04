@@ -134,6 +134,16 @@ class WoiAccessibilityService : AccessibilityService() {
                 return "set_text"
             }
         }
+        // Web content (WebView / Chrome inputs) often refuses set-text but has
+        // the IME connection: commit through the service's own input method
+        // (Android 13+, flagInputMethodEditor), which leaves the clipboard be.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val ic = inputMethod?.currentInputConnection
+            if (ic != null) {
+                ic.commitText(text, 1, null)
+                return "ime"
+            }
+        }
         // Fallback: clipboard + paste.
         val cm = getSystemService(ClipboardManager::class.java)
         cm.setPrimaryClip(ClipData.newPlainText("woi", text))
@@ -156,14 +166,32 @@ class WoiAccessibilityService : AccessibilityService() {
                     putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, len)
                 })
             }
-            "enter" -> if (Build.VERSION.SDK_INT >= 30) {
-                node.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)
-            } else false
+            "enter" -> (Build.VERSION.SDK_INT >= 30 &&
+                node.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)) || imeEnter()
             "clear_selection" -> node.performAction(AccessibilityNodeInfo.ACTION_CLEAR_SELECTION)
             else -> throw IllegalArgumentException("unknown node action $name")
         }
         if (!ok) throw IllegalStateException("$name is not available in the focused field")
         return name
+    }
+
+    /** Enter through the service's input method (web inputs that lack
+     *  ACTION_IME_ENTER still take the key from the IME connection). */
+    private fun imeEnter(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return false
+        val ic = inputMethod?.currentInputConnection ?: return false
+        val now = android.os.SystemClock.uptimeMillis()
+        ic.sendKeyEvent(android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_ENTER, 0))
+        ic.sendKeyEvent(android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_ENTER, 0))
+        return true
+    }
+
+    /** The app's IME connection comes back a moment after the panel steps
+     *  aside: retry Enter through it for up to 600 ms. */
+    private fun imeEnterSoon(cause: Exception, r: MethodChannel.Result, start: Long = android.os.SystemClock.uptimeMillis()) {
+        if (imeEnter()) return r.success("enter")
+        if (android.os.SystemClock.uptimeMillis() - start > 600) return r.error("failed", cause.message, null)
+        WoiBridge.main.postDelayed({ imeEnterSoon(cause, r, start) }, 50)
     }
 
     private fun global(name: String): Boolean {
@@ -226,8 +254,9 @@ class WoiAccessibilityService : AccessibilityService() {
                     s.aside(450, result) { r -> r.success(s.global(name)) }
                 }
                 "node" -> s.aside(150, result) { r ->
-                    try { r.success(s.nodeAction(call.argument<String>("name") ?: "")) } catch (e: Exception) {
-                        r.error("failed", e.message, null)
+                    val name = call.argument<String>("name") ?: ""
+                    try { r.success(s.nodeAction(name)) } catch (e: Exception) {
+                        if (name == "enter") s.imeEnterSoon(e, r) else r.error("failed", e.message, null)
                     }
                 }
                 "focusTarget" -> s.aside(150, result) { r ->
