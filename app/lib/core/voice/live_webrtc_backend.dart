@@ -354,6 +354,8 @@ class LiveWebRtcBackend extends VoiceBackend
     final s = _LiveSession(transportFactory(), model, voice);
     if (activate) {
       _session = s;
+      // Muted / push-to-talk: no mic audio leaves while connecting either.
+      s.rtc.setMicEnabled(_inputEnabled);
     } else {
       _preparing = s;
       s.rtc
