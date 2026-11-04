@@ -318,6 +318,7 @@ class TurnPipeline extends ChangeNotifier {
     } catch (e) {
       _status = SessionStatus.error;
       statusDetail = '$e';
+      debugPrint('voice session failed: $e');
     }
     _changed();
   }
@@ -1015,6 +1016,7 @@ class TurnPipeline extends ChangeNotifier {
         if (fatal) {
           _status = SessionStatus.error;
           statusDetail = message;
+          debugPrint('voice session failed: $message');
         }
         _awaitingResponse = false;
         _changed();

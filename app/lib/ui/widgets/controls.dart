@@ -257,6 +257,7 @@ class Composer extends StatefulWidget {
     this.showStop = false,
     this.focusNode,
     this.hint,
+    this.disabledHint = 'Connecting…',
     this.trailing,
     this.framed = true,
   });
@@ -266,6 +267,9 @@ class Composer extends StatefulWidget {
   final bool showStop;
   final FocusNode? focusNode;
   final String? hint;
+
+  /// Shown while [enabled] is false (connecting, or offline after an error).
+  final String disabledHint;
 
   /// Extra control after the send/stop button (the mic in the input bar).
   final Widget? trailing;
@@ -358,7 +362,7 @@ class _ComposerState extends State<Composer> {
             onEditingComplete: () {}, // keep focus after sending
             onChanged: (_) => setState(() {}),
             decoration: InputDecoration(
-              hintText: widget.enabled ? (widget.hint ?? 'Type a message…') : 'Connecting…',
+              hintText: widget.enabled ? (widget.hint ?? 'Type a message…') : widget.disabledHint,
               filled: false,
               isDense: true,
               border: InputBorder.none,

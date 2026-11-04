@@ -59,6 +59,7 @@ class _InputBarState extends State<InputBar> {
           onSend: pipeline.sendText,
           framed: false,
           hint: phone ? 'Message Woi' : 'Message Woi…  (Ctrl+K)',
+          disabledHint: composerDisabledHint(status),
           trailing: MicButton(
             mode: s.micMode,
             held: pipeline.pttHeld,
@@ -175,3 +176,11 @@ class MicModeMenu extends StatelessWidget {
     ),
   );
 }
+
+/// Composer placeholder while it cannot send: "Connecting…" only while a
+/// connection is actually being made; after a failure it says so (the banner
+/// above has the reason and Retry).
+String composerDisabledHint(SessionStatus status) => switch (status) {
+  SessionStatus.error => 'Offline — voice session failed (Retry)',
+  _ => 'Connecting…',
+};

@@ -8,7 +8,9 @@ import 'package:woi/core/pipeline/turn_pipeline.dart';
 import 'package:woi/core/settings/settings.dart';
 import 'package:woi/ui/theme.dart';
 import 'package:woi/ui/viewer/viewer_app.dart' show wavPeaks;
+import 'package:woi/ui/widgets/controls.dart';
 import 'package:woi/ui/widgets/empty_state.dart';
+import 'package:woi/ui/widgets/input_bar.dart' show composerDisabledHint;
 import 'package:woi/ui/widgets/message_tile.dart';
 import 'package:woi/ui/widgets/status_chip.dart';
 
@@ -29,6 +31,19 @@ void main() {
       expect(linkStateFor(SessionStatus.connected, wasConnected: false), LinkState.connected);
       expect(linkStateFor(SessionStatus.error, wasConnected: true), LinkState.error);
       expect(linkStateFor(SessionStatus.disconnected, wasConnected: false), LinkState.offline);
+    });
+
+    // iter6 QA: after a failed voice session (HTTP 429) the composer still
+    // said "Connecting…" under the "Voice session failed" banner.
+    test('composer placeholder says offline after a failure, not connecting', () {
+      expect(composerDisabledHint(SessionStatus.connecting), 'Connecting…');
+      expect(composerDisabledHint(SessionStatus.error), startsWith('Offline'));
+    });
+
+    testWidgets('disabled composer shows its disabled hint', (tester) async {
+      await tester.pumpWidget(_app(Composer(onSend: (_) {}, enabled: false, disabledHint: 'Offline — x')));
+      expect(find.text('Offline — x'), findsOneWidget);
+      expect(find.text('Connecting…'), findsNothing);
     });
 
     testWidgets('chip shows "model · state" and a retry when down', (tester) async {
