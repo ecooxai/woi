@@ -593,11 +593,11 @@ const kMediaRouteName = '/viewer';
 
 /// Phones: the viewer as a full-screen route (no sub-windows on Android).
 /// Opening another file replaces the open viewer route.
-Future<void> showMediaRoute(NavigatorState nav, MediaItem item, AudioIO audio) {
+Future<void> showMediaRoute(NavigatorState nav, MediaItem item, AudioIO audio, {Widget? footer}) {
   final route = MaterialPageRoute<void>(
     settings: const RouteSettings(name: kMediaRouteName),
     fullscreenDialog: true,
-    builder: (ctx) => MediaRoutePage(item: item, audio: audio),
+    builder: (ctx) => MediaRoutePage(item: item, audio: audio, footer: footer),
   );
   closeMediaRoute(nav);
   return nav.push(route).whenComplete(() => viewerFullscreen.value = false);
@@ -626,9 +626,13 @@ bool sendViewerCommand(ViewerCommand command, double seconds) {
 }
 
 class MediaRoutePage extends StatelessWidget {
-  const MediaRoutePage({super.key, required this.item, required this.audio});
+  const MediaRoutePage({super.key, required this.item, required this.audio, this.footer});
   final MediaItem item;
   final AudioIO audio;
+
+  /// Shown under the media (phones: the input bar, so the user can type a
+  /// question about what is open).
+  final Widget? footer;
 
   @override
   Widget build(BuildContext context) => ValueListenableBuilder<bool>(
@@ -656,6 +660,7 @@ class MediaRoutePage extends StatelessWidget {
                 ),
               ),
             Expanded(child: body!),
+            if (!full && footer != null) Padding(padding: const EdgeInsets.fromLTRB(8, 4, 8, 8), child: footer),
           ],
         ),
       ),

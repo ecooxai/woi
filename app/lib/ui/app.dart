@@ -17,6 +17,7 @@ import 'screens/home_screen.dart';
 import 'theme.dart';
 import 'viewer/viewer_app.dart';
 import 'widgets/glass.dart';
+import 'widgets/input_bar.dart';
 
 /// Root widget of the main window.
 class WoiApp extends StatefulWidget {
@@ -51,7 +52,9 @@ class _WoiAppState extends State<WoiApp> with WidgetsBindingObserver {
       viewer
         ..overlayPresenter = (item) async {
           final nav = _navigatorKey.currentState;
-          if (nav != null) await showMediaRoute(nav, item, _platform.audio);
+          if (nav != null) {
+            await showMediaRoute(nav, item, _platform.audio, footer: InputBar(controller: _controller, phone: true));
+          }
         }
         ..closer = (() => closeMediaRoute(_navigatorKey.currentState))
         ..commander = sendViewerCommand;
