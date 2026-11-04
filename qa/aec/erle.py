@@ -80,12 +80,19 @@ def main():
     ap.add_argument("--rate", type=int, default=48000)
     ap.add_argument("--label", default="")
     ap.add_argument("--json", default="")
+    ap.add_argument("--save-wav", default="", help="also write the processed signal as 24 kHz s16 WAV")
     a = ap.parse_args()
     tl = json.load(open(f"{a.rig}/timeline.json"))
     mic, _ = load_wav(f"{a.rig}/mic.wav")
     echo, _ = load_wav(f"{a.rig}/echo.wav")
     near, _ = load_wav(f"{a.rig}/near.wav")
     out = load_any(a.processed, a.rate)
+    if a.save_wav:
+        with wave.open(a.save_wav, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(R)
+            w.writeframes(np.clip(np.round(out * 32767), -32768, 32767).astype("<i2").tobytes())
     n = min(len(mic), len(out))
     mic, echo, near, out = mic[:n], echo[:n], near[:n], out[:n]
 
