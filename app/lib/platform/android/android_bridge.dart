@@ -76,6 +76,8 @@ sealed class AndroidEvent {
         return OpenEvent(files: files, text: m['text'] as String?, mime: m['mime'] as String?);
       case 'share':
         return ShareStateEvent(on: m['on'] == true, error: m['error'] as String?);
+      case 'micState':
+        return MicStateEvent(paused: m['paused'] == true, reason: m['reason'] as String?);
       case 'clipDone':
         return ClipDoneEvent((m['id'] as num).toInt());
       case 'stopAll':
@@ -154,6 +156,13 @@ class ShareStateEvent extends AndroidEvent {
   const ShareStateEvent({required this.on, this.error});
   final bool on;
   final String? error;
+}
+
+/// The mic paused for / resumed after another app's recording.
+class MicStateEvent extends AndroidEvent {
+  const MicStateEvent({required this.paused, this.reason});
+  final bool paused;
+  final String? reason;
 }
 
 class ClipDoneEvent extends AndroidEvent {

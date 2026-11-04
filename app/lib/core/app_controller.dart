@@ -67,7 +67,7 @@ note_control runs the notes: append/insert/replace/delete_text in this note, the
 (the note, or the line/paragraph/H1 section at the cursor, to the clipboard), and new, switch, rename, delete,
 list of notes. app_control runs Woi itself: show_view (tabs: note, chat, terminal, settings; split),
 set_setting (theme, voice, voice_model, mic_mode, compaction_threshold, run_in_terminal, edit_apply_delay,
-echo_cancellation), terminal tabs (terminal_new, terminal_run, terminal_close), the media viewer (viewer_open/close/pause/play/seek),
+echo_cancellation, audio_route), terminal tabs (terminal_new, terminal_run, terminal_close), the media viewer (viewer_open/close/pause/play/seek),
 apply_edit / reject_edit, and undo_edit for "undo that" (reverts your last note or file edit).
 Note and file edits appear as an inline diff that applies itself after a few seconds unless the user rejects it;
 the tool result tells you whether it was applied. Shell commands may need explicit approval.
@@ -352,6 +352,7 @@ class AppController extends ChangeNotifier {
     try {
       _settings = await _settingsStore.load();
       if (platform.audio case final EchoCancellable ec) ec.echoCancellation = _settings.echoCancellation;
+      if (platform.audio case final AudioRouted r) r.audioRoute = _settings.androidAudioRoute.name;
       // Woi listens from launch: a mic muted in the last session comes back
       // on (push-to-talk stays push-to-talk). QA: WOI_MIC_MODE=muted (or
       // handsFree / pushToTalk) sets the launch mode for this run only.
@@ -604,7 +605,11 @@ class AppController extends ChangeNotifier {
     if (next.usageGuardPercent != prev.usageGuardPercent) _usageLowNoticed = false;
     notifyListeners();
     await _settingsStore.save(next);
-    if (next.echoCancellation != prev.echoCancellation) await _applyEchoCancellation(prev);
+    if (next.echoCancellation != prev.echoCancellation) {
+      await _applyEchoCancellation(prev);
+    } else if (next.androidAudioRoute != prev.androidAudioRoute) {
+      await _applyAudioRoute(prev);
+    }
     if (next.micMode != prev.micMode) {
       await pipeline.setMicMode(next.micMode);
       if (_inBackground) _scheduleBackgroundSuspend();
@@ -625,12 +630,21 @@ class AppController extends ChangeNotifier {
   /// call.
   Future<void> _applyEchoCancellation(AppSettings prev) async {
     if (platform.audio case final EchoCancellable ec) ec.echoCancellation = _settings.echoCancellation;
+    if (platform.audio case final AudioRouted r) r.audioRoute = _settings.androidAudioRoute.name;
     if (prev.sessionDiffers(_settings)) return; // reconnecting anyway
     if (pipeline.backendManagesAudio) {
       await pipeline.connect();
     } else {
       await pipeline.reopenMic();
     }
+  }
+
+  /// Applies [AppSettings.androidAudioRoute] (Android): the mic reopens on
+  /// the new route. gpt-live's WebRTC audio is not affected.
+  Future<void> _applyAudioRoute(AppSettings prev) async {
+    if (platform.audio case final AudioRouted r) r.audioRoute = _settings.androidAudioRoute.name;
+    if (prev.sessionDiffers(_settings) || pipeline.backendManagesAudio) return;
+    await pipeline.reopenMic();
   }
 
   Future<void> refreshCodexAuth() async {

@@ -321,6 +321,15 @@ class AppActions {
         done = 'echo cancellation ${on ? 'on' : 'off'}';
         // gpt-live's WebRTC mic applies it with a new call.
         reconnects = on != s.echoCancellation && c.pipeline.backendManagesAudio;
+      case 'audio_route' || 'android_audio_route' || 'audio_channel' || 'route':
+        final r = RegExp(r'phone|call|communication|voice').hasMatch(lv)
+            ? AndroidAudioRoute.phone
+            : RegExp(r'media|music|speaker').hasMatch(lv)
+            ? AndroidAudioRoute.media
+            : null;
+        if (r == null) throw AppActionError('audio_route must be phone or media');
+        next = s.copyWith(androidAudioRoute: r);
+        done = 'Android audio route ${r.name}';
       case 'edit_apply_delay' || 'auto_apply' || 'edit_delay':
         final d = RegExp(r'approv|ask|never|manual|off').hasMatch(lv)
             ? kRequireApproval
@@ -338,7 +347,7 @@ class AppActions {
       default:
         throw AppActionError(
           'unknown setting "$key" (theme, mic_mode, voice, voice_model, compaction_threshold, run_in_terminal, '
-          'edit_apply_delay, echo_cancellation, usage_guard)',
+          'edit_apply_delay, echo_cancellation, audio_route, usage_guard)',
         );
     }
     if (reconnects || s.sessionDiffers(next)) {

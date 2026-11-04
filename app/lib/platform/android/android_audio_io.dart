@@ -8,17 +8,29 @@ import '../audio_io.dart';
 import 'android_bridge.dart';
 
 /// PCM16 / 24 kHz / mono through AudioRecord and a streaming AudioTrack
-/// (WoiAudio.kt). With [echoCancellation] on (default) the mic records from
-/// the VOICE_COMMUNICATION source with the platform echo canceller and noise
-/// suppressor; off, from the plain MIC source. Playback stays a normal
-/// (loudspeaker, media-volume) assistant stream either way. gpt-live does not
-/// use this: flutter_webrtc captures and plays with its own echo-cancelled
-/// audio device module.
-class AndroidAudioIO implements AudioIO, EchoCancellable {
+/// (WoiAudio.kt). The [audioRoute] 'phone' (default) runs the call path
+/// while the mic is open (MODE_IN_COMMUNICATION, VOICE_COMMUNICATION
+/// capture, voice-call playback on the loudspeaker or a headset: the call
+/// echo canceller); 'media' plays as media and records VOICE_RECOGNITION
+/// with the AEC effect where available. With [echoCancellation] off the mic
+/// records from the plain MIC source. While another app records, the mic is
+/// released ([micPaused]) and resumes when the mic is free. gpt-live does
+/// not use this: flutter_webrtc captures and plays with its own
+/// echo-cancelled audio device module.
+class AndroidAudioIO implements AudioIO, EchoCancellable, AudioRouted {
   AndroidAudioIO({AndroidBridge? bridge}) : _bridge = bridge ?? AndroidBridge.instance;
 
   final AndroidBridge _bridge;
   bool _echoCancellation = true;
+  String _route = 'phone';
+  final _micPaused = ValueNotifier<String?>(null);
+  StreamSubscription<AndroidEvent>? _stateSub;
+
+  @override
+  set audioRoute(String route) => _route = route == 'media' ? 'media' : 'phone';
+
+  @override
+  ValueListenable<String?> get micPaused => _micPaused;
 
   /// What the last mic open got (WoiAudio "aecStatus").
   String _aecStatus = 'not started';
@@ -36,7 +48,7 @@ class AndroidAudioIO implements AudioIO, EchoCancellable {
   Future<void> disposeEchoCancellation() async {}
 
   @override
-  String get description => 'Android AudioRecord / AudioTrack; echo cancellation: $echoCancellationStatus';
+  String get description => 'Android AudioRecord / AudioTrack ($_route route); echo cancellation: $echoCancellationStatus';
 
   Future<void> _ensureMicPermission() async {
     final ok = await _bridge.requestPermissions(['android.permission.RECORD_AUDIO']);
@@ -46,7 +58,14 @@ class AndroidAudioIO implements AudioIO, EchoCancellable {
   @override
   Future<MicStream> openMic() async {
     await _ensureMicPermission();
-    final mic = _AndroidMic(echoCancellation: _echoCancellation);
+    _stateSub ??= _bridge.events.listen((e) {
+      if (e is MicStateEvent) _micPaused.value = e.paused ? (e.reason ?? 'Mic paused') : null;
+    });
+    final mic = _AndroidMic(
+      echoCancellation: _echoCancellation,
+      route: _route,
+      onClose: () => _micPaused.value = null,
+    );
     unawaited(_refreshAecStatus());
     return mic;
   }
@@ -73,8 +92,8 @@ class AndroidAudioIO implements AudioIO, EchoCancellable {
 }
 
 class _AndroidMic implements MicStream {
-  _AndroidMic({required bool echoCancellation}) {
-    _sub = AndroidBridge.micChannel.receiveBroadcastStream({'aec': echoCancellation}).listen(
+  _AndroidMic({required bool echoCancellation, required String route, required this.onClose}) {
+    _sub = AndroidBridge.micChannel.receiveBroadcastStream({'aec': echoCancellation, 'route': route}).listen(
       (data) {
         if (data is! Uint8List || data.isEmpty) return;
         final m = rmsToMeter(pcm16Rms(data));
@@ -90,6 +109,7 @@ class _AndroidMic implements MicStream {
   final _controller = StreamController<Uint8List>.broadcast();
   final _level = ValueNotifier<double>(0);
   late final StreamSubscription<Object?> _sub;
+  final VoidCallback onClose;
 
   @override
   Stream<Uint8List> get chunks => _controller.stream;
@@ -102,6 +122,7 @@ class _AndroidMic implements MicStream {
     await _sub.cancel();
     if (!_controller.isClosed) await _controller.close();
     _level.value = 0;
+    onClose();
   }
 }
 

@@ -54,3 +54,14 @@ abstract class EchoCancellable {
   /// Releases the canceller (app exit).
   Future<void> disposeEchoCancellation();
 }
+
+/// Optional [AudioIO] capability (Android): the system audio route and a mic
+/// that steps aside while another app records.
+abstract class AudioRouted {
+  /// 'phone' (call path, default) or 'media'. Applies to mics opened
+  /// afterwards.
+  set audioRoute(String route);
+
+  /// Non-null while the mic is paused for another app (status-row text).
+  ValueListenable<String?> get micPaused;
+}

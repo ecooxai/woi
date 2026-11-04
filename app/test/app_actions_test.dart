@@ -82,6 +82,11 @@ void main() {
     expect(await a.setSetting('aec', 'on'), 'echo cancellation on');
     expect(fp.audio.echoCancellation, isTrue);
     expect(() => a.setSetting('echo_cancellation', 'maybe'), throwsA(isA<AppActionError>()));
+    await a.setSetting('audio_route', 'media');
+    expect(c.settings.androidAudioRoute, AndroidAudioRoute.media);
+    await a.setSetting('audio_route', 'phone');
+    expect(c.settings.androidAudioRoute, AndroidAudioRoute.phone);
+    expect(() => a.setSetting('audio_route', 'tin can'), throwsA(isA<AppActionError>()));
     if (fp.audio.mic != null) expect(fp.audio.micOpens.last, isTrue, reason: 'mic reopened with the canceller');
     expect(() => a.setSetting('theme', 'purple'), throwsA(isA<AppActionError>()));
     expect(() => a.setSetting('bogus', '1'), throwsA(isA<AppActionError>()));

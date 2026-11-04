@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../../core/app_controller.dart';
+import '../../platform/audio_io.dart';
 import '../../core/auth/auth.dart';
 import '../../core/settings/settings.dart';
 import '../../core/voice/backend_factory.dart';
@@ -591,6 +592,20 @@ class _SettingsViewState extends State<SettingsView> {
       ),
       controlWidth: 120,
     ),
+    if (c.platform.audio is AudioRouted)
+      _choices<AndroidAudioRoute>(
+        wide,
+        id: 'android-audio-route',
+        title: 'Audio route on Android',
+        desc: 'Phone uses the call path with its built-in echo cancellation; Media plays at media volume.',
+        options: AndroidAudioRoute.values,
+        value: _s.androidAudioRoute,
+        label: (r) => r == AndroidAudioRoute.phone ? 'Phone (echo cancellation, default)' : 'Media',
+        hint: (r) => r == AndroidAudioRoute.phone
+            ? 'Call audio: loudspeaker or headset, call volume'
+            : 'Media audio and volume; weaker echo cancellation',
+        onChanged: (v) => _apply(_s.copyWith(androidAudioRoute: v)),
+      ),
     _row(
       wide,
       'Thinking chime',

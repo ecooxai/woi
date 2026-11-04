@@ -11,6 +11,15 @@ void main() {
     expect(on.sessionDiffers(d), isFalse, reason: 'toggling it never reconnects');
   });
 
+  test('the Android audio route defaults to phone and round-trips through JSON', () {
+    const d = AppSettings();
+    expect(d.androidAudioRoute, AndroidAudioRoute.phone);
+    expect(AppSettings.fromJson(const {'androidAudioRoute': 'bogus'}).androidAudioRoute, AndroidAudioRoute.phone);
+    final media = d.copyWith(androidAudioRoute: AndroidAudioRoute.media);
+    expect(AppSettings.fromJson(media.toJson()).androidAudioRoute, AndroidAudioRoute.media);
+    expect(media.sessionDiffers(d), isFalse);
+  });
+
   test('echo cancellation is on by default and round-trips through JSON', () {
     const d = AppSettings();
     expect(d.echoCancellation, isTrue);

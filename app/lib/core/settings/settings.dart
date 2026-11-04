@@ -22,6 +22,19 @@ enum AppTheme {
   final String label;
 }
 
+/// How Woi's own audio goes through Android's audio system.
+enum AndroidAudioRoute {
+  /// The call path: hardware/platform call echo cancellation, call volume,
+  /// headset or loudspeaker.
+  phone('Phone (echo cancellation)'),
+
+  /// The media path: media volume, speech-recognition capture.
+  media('Media');
+
+  const AndroidAudioRoute(this.label);
+  final String label;
+}
+
 /// Which voice backend the app talks to.
 enum BackendMode {
   gptLive('gpt-live (WebRTC)'),
@@ -108,6 +121,7 @@ class AppSettings {
     this.cameraReplacesScreenshot = false,
     this.fallbackToDirectOnLimit = false,
     this.echoCancellation = true,
+    this.androidAudioRoute = AndroidAudioRoute.phone,
     this.usageGuardPercent = 20,
   });
 
@@ -171,6 +185,9 @@ class AppSettings {
   /// microphone: PipeWire WebRTC echo canceller on Linux, the platform
   /// AEC/NS/AGC on Android, libwebrtc's AEC for gpt-live.
   final bool echoCancellation;
+
+  /// Android only: [AndroidAudioRoute.phone] (default) or media.
+  final AndroidAudioRoute androidAudioRoute;
   /// When either Codex usage window (5 h, week) has less than this many
   /// percent remaining, delegation and compaction use gpt-6-luna even if a
   /// more expensive model is selected. 0 = off.
@@ -209,6 +226,7 @@ class AppSettings {
     int? editApplyDelay,
     bool? cameraReplacesScreenshot,
     bool? echoCancellation,
+    AndroidAudioRoute? androidAudioRoute,
     bool? fallbackToDirectOnLimit,
     int? usageGuardPercent,
   }) => AppSettings(
@@ -237,6 +255,7 @@ class AppSettings {
     cameraReplacesScreenshot: cameraReplacesScreenshot ?? this.cameraReplacesScreenshot,
     fallbackToDirectOnLimit: fallbackToDirectOnLimit ?? this.fallbackToDirectOnLimit,
     echoCancellation: echoCancellation ?? this.echoCancellation,
+    androidAudioRoute: androidAudioRoute ?? this.androidAudioRoute,
     usageGuardPercent: usageGuardPercent ?? this.usageGuardPercent,
   );
 
@@ -275,6 +294,7 @@ class AppSettings {
     'cameraReplacesScreenshot': cameraReplacesScreenshot,
     'fallbackToDirectOnLimit': fallbackToDirectOnLimit,
     'echoCancellation': echoCancellation,
+    'androidAudioRoute': androidAudioRoute.name,
     'usageGuardPercent': usageGuardPercent,
   };
 
@@ -318,6 +338,7 @@ class AppSettings {
       cameraReplacesScreenshot: b('cameraReplacesScreenshot', d.cameraReplacesScreenshot),
       fallbackToDirectOnLimit: b('fallbackToDirectOnLimit', d.fallbackToDirectOnLimit),
       echoCancellation: b('echoCancellation', d.echoCancellation),
+      androidAudioRoute: AndroidAudioRoute.values.asNameMap()[j['androidAudioRoute']] ?? d.androidAudioRoute,
       usageGuardPercent: i('usageGuardPercent', d.usageGuardPercent).clamp(0, 100),
     );
   }

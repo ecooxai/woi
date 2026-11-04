@@ -1,7 +1,11 @@
 package dev.woi.woi
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioManager
+import android.media.AudioRecordingConfiguration
+import android.os.Build
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.AudioTrack
@@ -18,9 +22,12 @@ import java.util.concurrent.TimeUnit
  * PCM16 / 24 kHz / mono capture and playback for the direct realtime
  * backends (gpt-live uses flutter_webrtc's own audio device module).
  *
- * Capture uses the VOICE_COMMUNICATION source with the platform echo
- * canceller and noise suppressor. The player pauses its AudioTrack after a
- * second without data so an idle Woi keeps the audio HAL asleep.
+ * The route (WoiAudioRoute) picks the call path (default: call mode,
+ * VOICE_COMMUNICATION capture, voice-call playback) or the media path. The
+ * mic yields to other apps: while another app records, Woi's AudioRecord is
+ * released and the call mode dropped; it comes back when that recording
+ * ends. The player pauses its AudioTrack after a second without data so an
+ * idle Woi keeps the audio HAL asleep.
  */
 object WoiAudio {
     private const val RATE = 24000
@@ -28,6 +35,9 @@ object WoiAudio {
     // WebSocket message; 40 ms chunks made listening ~18% CPU, 80 ms ~12%.
     // Server VAD and the local barge-in detector see audio <= 40 ms later.
     private const val CHUNK_BYTES = RATE * 2 * 80 / 1000
+    // MediaRecorder.AudioSource.HOTWORD (@SystemApi): always-on hotword
+    // clients do not count as "another app using the mic".
+    private const val HOTWORD_SOURCE = 1999
 
     // ---------------- microphone ----------------
 
@@ -40,45 +50,145 @@ object WoiAudio {
     private var aec: AcousticEchoCanceler? = null
     private var ns: NoiseSuppressor? = null
 
+    // The Dart side's mic stream: open while [micSink] is set, even when the
+    // recorder itself is released because another app is recording.
+    private var micSink: EventChannel.EventSink? = null
+    private var micAec = true
+    private var ourSession = 0
+    private var yielded = false
+    private var recCallback: AudioManager.AudioRecordingCallback? = null
+
     val micHandler = object : EventChannel.StreamHandler {
         override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
             try {
-                val aecOn = (arguments as? Map<*, *>)?.get("aec") as? Boolean ?: true
-                startMic(events, aecOn)
+                val args = arguments as? Map<*, *>
+                micAec = args?.get("aec") as? Boolean ?: true
+                if (WoiAudioRoute.setRoute(args?.get("route") as? String)) playerClose()
+                openMic(events)
             } catch (e: Throwable) {
                 events.error("mic", e.message ?: e.toString(), null)
             }
         }
 
-        override fun onCancel(arguments: Any?) = stopMic()
+        override fun onCancel(arguments: Any?) = closeMic()
+    }
+
+    private fun am(): AudioManager = WoiBridge.appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+
+    private fun openMic(events: EventChannel.EventSink) {
+        closeMic()
+        micSink = events
+        val cb = object : AudioManager.AudioRecordingCallback() {
+            override fun onRecordingConfigChanged(configs: MutableList<AudioRecordingConfiguration>) = evaluate(configs)
+        }
+        recCallback = cb
+        am().registerAudioRecordingCallback(cb, WoiBridge.main)
+        if (othersRecording(am().activeRecordingConfigurations)) {
+            yield()
+        } else {
+            startRecord(events)
+        }
+    }
+
+    private fun closeMic() {
+        recCallback?.let { am().unregisterAudioRecordingCallback(it) }
+        recCallback = null
+        val wasYielded = yielded
+        yielded = false
+        micSink = null
+        stopRecord()
+        WoiAudioRoute.leaveCommunication()
+        syncPlayerRoute()
+        if (wasYielded) emitMicState(false)
+    }
+
+    /** Another app's capture (any source but hotword), silenced or not. */
+    private fun othersRecording(configs: List<AudioRecordingConfiguration>): Boolean = configs.any {
+        it.clientAudioSessionId != ourSession && it.clientAudioSource != HOTWORD_SOURCE
+    }
+
+    private fun evaluate(configs: List<AudioRecordingConfiguration>) {
+        val sink = micSink ?: return
+        val others = othersRecording(configs)
+        if (others && !yielded) {
+            yield()
+        } else if (!others && yielded) {
+            // Let the other app finish releasing the input first.
+            WoiBridge.main.postDelayed({
+                if (micSink === sink && yielded && !othersRecording(am().activeRecordingConfigurations)) {
+                    yielded = false
+                    Log.i(WoiBridge.TAG, "mic free again: resuming")
+                    try {
+                        startRecord(sink)
+                        emitMicState(false)
+                    } catch (e: Throwable) {
+                        sink.error("mic", e.message ?: e.toString(), null)
+                    }
+                }
+            }, 400)
+        } else if (!others && !yielded && Build.VERSION.SDK_INT >= 29) {
+            val mine = configs.firstOrNull { it.clientAudioSessionId == ourSession }
+            if (mine?.isClientSilenced == true) Log.w(WoiBridge.TAG, "mic silenced by the system")
+        }
+    }
+
+    /** Releases the recorder (and the call mode) while another app records. */
+    private fun yield() {
+        yielded = true
+        Log.i(WoiBridge.TAG, "another app is recording: pausing Woi's mic")
+        stopRecord()
+        WoiAudioRoute.leaveCommunication()
+        syncPlayerRoute()
+        emitMicState(true)
+    }
+
+    private fun emitMicState(paused: Boolean) {
+        WoiBridge.emit(
+            mapOf(
+                "type" to "micState",
+                "paused" to paused,
+                "reason" to if (paused) "Mic paused: another app is using it" else null,
+            )
+        )
     }
 
     @SuppressLint("MissingPermission")
-    private fun startMic(events: EventChannel.EventSink, echoCancellation: Boolean) {
-        stopMic()
+    private fun startRecord(events: EventChannel.EventSink) {
+        stopRecord()
+        WoiAudioRoute.enterCommunication()
+        syncPlayerRoute()
         val min = AudioRecord.getMinBufferSize(RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
-        // VOICE_COMMUNICATION engages the platform's voice processing (on
-        // Qualcomm the HAL's echo canceller, referenced to the speaker
-        // output); the audio mode stays NORMAL so playback is not routed to
-        // the earpiece or turned into call volume.
-        val source = if (echoCancellation) MediaRecorder.AudioSource.VOICE_COMMUNICATION else MediaRecorder.AudioSource.MIC
+        val phone = WoiAudioRoute.isPhone
+        // Phone route: VOICE_COMMUNICATION in MODE_IN_COMMUNICATION runs the
+        // HAL's call echo canceller (referenced to the output mix). Media
+        // route: VOICE_RECOGNITION (no call processing) plus the AEC effect.
+        val source = when {
+            !micAec -> MediaRecorder.AudioSource.MIC
+            phone -> MediaRecorder.AudioSource.VOICE_COMMUNICATION
+            else -> MediaRecorder.AudioSource.VOICE_RECOGNITION
+        }
         val rec = AudioRecord(
             source, RATE,
             AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(min, CHUNK_BYTES * 4)
         )
         if (rec.state != AudioRecord.STATE_INITIALIZED) {
             rec.release()
+            WoiAudioRoute.leaveCommunication()
             throw IllegalStateException("AudioRecord not initialized (RECORD_AUDIO granted?)")
         }
-        if (echoCancellation) {
+        ourSession = rec.audioSessionId
+        val route = if (phone) "phone route" else "media route"
+        if (micAec) {
             if (AcousticEchoCanceler.isAvailable()) aec = AcousticEchoCanceler.create(rec.audioSessionId)?.apply { enabled = true }
             if (NoiseSuppressor.isAvailable()) ns = NoiseSuppressor.create(rec.audioSessionId)?.apply { enabled = true }
+            val src = if (phone) "VOICE_COMMUNICATION, call mode" else "VOICE_RECOGNITION"
             status = when {
-                aec?.enabled == true -> "active (VOICE_COMMUNICATION + platform AEC${if (ns?.enabled == true) " + NS" else ""})"
-                else -> "VOICE_COMMUNICATION source; no platform AEC effect on this device"
+                aec?.enabled == true -> "active ($route: $src + platform AEC${if (ns?.enabled == true) " + NS" else ""})"
+                phone -> "active ($route: $src; call echo canceller, no separate AEC effect)"
+                else -> "$route: $src; no platform AEC effect on this device"
             }
         } else {
-            status = "off (MIC source)"
+            status = "off (MIC source, $route)"
         }
         rec.startRecording()
         record = rec
@@ -114,7 +224,7 @@ object WoiAudio {
         }, 1500)
     }
 
-    private fun stopMic() {
+    private fun stopRecord() {
         val rec = record ?: return
         record = null
         try { rec.stop() } catch (_: Exception) {}
@@ -133,17 +243,29 @@ object WoiAudio {
     @Volatile private var generation = 0
     @Volatile private var paused = true
     private val trackLock = Object()
+    // Whether [track] was built for the call path (USAGE_VOICE_COMMUNICATION).
+    private var trackCall = false
+
+    private fun wantCallTrack() = WoiAudioRoute.isPhone && WoiAudioRoute.inCommunication
+
+    /** Rebuilds the track when the call mode changed under it. Main thread. */
+    private fun syncPlayerRoute() {
+        if (track != null && trackCall != wantCallTrack()) playerClose()
+    }
 
     fun playerOpen(): Boolean {
         if (track != null) return true
         val min = AudioTrack.getMinBufferSize(RATE, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
-        val t = AudioTrack.Builder()
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ASSISTANT)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build()
-            )
+        // Phone route in call mode: a voice-call stream (same session as the
+        // recorder, so session-bound effects see both). Otherwise media.
+        trackCall = wantCallTrack()
+        val attrs = if (trackCall) WoiAudioRoute.playbackAttributes()
+        else AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
+        val b = AudioTrack.Builder()
+        if (trackCall && record != null) b.setSessionId(ourSession)
+        val t = b
+            .setAudioAttributes(attrs)
             .setAudioFormat(
                 AudioFormat.Builder().setSampleRate(RATE).setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
                     .setEncoding(AudioFormat.ENCODING_PCM_16BIT).build()
@@ -161,13 +283,14 @@ object WoiAudio {
                 if (chunk == null) {
                     if (!paused && System.nanoTime() - lastData > 1_000_000_000L) {
                         synchronized(trackLock) { if (track === t) { t.pause(); paused = true } }
+                        WoiAudioRoute.abandonSpeechFocus()
                     }
                     continue
                 }
                 val gen = generation
                 synchronized(trackLock) {
                     if (track !== t) return@Thread
-                    if (paused) { t.play(); paused = false }
+                    if (paused) { t.play(); paused = false; WoiAudioRoute.requestSpeechFocus() }
                 }
                 var off = 0
                 // 20 ms slices so a stop() lands quickly.
@@ -198,6 +321,7 @@ object WoiAudio {
                 paused = true
             } catch (_: Exception) {}
         }
+        WoiAudioRoute.abandonSpeechFocus()
     }
 
     fun playerClose() {
@@ -211,6 +335,7 @@ object WoiAudio {
             try { t.stop() } catch (_: Exception) {}
             t.release()
         }
+        WoiAudioRoute.abandonSpeechFocus()
     }
 
     // ---------------- clips (wav files) ----------------

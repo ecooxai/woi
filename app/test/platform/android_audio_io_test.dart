@@ -25,6 +25,7 @@ void main() {
       }
       return null;
     });
+    messenger.setMockMessageHandler('woi/android/events', (msg) async => codec.encodeSuccessEnvelope(null));
     messenger.setMockMessageHandler(AndroidBridge.micChannel.name, (msg) async {
       final call = codec.decodeMethodCall(msg);
       if (call.method == 'listen') listenArgs.add(call.arguments);
@@ -35,6 +36,7 @@ void main() {
   tearDown(() {
     messenger.setMockMethodCallHandler(AndroidBridge.method, null);
     messenger.setMockMessageHandler(AndroidBridge.micChannel.name, null);
+    messenger.setMockMessageHandler('woi/android/events', null);
   });
 
   test('the Echo cancellation setting picks the capture source and shows the platform state', () async {
@@ -44,15 +46,37 @@ void main() {
 
     final mic = await io.openMic();
     await Future<void>.delayed(const Duration(milliseconds: 600));
-    expect(listenArgs.last, {'aec': true});
+    expect(listenArgs.last, {'aec': true, 'route': 'phone'});
     expect(io.echoCancellationStatus, contains('platform AEC'));
     expect(io.description, contains('echo cancellation: active'));
     await mic.close();
 
     io.echoCancellation = false;
     final plain = await io.openMic();
-    expect(listenArgs.last, {'aec': false});
+    expect(listenArgs.last, {'aec': false, 'route': 'phone'});
     expect(io.echoCancellationStatus, 'off (setting)');
     await plain.close();
+  });
+  test('the audio route goes to the recorder; another app recording pauses the mic', () async {
+    final io = AndroidAudioIO();
+    expect(io, isA<AudioRouted>());
+    io.audioRoute = 'media';
+    final mic = await io.openMic();
+    expect(listenArgs.last, {'aec': true, 'route': 'media'});
+    expect(io.description, contains('media route'));
+    expect(io.micPaused.value, isNull);
+
+    Future<void> emit(Map<String, Object?> e) => messenger.handlePlatformMessage(
+      'woi/android/events',
+      codec.encodeSuccessEnvelope(e),
+      (_) {},
+    );
+    await emit({'type': 'micState', 'paused': true, 'reason': 'Mic paused: another app is using it'});
+    await Future<void>.delayed(Duration.zero);
+    expect(io.micPaused.value, 'Mic paused: another app is using it');
+    await emit({'type': 'micState', 'paused': false});
+    await Future<void>.delayed(Duration.zero);
+    expect(io.micPaused.value, isNull);
+    await mic.close();
   });
 }

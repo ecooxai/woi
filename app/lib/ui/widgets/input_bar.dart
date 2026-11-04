@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/app_controller.dart';
 import '../../core/pipeline/turn_pipeline.dart';
 import '../../core/settings/settings.dart';
+import '../../platform/audio_io.dart';
 import '../theme.dart';
 import 'camera_preview.dart';
 import 'context_meter.dart';
@@ -73,20 +74,33 @@ class _InputBarState extends State<InputBar> {
           ),
         );
 
+        final micPaused = switch (c.platform.audio) {
+          final AudioRouted r => r.micPaused,
+          _ => null,
+        };
         final status_ = Row(
           children: [
             // Flexible: on 360 px phones the label ellipsizes instead of
             // overflowing the row.
             Flexible(
               child: ListenableBuilder(
-                listenable: pipeline.levelSourcesChanged,
-                builder: (context, _) => VoiceStatusIndicator(
-                  mode: mode,
-                  micLevel: pipeline.micLevel,
-                  outputLevel: pipeline.outputLevel,
-                  // Between reconnect attempts: still (the label says it).
-                  animate: mode == VoiceMode.reconnecting ? !pipeline.reconnectWaiting : null,
-                ),
+                listenable: Listenable.merge([pipeline.levelSourcesChanged, ?micPaused]),
+                builder: (context, _) => switch (micPaused?.value) {
+                  // Android: another app is recording; Woi's mic waits.
+                  final String why => Text(
+                        why,
+                        key: const ValueKey('mic-paused'),
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                  _ => VoiceStatusIndicator(
+                    mode: mode,
+                    micLevel: pipeline.micLevel,
+                    outputLevel: pipeline.outputLevel,
+                    // Between reconnect attempts: still (the label says it).
+                    animate: mode == VoiceMode.reconnecting ? !pipeline.reconnectWaiting : null,
+                  ),
+                },
               ),
             ),
             _dot(),
