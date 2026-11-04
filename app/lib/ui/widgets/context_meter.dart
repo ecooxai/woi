@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../core/context/context_manager.dart';
 import '../../core/models/message.dart';
 import '../theme.dart';
+import 'low_fps.dart';
 
 String formatTokens(int t) => formatTokenCount(t);
 
@@ -248,24 +249,10 @@ class MeterBar extends StatefulWidget {
   State<MeterBar> createState() => _MeterBarState();
 }
 
-class _MeterBarState extends State<MeterBar> with SingleTickerProviderStateMixin {
-  late final AnimationController _sweep = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1100),
-  );
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.busy) _sweep.repeat();
-  }
-
-  @override
-  void didUpdateWidget(MeterBar old) {
-    super.didUpdateWidget(old);
-    if (widget.busy && !_sweep.isAnimating) _sweep.repeat();
-    if (!widget.busy && _sweep.isAnimating) _sweep.stop();
-  }
+class _MeterBarState extends State<MeterBar> {
+  // 12 fps sweep (timer-driven, own repaint boundary): compaction can run for
+  // a while and a 60 fps sweep is a full raster per frame on software GL.
+  final _sweep = LowFpsLoop(period: const Duration(milliseconds: 1100));
 
   @override
   void dispose() {
@@ -295,19 +282,21 @@ class _MeterBarState extends State<MeterBar> with SingleTickerProviderStateMixin
               ),
             ),
             if (widget.busy)
-              AnimatedBuilder(
-                animation: _sweep,
-                builder: (context, _) => FractionallySizedBox(
-                  alignment: Alignment(-1.6 + 3.2 * _sweep.value, 0),
-                  widthFactor: 0.35,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Colors.white.withValues(alpha: 0),
-                          Colors.white.withValues(alpha: 0.7),
-                          Colors.white.withValues(alpha: 0),
-                        ],
+              RepaintBoundary(
+                child: ValueListenableBuilder<double>(
+                  valueListenable: _sweep,
+                  builder: (context, sweep, _) => FractionallySizedBox(
+                    alignment: Alignment(-1.6 + 3.2 * sweep, 0),
+                    widthFactor: 0.35,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            Colors.white.withValues(alpha: 0),
+                            Colors.white.withValues(alpha: 0.7),
+                            Colors.white.withValues(alpha: 0),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -330,21 +319,9 @@ class _Ring extends StatefulWidget {
   State<_Ring> createState() => _RingState();
 }
 
-class _RingState extends State<_Ring> with SingleTickerProviderStateMixin {
-  late final AnimationController _spin = AnimationController(vsync: this, duration: const Duration(milliseconds: 1200));
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.busy) _spin.repeat();
-  }
-
-  @override
-  void didUpdateWidget(_Ring old) {
-    super.didUpdateWidget(old);
-    if (widget.busy && !_spin.isAnimating) _spin.repeat();
-    if (!widget.busy && _spin.isAnimating) _spin.stop();
-  }
+class _RingState extends State<_Ring> {
+  final _spin = LowFpsLoop(period: const Duration(milliseconds: 1200));
+  static final _still = ValueNotifier<double>(0);
 
   @override
   void dispose() {
@@ -359,10 +336,11 @@ class _RingState extends State<_Ring> with SingleTickerProviderStateMixin {
       tween: Tween(end: widget.fill),
       duration: const Duration(milliseconds: 700),
       curve: WoiMotion.emphasized,
-      builder: (context, v, _) => AnimatedBuilder(
-        animation: _spin,
-        builder: (context, _) => CustomPaint(
-          painter: _RingPainter(v, widget.color, widget.busy ? _spin.value : null),
+      builder: (context, v, _) => ValueListenableBuilder<double>(
+        // Only listened to (so only ticking) while busy.
+        valueListenable: widget.busy ? _spin : _still,
+        builder: (context, spin, _) => CustomPaint(
+          painter: _RingPainter(v, widget.color, widget.busy ? spin : null),
           child: Center(
             child: Text(
               '${(widget.fill * 100).round()}',

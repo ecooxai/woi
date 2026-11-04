@@ -94,6 +94,8 @@ launch() {
   # shellcheck disable=SC2086
   xdotool windowmove "$WID" 0 0 windowsize "$WID" $SIZE
   sleep 12 # connect + settle
+  # Frame-stat lines up to here (launch, settle) are not counted.
+  FRAME_MARK=$(wc -l <"$OUT/app-$name.log")
 }
 
 stop_app() { kill "$APP_PID" 2>/dev/null; wait "$APP_PID" 2>/dev/null; APP_PID=""; sleep 1; }
@@ -121,8 +123,8 @@ for s in $SCENARIOS; do
       mon=$!
       end=$((SECONDS + SECS))
       while [ $SECONDS -lt $end ]; do
-        xdotool type --delay 90 "- typing perf check, the quick brown fox jumps over the lazy dog "
-        xdotool key Return
+        xdotool type --delay 90 "- typing perf check, the quick brown fox jumps over the lazy dog " 2>/dev/null
+        xdotool key Return 2>/dev/null
       done
       wait $mon
       ;;
@@ -176,8 +178,10 @@ for s in $SCENARIOS; do
   esac
   stop_app
   if [ -f "$OUT/$s.summary.txt" ]; then
-    # Frames per second while monitored (WOI_FRAME_STATS lines, 10 s each).
-    awk '/frames\[main\]/ { split($2, a, "f/"); f += a[1]; t += a[2] + 0 } END { if (t) printf "frames/s %.1f (%d frames in %d s)\n", f / t, f, t }' \
+    # Frames rendered while monitored (WOI_FRAME_STATS logs a line on the
+    # first frame after each >= 10 s window; no line = no frames).
+    awk -v mark="${FRAME_MARK:-0}" -v secs="$SECS" 'NR > mark && /frames\[main\]/ { split($2, a, "f/"); f += a[1] }
+      END { printf "frames/s %.1f (%d frames while monitored, %d s)\n", f / secs, f, secs }' \
       "$OUT/app-$s.log" >>"$OUT/$s.summary.txt"
   fi
   cat "$OUT/$s.summary.txt" 2>/dev/null

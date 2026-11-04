@@ -15,6 +15,7 @@ import 'code_highlight.dart';
 import 'context_meter.dart' show formatTokens;
 import 'glass.dart';
 import 'image_viewer.dart';
+import 'low_fps.dart';
 
 class MessageTile extends StatelessWidget {
   const MessageTile({
@@ -634,11 +635,7 @@ class _ToolCallCardState extends State<ToolCallCard> {
         child: ScaleTransition(scale: Tween(begin: 0.7, end: 1.0).animate(a), child: c),
       ),
       child: icon == null
-          ? SizedBox.square(
-              key: const ValueKey('spin'),
-              dimension: 14,
-              child: CircularProgressIndicator(strokeWidth: 1.8, color: color),
-            )
+          ? LowFpsSpinner(key: const ValueKey('spin'), color: color)
           : Pill(key: ValueKey(t.status), label: label, color: color, icon: icon, dense: true),
     );
 
@@ -754,22 +751,14 @@ class _ProgressSweep extends StatefulWidget {
   State<_ProgressSweep> createState() => _ProgressSweepState();
 }
 
-class _ProgressSweepState extends State<_ProgressSweep> with SingleTickerProviderStateMixin {
-  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 1200))
-    ..repeat();
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
+class _ProgressSweepState extends State<_ProgressSweep> {
   @override
   Widget build(BuildContext context) => SizedBox(
     height: 2,
-    child: AnimatedBuilder(
-      animation: _c,
-      builder: (context, _) => FractionallySizedBox(
-        alignment: Alignment(-1.5 + 3 * _c.value, 0),
+    child: LowFpsBuilder(
+      period: const Duration(milliseconds: 1200),
+      builder: (context, v) => FractionallySizedBox(
+        alignment: Alignment(-1.5 + 3 * v, 0),
         widthFactor: 0.4,
         child: DecoratedBox(
           decoration: BoxDecoration(
