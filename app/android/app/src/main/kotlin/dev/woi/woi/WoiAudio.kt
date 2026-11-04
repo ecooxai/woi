@@ -56,6 +56,9 @@ object WoiAudio {
     private var micAec = true
     private var ourSession = 0
     private var yielded = false
+    // One self-heal restart per mic open (see the dead-mic check below).
+    private var healed = false
+    @Volatile private var micZeros = false
     private var recCallback: AudioManager.AudioRecordingCallback? = null
 
     val micHandler = object : EventChannel.StreamHandler {
@@ -78,6 +81,7 @@ object WoiAudio {
     private fun openMic(events: EventChannel.EventSink) {
         closeMic()
         micSink = events
+        healed = false
         val cb = object : AudioManager.AudioRecordingCallback() {
             override fun onRecordingConfigChanged(configs: MutableList<AudioRecordingConfiguration>) = evaluate(configs)
         }
@@ -177,6 +181,7 @@ object WoiAudio {
             throw IllegalStateException("AudioRecord not initialized (RECORD_AUDIO granted?)")
         }
         ourSession = rec.audioSessionId
+        micZeros = false
         val route = if (phone) "phone route" else "media route"
         if (micAec) {
             if (AcousticEchoCanceler.isAvailable()) aec = AcousticEchoCanceler.create(rec.audioSessionId)?.apply { enabled = true }
@@ -199,6 +204,16 @@ object WoiAudio {
             // Residual-echo diagnostics: mean mic RMS while Woi's track plays.
             var echoSum = 0.0
             var echoN = 0
+            // Start-up diagnostics: rms + silenced flag once a second for 5 s.
+            val t0 = System.nanoTime()
+            var diagSum = 0.0
+            var diagN = 0
+            var diagSec = 1
+            // Dead-mic check: a live mic never delivers exact digital zeros
+            // (even AEC/NS leave a noise floor); seen on a MI 8 after a
+            // relaunch with the capture reported as not silenced.
+            var zeroSince = 0L
+            var zeroReported = false
             while (record === rec) {
                 var off = 0
                 while (off < buf.size && record === rec) {
@@ -211,8 +226,32 @@ object WoiAudio {
                     continue
                 }
                 val chunk = buf.copyOf(off)
+                val r = rms(chunk)
+                val now = System.nanoTime()
+                if (diagSec <= 5) {
+                    diagSum += r; diagN++
+                    if (now - t0 >= diagSec * 1_000_000_000L) {
+                        val silenced = if (Build.VERSION.SDK_INT >= 29) {
+                            try { rec.activeRecordingConfiguration?.isClientSilenced } catch (_: Exception) { null }
+                        } else null
+                        Log.i(WoiBridge.TAG, "mic start +%ds: rms %.4f silenced=%s".format(diagSec, diagSum / diagN, silenced))
+                        diagSum = 0.0; diagN = 0; diagSec++
+                    }
+                }
+                if (r == 0.0) {
+                    if (zeroSince == 0L) zeroSince = now
+                    else if (!zeroReported && now - zeroSince > 2_000_000_000L) {
+                        zeroReported = true
+                        micZeros = true
+                        WoiBridge.main.post { onDeadMic(rec) }
+                    }
+                } else {
+                    zeroSince = 0L
+                    zeroReported = false
+                    micZeros = false
+                }
                 if (!paused) {
-                    echoSum += rms(chunk); echoN++
+                    echoSum += r; echoN++
                     if (echoN == 25) {
                         Log.i(WoiBridge.TAG, "mic rms while playing (2 s): %.4f".format(echoSum / echoN))
                         echoSum = 0.0; echoN = 0
@@ -236,6 +275,34 @@ object WoiAudio {
                 else Log.i(WoiBridge.TAG, "mic capturing (silenced=$silenced)")
             }
         }, 1500)
+    }
+
+    /**
+     * The recorder delivered exact zeros for over 2 s while active. Restarts
+     * it once per mic open. Main thread. While Woi speaks the restart waits
+     * for the reply to end: a new recorder means a new session, and the
+     * media track (bound to the old session) would be rebuilt mid-reply.
+     */
+    private fun onDeadMic(rec: AudioRecord) {
+        val sink = micSink
+        if (record !== rec || sink == null || yielded || !micZeros) return
+        val silenced = if (Build.VERSION.SDK_INT >= 29) rec.activeRecordingConfiguration?.isClientSilenced else null
+        if (healed) {
+            Log.w(WoiBridge.TAG, "mic delivers only zeros (silenced=$silenced); already restarted once, not again")
+            return
+        }
+        if (!paused) {
+            Log.w(WoiBridge.TAG, "mic delivers only zeros (silenced=$silenced); restart after Woi's reply")
+            WoiBridge.main.postDelayed({ onDeadMic(rec) }, 500)
+            return
+        }
+        healed = true
+        Log.w(WoiBridge.TAG, "mic delivered only zeros for 2 s (silenced=$silenced): restarting the recorder (self-heal)")
+        try {
+            startRecord(sink)
+        } catch (e: Throwable) {
+            sink.error("mic", e.message ?: e.toString(), null)
+        }
     }
 
     private fun rms(pcm: ByteArray): Double {
