@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:woi/core/context/compressor.dart';
 import 'package:woi/core/context/context_manager.dart';
@@ -18,6 +19,12 @@ class _GatedCompressor implements Compressor {
     await gate.future;
     return CompressionResult(summary: 'S' * summaryChars, tokensAfter: summaryChars ~/ 4);
   }
+}
+
+class _FailingCompressor implements Compressor {
+  @override
+  Future<CompressionResult> compress(List<Message> messages, {required String model, String? previousSummary}) =>
+      Future.error(Exception('429 usage_limit_reached'));
 }
 
 Message _text(MessageKind k, int chars) => Message(kind: k, text: 'a' * chars);
@@ -241,6 +248,29 @@ void main() {
     expect(conv.messages.any((m) => m.compacted), isFalse);
     expect(conv.summary, isNull);
     expect(cm.lastError, isA<StateError>());
+  });
+
+  // iter6 QA: a compaction failing on HTTP 429 left no trace in the log.
+  test('a failing compaction is logged, keeps the messages and can run again', () async {
+    final failing = _FailingCompressor();
+    cm = ContextManager(compressor: failing, threshold: 1000, keepRecentTurns: 2, minInterval: Duration.zero)
+      ..attach(conv);
+    for (var i = 0; i < 3; i++) {
+      _turn(conv);
+    }
+    final logs = <String>[];
+    final prev = debugPrint;
+    debugPrint = (String? m, {int? wrapWidth}) => logs.add(m ?? '');
+    try {
+      await cm.maybeCompress(force: true);
+    } finally {
+      debugPrint = prev;
+    }
+    expect(logs, contains(contains('compaction failed: Exception: 429 usage_limit_reached')));
+    expect(cm.lastError, isA<Exception>());
+    expect(conv.messages.any((m) => m.compacted), isFalse);
+    expect(cm.compressing, isFalse);
+    expect(cm.maybeCompress(force: true), isNotNull, reason: 'retries are not blocked');
   });
 
   test('onConversationChanged triggers compaction automatically', () async {

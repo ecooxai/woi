@@ -473,8 +473,10 @@ class ContextManager extends ChangeNotifier {
         ),
       );
     } catch (e) {
+      // e.g. Responses API 429 usage_limit_reached: retried after minInterval.
       lastError = e;
       _lastCompaction = DateTime.now();
+      debugPrint('context: compaction failed: $e');
     } finally {
       _compressing = false;
       notifyListeners();
