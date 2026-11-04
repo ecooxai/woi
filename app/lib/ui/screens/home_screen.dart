@@ -416,8 +416,11 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _chatPanel({required double maxBubble}) => GlassPanel(
     key: const ValueKey('chat-panel'),
     padding: EdgeInsets.zero,
+    // Hard-edge clip: an anti-aliased rounded clip over the scrolling list
+    // is redrawn with coverage every frame (expensive on software GL).
     child: ClipRRect(
       borderRadius: BorderRadius.circular(WoiRadii.lg),
+      clipBehavior: Clip.hardEdge,
       child: _transcriptArea(maxBubble: maxBubble, wide: !_phone),
     ),
   );
@@ -591,22 +594,25 @@ class _HomeScreenState extends State<HomeScreen> {
       final img = msgs[i].image;
       if (img != null) last = img;
     }
-    return ListView.builder(
-      reverse: true,
-      padding: EdgeInsets.fromLTRB(wide ? 22 : 10, 16, wide ? 22 : 10, 8),
-      itemCount: msgs.length,
-      itemBuilder: (context, i) {
-        final idx = msgs.length - 1 - i;
-        final m = msgs[idx];
-        return MessageTile(
-          key: ValueKey(m.id),
-          message: m,
-          audio: c.platform.audio,
-          viewer: c.platform.viewer,
-          maxBubbleWidth: maxBubble,
-          screenshot: m.kind == MessageKind.tool ? shots[idx] : null,
-        );
-      },
+    // One SelectionArea for the transcript: message text is plain Text.
+    return SelectionArea(
+      child: ListView.builder(
+        reverse: true,
+        padding: EdgeInsets.fromLTRB(wide ? 22 : 10, 16, wide ? 22 : 10, 8),
+        itemCount: msgs.length,
+        itemBuilder: (context, i) {
+          final idx = msgs.length - 1 - i;
+          final m = msgs[idx];
+          return MessageTile(
+            key: ValueKey(m.id),
+            message: m,
+            audio: c.platform.audio,
+            viewer: c.platform.viewer,
+            maxBubbleWidth: maxBubble,
+            screenshot: m.kind == MessageKind.tool ? shots[idx] : null,
+          );
+        },
+      ),
     );
   }
 }

@@ -321,6 +321,28 @@ extern "C" G_MODULE_EXPORT FlDartProject* fl_dart_project_new() {
   return project;
 }
 
+// Main window renderer on a display without DRI3 (WOI_SOFTWARE_GL=1, GL is
+// Mesa llvmpipe): Skia's CPU rasterizer (the embedder's "software"
+// renderer), not Skia over llvmpipe. llvmpipe runs every fragment through
+// JIT shaders on two thread pools (Flutter's context and GTK's, which draws
+// the finished frame and reads it back), ~60 ms of CPU per 1600x900 frame;
+// Skia's raster pipeline paints the same frame in ~5 ms on one thread.
+// Measured on Xephyr, 200-message chat, wheel scrolling (qa/perf_scenarios.sh):
+// 210% -> 41% CPU at 50 instead of 31 fps, RSS 332 -> 211 MB (llvmpipe is not
+// loaded until a viewer opens). The main window has no external textures
+// (video lives in the viewer windows, which keep OpenGL for fvp; the camera
+// preview is a RawImage), so the renderer's limits do not apply to it.
+// WOI_RENDERER=gl (or impeller) keeps the GPU path; WOI_RENDERER=software
+// forces the CPU renderer anywhere; an explicit FLUTTER_LINUX_RENDERER wins.
+static gboolean main_window_uses_cpu_renderer() {
+  if (g_getenv("FLUTTER_LINUX_RENDERER") != nullptr) return FALSE;
+  const gchar* renderer = g_getenv("WOI_RENDERER");
+  if (g_strcmp0(renderer, "software") == 0) return TRUE;
+  if (renderer != nullptr && *renderer != '\0') return FALSE;
+  return g_strcmp0(g_getenv("WOI_SOFTWARE_GL"), "1") == 0 ||
+         g_strcmp0(g_getenv("LIBGL_ALWAYS_SOFTWARE"), "1") == 0;
+}
+
 // Implements GApplication::activate.
 static void my_application_activate(GApplication* application) {
   MyApplication* self = MY_APPLICATION(application);
@@ -364,7 +386,15 @@ static void my_application_activate(GApplication* application) {
   fl_dart_project_set_dart_entrypoint_arguments(
       project, self->dart_entrypoint_arguments);
 
+  // The engine reads FLUTTER_LINUX_RENDERER in fl_view_new(), so it is only
+  // set around this call: viewer windows created later keep OpenGL.
+  const gboolean cpu = main_window_uses_cpu_renderer();
+  if (cpu) g_setenv("FLUTTER_LINUX_RENDERER", "software", TRUE);
   FlView* view = fl_view_new(project);
+  if (cpu) {
+    g_unsetenv("FLUTTER_LINUX_RENDERER");
+    g_message("software GL: main window rasterized on the CPU (Skia)");
+  }
   GdkRGBA background_color;
   // Background defaults to black, override it here if necessary, e.g. #00000000
   // for transparent.

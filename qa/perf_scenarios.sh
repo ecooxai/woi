@@ -63,7 +63,7 @@ launch() {
   local wid="" t=0
   while [ -z "$wid" ] && [ $t -lt 60 ]; do
     sleep 0.5; t=$((t + 1))
-    wid=$(xdotool search --pid "$APP_PID" --name '^Woi$' 2>/dev/null | head -1)
+    wid=$(xdotool search --onlyvisible --pid "$APP_PID" --name '^Woi$' 2>/dev/null | head -1)
   done
   [ -n "$wid" ] || { echo "no window for $name" >&2; return 1; }
   WID=$wid
