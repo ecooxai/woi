@@ -43,7 +43,7 @@ import '../fakes/fakes.dart';
 
 final _live = Platform.environment['WOI_LIVE'] == '1';
 final _fixtures = Directory('../research/fixtures');
-final _model = Platform.environment['WOI_REALTIME_MODEL'] ?? 'gpt-realtime-2';
+final _model = Platform.environment['WOI_REALTIME_MODEL'] ?? 'gpt-realtime-2.1';
 const _screenW = 1920, _screenH = 1080;
 
 /// Screen fake returning the real fixture PNG (256x256) for a 1920x1080 screen.
@@ -739,7 +739,7 @@ void main() {
       expect(s, contains('red'));
     }, timeout: const Timeout(Duration(minutes: 2)));
 
-    test('delegate (gpt-6.1-sol) runs the tool loop with confirmations and returns a concise result', () async {
+    test('delegate (gpt-6-luna) runs the tool loop with confirmations and returns a concise result', () async {
       final client = ResponsesClient(credentials: auth.credentials);
       final root = await Directory.systemTemp.createTemp('woi_live_del_');
       addTearDown(() => root.delete(recursive: true));

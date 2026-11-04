@@ -31,8 +31,11 @@ QA_DIR=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$QA_DIR/.." && pwd)
 FIX=${WOI_FIXTURES:-$REPO/research/fixtures}
 QFIX=$QA_DIR/fixtures
-PHASES=${PHASES:-live direct barge compact ux}
+# Default: Direct realtime only (gpt-realtime-2.1 is free; gpt-live costs
+# quota): add "live" explicitly to test gpt-live.
+PHASES=${PHASES:-full barge compact ux media extras}
 export QA_OUT=${QA_OUT:-/tmp/woi-qa-out}
+QA_REALTIME_MODEL=${QA_REALTIME_MODEL:-gpt-realtime-2.1}
 rm -rf "$QA_OUT" && mkdir -p "$QA_OUT/shots"
 . "$QA_DIR/lib/common.sh"
 LAT="python3 $QA_DIR/lib/latency.py"
@@ -331,7 +334,7 @@ phase_live() {
     fi
     result $mode connect - - PASS "$(grep -m1 'gpt-live connected' "$APP_LOG" | grep -oE 'offer=[0-9]+ms?')"
   else
-    qa_launch_app $mode '{"backendMode":"direct"}' || return 1
+    qa_launch_app $mode '{"backendMode":"direct","realtimeModel":"'"$QA_REALTIME_MODEL"'"}' || return 1
     qa_place_app $APP_X $APP_Y $APP_W $APP_H
     sleep 8 # the WebSocket backend logs nothing on connect
   fi
@@ -393,7 +396,7 @@ phase_live() {
   echo "$said" | grep -qiE "hello,? world|WOI-QA|QA (target|run)|click/type|backdrop|run in progress|terminal|xterm|woi|conversation|chat|notes|buy milk$seen" && ok=PASS
   result $mode 07_whats_on_screen "$LAST_LAT" "$LAST_DIALOG" $ok "$(echo "$said" | cut -c1-200)"
 
-  # delegate_task (gpt-6.1-sol) writes the script via write_file (approval),
+  # delegate_task (gpt-6-luna, the default; never sol in tests) writes the script via write_file (approval),
   # may ask to run a check (approval), then the result is voiced. The
   # delegation is silent for minutes, so wait for its log line, then quiet.
   local py0; py0=$(ls "$QA_SANDBOX"/*.py 2>/dev/null | wc -l)
@@ -453,7 +456,7 @@ phase_live() {
 phase_direct() {
   local mode=direct
   prep_click_target
-  qa_launch_app $mode '{"backendMode":"direct"}' || return 1
+  qa_launch_app $mode '{"backendMode":"direct","realtimeModel":"'"$QA_REALTIME_MODEL"'"}' || return 1
   qa_place_app $APP_X $APP_Y $APP_W $APP_H
   sleep 8  # the WebSocket backend logs nothing on connect
   qa_shot "$APP_WID" "${mode}_00_connected" >/dev/null
@@ -480,8 +483,8 @@ phase_direct() {
 
 phase_compact() {
   local mode=compact
-  if [ "${COMPACT_BACKEND:-live}" = direct ]; then
-    qa_launch_app $mode '{"compressionThreshold":2000,"backendMode":"direct"}' || return 1
+  if [ "${COMPACT_BACKEND:-direct}" = direct ]; then
+    qa_launch_app $mode '{"compressionThreshold":2000,"backendMode":"direct","realtimeModel":"'"$QA_REALTIME_MODEL"'"}' || return 1
     qa_place_app $APP_X $APP_Y $APP_W $APP_H
     sleep 8
   else
@@ -513,8 +516,8 @@ phase_compact() {
 # media: viewers (text, image, video) and the edit approve/reject pair only
 phase_media() {
   local mode=media v ok
-  if [ "${MEDIA_BACKEND:-live}" = direct ]; then
-    qa_launch_app $mode '{"backendMode":"direct"}' || return 1
+  if [ "${MEDIA_BACKEND:-direct}" = direct ]; then
+    qa_launch_app $mode '{"backendMode":"direct","realtimeModel":"'"$QA_REALTIME_MODEL"'"}' || return 1
     qa_place_app $APP_X $APP_Y $APP_W $APP_H
     sleep 8
   else
@@ -549,8 +552,8 @@ phase_media() {
 
 phase_ux() {
   local mode=ux
-  if [ "${UX_BACKEND:-live}" = direct ]; then
-    qa_launch_app $mode '{"backendMode":"direct"}' || return 1; sleep 8
+  if [ "${UX_BACKEND:-direct}" = direct ]; then
+    qa_launch_app $mode '{"backendMode":"direct","realtimeModel":"'"$QA_REALTIME_MODEL"'"}' || return 1; sleep 8
   else
     qa_launch_app $mode || return 1
     qa_wait_log 'gpt-live connected' 40
@@ -583,7 +586,7 @@ phase_barge_only() {
     qa_launch_app $mode || return 1
     qa_wait_log 'gpt-live connected' 40 || { result $mode connect -1 0 FAIL "no gpt-live connection"; return 1; }
   else
-    qa_launch_app $mode '{"backendMode":"direct"}' || return 1
+    qa_launch_app $mode '{"backendMode":"direct","realtimeModel":"'"$QA_REALTIME_MODEL"'"}' || return 1
     sleep 8
   fi
   qa_place_app $APP_X $APP_Y $APP_W $APP_H
@@ -640,7 +643,7 @@ PY
 #   video    a test-pattern video in the viewer; "what is happening in the
 #            video right now" answers from the current frame
 phase_extras() {
-  local mode=extras ok r settings='{"backendMode":"direct"}' cam
+  local mode=extras ok r settings='{"backendMode":"direct","realtimeModel":"'"$QA_REALTIME_MODEL"'"}' cam
   [ "${EXTRAS_BACKEND:-direct}" = live ] && settings=''
   cam=$(qa_fake_camera) || { result $mode camera - - FAIL "could not build the test card"; return 1; }
   # shellcheck disable=SC2086

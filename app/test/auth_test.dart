@@ -167,7 +167,7 @@ void main() {
   test('settings: backend mode round trip and legacy apiKey migration', () {
     const s = AppSettings();
     expect(s.backendMode, BackendMode.gptLive);
-    expect(s.realtimeModel, 'gpt-realtime-2');
+    expect(s.realtimeModel, 'gpt-realtime-2.1');
     final rt = AppSettings.fromJson(s.copyWith(backendMode: BackendMode.direct, realtimeModel: 'x').toJson());
     expect(rt.backendMode, BackendMode.direct);
     expect(rt.realtimeModel, 'x');

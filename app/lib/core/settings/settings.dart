@@ -25,7 +25,7 @@ enum AppTheme {
 /// Which voice backend the app talks to.
 enum BackendMode {
   gptLive('gpt-live (WebRTC)'),
-  direct('Direct realtime (gpt-realtime-2)'),
+  direct('Direct realtime (gpt-realtime-2.1)'),
   apiKey('OpenAI API key');
 
   const BackendMode(this.label);
@@ -39,7 +39,7 @@ enum BackendMode {
 const kVoiceModels = ['gpt-live-1.1', 'gpt-live-1', 'gpt-live-1-codex'];
 
 /// Models that work on wss://api.openai.com/v1/realtime (§2.1).
-const kRealtimeModels = ['gpt-realtime-2', 'gpt-realtime-1.5', 'gpt-realtime', 'gpt-realtime-mini'];
+const kRealtimeModels = ['gpt-realtime-2.1', 'gpt-realtime-2.1-mini', 'gpt-realtime-2', 'gpt-realtime-1.5', 'gpt-realtime', 'gpt-realtime-mini'];
 
 /// Voices of the realtime WebSocket models (direct and API-key modes).
 const kVoices = ['marin', 'cedar', 'alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse'];
@@ -86,11 +86,11 @@ class AppSettings {
     this.backendMode = BackendMode.gptLive,
     this.apiKey = '',
     this.voiceModel = 'gpt-live-1.1',
-    this.realtimeModel = 'gpt-realtime-2',
+    this.realtimeModel = 'gpt-realtime-2.1',
     this.voice = 'marin',
     this.compressionThreshold = 10000,
     this.compressionModel = 'gpt-6-luna',
-    this.delegateModel = 'gpt-6.1-sol',
+    this.delegateModel = 'gpt-6-luna',
     this.screenshotDelayMs = 1200,
     this.autoScreenshot = true,
     this.confirmBeforeBash = true,

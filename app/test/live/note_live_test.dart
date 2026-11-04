@@ -29,7 +29,7 @@ import 'package:woi/tools/tool_registry.dart';
 import '../fakes/fakes.dart';
 
 final _live = Platform.environment['WOI_LIVE'] == '1';
-final _model = Platform.environment['WOI_REALTIME_MODEL'] ?? 'gpt-realtime-2';
+final _model = Platform.environment['WOI_REALTIME_MODEL'] ?? 'gpt-realtime-2.1';
 
 class _Session {
   _Session(this.notes, this.auth) {
