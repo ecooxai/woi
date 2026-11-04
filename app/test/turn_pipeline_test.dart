@@ -429,6 +429,31 @@ void main() {
     });
   });
 
+  test('streaming transcript deltas are coalesced (at most ~15 notifications a second)', () async {
+    final h = await Harness.create();
+    final b = h.scripted;
+    var notes = 0;
+    h.pipeline.addListener(() => notes++);
+    b.emit(const AssistantTranscriptDelta('Hello'));
+    // The phase changed (speaking): heard at once.
+    expect(notes, greaterThanOrEqualTo(1));
+    final first = notes;
+    for (var i = 0; i < 30; i++) {
+      b.emit(AssistantTranscriptDelta(' w$i'));
+    }
+    expect(notes, first, reason: 'deltas inside the interval are held');
+    await Future<void>.delayed(h.pipeline.transcriptNotifyInterval * 2);
+    expect(notes, first + 1, reason: 'one notification for the burst');
+    expect(ofKind(h.conv, MessageKind.assistant).single.text, endsWith(' w29'));
+    // Any other change notifies at once and takes the pending delta along.
+    b.emit(const AssistantTranscriptDelta(' more'));
+    b.emit(const ResponseDone());
+    final n = notes;
+    await Future<void>.delayed(h.pipeline.transcriptNotifyInterval * 2);
+    expect(notes, n, reason: 'no trailing notification after an immediate one');
+    await h.dispose();
+  });
+
   group('barge-in', () {
     test('user speech stops playback, cancels the response and drops late deltas', () async {
       final h = await Harness.create();

@@ -16,6 +16,7 @@ import 'context_meter.dart' show formatTokens;
 import 'glass.dart';
 import 'image_viewer.dart';
 import 'low_fps.dart';
+import 'throttled_builder.dart';
 
 class MessageTile extends StatelessWidget {
   const MessageTile({
@@ -56,6 +57,63 @@ class MessageTile extends StatelessWidget {
       child: AnimatedOpacity(duration: WoiMotion.slow, opacity: m.compacted ? 0.45 : 1, child: child),
     );
   }
+}
+
+/// Everything of [m] that a [MessageTile] shows and that can change after
+/// the message is added (messages are mutated in place while a turn runs).
+Object messageRenderSignature(Message m) {
+  final t = m.tool;
+  return (
+    m.text,
+    m.streaming,
+    m.interrupted,
+    m.compacted,
+    m.audio,
+    m.image,
+    t?.status,
+    t?.resultJson,
+    t?.finishedAt,
+    m.meta.length,
+    Object.hashAll(m.meta.values),
+  );
+}
+
+/// A [MessageTile] that follows [listenable] (the pipeline) itself and
+/// rebuilds only when its own message changed ([messageRenderSignature]), in
+/// its own repaint boundary: while a reply streams, the other bubbles are
+/// neither rebuilt nor repainted.
+class LiveMessageTile extends StatelessWidget {
+  const LiveMessageTile({
+    super.key,
+    required this.listenable,
+    required this.message,
+    required this.audio,
+    required this.viewer,
+    this.maxBubbleWidth = 640,
+    this.screenshot,
+  });
+
+  final Listenable listenable;
+  final Message message;
+  final AudioIO audio;
+  final MediaViewer viewer;
+  final double maxBubbleWidth;
+  final ImageAttachment? screenshot;
+
+  @override
+  Widget build(BuildContext context) => SelectorBuilder<Object>(
+    listenable: listenable,
+    selector: () => messageRenderSignature(message),
+    builder: (context, _) => RepaintBoundary(
+      child: MessageTile(
+        message: message,
+        audio: audio,
+        viewer: viewer,
+        maxBubbleWidth: maxBubbleWidth,
+        screenshot: screenshot,
+      ),
+    ),
+  );
 }
 
 /// Fade + rise + slight scale on first build (new messages only).

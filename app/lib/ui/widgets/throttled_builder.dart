@@ -59,10 +59,14 @@ class ThrottledBuilder extends StatefulWidget {
     required this.builder,
     this.interval = const Duration(milliseconds: 250),
     this.repaintBoundary = true,
+    this.now,
   });
 
   final Listenable listenable;
   final Duration interval;
+
+  /// Clock for the throttle (tests); defaults to [DateTime.now].
+  final DateTime Function()? now;
   final WidgetBuilder builder;
   final bool repaintBoundary;
 
@@ -71,7 +75,7 @@ class ThrottledBuilder extends StatefulWidget {
 }
 
 class _ThrottledBuilderState extends State<ThrottledBuilder> {
-  late Throttle _throttle = Throttle(widget.interval);
+  late Throttle _throttle = Throttle(widget.interval, now: widget.now);
 
   @override
   void initState() {
@@ -88,7 +92,7 @@ class _ThrottledBuilderState extends State<ThrottledBuilder> {
     }
     if (old.interval != widget.interval) {
       _throttle.cancel();
-      _throttle = Throttle(widget.interval);
+      _throttle = Throttle(widget.interval, now: widget.now);
     }
   }
 
@@ -157,4 +161,45 @@ class _SelectorBuilderState<T> extends State<SelectorBuilder<T>> {
 
   @override
   Widget build(BuildContext context) => widget.builder(context, _value);
+}
+
+/// A [Listenable] that notifies only when [selector] (over [source]) returns
+/// a different value (==). For merging into a [ListenableBuilder] that
+/// shows a few fields of a busy model: it then rebuilds when those change,
+/// not on every notification of [source]. Subscribes to [source] only while
+/// it has listeners.
+class SelectedListenable<T> extends ChangeNotifier {
+  SelectedListenable(this.source, this.selector);
+
+  final Listenable source;
+  final T Function() selector;
+  late T _value;
+
+  @override
+  void addListener(VoidCallback listener) {
+    if (!hasListeners) {
+      _value = selector();
+      source.addListener(_check);
+    }
+    super.addListener(listener);
+  }
+
+  @override
+  void removeListener(VoidCallback listener) {
+    super.removeListener(listener);
+    if (!hasListeners) source.removeListener(_check);
+  }
+
+  void _check() {
+    final v = selector();
+    if (v == _value) return;
+    _value = v;
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    if (hasListeners) source.removeListener(_check);
+    super.dispose();
+  }
 }
