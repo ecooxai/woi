@@ -146,6 +146,7 @@ object WoiAudioRoute {
     // audio is not in the AEC reference there (only Woi's own track is), so
     // a podcast would otherwise reach the server as user speech.
     private var listenFocus: AudioFocusRequest? = null
+    @Volatile private var listenLost = false
 
     fun requestListenFocus() {
         WoiBridge.main.post {
@@ -155,9 +156,10 @@ object WoiAudioRoute {
                     AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANT)
                         .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
                 )
-                .setOnAudioFocusChangeListener { }
+                .setOnAudioFocusChangeListener { c -> listenLost = c < 0 }
                 .build()
             listenFocus = req
+            listenLost = false
             val r = am().requestAudioFocus(req)
             Log.i(WoiBridge.TAG, "media route: listen focus (other media pauses) result=$r")
         }
@@ -174,6 +176,14 @@ object WoiAudioRoute {
     /** Other apps duck (or pause) while Woi speaks. Any thread. */
     fun requestSpeechFocus() {
         WoiBridge.main.post {
+            // Another app took the listen focus (e.g. the user started a
+            // podcast): take it back when Woi speaks, which pauses it again.
+            val lf = listenFocus
+            if (lf != null && listenLost) {
+                listenLost = false
+                val r = am().requestAudioFocus(lf)
+                Log.i(WoiBridge.TAG, "media route: listen focus taken back result=$r")
+            }
             if (focus != null || listenFocus != null) return@post
             val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
                 .setAudioAttributes(playbackAttributes())
