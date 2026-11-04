@@ -302,6 +302,16 @@ object WoiAudio {
         val sink = micSink
         if (record !== rec || sink == null || yielded || !micZeros) return
         val silenced = if (Build.VERSION.SDK_INT >= 29) rec.activeRecordingConfiguration?.isClientSilenced else null
+        // Zeros with silenced=false are the platform AEC/NS gating a quiet
+        // room (measured on the MI 8: HAL input live, app gets 0): normal, so
+        // no restart. Only a client Android really silenced is restarted.
+        if (silenced != true) {
+            if (!healNoted) {
+                healNoted = true
+                Log.i(WoiBridge.TAG, "mic quiet (exact zeros, not silenced): effects gating a quiet room")
+            }
+            return
+        }
         if (healed) {
             if (healNoted) return
             healNoted = true
