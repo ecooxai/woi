@@ -36,7 +36,7 @@ String backendShortName(BackendMode m) => switch (m) {
   BackendMode.apiKey => 'Realtime · API key',
 };
 
-/// "gpt-live-1.1 · connected": a status dot, model and state, a details
+/// A status dot plus the model (connected) or the state, a details
 /// tooltip and an inline Retry when the link is down. Static (no ticker):
 /// motion lives in the voice indicator next to it.
 class ConnectionStatusChip extends StatelessWidget {
@@ -83,17 +83,16 @@ class ConnectionStatusChip extends StatelessWidget {
       decoration: BoxDecoration(shape: BoxShape.circle, color: color),
     );
 
-    final text = Text.rich(
-      TextSpan(
-        children: [
-          TextSpan(text: model, style: _style(WoiColors.textDim)),
-          TextSpan(text: ' · ', style: _style(WoiColors.textFaint)),
-          TextSpan(text: label, style: _style(state == LinkState.connected ? WoiColors.textDim : color)),
-        ],
-      ),
+    // Just the model: the coloured dot carries the state and the voice
+    // label next to it already says Offline / Connecting… ("gpt-live-1.1 ·
+    // connected" was cut to "gpt-live-1.1 · co…" in a 588 px chat pane).
+    // The backend, voice, state and details are in the tooltip.
+    final text = Text(
+      model,
       maxLines: 1,
       softWrap: false,
       overflow: TextOverflow.ellipsis,
+      style: _style(WoiColors.textDim),
     );
 
     return Semantics(

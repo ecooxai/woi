@@ -46,7 +46,7 @@ void main() {
       expect(find.text('Connecting…'), findsNothing);
     });
 
-    testWidgets('chip shows "model · state" and a retry when down', (tester) async {
+    testWidgets('chip shows the model (state in the dot and tooltip) and a retry when down', (tester) async {
       var retries = 0;
       Widget chip(LinkState s) => _app(
         ConnectionStatusChip(
@@ -57,12 +57,16 @@ void main() {
         ),
       );
       await tester.pumpWidget(chip(LinkState.connected));
-      expect(find.textContaining('gpt-live-1.1'), findsOneWidget);
-      expect(find.textContaining('connected'), findsOneWidget);
+      expect(find.text('gpt-live-1.1'), findsOneWidget);
+      expect(find.textContaining('connected'), findsNothing);
       expect(find.text('Retry'), findsNothing);
+      final tip = find.ancestor(of: find.text('gpt-live-1.1'), matching: find.byType(Tooltip));
+      expect(tester.widget<Tooltip>(tip.first).message, contains('Status: connected'));
 
       await tester.pumpWidget(chip(LinkState.error));
       await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('gpt-live-1.1'), findsOneWidget);
+      expect(tester.widget<Tooltip>(tip.first).message, contains('Status: error'));
       expect(find.text('Retry'), findsOneWidget);
       await tester.tap(find.text('Retry'));
       expect(retries, 1);
