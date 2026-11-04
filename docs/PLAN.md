@@ -264,3 +264,10 @@ Numbers (`qa/aec/guard_eval.sh`, 12 rigs = turns/stress × 3 seeds × near-end �
 False local onsets (pauses): guard 19 vs old broadband BargeInDetector 34. Barge-in detection: guard 11/18 vs old
 14/18 items over Woi's speech; guard detects 200–380 ms after speech start (median 330 ms, capture time, plus
 ~50 ms canceller latency). The transcript guard catches the remaining echo turns that do get through.
+
+E2E (`qa/aec/e2e_echo.sh`, after build only, 2026-11-04; the before run was not completed): of 4 user turns 2 were
+self-talk ("That's", "What?"), 0 echo turns dropped by the transcript guard, 7 false local onsets (pause + resume),
+and "Stop" / the question barge-in stopped Woi only after 7.4 s / 8.3 s (the 2 fixture barge-ins never became user
+turns). Mic level p50 −25 dBFS. **Open:** the guard is not yet good enough on this virtual room (clip + IR, no
+real speaker roll-off, so its low-band advantage is gone) — false onsets and missed barge-ins; needs the before run
+for comparison and tuning (onset threshold vs the room's coupling) before the live :0 app leaves push-to-talk.
