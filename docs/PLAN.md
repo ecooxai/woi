@@ -159,3 +159,12 @@ turn), send key events to the current app (esc/back, ctrl+c copy, paste, select 
   "open full app" button. The assist screenshot of the underlying app is attached as before. Dismiss with
   back / tap outside / swipe down; actions (click/type/send_keys via accessibility) operate on the app underneath
   (the panel must not steal those events: hide/shrink during gestures if needed).
+
+## Spec 2026-11-03 #5 (user): Android app starts in a freeform window
+- Try to launch Woi (the full app, from the launcher and when the assistant hands off to "open full app") in a
+  freeform window by default: width 100% of the screen, height 70%, docked at the bottom.
+- Approach: the manifest `<layout android:defaultWidth="100%" android:defaultHeight="70%" android:gravity="bottom">`
+  on MainActivity plus `resizeableActivity`, and ActivityOptions.setLaunchBounds / launch windowing mode when Woi
+  launches itself. Needs freeform support on the device (Android 15: developer option
+  `enable_freeform_support`, or the desktop windowing mode); when it's unavailable, fall back to full screen without errors.
+- The assistant floating panel (#4: 60% by default, resizable to 95%) stays as is.
