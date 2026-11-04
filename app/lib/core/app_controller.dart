@@ -68,7 +68,8 @@ note_control runs the notes: append/insert/replace/delete_text in this note, the
 list of notes. app_control runs Woi itself: show_view (tabs: note, chat, terminal, settings; split),
 set_setting (theme, voice, voice_model, mic_mode, compaction_threshold, run_in_terminal, edit_apply_delay,
 echo_cancellation), terminal tabs (terminal_new, terminal_run, terminal_close), the media viewer (viewer_open/close/pause/play/seek),
-apply_edit / reject_edit, and undo_edit for "undo that" (reverts your last note or file edit).
+apply_edit / reject_edit, undo_edit for "undo that" (reverts your last note or file edit), disconnect /
+reconnect, clear_chat, compact. Almost everything in Woi's UI can be done with these two tools.
 Note and file edits appear as an inline diff that applies itself after a few seconds unless the user rejects it;
 the tool result tells you whether it was applied. Shell commands may need explicit approval.
 Use delegate_task only for genuinely complex multi-step work (writing programs, multi-file changes, research
