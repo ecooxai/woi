@@ -243,10 +243,10 @@ void main() {
         ..add(_callReply('c1', 'write_file', {'path': '~/notes.txt', 'content': 'buy milk\n'}))
         ..add(_callReply('c2', 'run_bash', {'command': 'wc -l ~/notes.txt'}))
         ..add(_textReply('Created notes.txt with one line.'));
-      final r = await delegate.runTask('make a notes file', model: 'gpt-6.1-sol', context: 'user said so');
+      final r = await delegate.runTask('make a notes file', model: 'gpt-6-luna', context: 'user said so');
       expect(r.success, isTrue);
       expect(r.output, 'Created notes.txt with one line.');
-      expect(r.model, 'gpt-6.1-sol');
+      expect(r.model, 'gpt-6-luna');
       expect(r.tokensUsed, 126);
       expect(confirm.writeRequests, hasLength(1));
       expect(await File('${fp.root.path}/notes.txt').readAsString(), 'buy milk\n');

@@ -314,7 +314,7 @@ void main() {
 
   test('delegate_task uses the delegate model from settings', () async {
     final o = await registry.dispatch('delegate_task', '{"task":"refactor"}');
-    expect(delegate.model, 'gpt-6.1-sol');
+    expect(delegate.model, 'gpt-6-luna');
     expect(decode(o)['output'], 'done: refactor');
   });
 }

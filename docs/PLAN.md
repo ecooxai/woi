@@ -180,3 +180,18 @@ turn), send key events to the current app (esc/back, ctrl+c copy, paste, select 
   AcousticEchoCanceler/NoiseSuppressor (and WebRTC's AEC on gpt-live). Setting: on by default.
 - Unified, simplified UI: the whole app is tab-like: Note, Chat, Terminal, Settings are tabs in one tab strip that
   starts at the left edge (no "Woi" title on the left); settings is a tab, not a separate screen/dialog.
+- Delegation (complex tasks, gpt-live delegation tool loop) defaults to gpt-6-luna; gpt-6.1-sol is an optional
+  setting (expensive) and is never used in tests.
+- Codex usage check: read the ChatGPT/Codex rate-limit usage (5-hour window and weekly window, as Codex CLI's
+  /status shows: e.g. the `x-codex-primary/secondary-used-percent` response headers or the backend usage endpoint)
+  and show it in the UI. When EITHER window has < 20% remaining, delegation/compaction use gpt-6-luna even if the user
+  selected gpt-6.1-sol (show why), and Woi tells the user when gpt-live/realtime quota is low.
+
+## Spec 2026-11-04 #7 (user)
+- FIX FIRST: the Android assistant panel floating over another app can't use the mic (Android blocks capture for an
+  app that isn't foreground: needs a microphone-type foreground service / the session must own capture).
+- Editor: no edit/preview icon toggle in the top bar; all Markdown format buttons merged into ONE dropdown; a Copy
+  button copies the whole note; long-pressing Copy offers: current line, current paragraph (text between blank lines),
+  current H1 section.
+- Perf: on the embedded test display Woi uses too much CPU even when idle; find the cost. Target: < 30% most of the
+  time (idle ≈ 0%) on :11 (software GL).

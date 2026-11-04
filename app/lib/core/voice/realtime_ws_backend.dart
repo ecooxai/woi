@@ -807,7 +807,9 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
         _log('server rejected a tool call id: $message');
         return;
     }
-    final fatal = code == 'invalid_api_key' || code == 'session_expired';
+    // An expired session (the 60-minute cap) is not fatal: this backend
+    // reconnects on its own with the summary and recent turns.
+    final fatal = code == 'invalid_api_key';
     _emit(BackendError(redactSecrets(message), code: code, fatal: fatal));
     if (code == 'session_expired' && !_closed) {
       _generation++;

@@ -90,7 +90,7 @@ class AppSettings {
     this.voice = 'marin',
     this.compressionThreshold = 10000,
     this.compressionModel = 'gpt-6-luna',
-    this.delegateModel = 'gpt-6.1-sol',
+    this.delegateModel = 'gpt-6-luna',
     this.screenshotDelayMs = 1200,
     this.autoScreenshot = true,
     this.confirmBeforeBash = true,

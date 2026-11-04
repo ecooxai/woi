@@ -231,7 +231,7 @@ class DelegationExecutor {
   final String? Function()? pinnedNote;
 
   /// Model for the tool loop. Complex work is escalated by the model itself
-  /// through `delegate_task` (the app's DelegateBackend, gpt-6.1-sol).
+  /// through `delegate_task` (the app's DelegateBackend, gpt-6-luna by default).
   final String fastModel;
   final String? reasoningEffort;
   final int maxSteps;

@@ -739,7 +739,7 @@ void main() {
       expect(s, contains('red'));
     }, timeout: const Timeout(Duration(minutes: 2)));
 
-    test('delegate (gpt-6.1-sol) runs the tool loop with confirmations and returns a concise result', () async {
+    test('delegate (gpt-6-luna) runs the tool loop with confirmations and returns a concise result', () async {
       final client = ResponsesClient(credentials: auth.credentials);
       final root = await Directory.systemTemp.createTemp('woi_live_del_');
       addTearDown(() => root.delete(recursive: true));
