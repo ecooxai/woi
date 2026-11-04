@@ -2,6 +2,7 @@
 
 
 #include <dlfcn.h>
+#include <malloc.h>
 #include <flutter_linux/flutter_linux.h>
 #ifdef GDK_WINDOWING_X11
 #include <gdk/gdkx.h>
@@ -276,9 +277,48 @@ static void secondary_window_created(FlPluginRegistry* registry) {
 }
 
 // Called when first Flutter frame received.
+// Returns freed malloc memory to the OS. Startup (history load, markdown,
+// compaction requests, GL/shader setup) frees tens of MB that glibc keeps in
+// its arenas; trimming once the UI has settled saves 10-15 MB RSS, and a
+// periodic trim keeps transient peaks (compaction, large tool output) from
+// sticking. Cheap (a few ms walk of the free lists) and on the main loop.
+static gboolean trim_malloc(gpointer) {
+  malloc_trim(0);
+  return G_SOURCE_CONTINUE;
+}
+
 static void first_frame_cb(MyApplication* self, FlView* view) {
   gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
+  static gboolean trim_scheduled = FALSE;
+  if (!trim_scheduled) {
+    trim_scheduled = TRUE;
+    g_timeout_add_seconds(15, +[](gpointer) -> gboolean {
+      trim_malloc(nullptr);
+      g_timeout_add_seconds(120, trim_malloc, nullptr);
+      return G_SOURCE_REMOVE;
+    }, nullptr);
+  }
 
+}
+
+// Renderer: Skia over OpenGL by default, WOI_RENDERER=impeller for Impeller.
+// Measured on Mesa llvmpipe (qa/perf_scenarios.sh, 30 s): idle 18% -> 4%
+// CPU, scroll 431% -> 222%; Impeller has no raster cache and its SDF
+// text/shadow shaders are expensive in software GL. The media viewer
+// windows are created inside desktop_multi_window (fl_dart_project_new()
+// with the engine default, Impeller), so the runner interposes that
+// function: every project, the main window's and the viewers', gets the
+// same renderer. The executable exports the symbol (runner/CMakeLists.txt)
+// so the plugin library binds to it; the real one is found with RTLD_NEXT.
+extern "C" G_MODULE_EXPORT FlDartProject* fl_dart_project_new() {
+  using NewFn = FlDartProject* (*)();
+  static NewFn real =
+      reinterpret_cast<NewFn>(dlsym(RTLD_NEXT, "fl_dart_project_new"));
+  FlDartProject* project = real();
+  if (g_strcmp0(g_getenv("WOI_RENDERER"), "impeller") != 0) {
+    fl_dart_project_set_enable_impeller(project, FALSE);
+  }
+  return project;
 }
 
 // Implements GApplication::activate.
@@ -323,16 +363,6 @@ static void my_application_activate(GApplication* application) {
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   fl_dart_project_set_dart_entrypoint_arguments(
       project, self->dart_entrypoint_arguments);
-  // Renderer: Skia over OpenGL by default, WOI_RENDERER=impeller for Impeller.
-  // Measured on Mesa llvmpipe (qa/perf_scenarios.sh, 30 s): idle 18% -> 4%
-  // CPU, scroll 431% -> 222%; Impeller has no raster cache and its SDF
-  // text/shadow shaders are expensive in software GL. The media viewer
-  // windows are created by desktop_multi_window with a default project
-  // (Impeller); video renders there once decoding stays on the CPU without
-  // DRI3 (detect_software_gl).
-  if (g_strcmp0(g_getenv("WOI_RENDERER"), "impeller") != 0) {
-    fl_dart_project_set_enable_impeller(project, FALSE);
-  }
 
   FlView* view = fl_view_new(project);
   GdkRGBA background_color;

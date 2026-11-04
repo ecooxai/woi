@@ -25,3 +25,7 @@ target_link_libraries(${BINARY_NAME} PRIVATE PkgConfig::GTK)
 target_link_libraries(${BINARY_NAME} PRIVATE PkgConfig::X11)
 
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
+
+# my_application.cc interposes fl_dart_project_new() (the renderer choice for
+# windows that plugins create); export it so shared libraries bind to it.
+target_link_options(${BINARY_NAME} PRIVATE "LINKER:--export-dynamic-symbol=fl_dart_project_new")
