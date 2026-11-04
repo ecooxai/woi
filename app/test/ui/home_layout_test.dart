@@ -288,6 +288,12 @@ void main() {
       await t.tap(find.byKey(const ValueKey('view-chat')));
       await t.pump(const Duration(milliseconds: 500));
       expect(find.text('list the files in /tmp'), findsOneWidget);
+      // Message text is plain Text, selectable through the transcript's
+      // SelectionArea (no SelectableText per bubble).
+      expect(
+        find.ancestor(of: find.text('list the files in /tmp'), matching: find.byType(SelectionArea)),
+        findsOneWidget,
+      );
 
       await env.stop(t);
     });

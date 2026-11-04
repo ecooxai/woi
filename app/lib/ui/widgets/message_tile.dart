@@ -156,7 +156,11 @@ class _Bubble extends StatelessWidget {
           // Live partial transcript; finalized when the transcription completes.
           Text(m.text, style: body(15, height: 1.5, color: WoiColors.textDim).copyWith(fontStyle: FontStyle.italic))
         else if (m.text.isNotEmpty)
-          SelectableText(m.text, style: body(15, height: 1.5, color: WoiColors.text)),
+          // Plain Text: the transcript's SelectionArea makes it selectable
+          // (also across messages). A SelectableText per bubble built an
+          // editable-text render object, gesture recognizers and a focus
+          // node for every message scrolled into view.
+          Text(m.text, style: body(15, height: 1.5, color: WoiColors.text)),
         if (m.audio != null || m.interrupted || !m.streaming) ...[
           const SizedBox(height: 8),
           Wrap(
@@ -174,21 +178,27 @@ class _Bubble extends StatelessWidget {
       ],
     );
 
-    final bubble = AnimatedSize(
-      duration: WoiMotion.medium,
-      curve: WoiMotion.curve,
-      alignment: isUser ? Alignment.topRight : Alignment.topLeft,
-      child: Container(
-        constraints: BoxConstraints(maxWidth: maxWidth),
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
-        decoration: BoxDecoration(
-          borderRadius: radius,
-          color: isUser ? WoiColors.cyan.withValues(alpha: WoiColors.palette.isDark ? 0.16 : 0.08) : WoiColors.bg2,
-          border: Border.all(color: isUser ? WoiColors.cyan.withValues(alpha: 0.16) : WoiColors.stroke),
-        ),
-        child: content,
+    final box = Container(
+      constraints: BoxConstraints(maxWidth: maxWidth),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+      decoration: BoxDecoration(
+        borderRadius: radius,
+        color: isUser ? WoiColors.cyan.withValues(alpha: WoiColors.palette.isDark ? 0.16 : 0.08) : WoiColors.bg2,
+        border: Border.all(color: isUser ? WoiColors.cyan.withValues(alpha: 0.16) : WoiColors.stroke),
       ),
+      child: content,
     );
+    // Only live (or just finished) messages change size; old ones skip the
+    // AnimatedSize render object and its animation controller.
+    final live = m.streaming || DateTime.now().difference(m.createdAt) < const Duration(minutes: 1);
+    final bubble = live
+        ? AnimatedSize(
+            duration: WoiMotion.medium,
+            curve: WoiMotion.curve,
+            alignment: isUser ? Alignment.topRight : Alignment.topLeft,
+            child: box,
+          )
+        : box;
 
     return Semantics(
       container: true,
@@ -312,7 +322,9 @@ class ScreenshotThumb extends StatelessWidget {
                         alignment: Alignment.topCenter,
                         // Decode at the tile's size, not the image's.
                         cacheWidth: decodeWidth.clamp(64, 1280),
-                        filterQuality: FilterQuality.medium,
+                        // Decoded at about the tile size: bilinear is enough
+                        // (medium builds mipmaps, costly on software GL).
+                        filterQuality: FilterQuality.low,
                         errorBuilder: (context, e, s) => Container(
                           color: WoiColors.glass,
                           alignment: Alignment.center,
@@ -625,10 +637,13 @@ class _ToolCallCardState extends State<ToolCallCard> {
                 borderRadius: BorderRadius.circular(WoiRadii.md),
                 border: Border.all(color: color.withValues(alpha: busy ? 0.6 : 0.25)),
               ),
-              clipBehavior: Clip.antiAlias,
+              // Clip only while the progress sweep runs along the bottom
+              // edge; the ink splash is shaped by the InkWell's radius.
+              clipBehavior: busy ? Clip.antiAlias : Clip.none,
               child: Material(
                 type: MaterialType.transparency,
                 child: InkWell(
+                  borderRadius: BorderRadius.circular(WoiRadii.md),
                   onTap: () => setState(() => _open = !_open),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
