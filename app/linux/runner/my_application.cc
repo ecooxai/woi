@@ -1,5 +1,7 @@
 #include "my_application.h"
 
+
+#include <dlfcn.h>
 #include <flutter_linux/flutter_linux.h>
 #ifdef GDK_WINDOWING_X11
 #include <gdk/gdkx.h>
@@ -68,13 +70,50 @@ static int woi_x_error(Display* display, XErrorEvent* event) {
 // (videoDecoders() in lib/ui/perf.dart). An explicit value is kept.
 static void detect_software_gl() {
   if (g_getenv("WOI_SOFTWARE_GL") != nullptr) return;
-  GdkDisplay* display = gdk_display_get_default();
-  if (display == nullptr || !GDK_IS_X11_DISPLAY(display)) return;
+  // Runs before GTK opens its display, so it uses a short-lived connection of
+  // its own. GTK prefers Wayland when it can.
+  if (g_getenv("WAYLAND_DISPLAY") != nullptr &&
+      g_strcmp0(g_getenv("GDK_BACKEND"), "x11") != 0) {
+    return;
+  }
+  Display* xdisplay = XOpenDisplay(nullptr);
+  if (xdisplay == nullptr) return;
   int opcode = 0, event_base = 0, error_base = 0;
-  if (!XQueryExtension(gdk_x11_display_get_xdisplay(display), "DRI3", &opcode,
-                       &event_base, &error_base)) {
+  if (!XQueryExtension(xdisplay, "DRI3", &opcode, &event_base, &error_base)) {
     g_setenv("WOI_SOFTWARE_GL", "1", TRUE);
   }
+  XCloseDisplay(xdisplay);
+}
+
+// main() re-executes Woi with GLX pinned to Mesa when the inherited NVIDIA
+// PRIME variables would load a second driver for nothing (see main.cc). The
+// original values are restored a few seconds after the first frame (GTK has
+// created its GLX context and libglvnd has cached the screen's vendor by
+// then; restoring earlier makes the first context load NVIDIA after all), so
+// the terminal and tools started from Woi still inherit the user's
+// environment.
+static void restore_gl_env() {
+  const gchar* glx = g_getenv("WOI_ORIG_GLX_VENDOR");
+  if (glx == nullptr) return;
+  const gchar* prime = g_getenv("WOI_ORIG_NV_PRIME");
+  // Resolve (and cache) the default screen's GLX vendor while it is pinned.
+  GdkDisplay* display = gdk_display_get_default();
+  void* lib = dlopen("libGLX.so.0", RTLD_NOW | RTLD_GLOBAL);
+  using QueryFn = const char* (*)(Display*, int);
+  auto query = lib == nullptr ? nullptr
+                              : reinterpret_cast<QueryFn>(
+                                    dlsym(lib, "glXQueryExtensionsString"));
+  if (query != nullptr && display != nullptr && GDK_IS_X11_DISPLAY(display)) {
+    Display* xdisplay = gdk_x11_display_get_xdisplay(display);
+    query(xdisplay, DefaultScreen(xdisplay));
+  }
+  g_setenv("__GLX_VENDOR_LIBRARY_NAME", glx, TRUE);
+  if (prime != nullptr && *prime != '\0') {
+    g_setenv("__NV_PRIME_RENDER_OFFLOAD", prime, TRUE);
+  }
+  g_message("software GL: GLX vendor pinned to Mesa (inherited: %s)", glx);
+  g_unsetenv("WOI_ORIG_GLX_VENDOR");
+  g_unsetenv("WOI_ORIG_NV_PRIME");
 }
 
 static void install_x_error_handler() {
@@ -239,6 +278,7 @@ static void secondary_window_created(FlPluginRegistry* registry) {
 // Called when first Flutter frame received.
 static void first_frame_cb(MyApplication* self, FlView* view) {
   gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
+
 }
 
 // Implements GApplication::activate.
@@ -280,9 +320,6 @@ static void my_application_activate(GApplication* application) {
   hints.min_height = 560;
   gtk_window_set_geometry_hints(window, nullptr, &hints, GDK_HINT_MIN_SIZE);
 
-#ifdef GDK_WINDOWING_X11
-  detect_software_gl();
-#endif
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   fl_dart_project_set_dart_entrypoint_arguments(
       project, self->dart_entrypoint_arguments);
@@ -354,7 +391,13 @@ static void my_application_startup(GApplication* application) {
   g_signal_add_emission_hook(g_signal_lookup("parent-set", GTK_TYPE_WIDGET), 0,
                              clear_gl_before_view_realize, nullptr, nullptr);
 
+#ifdef GDK_WINDOWING_X11
+  detect_software_gl();
+#endif
   G_APPLICATION_CLASS(my_application_parent_class)->startup(application);
+#ifdef GDK_WINDOWING_X11
+  restore_gl_env();
+#endif
 }
 
 // Implements GApplication::shutdown.
