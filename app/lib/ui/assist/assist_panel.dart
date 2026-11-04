@@ -93,7 +93,11 @@ class _AssistPanelState extends State<AssistPanel> {
         final top = mq.viewPadding.top;
         final share = (_drag ?? _fraction).clamp(0.0, kAssistPanelMax);
         // The keyboard lifts the panel; it never grows past the status bar.
-        final panelH = (h * share).clamp(0.0, h - keyboard - top).toDouble();
+        final room = (h - keyboard - top).clamp(0.0, h).toDouble();
+        final panelH = (h * share).clamp(0.0, room).toDouble();
+        // Dragged below the minimum (about to dismiss): the content keeps
+        // its minimum layout and slides out of view instead of squeezing.
+        final contentH = panelH < h * kAssistPanelMin ? (h * kAssistPanelMin).clamp(0.0, room).toDouble() : panelH;
         return Stack(
           children: [
             Positioned.fill(
@@ -113,7 +117,14 @@ class _AssistPanelState extends State<AssistPanel> {
               right: 0,
               bottom: keyboard,
               height: panelH,
-              child: _panel(context, h, bottomInset: keyboard > 0 ? 0 : mq.viewPadding.bottom),
+              child: ClipRect(
+                child: OverflowBox(
+                  alignment: Alignment.topCenter,
+                  minHeight: contentH,
+                  maxHeight: contentH,
+                  child: _panel(context, h, bottomInset: keyboard > 0 ? 0 : mq.viewPadding.bottom),
+                ),
+              ),
             ),
           ],
         );
