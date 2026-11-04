@@ -396,7 +396,7 @@ phase_live() {
   echo "$said" | grep -qiE "hello,? world|WOI-QA|QA (target|run)|click/type|backdrop|run in progress|terminal|xterm|woi|conversation|chat|notes|buy milk$seen" && ok=PASS
   result $mode 07_whats_on_screen "$LAST_LAT" "$LAST_DIALOG" $ok "$(echo "$said" | cut -c1-200)"
 
-  # delegate_task (gpt-6.1-sol) writes the script via write_file (approval),
+  # delegate_task (gpt-6-luna, the default; never sol in tests) writes the script via write_file (approval),
   # may ask to run a check (approval), then the result is voiced. The
   # delegation is silent for minutes, so wait for its log line, then quiet.
   local py0; py0=$(ls "$QA_SANDBOX"/*.py 2>/dev/null | wc -l)

@@ -19,7 +19,7 @@ at most 80 words, plain sentences, no markdown, no code blocks, no lists; mentio
 or changed and the key result.
 ''';
 
-/// Runs complex tasks with a stronger text model (default gpt-6.1-sol)
+/// Runs complex tasks with a stronger text model (default gpt-6-luna; gpt-6.1-sol is optional and expensive)
 /// through the Responses API, in a function-calling loop over the app's
 /// [ToolRegistry] (edits still go through user confirmation).
 class ResponsesDelegate implements DelegateBackend {

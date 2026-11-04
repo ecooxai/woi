@@ -16,7 +16,7 @@ import '../widgets/glass.dart';
 
 /// Choices for the background models (a custom model id is also accepted).
 const kCompressionModels = ['gpt-6-luna', 'gpt-6.1-sol'];
-const kDelegateModels = ['gpt-6.1-sol', 'gpt-6-luna'];
+const kDelegateModels = ['gpt-6-luna', 'gpt-6.1-sol'];
 
 /// Short descriptions shown under the model radio buttons.
 const kModelHints = <String, String>{
@@ -30,7 +30,7 @@ const kModelHints = <String, String>{
   'gpt-realtime': 'Original release',
   'gpt-realtime-mini': 'Fastest, lowest cost',
   'gpt-6-luna': 'Fast and inexpensive',
-  'gpt-6.1-sol': 'Strongest reasoning, slower',
+  'gpt-6.1-sol': 'Strongest reasoning, slower, expensive',
 };
 
 enum _TestState { idle, testing, ok, failed }
@@ -506,7 +506,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       options: kDelegateModels,
       value: _s.delegateModel,
       ctl: _delegateModel,
-      fallback: 'gpt-6.1-sol',
+      fallback: 'gpt-6-luna',
       set: (v, {debounce = false}) => _apply(_s.copyWith(delegateModel: v), debounce: debounce),
     ),
     _row(

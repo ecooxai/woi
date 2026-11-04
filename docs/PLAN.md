@@ -180,3 +180,9 @@ turn), send key events to the current app (esc/back, ctrl+c copy, paste, select 
   AcousticEchoCanceler/NoiseSuppressor (and WebRTC's AEC on gpt-live). Setting: on by default.
 - Unified, simplified UI: the whole app is tab-like: Note, Chat, Terminal, Settings are tabs in one tab strip that
   starts at the left edge (no "Woi" title on the left); settings is a tab, not a separate screen/dialog.
+- Delegation (complex tasks, gpt-live delegation tool loop) defaults to gpt-6-luna; gpt-6.1-sol is an optional
+  setting (expensive) and is never used in tests.
+- Codex usage check: read the ChatGPT/Codex rate-limit usage (5-hour window and weekly window, as Codex CLI's
+  /status shows: e.g. the `x-codex-primary/secondary-used-percent` response headers or the backend usage endpoint)
+  and show it in the UI. When EITHER window has < 20% remaining, delegation/compaction use gpt-6-luna even if the user
+  selected gpt-6.1-sol (show why), and Woi tells the user when gpt-live/realtime quota is low.
