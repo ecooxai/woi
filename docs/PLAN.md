@@ -168,3 +168,16 @@ turn), send key events to the current app (esc/back, ctrl+c copy, paste, select 
   launches itself. Needs freeform support on the device (Android 15: developer option
   `enable_freeform_support`, or the desktop windowing mode); when it's unavailable, fall back to full screen without errors.
 - The assistant floating panel (#4: 60% by default, resizable to 95%) stays as is.
+
+## Spec 2026-11-03 #6 (user): unified tab UI
+- "Unify and simplify UI, make the whole app tab-like": Note, Chat, Terminal and Settings are top-level tabs in one
+  strip starting at the left edge (icons + labels; on phones only the selected tab shows its label). The "Woi"
+  title is removed; the header keeps only the side-by-side toggle (wide windows) and the history button on the right.
+- Settings is a tab hosting the settings content inline (radio sections, section rail on wide layouts); no
+  separate route. Ctrl+1..4 select the tabs, Ctrl+, opens Settings, Esc leaves it; voice "open settings" /
+  "show chat" (app_control show_view, delegation fast paths) select the tabs.
+- One tab language (`WoiTab`: label + accent underline): the note's file tabs (New, 4 recent, More) and the terminal
+  tabs are the lighter secondary row inside their tab; the editor's Run button is tonal.
+- Split view (>=1280 px): Note and Chat side by side and both read as selected; Terminal/Settings are full size,
+  going back restores the split. No new animations (idle stays at ~0 frames).
+

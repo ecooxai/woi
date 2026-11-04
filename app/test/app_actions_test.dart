@@ -44,6 +44,23 @@ void main() {
     expect(a.split.value, isTrue);
     a.showViewNamed('note');
     expect(a.view.value, HomeView.note);
+    expect(a.splitActive, isTrue);
+    // Settings and Terminal are full-size tabs; Note / Chat restore the split.
+    expect(a.showViewNamed('settings'), 'settings');
+    expect(a.view.value, HomeView.settings);
+    expect(a.splitActive, isFalse);
+    a.closeSettings();
+    expect(a.view.value, HomeView.note);
+    expect(a.splitActive, isTrue);
+    a.showViewNamed('preferences');
+    expect(a.view.value, HomeView.settings);
+    a.showViewNamed('chat');
+    expect(a.splitActive, isTrue);
+    a.showViewNamed('settings');
+    a.toggleSplit();
+    expect(a.view.value, HomeView.settings, reason: 'turning split off stays on the tab');
+    a.toggleSplit();
+    expect(a.view.value, HomeView.note, reason: 'turning split on shows the note and the chat');
     a.splitAvailable = false;
     expect(() => a.showViewNamed('split'), throwsA(isA<AppActionError>()));
     expect(() => a.showViewNamed('kitchen'), throwsA(isA<AppActionError>()));
@@ -142,6 +159,9 @@ void main() {
       expect(fp('undo that')!.single.$2['action'], 'undo_edit');
       expect(fp('Switch to terminal.')!.single.$2, {'action': 'show_view', 'view': 'terminal'});
       expect(fp('go back to the chat')!.single.$2['view'], 'chat');
+      expect(fp('open settings')!.single.$2, {'action': 'show_view', 'view': 'settings'});
+      expect(fp('show the chat')!.single.$2['view'], 'chat');
+      expect(fp('go to settings')!.single.$2['view'], 'settings');
       expect(fp('change theme to dark')!.single.$2, {'action': 'set_setting', 'key': 'theme', 'value': 'dark'});
       expect(fp('switch to light mode')!.single.$2['value'], 'light');
       expect(fp('please apply the edit')!.single.$2['action'], 'apply_edit');

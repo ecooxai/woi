@@ -68,6 +68,8 @@ class WoiTab extends StatelessWidget {
         child: InkWell(
           key: inkKey,
           onTap: onTap,
+          hoverColor: WoiColors.text.withValues(alpha: 0.04),
+          focusColor: WoiColors.text.withValues(alpha: 0.06),
           borderRadius: const BorderRadius.vertical(top: Radius.circular(WoiRadii.sm)),
           child: Container(
             height: height,
@@ -78,9 +80,9 @@ class WoiTab extends StatelessWidget {
                 bottom: BorderSide(color: selected ? WoiColors.cyan : Colors.transparent, width: 2),
               ),
             ),
-            alignment: Alignment.center,
             child: Row(
               mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 if (icon != null) Icon(icon, size: primary ? 17 : 15, color: selected ? WoiColors.cyan : fg),
                 if (icon != null && hasLabel) const SizedBox(width: 7),

@@ -630,13 +630,18 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
       message: widget.onRun == null
           ? 'Run (connect first)'
           : 'Run: send the current line or selection to Woi (Ctrl+R)',
+      // Tonal, the same weight as the tabs and the mode switch.
       child: FilledButton.icon(
         key: const ValueKey('note-run'),
         onPressed: widget.onRun == null ? null : run,
         style: FilledButton.styleFrom(
-          minimumSize: Size(0, widget.compact ? kTouchTarget : 34),
-          padding: const EdgeInsets.symmetric(horizontal: 12),
+          minimumSize: Size(0, widget.compact ? kTouchTarget : 32),
+          padding: const EdgeInsets.only(left: 10, right: 14),
           textStyle: body(13, weight: FontWeight.w600),
+          backgroundColor: WoiColors.cyan.withValues(alpha: 0.10),
+          foregroundColor: WoiColors.cyan,
+          elevation: 0,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(WoiRadii.sm + 2)),
           disabledBackgroundColor: WoiColors.glassStrong,
           disabledForegroundColor: WoiColors.textFaint,
         ),

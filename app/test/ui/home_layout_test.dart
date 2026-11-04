@@ -15,6 +15,7 @@ import 'package:woi/ui/notes/note_tabs.dart';
 import 'package:woi/ui/screens/home_screen.dart';
 import 'package:woi/ui/screens/settings_screen.dart';
 import 'package:woi/ui/theme.dart';
+import 'package:woi/ui/widgets/tab_strip.dart';
 
 import '../fakes/fakes.dart';
 
@@ -153,7 +154,8 @@ void main() {
       await env.start(t);
       await _pumpHome(t, env.c, const Size(1400, 900));
 
-      for (final k in ['open-settings', 'view-note', 'view-chat', 'split-toggle', 'input-bar', 'composer-field',
+      for (final k in ['view-note', 'view-chat', 'view-terminal', 'view-settings', 'split-toggle', 'open-history',
+        'input-bar', 'composer-field',
         'mic-button', 'voice-indicator', 'voice-label', 'connection-status', 'context-compact',
         'mic-mode-handsFree', 'mic-mode-pushToTalk', 'mic-mode-muted']) {
         expect(find.byKey(ValueKey(k)), findsOneWidget, reason: k);
@@ -164,6 +166,16 @@ void main() {
         expect(find.descendant(of: bar, matching: find.byKey(ValueKey(k))), findsOneWidget, reason: k);
       }
       expect(find.textContaining('gpt-live-1.1'), findsOneWidget);
+      // No "Woi" title: the tabs start at the left edge, in order.
+      expect(find.text('Woi'), findsNothing);
+      final xs = [for (final v in HomeView.values) t.getTopLeft(find.byKey(ValueKey('view-${v.name}'))).dx];
+      expect(xs.first, lessThan(24));
+      for (var i = 1; i < xs.length; i++) {
+        expect(xs[i], greaterThan(xs[i - 1]));
+      }
+      for (final l in ['Note', 'Chat', 'Terminal', 'Settings']) {
+        expect(find.descendant(of: find.byType(HomeTabs), matching: find.text(l)), findsOneWidget, reason: l);
+      }
 
       // Mic mode toggle changes the setting.
       await t.tap(find.byKey(const ValueKey('mic-mode-muted')));
@@ -223,6 +235,81 @@ void main() {
       expect(env.c.settings.micMode, MicMode.pushToTalk);
       expect(t.takeException(), isNull);
 
+      await env.stop(t);
+    });
+
+    for (final size in const [Size(360, 740), Size(400, 860)]) {
+      testWidgets('phone ${size.width.toInt()}x${size.height.toInt()}: tab strip fits, every tab opens', (t) async {
+        final env = _Env();
+        await env.start(t);
+        await _pumpHome(t, env.c, size);
+        expect(t.takeException(), isNull);
+        final strip = find.byType(HomeTabs);
+        expect(t.getTopLeft(strip).dx, lessThan(8));
+        expect(t.getTopRight(strip).dx, lessThanOrEqualTo(size.width - kTouchTarget));
+        // Only the selected tab shows its label.
+        expect(find.descendant(of: strip, matching: find.text('Note')), findsOneWidget);
+        expect(find.descendant(of: strip, matching: find.text('Chat')), findsNothing);
+        for (final v in HomeView.values) {
+          final f = find.byKey(ValueKey('view-${v.name}'));
+          expect(t.getSize(f).height, greaterThanOrEqualTo(kTouchTarget), reason: v.name);
+          expect(t.getSize(f).width, greaterThanOrEqualTo(kTouchTarget), reason: v.name);
+        }
+        for (final (v, panel) in [
+          (HomeView.chat, 'chat-panel'),
+          (HomeView.settings, 'settings-view'),
+          (HomeView.terminal, 'terminal-view'),
+          (HomeView.note, 'note-panel'),
+        ]) {
+          await _tapIo(t, find.byKey(ValueKey('view-${v.name}')));
+          expect(env.c.actions.view.value, v);
+          expect(find.byKey(ValueKey(panel)), findsOneWidget, reason: panel);
+          expect(find.descendant(of: strip, matching: find.text(kHomeTabs[v]!.$2)), findsOneWidget);
+          expect(t.takeException(), isNull, reason: v.name);
+        }
+        await env.stop(t);
+      });
+    }
+
+    testWidgets('Settings is a tab: Ctrl+4, Ctrl+, and voice select it, Esc goes back', (t) async {
+      final env = _Env();
+      await env.start(t);
+      await _pumpHome(t, env.c, const Size(1400, 900));
+      final a = env.c.actions;
+      Future<void> ctrl(LogicalKeyboardKey k) async {
+        await t.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+        await t.sendKeyEvent(k);
+        await t.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+        await _settle(t, 150);
+      }
+
+      await ctrl(LogicalKeyboardKey.digit2);
+      expect(a.view.value, HomeView.chat);
+      await ctrl(LogicalKeyboardKey.digit4);
+      expect(a.view.value, HomeView.settings);
+      expect(find.byKey(const ValueKey('settings-view')), findsOneWidget);
+      expect(find.byKey(const ValueKey('choices-backend')), findsOneWidget);
+      // Inline: no route was pushed and the input bar stays.
+      expect(find.byKey(const ValueKey('input-bar')), findsOneWidget);
+      await t.sendKeyEvent(LogicalKeyboardKey.escape);
+      await _settle(t, 150);
+      expect(a.view.value, HomeView.chat);
+      await ctrl(LogicalKeyboardKey.digit3);
+      expect(a.view.value, HomeView.terminal);
+      await ctrl(LogicalKeyboardKey.digit1);
+      expect(a.view.value, HomeView.note);
+      await ctrl(LogicalKeyboardKey.comma);
+      expect(a.view.value, HomeView.settings);
+
+      // Voice: "show chat" / "open settings" select the tabs.
+      final r1 = await t.runAsync(() => env.c.tools.dispatch('app_control', '{"action":"show_view","view":"chat"}'));
+      await _settle(t, 150);
+      expect(r1!.json, contains('"ok":true'));
+      expect(find.byKey(const ValueKey('chat-panel')), findsOneWidget);
+      await t.runAsync(() => env.c.tools.dispatch('app_control', '{"action":"show_view","view":"settings"}'));
+      await _settle(t, 150);
+      expect(find.byKey(const ValueKey('settings-view')), findsOneWidget);
+      expect(find.byKey(const ValueKey('chat-panel')), findsNothing);
       await env.stop(t);
     });
 

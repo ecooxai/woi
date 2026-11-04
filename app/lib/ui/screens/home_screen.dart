@@ -487,7 +487,7 @@ class _HomeScreenState extends State<HomeScreen> {
           if (Platform.isAndroid) ScreenShareButton(size: t),
           GlassIconButton(
             key: const ValueKey('open-history'),
-            icon: Icons.history_rounded,
+            icon: Icons.history,
             tooltip: 'All conversations',
             onPressed: _openHistory,
             size: t,

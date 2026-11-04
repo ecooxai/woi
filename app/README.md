@@ -68,7 +68,7 @@ Pick the backend under **Settings → Voice backend**. `lib/core/voice/backend_f
   finishes.
 
 ### Context size and compaction (`lib/core/context/context_manager.dart`)
-`ContextManager.estimatedTokens` is the only context figure. The header meter, the
+`ContextManager.estimatedTokens` is the only context figure. The input bar's meter, the
 compaction trigger and the "Context compacted: X → Y" note all read it. Each backend
 declares its `contextAccounting`:
 - **usage** (direct realtime): the last `response.done` usage, plus a calibrated
@@ -99,6 +99,17 @@ meantime it is discarded and prepared again, so a response is never interrupted.
 - `ResponsesDelegate` (`gpt-6.1-sol`) runs a tool loop over the same `ToolRegistry`, so
   writes and commands still go through the confirmation dialogs. Its final answer is short
   enough to be spoken.
+
+## UI (`lib/ui/screens/home_screen.dart`)
+One top-level tab strip at the left edge: **Note, Chat, Terminal, Settings** (Ctrl+1..4;
+Ctrl+, also opens Settings and Esc leaves it). `AppActions.view` owns the selected tab, so
+clicks, shortcuts and voice (`app_control` `show_view`, fast paths like "open settings")
+behave the same. Settings is inline in its tab (`SettingsView`), not a separate route.
+All tabs share `WoiTab` (`lib/ui/widgets/tab_strip.dart`): label plus accent underline. The
+note's file tabs (New, 4 recent, More) and the terminal's tabs are the quieter secondary
+row inside their tab. On windows ≥1280 px wide, Ctrl+\ shows Note and Chat side by side;
+Terminal and Settings stay full size and going back to Note or Chat restores the split.
+Status (connection, voice phase, mic mode, context meter, camera) lives in the input bar.
 
 ### Tests
 - `test/realtime_ws_backend_test.dart` uses a fake WebSocket to cover:

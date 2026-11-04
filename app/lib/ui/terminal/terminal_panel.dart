@@ -406,29 +406,29 @@ class _TabStrip extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
+    // Same tab look as the app's other tabs: label + accent underline.
     return SizedBox(
-      height: 38,
+      height: 40,
       child: Row(
         children: [
           Expanded(
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+              padding: const EdgeInsets.symmetric(horizontal: 6),
               itemCount: sessions.length,
               itemBuilder: (context, i) {
                 final s = sessions[i];
                 final on = i == activeIndex;
                 final fg = on ? cs.onSurface : cs.onSurface.withValues(alpha: 0.6);
                 return Padding(
-                  padding: const EdgeInsets.only(right: 4),
+                  padding: const EdgeInsets.only(right: 2),
                   child: GestureDetector(
                     onSecondaryTapDown: (d) => _tabMenu(context, s, d.globalPosition),
                     child: Material(
-                      color: on ? cs.onSurface.withValues(alpha: 0.07) : Colors.transparent,
-                      borderRadius: BorderRadius.circular(7),
+                      type: MaterialType.transparency,
                       child: InkWell(
                         key: ValueKey('terminal-tab-${s.id}'),
-                        borderRadius: BorderRadius.circular(7),
+                        borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
                         // A second click within 400 ms renames (no
                         // double-tap recognizer: it would delay every click).
                         onTap: () {
@@ -438,15 +438,18 @@ class _TabStrip extends StatelessWidget {
                           _lastTap = again ? null : (s.id, now);
                           again ? onRename(s) : onSelect(i);
                         },
-                        child: Padding(
+                        child: Container(
                           padding: const EdgeInsets.only(left: 10, right: 2),
+                          decoration: BoxDecoration(
+                            border: Border(bottom: BorderSide(color: on ? cs.primary : Colors.transparent, width: 2)),
+                          ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Icon(
                                 s.kind == TerminalKind.ai ? Icons.auto_awesome_outlined : Icons.terminal,
                                 size: 14,
-                                color: fg,
+                                color: on ? cs.primary : fg,
                               ),
                               const SizedBox(width: 6),
                               ConstrainedBox(
@@ -455,7 +458,7 @@ class _TabStrip extends StatelessWidget {
                                   s.title,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
-                                    fontSize: 12.5,
+                                    fontSize: 13,
                                     color: fg,
                                     fontWeight: on ? FontWeight.w600 : FontWeight.w400,
                                   ),

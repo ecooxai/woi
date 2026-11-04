@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:woi/core/app_controller.dart';
 import 'package:woi/core/auth/auth.dart';
@@ -9,7 +10,7 @@ import 'package:woi/ui/theme.dart';
 import '../fakes/fakes.dart';
 
 void main() {
-  testWidgets('view switch and split still work after settings and a fatal backend error', (t) async {
+  testWidgets('tabs and split still work after the Settings tab and a fatal backend error', (t) async {
     late FakePlatform fp;
     late AppController c;
     ScriptedBackend? backend;
@@ -41,14 +42,19 @@ void main() {
     await t.pump(const Duration(milliseconds: 300));
     expect(find.byKey(const ValueKey('chat-panel')), findsOneWidget);
     await t.runAsync(() async {
-      await t.tap(find.byKey(const ValueKey('open-settings')));
+      await t.tap(find.byKey(const ValueKey('view-settings')));
       await Future<void>.delayed(const Duration(milliseconds: 300));
     });
     for (var i = 0; i < 40; i++) {
       await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 15)));
       await t.pump(const Duration(milliseconds: 20));
     }
-    await t.tap(find.byIcon(Icons.arrow_back_rounded).first);
+    expect(find.byKey(const ValueKey('settings-view')), findsOneWidget);
+    expect(find.byKey(const ValueKey('chat-panel')), findsNothing);
+    // Esc leaves Settings for the tab shown before it.
+    await t.sendKeyEvent(LogicalKeyboardKey.escape);
+    await t.pump(const Duration(milliseconds: 300));
+    expect(find.byKey(const ValueKey('chat-panel')), findsOneWidget);
     for (var i = 0; i < 40; i++) {
       await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 15)));
       await t.pump(const Duration(milliseconds: 20));
