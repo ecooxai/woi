@@ -1,3 +1,0 @@
-/mnt/p3/project/claude/woi-android7/app/third_party/flutter_pty/android/.cxx/Debug/1f726j1v/armeabi-v7a/CMakeFiles/flutter_pty.dir
-/mnt/p3/project/claude/woi-android7/app/third_party/flutter_pty/android/.cxx/Debug/1f726j1v/armeabi-v7a/CMakeFiles/edit_cache.dir
-/mnt/p3/project/claude/woi-android7/app/third_party/flutter_pty/android/.cxx/Debug/1f726j1v/armeabi-v7a/CMakeFiles/rebuild_cache.dir

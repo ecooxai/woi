@@ -1,7 +1,0 @@
-[
-{
-  "directory": "/mnt/p3/project/claude/woi-android7/app/third_party/flutter_pty/android/.cxx/Debug/1f726j1v/x86_64",
-  "command": "/home/a/Android/Sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/linux-x86_64/bin/clang --target=x86_64-none-linux-android21 --sysroot=/home/a/Android/Sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DDART_SHARED_LIB -Dflutter_pty_EXPORTS -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -fno-limit-debug-info  -fPIC -o CMakeFiles/flutter_pty.dir/flutter_pty.c.o -c /mnt/p3/project/claude/woi-android7/app/third_party/flutter_pty/src/flutter_pty.c",
-  "file": "/mnt/p3/project/claude/woi-android7/app/third_party/flutter_pty/src/flutter_pty.c"
-}
-]
