@@ -5,7 +5,6 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.ImageFormat
-import android.graphics.Matrix
 import android.graphics.Rect
 import android.graphics.YuvImage
 import android.hardware.camera2.CameraCaptureSession
@@ -62,8 +61,10 @@ object WoiCamera {
         mirror = ch.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_FRONT
         val map = ch.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
         val sizes = map?.getOutputSizes(ImageFormat.YUV_420_888)?.toList().orEmpty()
-        // Largest 4:3 or 16:9 size not wider than 1280 (smallest available otherwise).
-        val size = sizes.filter { it.width <= 1280 }.maxByOrNull { it.width * it.height }
+        // Largest size whose longer side fits MAX_W, so frames need no scaling
+        // (smallest available otherwise; toJpeg then scales it down).
+        val size = sizes.filter { maxOf(it.width, it.height) <= MAX_W && it.width * 3 >= it.height * 4 }
+            .maxByOrNull { it.width * it.height }
             ?: sizes.minByOrNull { it.width * it.height }
             ?: return done("no usable camera size")
         val fpsRange = ch.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
@@ -160,50 +161,83 @@ object WoiCamera {
         handler = null
     }
 
-    /** YUV_420_888 -> NV21 -> JPEG, rotated upright and scaled to [MAX_W]. */
+    /**
+     * YUV_420_888 -> upright NV21 -> JPEG. Rotation/mirroring happen while
+     * copying the planes (one pass over plain arrays), so a frame costs one
+     * JPEG encode; the old path encoded, decoded, rotated a Bitmap and
+     * encoded again (~37% CPU at 4 fps on the MI 8). Sizes above [MAX_W]
+     * (no smaller camera size) still go through a scaled Bitmap.
+     */
     private fun toJpeg(img: Image): Map<String, Any>? {
-        val w = img.width
-        val h = img.height
-        val nv21 = ByteArray(w * h * 3 / 2)
-        val y = img.planes[0]
-        val u = img.planes[1]
-        val v = img.planes[2]
-        var o = 0
-        val yb = y.buffer
-        for (row in 0 until h) {
-            yb.position(row * y.rowStride)
-            yb.get(nv21, o, w)
-            o += w
-        }
-        val ub = u.buffer
-        val vb = v.buffer
-        val ps = u.pixelStride
-        for (row in 0 until h / 2) {
-            for (col in 0 until w / 2) {
-                val i = row * u.rowStride + col * ps
-                nv21[o++] = vb.get(row * v.rowStride + col * v.pixelStride)
-                nv21[o++] = ub.get(i)
-            }
-        }
-        val raw = ByteArrayOutputStream()
-        YuvImage(nv21, ImageFormat.NV21, w, h, null).compressToJpeg(Rect(0, 0, w, h), 85, raw)
+        val w = img.width and 1.inv()
+        val h = img.height and 1.inv()
+        val rot = ((rotation % 360) + 360) % 360
+        val swap = rot == 90 || rot == 270
+        val ow = if (swap) h else w
+        val oh = if (swap) w else h
+        val nv21 = ByteArray(ow * oh * 3 / 2)
+        val yp = img.planes[0]
+        val up = img.planes[1]
+        val vp = img.planes[2]
+        val ya = bytesOf(yp.buffer)
+        val ua = bytesOf(up.buffer)
+        val va = bytesOf(vp.buffer)
+        copyPlane(ya, yp.rowStride, yp.pixelStride, w, h, rot, nv21, 0, 1)
+        val cw = w / 2
+        val ch = h / 2
+        // NV21 chroma: V then U, interleaved.
+        copyPlane(va, vp.rowStride, vp.pixelStride, cw, ch, rot, nv21, ow * oh, 2)
+        copyPlane(ua, up.rowStride, up.pixelStride, cw, ch, rot, nv21, ow * oh + 1, 2)
+        val raw = ByteArrayOutputStream(ow * oh / 4)
+        YuvImage(nv21, ImageFormat.NV21, ow, oh, null).compressToJpeg(Rect(0, 0, ow, oh), 80, raw)
         val bytes = raw.toByteArray()
-        if (rotation == 0 && !mirror && w <= MAX_W) {
-            return mapOf("type" to "camera", "jpeg" to bytes, "width" to w, "height" to h)
+        if (maxOf(ow, oh) <= MAX_W) {
+            return mapOf("type" to "camera", "jpeg" to bytes, "width" to ow, "height" to oh)
         }
         val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return null
-        val s = MAX_W.toFloat() / maxOf(w, h)
-        val m = Matrix().apply {
-            if (s < 1f) postScale(s, s)
-            postRotate(rotation.toFloat())
-            if (mirror) postScale(-1f, 1f)
-        }
-        val out = Bitmap.createBitmap(bmp, 0, 0, w, h, m, true)
+        val s = MAX_W.toFloat() / maxOf(ow, oh)
+        val out = Bitmap.createScaledBitmap(bmp, (ow * s).toInt(), (oh * s).toInt(), true)
         bmp.recycle()
         val jpg = ByteArrayOutputStream()
         out.compress(Bitmap.CompressFormat.JPEG, 80, jpg)
         val res = mapOf("type" to "camera", "jpeg" to jpg.toByteArray(), "width" to out.width, "height" to out.height)
         out.recycle()
         return res
+    }
+
+    private fun bytesOf(b: java.nio.ByteBuffer): ByteArray {
+        b.rewind()
+        return ByteArray(b.remaining()).also { b.get(it) }
+    }
+
+    /**
+     * Copies a [w]x[h] plane (row/pixel strides [rs]/[ps]) into [dst] at
+     * [off] every [step] bytes, rotated clockwise by [rot] degrees and
+     * mirrored horizontally afterwards when [mirror] is set (front camera).
+     */
+    private fun copyPlane(src: ByteArray, rs: Int, ps: Int, w: Int, h: Int, rot: Int, dst: ByteArray, off: Int, step: Int) {
+        val ow = if (rot == 90 || rot == 270) h else w
+        val oh = if (rot == 90 || rot == 270) w else h
+        // Source index of output pixel (ox, oy).
+        fun at(ox: Int, oy: Int): Int {
+            val x = if (mirror) ow - 1 - ox else ox
+            return when (rot) {
+                90 -> (h - 1 - x) * rs + oy * ps
+                180 -> (h - 1 - oy) * rs + (w - 1 - x) * ps
+                270 -> x * rs + (w - 1 - oy) * ps
+                else -> oy * rs + x * ps
+            }
+        }
+        val last = src.size - 1
+        var o = off
+        for (oy in 0 until oh) {
+            var i = at(0, oy)
+            val d = if (ow > 1) at(1, oy) - i else 0
+            for (ox in 0 until ow) {
+                dst[o] = src[if (i > last) last else i]
+                o += step
+                i += d
+            }
+        }
     }
 }
