@@ -58,6 +58,7 @@ object WoiAudio {
     private var yielded = false
     // One self-heal restart per mic open (see the dead-mic check below).
     private var healed = false
+    private var healNoted = false
     @Volatile private var micZeros = false
     private var recCallback: AudioManager.AudioRecordingCallback? = null
 
@@ -82,6 +83,7 @@ object WoiAudio {
         closeMic()
         micSink = events
         healed = false
+        healNoted = false
         val cb = object : AudioManager.AudioRecordingCallback() {
             override fun onRecordingConfigChanged(configs: MutableList<AudioRecordingConfiguration>) = evaluate(configs)
         }
@@ -157,8 +159,8 @@ object WoiAudio {
     }
 
     @SuppressLint("MissingPermission")
-    private fun startRecord(events: EventChannel.EventSink) {
-        stopRecord()
+    private fun startRecord(events: EventChannel.EventSink, keepFocus: Boolean = false) {
+        stopRecord(keepFocus)
         WoiAudioRoute.enterCommunication()
         syncPlayerRoute()
         val min = AudioRecord.getMinBufferSize(RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
@@ -214,6 +216,10 @@ object WoiAudio {
             // relaunch with the capture reported as not silenced.
             var zeroSince = 0L
             var zeroReported = false
+            // Idle (Woi silent) mic level, every 10 s.
+            var idleSum = 0.0
+            var idleN = 0
+            var idleZero = 0
             while (record === rec) {
                 var off = 0
                 while (off < buf.size && record === rec) {
@@ -256,8 +262,14 @@ object WoiAudio {
                         Log.i(WoiBridge.TAG, "mic rms while playing (2 s): %.4f".format(echoSum / echoN))
                         echoSum = 0.0; echoN = 0
                     }
-                } else if (echoN > 0) {
-                    echoSum = 0.0; echoN = 0
+                } else {
+                    if (echoN > 0) { echoSum = 0.0; echoN = 0 }
+                    idleSum += r; idleN++
+                    if (r == 0.0) idleZero++
+                    if (idleN == 125) {
+                        Log.i(WoiBridge.TAG, "mic rms idle (10 s): %.4f, all-zero chunks %d/125".format(idleSum / idleN, idleZero))
+                        idleSum = 0.0; idleN = 0; idleZero = 0
+                    }
                 }
                 WoiBridge.main.post { if (record === rec) events.success(chunk) }
             }
@@ -278,7 +290,10 @@ object WoiAudio {
     }
 
     /**
-     * The recorder delivered exact zeros for over 2 s while active. Restarts
+     * The recorder delivered exact zeros for over 2 s while active. On a
+     * MI 8 this is also what VOICE_COMMUNICATION + NS deliver in a quiet
+     * room (the HAL input is live, -95..-70 dBFS; the effects gate it to 0),
+     * so this is a cheap one-shot safety net, not proof of a dead mic. Restarts
      * it once per mic open. Main thread. While Woi speaks the restart waits
      * for the reply to end: a new recorder means a new session, and the
      * media track (bound to the old session) would be rebuilt mid-reply.
@@ -288,6 +303,8 @@ object WoiAudio {
         if (record !== rec || sink == null || yielded || !micZeros) return
         val silenced = if (Build.VERSION.SDK_INT >= 29) rec.activeRecordingConfiguration?.isClientSilenced else null
         if (healed) {
+            if (healNoted) return
+            healNoted = true
             Log.w(WoiBridge.TAG, "mic delivers only zeros (silenced=$silenced); already restarted once, not again")
             return
         }
@@ -299,7 +316,9 @@ object WoiAudio {
         healed = true
         Log.w(WoiBridge.TAG, "mic delivered only zeros for 2 s (silenced=$silenced): restarting the recorder (self-heal)")
         try {
-            startRecord(sink)
+            // Keeps the media route's listen focus: no resume blip for the
+            // paused app.
+            startRecord(sink, keepFocus = true)
         } catch (e: Throwable) {
             sink.error("mic", e.message ?: e.toString(), null)
         }
@@ -316,8 +335,8 @@ object WoiAudio {
         return Math.sqrt(sum / maxOf(1, pcm.size / 2))
     }
 
-    private fun stopRecord() {
-        WoiAudioRoute.abandonListenFocus()
+    private fun stopRecord(keepFocus: Boolean = false) {
+        if (!keepFocus) WoiAudioRoute.abandonListenFocus()
         val rec = record ?: return
         record = null
         try { rec.stop() } catch (_: Exception) {}
