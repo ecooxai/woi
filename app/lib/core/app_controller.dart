@@ -421,7 +421,7 @@ class AppController extends ChangeNotifier {
     }
     return SessionConfig(
       model: activeVoiceModel,
-      voice: _settings.activeVoice,
+      voice: activeBackendMode == BackendMode.gptLive ? _settings.liveVoice : _settings.voice,
       instructions: [
         kAssistantInstructions,
         if (activeBackendMode == BackendMode.gptLive) kLiveInstructions,

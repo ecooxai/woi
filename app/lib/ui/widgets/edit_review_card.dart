@@ -178,16 +178,21 @@ class _EditReviewCardState extends State<EditReviewCard> with SingleTickerProvid
 class _CountdownRing extends StatelessWidget {
   const _CountdownRing({required this.animation, required this.total, required this.color});
 
+  /// 0 → 1 over [total], started from the time left on the edit's deadline.
   final Animation<double> animation;
   final Duration total;
   final Color color;
+
+  /// Whole seconds left, to the nearest second (ceil showed up to a second
+  /// more than was left: "3" with 2.1 s to go).
+  static int secondsLeft(Duration left) => (left.inMilliseconds / 1000).round();
 
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: animation,
       builder: (context, _) {
-        final left = (total.inMilliseconds * (1 - animation.value) / 1000).ceil();
+        final left = secondsLeft(total * (1 - animation.value));
         return SizedBox.square(
           key: const ValueKey('edit-review-countdown'),
           dimension: 28,

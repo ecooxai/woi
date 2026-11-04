@@ -312,6 +312,8 @@ class AppActions {
 
   void selectTerminalTab(int index) => terminals.select(index);
 
+  void renameTerminalTab(TerminalSession s, String title) => s.rename(title);
+
   /// Tab by 1-based number, title, "current"/"last", or null = active.
   TerminalSession findTab(String? which) {
     final all = terminals.sessions;

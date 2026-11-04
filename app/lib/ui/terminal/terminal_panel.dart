@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:xterm/xterm.dart';
 
+import '../../core/app_actions.dart';
 import '../../core/terminal/terminal_hub.dart';
 
 /// True while keyboard focus is inside a terminal view (the home screen then
@@ -105,8 +106,12 @@ bool get _desktop => switch (defaultTargetPlatform) {
 };
 
 class TerminalPanel extends StatefulWidget {
-  const TerminalPanel({super.key, required this.hub, this.fontSize = 13.5, this.hardwareKeyboardOnly});
+  const TerminalPanel({super.key, required this.hub, this.actions, this.fontSize = 13.5, this.hardwareKeyboardOnly});
   final TerminalHub hub;
+
+  /// The tab strip's buttons, shortcuts and menu go through these (the same
+  /// paths voice uses); without them they act on [hub] directly (tests).
+  final AppActions? actions;
   final double fontSize;
 
   /// Read typed characters straight from key events instead of the platform
@@ -166,12 +171,18 @@ class _TerminalPanelState extends State<TerminalPanel> {
     });
   }
 
-  void _newTab() => _focusLater(hub.newShell().id);
+  AppActions? get _actions => widget.actions;
 
-  void _close(TerminalSession s) => hub.close(s);
+  void _newTab() => _focusLater((_actions?.newTerminalTab() ?? hub.newShell()).id);
+
+  void _close(TerminalSession s) {
+    final a = _actions;
+    a == null ? hub.close(s) : a.closeTerminalTab(s);
+  }
 
   void _select(int i) {
-    hub.select(i);
+    final a = _actions;
+    a == null ? hub.select(i) : a.selectTerminalTab(i);
     final s = hub.active;
     if (s != null) _focusLater(s.id);
   }
@@ -182,7 +193,10 @@ class _TerminalPanelState extends State<TerminalPanel> {
       builder: (ctx) => _RenameDialog(initial: s.title),
     );
     if (!mounted) return;
-    if (name != null) s.rename(name);
+    if (name != null) {
+      final a = _actions;
+      a == null ? s.rename(name) : a.renameTerminalTab(s, name);
+    }
     _focus[s.id]?.requestFocus();
   }
 

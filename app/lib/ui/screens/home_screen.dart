@@ -407,7 +407,7 @@ class _HomeScreenState extends State<HomeScreen> {
         padding: EdgeInsets.zero,
         child: ClipRRect(
           borderRadius: BorderRadius.circular(WoiRadii.lg),
-          child: TerminalPanel(hub: c.terminals, fontSize: _phone ? 12 : 13.5),
+          child: TerminalPanel(hub: c.terminals, actions: c.actions, fontSize: _phone ? 12 : 13.5),
         ),
       ),
     };

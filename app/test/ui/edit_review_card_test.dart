@@ -37,7 +37,10 @@ void main() {
     expect(find.text('Apply now'), findsOneWidget);
     await t.pump(const Duration(milliseconds: 2050));
     expect(ring('3'), findsOneWidget);
-    await t.pump(const Duration(seconds: 3));
+    // 2.4 s left reads "2", not "3" (nearest second, not up to +1 s).
+    await t.pump(const Duration(milliseconds: 550));
+    expect(ring('2'), findsOneWidget);
+    await t.pump(const Duration(milliseconds: 2450));
     await t.pump(const Duration(milliseconds: 300));
     expect(applied, isTrue);
     expect(find.byKey(const ValueKey('edit-review-apply')), findsNothing);
