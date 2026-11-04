@@ -56,7 +56,10 @@ sealed class AndroidEvent {
           app: m['app'] as String?,
           screenText: m['screenText'] as String?,
           shownAtMs: (m['shownAt'] as num?)?.toInt() ?? 0,
+          overlay: m['overlay'] == true,
         );
+      case 'overlay':
+        return OverlayEvent(on: m['on'] == true, fraction: (m['fraction'] as num?)?.toDouble());
       case 'open':
         final files = <SharedFile>[];
         for (final f in (m['files'] as List?) ?? const []) {
@@ -100,6 +103,7 @@ class AssistEvent extends AndroidEvent {
     this.app,
     this.screenText,
     this.shownAtMs = 0,
+    this.overlay = false,
   });
 
   /// Assist screenshot (PNG, scaled to [width]x[height]); null when the
@@ -118,6 +122,17 @@ class AssistEvent extends AndroidEvent {
 
   /// When the system showed the session (epoch ms), for latency logs.
   final int shownAtMs;
+
+  /// Delivered to the floating panel (Woi stays in the background).
+  final bool overlay;
+}
+
+/// The assistant panel was put up over another app ([on]) or taken down.
+/// [fraction]: the remembered panel height (share of the screen height).
+class OverlayEvent extends AndroidEvent {
+  const OverlayEvent({required this.on, this.fraction});
+  final bool on;
+  final double? fraction;
 }
 
 class SharedFile {
@@ -184,17 +199,50 @@ class AndroidBridge {
   /// Woi's accessibility service is connected.
   final accessibility = ValueNotifier<bool>(false);
 
+  /// The assistant floats as a panel over another app (WoiOverlay.kt).
+  final overlayVisible = ValueNotifier<bool>(false);
+
+  /// Remembered panel height while [overlayVisible] (share of the screen).
+  double overlayFraction = 0.6;
+
   StreamSubscription<AndroidEvent>? _sub;
+
+  // Assist/open events that arrived before AndroidIntegration listened
+  // (cold start from the assist gesture): a broadcast stream would drop them.
+  List<AndroidEvent>? _early = [];
+
+  /// Events [AndroidIntegration] missed before it subscribed; call once,
+  /// right after subscribing.
+  List<AndroidEvent> claimEarly() {
+    final e = _early ?? const <AndroidEvent>[];
+    _early = null;
+    return e;
+  }
 
   Future<AndroidInfo> init() async {
     final m = await method.invokeMapMethod<Object?, Object?>('init');
     _info = AndroidInfo.fromMap(m!);
-    _sub ??= events.listen((e) {
-      if (e is ShareStateEvent) sharing.value = e.on;
-      if (e is StopAllEvent) sharing.value = false;
-    });
+    _sub ??= events.listen(onEvent);
     unawaited(refreshStatus());
     return _info!;
+  }
+
+  /// Bridge-level state from OS events (also used by tests).
+  @visibleForTesting
+  void onEvent(AndroidEvent e) {
+    switch (e) {
+      case ShareStateEvent():
+        sharing.value = e.on;
+      case StopAllEvent():
+        sharing.value = false;
+      case OverlayEvent():
+        if (e.fraction != null) overlayFraction = e.fraction!;
+        overlayVisible.value = e.on;
+      case AssistEvent() || OpenEvent():
+        _early?.add(e);
+      default:
+        break;
+    }
   }
 
   Future<Map<String, bool>> refreshStatus() async {

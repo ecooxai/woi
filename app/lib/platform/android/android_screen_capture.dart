@@ -29,7 +29,9 @@ class AndroidScreenCapture implements ScreenCapture {
 
   @override
   Future<Screenshot> capture({int maxWidth = 1280}) async {
-    if (_bridge.sharing.value) {
+    // Share frames would show the floating panel; the accessibility
+    // screenshot hides it while capturing.
+    if (_bridge.sharing.value && !_bridge.overlayVisible.value) {
       final m = await _bridge.call<Map<Object?, Object?>>('shareFrame', {'maxWidth': maxWidth});
       if (m != null) return fromMap(m);
     }

@@ -353,6 +353,49 @@ void main() {
       await env.stop(t);
     });
 
+    // Android starts the app in a bottom freeform window (100% x 70%): on a
+    // MI 8 (393x817 dp) that is 393x572 dp with only the nav bar inset, and
+    // the keyboard takes about half of it.
+    testWidgets('phone: freeform window at 70% height, with and without the keyboard', (t) async {
+      final env = _Env();
+      await env.start(t);
+      const dpr = 2.75;
+      t.view.devicePixelRatio = dpr;
+      t.view.physicalSize = const Size(393 * dpr, 572 * dpr);
+      t.view.padding = const FakeViewPadding(bottom: 48 * dpr);
+      t.view.viewPadding = const FakeViewPadding(bottom: 48 * dpr);
+      addTearDown(t.view.reset);
+      await t.runAsync(() async {
+        await t.pumpWidget(MaterialApp(theme: buildWoiTheme(), home: HomeScreen(controller: env.c)));
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+      });
+      await _settle(t);
+      expect(t.takeException(), isNull);
+      final mic = t.getRect(find.byKey(const ValueKey('mic-button')));
+      expect(mic.bottom, lessThanOrEqualTo(572 - 48 + 0.5), reason: 'input bar above the nav bar');
+      expect(mic.top, greaterThanOrEqualTo(0));
+
+      // Keyboard up: ~260 dp of the 572.
+      t.view.viewInsets = const FakeViewPadding(bottom: 260 * dpr);
+      t.view.padding = FakeViewPadding.zero;
+      await t.pump();
+      await _settle(t);
+      expect(t.takeException(), isNull);
+      expect(t.getRect(find.byKey(const ValueKey('mic-button'))).bottom, lessThanOrEqualTo(572 - 260 + 0.5));
+      // The note text keeps the room (tabs, toolbar and footer step aside).
+      expect(t.getSize(find.byKey(const ValueKey('note-editor-field'))).height, greaterThan(60));
+
+      // Maximized again (full screen with the status bar).
+      t.view.viewInsets = FakeViewPadding.zero;
+      t.view.physicalSize = const Size(393 * dpr, 817 * dpr);
+      t.view.padding = const FakeViewPadding(top: 30 * dpr, bottom: 48 * dpr);
+      await t.pump();
+      await _settle(t);
+      expect(t.takeException(), isNull);
+
+      await env.stop(t);
+    });
+
     testWidgets('note tabs, More picker with search, and New note', (t) async {
       final env = _Env();
       await env.start(t);

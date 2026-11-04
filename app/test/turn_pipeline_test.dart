@@ -116,6 +116,21 @@ class Harness {
 Iterable<Message> ofKind(Conversation c, MessageKind k) => c.messages.where((m) => m.kind == k);
 
 void main() {
+  test('reopenMic re-opens the microphone with the current echo-cancellation setting', () async {
+    final h = await Harness.create();
+    expect(h.fp.audio.micOpens, [true]);
+    expect(h.pipeline.backendManagesAudio, isFalse);
+    final first = h.mic;
+    h.fp.audio.echoCancellation = false;
+    await h.pipeline.reopenMic();
+    expect(h.fp.audio.micOpens, [true, false]);
+    expect(first.closed, isTrue);
+    await h.pipeline.setMicMode(MicMode.muted);
+    await h.pipeline.reopenMic(); // no mic open: stays closed
+    expect(h.fp.audio.micOpens.length, 2);
+    await h.dispose();
+  });
+
   group('screenshot tiers', () {
     test('older screenshots go to 1/5 size, then to a description, in the live context', () async {
       final sizes = <(int, int)>[];

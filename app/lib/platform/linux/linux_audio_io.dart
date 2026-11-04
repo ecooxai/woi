@@ -8,28 +8,76 @@ import '../../core/audio/wav.dart';
 import '../../core/voice/voice_backend.dart';
 import '../audio_io.dart';
 import 'exec_util.dart';
+import 'pipewire_aec.dart';
 
 /// PipeWire (pw-record / pw-play) with PulseAudio (parecord / pacat)
 /// fallback. Raw PCM is piped through child processes.
-class LinuxAudioIO implements AudioIO {
-  LinuxAudioIO({this.captureLatencyMs = 20, this.playbackLatencyMs = 40});
+///
+/// With [echoCancellation] on (default) the mic is recorded from the
+/// app-owned PipeWire WebRTC echo canceller ([PipewireEchoCancel]), whose
+/// reference is the default sink's monitor: everything the speakers play is
+/// removed. Falls back to the plain default mic when that is unavailable.
+class LinuxAudioIO implements AudioIO, EchoCancellable {
+  LinuxAudioIO({this.captureLatencyMs = 20, this.playbackLatencyMs = 40, PipewireEchoCancel? echoCanceller})
+    : _aec = echoCanceller ?? PipewireEchoCancel(log: (m) => debugPrint('woi aec: $m'));
 
   final int captureLatencyMs;
   final int playbackLatencyMs;
+  final PipewireEchoCancel _aec;
+  bool _echoCancellation = true;
 
   static const _rate = '$kVoiceSampleRate';
 
-  (String, List<String>) _captureCommand() {
+  @override
+  bool get echoCancellation => _echoCancellation;
+
+  @override
+  set echoCancellation(bool on) {
+    if (on == _echoCancellation) return;
+    _echoCancellation = on;
+    // Open mics keep their source until reopened; the host stops once the
+    // last of them is released.
+  }
+
+  @override
+  String get echoCancellationStatus => _echoCancellation ? _aec.status : 'off (setting)';
+
+  @override
+  Future<void> disposeEchoCancellation() => _aec.dispose();
+
+  (String, List<String>) _captureCommand({String? target}) {
     final pw = which('pw-record');
     if (pw != null) {
       return (
         pw,
-        ['--raw', '--rate', _rate, '--channels', '1', '--format', 's16', '--latency', '${captureLatencyMs}ms', '-'],
+        [
+          '--raw',
+          if (target != null) ...['--target', target],
+          '--rate',
+          _rate,
+          '--channels',
+          '1',
+          '--format',
+          's16',
+          '--latency',
+          '${captureLatencyMs}ms',
+          '-',
+        ],
       );
     }
     final pa = which('parecord');
     if (pa != null) {
-      return (pa, ['--raw', '--rate=$_rate', '--channels=1', '--format=s16le', '--latency-msec=$captureLatencyMs']);
+      return (
+        pa,
+        [
+          '--raw',
+          if (target != null) '--device=$target',
+          '--rate=$_rate',
+          '--channels=1',
+          '--format=s16le',
+          '--latency-msec=$captureLatencyMs',
+        ],
+      );
     }
     throw MissingTool(['pw-record', 'parecord']);
   }
@@ -56,15 +104,21 @@ class LinuxAudioIO implements AudioIO {
   String get description {
     final cap = which('pw-record') != null ? 'pw-record' : 'parecord';
     final play = which('pw-play') != null ? 'pw-play' : 'pacat';
-    return '$cap / $play';
+    return '$cap / $play; echo cancellation: $echoCancellationStatus';
   }
 
   @override
   Future<MicStream> openMic() async {
-    final (exe, args) = _captureCommand();
-    final (e, a) = withDefaultSigpipe(exe, args);
-    final proc = await Process.start(e, a);
-    return _LinuxMic(proc);
+    final target = _echoCancellation ? await _aec.acquire() : null;
+    try {
+      final (exe, args) = _captureCommand(target: target);
+      final (e, a) = withDefaultSigpipe(exe, args);
+      final proc = await Process.start(e, a);
+      return _LinuxMic(proc, target == null ? null : _aec.release);
+    } catch (_) {
+      if (target != null) _aec.release();
+      rethrow;
+    }
   }
 
   @override
@@ -84,12 +138,13 @@ class LinuxAudioIO implements AudioIO {
 }
 
 class _LinuxMic implements MicStream {
-  _LinuxMic(this._proc) {
+  _LinuxMic(this._proc, [this._onClose]) {
     _sub = _proc.stdout.listen(_onData, onDone: _controller.close);
     _proc.stderr.drain<void>();
   }
 
   final Process _proc;
+  void Function()? _onClose;
   final _controller = StreamController<Uint8List>.broadcast();
   final _level = ValueNotifier<double>(0);
   late final StreamSubscription<List<int>> _sub;
@@ -121,6 +176,8 @@ class _LinuxMic implements MicStream {
   @override
   Future<void> close() async {
     _proc.kill(ProcessSignal.sigterm);
+    _onClose?.call();
+    _onClose = null;
     await _sub.cancel();
     if (!_controller.isClosed) await _controller.close();
     _level.value = 0;

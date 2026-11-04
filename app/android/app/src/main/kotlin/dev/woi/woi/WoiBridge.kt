@@ -41,9 +41,9 @@ object WoiBridge {
         }
     }
 
-    fun attach(act: MainActivity, engine: FlutterEngine) {
-        activity = act
-        appContext = act.applicationContext
+    /** Once per engine (WoiEngine.obtain), before Dart runs. */
+    fun attachEngine(ctx: Context, engine: FlutterEngine) {
+        appContext = ctx.applicationContext
         val messenger = engine.dartExecutor.binaryMessenger
         EventChannel(messenger, "woi/android/events").setStreamHandler(object : EventChannel.StreamHandler {
             override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
@@ -97,9 +97,12 @@ object WoiBridge {
                 )
             )
             "requestPermissions" -> {
-                val act = activity ?: return result.success(false)
-                @Suppress("UNCHECKED_CAST")
                 val perms = (call.argument<List<String>>("permissions") ?: emptyList())
+                // Already granted: no activity needed. The assistant panel
+                // runs the engine without MainActivity (process started by the
+                // assist gesture), where asking was reported as "denied".
+                if (perms.all { hasPermission(ctx, it) }) return result.success(true)
+                val act = activity ?: return result.success(false)
                 act.requestPerms(perms.toTypedArray()) { granted -> result.success(granted) }
             }
             "openUrl" -> {
@@ -120,6 +123,7 @@ object WoiBridge {
                 result.success(true)
             }
             // --- audio ---
+            "aecStatus" -> result.success(WoiAudio.status)
             "playerOpen" -> result.success(WoiAudio.playerOpen())
             "playerWrite" -> {
                 WoiAudio.playerWrite(call.arguments as ByteArray)
@@ -172,6 +176,23 @@ object WoiBridge {
             }
             "moveToBack" -> {
                 result.success(activity?.moveTaskToBack(true) ?: false)
+            }
+            // --- assistant overlay (WoiOverlay) ---
+            "overlayReady" -> {
+                WoiOverlay.ready()
+                result.success(true)
+            }
+            "overlayDismiss" -> {
+                WoiOverlay.dismiss()
+                result.success(true)
+            }
+            "overlayOpenApp" -> {
+                WoiOverlay.openApp(ctx)
+                result.success(true)
+            }
+            "overlaySaveFraction" -> {
+                WoiOverlay.saveFraction(ctx, call.argument<Number>("fraction")?.toDouble() ?: WoiOverlay.DEFAULT_FRACTION)
+                result.success(true)
             }
             else -> result.notImplemented()
         }

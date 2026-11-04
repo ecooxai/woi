@@ -76,6 +76,13 @@ void main() {
     expect(c.settings.compressionThreshold, 80000);
     await a.setSetting('edit_apply_delay', 'require approval');
     expect(c.settings.editApplyDelay, kRequireApproval);
+    expect(await a.setSetting('echo cancellation', 'off'), 'echo cancellation off');
+    expect(c.settings.echoCancellation, isFalse);
+    expect(fp.audio.echoCancellation, isFalse, reason: 'applied to the platform audio');
+    expect(await a.setSetting('aec', 'on'), 'echo cancellation on');
+    expect(fp.audio.echoCancellation, isTrue);
+    expect(() => a.setSetting('echo_cancellation', 'maybe'), throwsA(isA<AppActionError>()));
+    if (fp.audio.mic != null) expect(fp.audio.micOpens.last, isTrue, reason: 'mic reopened with the canceller');
     expect(() => a.setSetting('theme', 'purple'), throwsA(isA<AppActionError>()));
     expect(() => a.setSetting('bogus', '1'), throwsA(isA<AppActionError>()));
   });

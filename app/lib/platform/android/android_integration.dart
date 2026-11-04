@@ -34,6 +34,7 @@ class AndroidIntegration {
   StreamSubscription<AndroidEvent>? _sub;
   final List<AndroidEvent> _early = [];
   bool _voiceOn = false;
+  bool _overlay = false;
   bool _wasLogin = false;
 
   /// Last assist invocation (diagnostics / tests): shown -> attached ms.
@@ -41,6 +42,9 @@ class AndroidIntegration {
 
   void start() {
     _sub = bridge.events.listen(_onEvent);
+    for (final e in bridge.claimEarly()) {
+      unawaited(_onEvent(e));
+    }
     controller.addListener(_onController);
     unawaited(_permissions());
     _onController();
@@ -73,13 +77,31 @@ class AndroidIntegration {
       if (o is AndroidUrlOpener) unawaited(o.done());
     }
     final wantVoice = !controller.needsLogin && controller.settings.micMode != MicMode.muted;
-    if (wantVoice != _voiceOn) {
+    // While the panel shows, keep the service even if muted: it can only be
+    // restarted while Woi is visible.
+    if (wantVoice != _voiceOn && (wantVoice || !_overlay || controller.needsLogin)) {
       _voiceOn = wantVoice;
       unawaited(bridge.call<bool>('voiceActive', {'on': wantVoice}).catchError((Object e) => false));
     }
   }
 
   Future<void> _onEvent(AndroidEvent e) async {
+    if (e is OverlayEvent) {
+      if (e.on) {
+        // The panel started the microphone service natively (it may only
+        // start while Woi is visible, and Android 14+ silences a background
+        // mic without it). The assist event unmutes the mic; only a session
+        // that can't listen (signed out) turns it off again.
+        _overlay = true;
+        _voiceOn = true;
+        if (controller.ready && controller.needsLogin) _onController();
+      } else {
+        _overlay = false;
+        controller.assistantDismissed();
+        _onController();
+      }
+      return;
+    }
     if (!controller.ready || controller.needsLogin) {
       if (e is AssistEvent || e is OpenEvent) _early.add(e);
       return;
@@ -119,8 +141,11 @@ class AndroidIntegration {
       final clipped = text.length > 1500 ? '${text.substring(0, 1500)}…' : text;
       await controller.pipeline.attachScreenshot(
         shot,
-        note:
-            'The user invoked Woi as the phone assistant (long-press home) while in $app; this is that screen. '
+        note: e.overlay
+            ? 'The user invoked Woi as the phone assistant (long-press home) while in $app; this is that screen. '
+                  'Woi floats as a bottom panel over that app, which is still open: click_screen, type_text and '
+                  'send_keys act on it (the panel steps aside). '
+            : 'The user invoked Woi as the phone assistant (long-press home) while in $app; this is that screen. '
             '${clipped.isEmpty ? '' : 'Visible text: $clipped. '}',
         label: e.app == null || e.app!.isEmpty ? 'Assist screenshot' : 'Assist screenshot from ${e.app}',
       );

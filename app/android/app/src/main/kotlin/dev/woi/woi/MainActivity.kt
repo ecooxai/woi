@@ -1,5 +1,6 @@
 package dev.woi.woi
 
+import android.content.Context
 import android.content.Intent
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
@@ -7,6 +8,7 @@ import android.os.Build
 import android.provider.OpenableColumns
 import android.util.Log
 import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.FlutterView
 import io.flutter.embedding.engine.FlutterEngine
 import java.io.File
 
@@ -14,10 +16,62 @@ class MainActivity : FlutterActivity() {
     private var permCallback: ((Boolean) -> Unit)? = null
     private var projectionCallback: ((Boolean) -> Unit)? = null
 
+    /** Started (visible or about to be); the overlay hands the engine back. */
+    var started = false
+        private set
+
+    /** Resumed: Woi itself is in front, so the assist gesture opens no panel. */
+    var resumed = false
+        private set
+
+    // One engine for the process (WoiEngine), shared with the assistant
+    // overlay; it outlives this activity.
+    override fun provideFlutterEngine(context: Context): FlutterEngine = WoiEngine.obtain(context)
+
+    override fun shouldDestroyEngineWithHost(): Boolean = false
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
-        super.configureFlutterEngine(flutterEngine)
-        WoiBridge.attach(this, flutterEngine)
+        // Plugins are registered by the engine itself (host-provided engine).
+        WoiBridge.activity = this
         handleIntent(intent)
+    }
+
+    override fun onStart() {
+        started = true
+        WoiBridge.activity = this
+        // The launcher (or "open full app") wins over a floating panel.
+        if (WoiOverlay.showing) WoiOverlay.dismiss()
+        reattachFlutterView()
+        super.onStart()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        resumed = true
+    }
+
+    override fun onPause() {
+        resumed = false
+        super.onPause()
+    }
+
+    override fun onStop() {
+        started = false
+        super.onStop()
+    }
+
+    private fun flutterView(): FlutterView? = findViewById(FLUTTER_VIEW_ID)
+
+    /** The overlay takes the engine: this activity's view lets go of it. */
+    fun releaseFlutterView() {
+        val v = flutterView() ?: return
+        if (v.isAttachedToFlutterEngine) v.detachFromFlutterEngine()
+    }
+
+    fun reattachFlutterView() {
+        val v = flutterView() ?: return
+        val engine = WoiEngine.peek() ?: return
+        if (!v.isAttachedToFlutterEngine) v.attachToFlutterEngine(engine)
     }
 
     override fun onNewIntent(intent: Intent) {

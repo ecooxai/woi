@@ -48,7 +48,14 @@ class PipelineOptions {
     this.localBargeIn = true,
     this.cameraReplacesScreenshot = false,
     this.onsetMicWithManagedAudio = true,
+    this.bargeInFloor = 0.02,
   });
+
+  /// Minimum mic RMS for a local barge-in onset while Woi speaks. Android's
+  /// platform echo canceller removes the echo almost completely but leaves
+  /// 30-70 ms residual bursts up to ~0.05 (measured on a Xiaomi MI 8), above
+  /// the desktop floor; a voice near the phone is 0.06-0.3.
+  final double bargeInFloor;
 
   /// With a backend that captures the mic itself (WebRTC), also open the
   /// platform mic for the local barge-in detector. Off on phones: a second
@@ -246,6 +253,10 @@ class TurnPipeline extends ChangeNotifier {
   /// Where assistant audio goes: the managed backend's level tracker (audio
   /// already audible via WebRTC) or the platform player.
   PcmPlayer? get _out => _managed?.managedPlayer ?? _player;
+
+  /// True while the backend captures the microphone itself (gpt-live's
+  /// WebRTC): capture settings then need a new call, not [reopenMic].
+  bool get backendManagesAudio => _managed != null;
   bool _micManaged = false;
 
   /// Bumps when the mic or player (and so the level listenables) change.
@@ -509,6 +520,18 @@ class TurnPipeline extends ChangeNotifier {
     _changed();
   }
 
+  /// Closes and re-opens an open microphone so a capture setting (echo
+  /// cancellation) takes effect.
+  Future<void> reopenMic() async {
+    if (_mic == null) return;
+    await _closeMic();
+    if (_micMode != MicMode.muted && _status == SessionStatus.connected) {
+      await _openMic();
+      _managed?.setInputEnabled(_forwarding);
+    }
+    _changed();
+  }
+
   Future<void> _openMic() async {
     if (_mic != null) return;
     try {
@@ -624,6 +647,7 @@ class TurnPipeline extends ChangeNotifier {
 
   void _feedOnset(Uint8List chunk) {
     if (!options().localBargeIn) return;
+    _onset.minThreshold = options().bargeInFloor;
     if (_onset.process(chunk, audible: _assistantAudible && !_userSpeaking)) _localOnset();
   }
 

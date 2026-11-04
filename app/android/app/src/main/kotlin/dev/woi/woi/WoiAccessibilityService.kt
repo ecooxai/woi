@@ -21,7 +21,7 @@ import io.flutter.plugin.common.MethodChannel
  * actions on the focused field (copy, paste, cut, select all, IME enter).
  *
  * When Woi itself is in front, it is sent to the back first so the action
- * reaches the app below.
+ * reaches the app below; the floating assistant panel steps aside instead.
  */
 class WoiAccessibilityService : AccessibilityService() {
     /** Last foreground package that is not Woi (the send_keys target). */
@@ -73,6 +73,30 @@ class WoiAccessibilityService : AccessibilityService() {
         WoiBridge.main.postDelayed(::poll, 50)
     }
 
+    /**
+     * Runs [block] where the action reaches the app the user is in: with the
+     * assistant panel up it steps aside (touches and focus pass through,
+     * [visual] also hides it) until the action's result is sent; otherwise
+     * Woi's task goes to the back as before.
+     */
+    private fun aside(settleMs: Long, result: MethodChannel.Result, visual: Boolean = false, block: (MethodChannel.Result) -> Unit) {
+        if (!WoiOverlay.showing) return leaveWoi(settleMs) { block(result) }
+        WoiOverlay.stepAside(visual)
+        val r = WoiOverlay.releasing(result)
+        val start = System.currentTimeMillis()
+        fun poll() {
+            // Focus (the active window) moves back to the app once the panel
+            // is not focusable; typing and node actions need that.
+            if (!woiInFront() || System.currentTimeMillis() - start > 800) {
+                android.util.Log.i(WoiBridge.TAG, "panel aside in ${System.currentTimeMillis() - start} ms; front=${rootInActiveWindow?.packageName}")
+                WoiBridge.main.postDelayed({ block(r) }, if (visual) 120L else 60L)
+            } else {
+                WoiBridge.main.postDelayed(::poll, 40)
+            }
+        }
+        WoiBridge.main.postDelayed(::poll, 40)
+    }
+
     private fun tap(x: Float, y: Float, count: Int, result: MethodChannel.Result) {
         val path = Path().apply { moveTo(x, y) }
         val builder = GestureDescription.Builder()
@@ -110,6 +134,16 @@ class WoiAccessibilityService : AccessibilityService() {
                 return "set_text"
             }
         }
+        // Web content (WebView / Chrome inputs) often refuses set-text but has
+        // the IME connection: commit through the service's own input method
+        // (Android 13+, flagInputMethodEditor), which leaves the clipboard be.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val ic = inputMethod?.currentInputConnection
+            if (ic != null) {
+                ic.commitText(text, 1, null)
+                return "ime"
+            }
+        }
         // Fallback: clipboard + paste.
         val cm = getSystemService(ClipboardManager::class.java)
         cm.setPrimaryClip(ClipData.newPlainText("woi", text))
@@ -132,14 +166,32 @@ class WoiAccessibilityService : AccessibilityService() {
                     putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, len)
                 })
             }
-            "enter" -> if (Build.VERSION.SDK_INT >= 30) {
-                node.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)
-            } else false
+            "enter" -> (Build.VERSION.SDK_INT >= 30 &&
+                node.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)) || imeEnter()
             "clear_selection" -> node.performAction(AccessibilityNodeInfo.ACTION_CLEAR_SELECTION)
             else -> throw IllegalArgumentException("unknown node action $name")
         }
         if (!ok) throw IllegalStateException("$name is not available in the focused field")
         return name
+    }
+
+    /** Enter through the service's input method (web inputs that lack
+     *  ACTION_IME_ENTER still take the key from the IME connection). */
+    private fun imeEnter(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return false
+        val ic = inputMethod?.currentInputConnection ?: return false
+        val now = android.os.SystemClock.uptimeMillis()
+        ic.sendKeyEvent(android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_ENTER, 0))
+        ic.sendKeyEvent(android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_ENTER, 0))
+        return true
+    }
+
+    /** The app's IME connection comes back a moment after the panel steps
+     *  aside: retry Enter through it for up to 600 ms. */
+    private fun imeEnterSoon(cause: Exception, r: MethodChannel.Result, start: Long = android.os.SystemClock.uptimeMillis()) {
+        if (imeEnter()) return r.success("enter")
+        if (android.os.SystemClock.uptimeMillis() - start > 600) return r.error("failed", cause.message, null)
+        WoiBridge.main.postDelayed({ imeEnterSoon(cause, r, start) }, 50)
     }
 
     private fun global(name: String): Boolean {
@@ -188,30 +240,31 @@ class WoiAccessibilityService : AccessibilityService() {
                 "click", "doubleClick" -> {
                     val x = (call.argument<Number>("x") ?: 0).toFloat()
                     val y = (call.argument<Number>("y") ?: 0).toFloat()
-                    s.leaveWoi(350) { s.tap(x, y, if (call.method == "doubleClick") 2 else 1, result) }
+                    s.aside(350, result) { r -> s.tap(x, y, if (call.method == "doubleClick") 2 else 1, r) }
                 }
-                "typeText" -> s.leaveWoi {
-                    try { result.success(s.typeText(call.argument<String>("text") ?: "")) } catch (e: Exception) {
-                        result.error("failed", e.message, null)
+                "typeText" -> s.aside(150, result) { r ->
+                    try { r.success(s.typeText(call.argument<String>("text") ?: "")) } catch (e: Exception) {
+                        r.error("failed", e.message, null)
                     }
                 }
                 "global" -> {
                     val name = call.argument<String>("name") ?: ""
                     // Global keys sent while the task-switch animation still
                     // runs can be dropped: let it finish first.
-                    s.leaveWoi(450) { result.success(s.global(name)) }
+                    s.aside(450, result) { r -> r.success(s.global(name)) }
                 }
-                "node" -> s.leaveWoi {
-                    try { result.success(s.nodeAction(call.argument<String>("name") ?: "")) } catch (e: Exception) {
-                        result.error("failed", e.message, null)
+                "node" -> s.aside(150, result) { r ->
+                    val name = call.argument<String>("name") ?: ""
+                    try { r.success(s.nodeAction(name)) } catch (e: Exception) {
+                        if (name == "enter") s.imeEnterSoon(e, r) else r.error("failed", e.message, null)
                     }
                 }
-                "focusTarget" -> s.leaveWoi {
-                    result.success(mapOf("package" to (s.rootInActiveWindow?.packageName?.toString() ?: s.targetPackage)))
+                "focusTarget" -> s.aside(150, result) { r ->
+                    r.success(mapOf("package" to (s.rootInActiveWindow?.packageName?.toString() ?: s.targetPackage)))
                 }
                 // The screen of the app the user is working in, not Woi's.
                 "a11yScreenshot" -> if (call.argument<Boolean>("stepAside") != false) {
-                    s.leaveWoi(350) { s.screenshot(call.argument<Int>("maxWidth") ?: 1280, result) }
+                    s.aside(350, result, visual = true) { r -> s.screenshot(call.argument<Int>("maxWidth") ?: 1280, r) }
                 } else {
                     s.screenshot(call.argument<Int>("maxWidth") ?: 1280, result)
                 }

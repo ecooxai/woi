@@ -16,6 +16,10 @@ import 'markdown_view.dart';
 /// or the rendered preview (Format menu or Ctrl+Shift+P; Esc goes back).
 enum NoteViewMode { edit, preview }
 
+/// Editor heights below which the footer / the toolbar are left out.
+const kNoteFooterMinHeight = 200.0;
+const kNoteToolbarMinHeight = 130.0;
+
 class _UndoIntent extends Intent {
   const _UndoIntent();
 }
@@ -638,18 +642,22 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, box) {
       _dense = widget.compact || box.maxWidth < 720;
-      return _build();
+      return _build(box.maxHeight);
     },
   );
 
-  Widget _build() {
+  /// Below [kNoteFooterMinHeight] the footer goes, below
+  /// [kNoteToolbarMinHeight] the toolbar too, so the text keeps the room
+  /// (a short freeform window with the keyboard up).
+  Widget _build(double height) {
+    final footer = height >= kNoteFooterMinHeight;
+    final toolbar = height >= kNoteToolbarMinHeight;
     final m = _effectiveMode;
     final content = m == NoteViewMode.preview ? _previewPane() : _editorPane();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _toolbar(),
-        Container(height: 1, color: WoiColors.stroke),
+        if (toolbar) ...[_toolbar(), Container(height: 1, color: WoiColors.stroke)],
         Expanded(
           child: Stack(
             children: [
@@ -664,7 +672,7 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
             ],
           ),
         ),
-        _footer(),
+        if (footer) _footer(),
       ],
     );
   }

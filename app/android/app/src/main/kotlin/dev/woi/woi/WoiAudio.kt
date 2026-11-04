@@ -32,6 +32,10 @@ object WoiAudio {
     // ---------------- microphone ----------------
 
     @Volatile private var record: AudioRecord? = null
+
+    /** What the last mic open got, for the settings / diagnostics. */
+    @Volatile var status = "not started"
+        private set
     private var micThread: Thread? = null
     private var aec: AcousticEchoCanceler? = null
     private var ns: NoiseSuppressor? = null
@@ -39,7 +43,8 @@ object WoiAudio {
     val micHandler = object : EventChannel.StreamHandler {
         override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
             try {
-                startMic(events)
+                val aecOn = (arguments as? Map<*, *>)?.get("aec") as? Boolean ?: true
+                startMic(events, aecOn)
             } catch (e: Throwable) {
                 events.error("mic", e.message ?: e.toString(), null)
             }
@@ -49,19 +54,32 @@ object WoiAudio {
     }
 
     @SuppressLint("MissingPermission")
-    private fun startMic(events: EventChannel.EventSink) {
+    private fun startMic(events: EventChannel.EventSink, echoCancellation: Boolean) {
         stopMic()
         val min = AudioRecord.getMinBufferSize(RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+        // VOICE_COMMUNICATION engages the platform's voice processing (on
+        // Qualcomm the HAL's echo canceller, referenced to the speaker
+        // output); the audio mode stays NORMAL so playback is not routed to
+        // the earpiece or turned into call volume.
+        val source = if (echoCancellation) MediaRecorder.AudioSource.VOICE_COMMUNICATION else MediaRecorder.AudioSource.MIC
         val rec = AudioRecord(
-            MediaRecorder.AudioSource.VOICE_COMMUNICATION, RATE,
+            source, RATE,
             AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(min, CHUNK_BYTES * 4)
         )
         if (rec.state != AudioRecord.STATE_INITIALIZED) {
             rec.release()
             throw IllegalStateException("AudioRecord not initialized (RECORD_AUDIO granted?)")
         }
-        if (AcousticEchoCanceler.isAvailable()) aec = AcousticEchoCanceler.create(rec.audioSessionId)?.apply { enabled = true }
-        if (NoiseSuppressor.isAvailable()) ns = NoiseSuppressor.create(rec.audioSessionId)?.apply { enabled = true }
+        if (echoCancellation) {
+            if (AcousticEchoCanceler.isAvailable()) aec = AcousticEchoCanceler.create(rec.audioSessionId)?.apply { enabled = true }
+            if (NoiseSuppressor.isAvailable()) ns = NoiseSuppressor.create(rec.audioSessionId)?.apply { enabled = true }
+            status = when {
+                aec?.enabled == true -> "active (VOICE_COMMUNICATION + platform AEC${if (ns?.enabled == true) " + NS" else ""})"
+                else -> "VOICE_COMMUNICATION source; no platform AEC effect on this device"
+            }
+        } else {
+            status = "off (MIC source)"
+        }
         rec.startRecording()
         record = rec
         micThread = Thread({
@@ -84,7 +102,16 @@ object WoiAudio {
             priority = Thread.MAX_PRIORITY
             start()
         }
-        Log.i(WoiBridge.TAG, "mic started aec=${aec?.enabled} ns=${ns?.enabled}")
+        Log.i(WoiBridge.TAG, "mic started: $status")
+        // The system silences capture (zeros, no error) for apps that are
+        // neither in front nor running a microphone foreground service.
+        WoiBridge.main.postDelayed({
+            if (record === rec) {
+                val silenced = rec.activeRecordingConfiguration?.isClientSilenced
+                if (silenced == true) Log.w(WoiBridge.TAG, "mic is silenced by the system (background without a microphone FGS?)")
+                else Log.i(WoiBridge.TAG, "mic capturing (silenced=$silenced)")
+            }
+        }, 1500)
     }
 
     private fun stopMic() {

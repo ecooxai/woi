@@ -11,6 +11,15 @@ void main() {
     expect(on.sessionDiffers(d), isFalse, reason: 'toggling it never reconnects');
   });
 
+  test('echo cancellation is on by default and round-trips through JSON', () {
+    const d = AppSettings();
+    expect(d.echoCancellation, isTrue);
+    expect(AppSettings.fromJson(const {}).echoCancellation, isTrue);
+    final off = d.copyWith(echoCancellation: false);
+    expect(AppSettings.fromJson(off.toJson()).echoCancellation, isFalse);
+    expect(off.sessionDiffers(d), isFalse);
+  });
+
   test('voice is per mode: gpt-live voices vs realtime voices', () {
     const d = AppSettings();
     expect(d.activeVoice, 'cove');

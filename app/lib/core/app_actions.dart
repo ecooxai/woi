@@ -265,6 +265,7 @@ class AppActions {
     final lv = v.toLowerCase();
     AppSettings next;
     String done;
+    var reconnects = false;
     switch (k) {
       case 'theme' || 'color_theme' || 'appearance':
         final t = AppTheme.values.where((t) => lv.contains(t.name)).firstOrNull ??
@@ -312,6 +313,14 @@ class AppActions {
         if (!on && !off) throw AppActionError('run_in_terminal must be on or off');
         next = s.copyWith(runBashInTerminal: on);
         done = 'run commands in terminal ${on ? 'on' : 'off'}';
+      case 'echo_cancellation' || 'echo_cancel' || 'aec' || 'echo':
+        final on = RegExp(r'^(on|true|yes|enable|enabled|1)$').hasMatch(lv);
+        final off = RegExp(r'^(off|false|no|disable|disabled|0)$').hasMatch(lv);
+        if (!on && !off) throw AppActionError('echo_cancellation must be on or off');
+        next = s.copyWith(echoCancellation: on);
+        done = 'echo cancellation ${on ? 'on' : 'off'}';
+        // gpt-live's WebRTC mic applies it with a new call.
+        reconnects = on != s.echoCancellation && c.pipeline.backendManagesAudio;
       case 'edit_apply_delay' || 'auto_apply' || 'edit_delay':
         final d = RegExp(r'approv|ask|never|manual|off').hasMatch(lv)
             ? kRequireApproval
@@ -328,10 +337,11 @@ class AppActions {
         done = n == 0 ? 'usage guard off' : 'background work uses gpt-6-luna below $n% usage left';
       default:
         throw AppActionError(
-          'unknown setting "$key" (theme, mic_mode, voice, voice_model, compaction_threshold, run_in_terminal, edit_apply_delay, usage_guard)',
+          'unknown setting "$key" (theme, mic_mode, voice, voice_model, compaction_threshold, run_in_terminal, '
+          'edit_apply_delay, echo_cancellation, usage_guard)',
         );
     }
-    if (s.sessionDiffers(next)) {
+    if (reconnects || s.sessionDiffers(next)) {
       // Reconnecting now would cut off the reply to this very request.
       Timer(reconnectDelay, () => unawaited(c.updateSettings(next)));
       return '$done (reconnecting)';

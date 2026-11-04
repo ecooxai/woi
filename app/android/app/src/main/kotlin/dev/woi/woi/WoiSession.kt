@@ -4,6 +4,8 @@ import android.app.assist.AssistStructure
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
 import android.os.SystemClock
 import android.service.voice.VoiceInteractionService
@@ -12,6 +14,9 @@ import android.service.voice.VoiceInteractionSessionService
 import android.speech.RecognitionService
 import android.speech.SpeechRecognizer
 import android.util.Log
+import android.view.View
+import android.view.WindowManager
+import android.widget.FrameLayout
 import java.io.File
 
 /** Lets the user pick Woi as the "Digital assistant app". */
@@ -47,7 +52,8 @@ class WoiAssistActivity : android.app.Activity() {
             Log.i(WoiBridge.TAG, "assist intent -> showSession")
             svc.showSession(Bundle(), VoiceInteractionSession.SHOW_WITH_ASSIST or VoiceInteractionSession.SHOW_WITH_SCREENSHOT)
         } else {
-            startActivity(
+            WoiLaunch.start(
+                this,
                 Intent(this, MainActivity::class.java)
                     .putExtra(WoiSession.EXTRA_ASSIST, true)
                     .putExtra(WoiSession.EXTRA_T0, System.currentTimeMillis())
@@ -63,33 +69,67 @@ class WoiSessionService : VoiceInteractionSessionService() {
 }
 
 /**
- * Long-press home / assist gesture: waits for the assist screenshot (and the
- * screen's text from the AssistStructure), saves the screenshot and opens
- * Woi on top of the current app, which attaches it to the next turn.
+ * Long-press home / assist gesture / ASSIST intent. Normally Woi floats as a
+ * bottom panel over the current app (WoiOverlay, drawn in this session's own
+ * window). When Woi itself is in front, the session opens no panel and hands
+ * the screenshot to MainActivity as before.
+ *
+ * Either way it waits for the assist screenshot (and the screen's text from
+ * the AssistStructure), saves it and gives it to Dart, which attaches it to
+ * the next turn.
  */
 class WoiSession(ctx: Context) : VoiceInteractionSession(ctx) {
-    private var launched = false
+    private var delivered = false
+    private var overlay = false
     private var shownAt = 0L
     private var screenText: String? = null
     private var appName: String? = null
-    private val fallback = Runnable { launch(null) }
+    private var container: FrameLayout? = null
+    private val fallback = Runnable { deliver(null) }
+
+    override fun onCreateContentView(): View {
+        val c = FrameLayout(context)
+        c.setBackgroundColor(Color.TRANSPARENT)
+        container = c
+        return c
+    }
 
     override fun onShow(args: Bundle?, showFlags: Int) {
         super.onShow(args, showFlags)
-        launched = false
+        delivered = false
         screenText = null
         appName = null
         shownAt = System.currentTimeMillis()
-        Log.i(WoiBridge.TAG, "assist session shown flags=$showFlags")
+        overlay = WoiBridge.activity?.resumed != true
+        Log.i(WoiBridge.TAG, "assist session shown flags=$showFlags overlay=$overlay")
+        if (overlay) {
+            window?.window?.let { w ->
+                w.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+                w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+            }
+            val c = container
+            if (c != null) WoiOverlay.show(this, c) else overlay = false
+        }
         // The screenshot normally arrives within ~300 ms; without it (assist
-        // screenshots disabled) open Woi anyway.
+        // screenshots disabled) go on anyway.
         val wantsShot = showFlags and SHOW_WITH_SCREENSHOT != 0
         WoiBridge.main.postDelayed(fallback, if (wantsShot) 2000L else 600L)
     }
 
     override fun onHide() {
         WoiBridge.main.removeCallbacks(fallback)
+        if (overlay) WoiOverlay.hide()
         super.onHide()
+    }
+
+    override fun onDestroy() {
+        WoiBridge.main.removeCallbacks(fallback)
+        if (overlay) WoiOverlay.hide()
+        super.onDestroy()
+    }
+
+    override fun onBackPressed() {
+        if (overlay) WoiOverlay.dismiss() else super.onBackPressed()
     }
 
     override fun onHandleAssist(state: AssistState) {
@@ -109,7 +149,7 @@ class WoiSession(ctx: Context) : VoiceInteractionSession(ctx) {
     }
 
     override fun onHandleScreenshot(screenshot: Bitmap?) {
-        if (screenshot == null) return launch(null)
+        if (screenshot == null) return deliver(null)
         val t0 = SystemClock.elapsedRealtime()
         val w = screenshot.width
         val h = screenshot.height
@@ -130,14 +170,32 @@ class WoiSession(ctx: Context) : VoiceInteractionSession(ctx) {
                 Log.w(WoiBridge.TAG, "assist screenshot failed", e)
             }
             val p = path
-            WoiBridge.main.post { launch(p, sw, sh, w, h) }
+            WoiBridge.main.post { deliver(p, sw, sh, w, h) }
         }
     }
 
-    private fun launch(png: String?, w: Int = 0, h: Int = 0, ow: Int = 0, oh: Int = 0) {
-        if (launched) return
-        launched = true
+    private fun deliver(png: String?, w: Int = 0, h: Int = 0, ow: Int = 0, oh: Int = 0) {
+        if (delivered) return
+        delivered = true
         WoiBridge.main.removeCallbacks(fallback)
+        if (overlay) {
+            // The panel is up: Dart attaches the screenshot to the session.
+            WoiBridge.emit(
+                mapOf(
+                    "type" to "assist",
+                    "png" to png,
+                    "width" to w,
+                    "height" to h,
+                    "originalWidth" to ow,
+                    "originalHeight" to oh,
+                    "app" to appName,
+                    "screenText" to screenText,
+                    "shownAt" to shownAt,
+                    "overlay" to true,
+                )
+            )
+            return
+        }
         val i = Intent(context, MainActivity::class.java).apply {
             putExtra(EXTRA_ASSIST, true)
             putExtra(EXTRA_PNG, png)
@@ -150,10 +208,8 @@ class WoiSession(ctx: Context) : VoiceInteractionSession(ctx) {
             putExtra(EXTRA_T0, shownAt)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
-        // A plain start reaches the existing singleTask MainActivity (one
-        // Flutter engine). startAssistantActivity() would create a second
-        // MainActivity in an "assistant" task, i.e. a second engine and app
-        // state in the same process; only use it if the plain start fails.
+        // Woi is in front already: a plain start reaches the existing
+        // singleTask MainActivity (the shared engine).
         try {
             context.startActivity(i)
         } catch (e: Exception) {

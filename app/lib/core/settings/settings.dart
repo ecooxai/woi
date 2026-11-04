@@ -107,6 +107,7 @@ class AppSettings {
     this.editApplyDelay = 5,
     this.cameraReplacesScreenshot = false,
     this.fallbackToDirectOnLimit = false,
+    this.echoCancellation = true,
     this.usageGuardPercent = 20,
   });
 
@@ -166,6 +167,10 @@ class AppSettings {
   /// with Direct realtime instead until the limit resets.
   final bool fallbackToDirectOnLimit;
 
+  /// Remove what the speakers play (Woi's voice, music, videos) from the
+  /// microphone: PipeWire WebRTC echo canceller on Linux, the platform
+  /// AEC/NS/AGC on Android, libwebrtc's AEC for gpt-live.
+  final bool echoCancellation;
   /// When either Codex usage window (5 h, week) has less than this many
   /// percent remaining, delegation and compaction use gpt-6-luna even if a
   /// more expensive model is selected. 0 = off.
@@ -203,6 +208,7 @@ class AppSettings {
     AppTheme? theme,
     int? editApplyDelay,
     bool? cameraReplacesScreenshot,
+    bool? echoCancellation,
     bool? fallbackToDirectOnLimit,
     int? usageGuardPercent,
   }) => AppSettings(
@@ -230,6 +236,7 @@ class AppSettings {
     editApplyDelay: editApplyDelay ?? this.editApplyDelay,
     cameraReplacesScreenshot: cameraReplacesScreenshot ?? this.cameraReplacesScreenshot,
     fallbackToDirectOnLimit: fallbackToDirectOnLimit ?? this.fallbackToDirectOnLimit,
+    echoCancellation: echoCancellation ?? this.echoCancellation,
     usageGuardPercent: usageGuardPercent ?? this.usageGuardPercent,
   );
 
@@ -267,6 +274,7 @@ class AppSettings {
     'editApplyDelay': editApplyDelay,
     'cameraReplacesScreenshot': cameraReplacesScreenshot,
     'fallbackToDirectOnLimit': fallbackToDirectOnLimit,
+    'echoCancellation': echoCancellation,
     'usageGuardPercent': usageGuardPercent,
   };
 
@@ -309,6 +317,7 @@ class AppSettings {
           : d.editApplyDelay,
       cameraReplacesScreenshot: b('cameraReplacesScreenshot', d.cameraReplacesScreenshot),
       fallbackToDirectOnLimit: b('fallbackToDirectOnLimit', d.fallbackToDirectOnLimit),
+      echoCancellation: b('echoCancellation', d.echoCancellation),
       usageGuardPercent: i('usageGuardPercent', d.usageGuardPercent).clamp(0, 100),
     );
   }

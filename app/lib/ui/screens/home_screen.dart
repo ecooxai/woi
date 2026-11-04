@@ -37,6 +37,9 @@ const kPhoneBreakpoint = 640.0;
 /// Width from which the note and the chat can be shown side by side.
 const kSplitBreakpoint = 1280.0;
 
+/// Note panel height below which the note tabs are left out.
+const kNoteTabsMinHeight = 220.0;
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, required this.controller});
   final AppController controller;
@@ -394,26 +397,32 @@ class _HomeScreenState extends State<HomeScreen> {
       padding: EdgeInsets.zero,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(WoiRadii.lg),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: EdgeInsets.fromLTRB(phone ? 4 : 8, phone ? 0 : 4, phone ? 4 : 8, 0),
-              child: NoteTabsBar(controller: c, compact: phone),
-            ),
-            Divider(height: 1, color: WoiColors.stroke),
-            Expanded(
-              child: NoteEditor(
-                key: const ValueKey('note-editor'),
-                notes: c.notes,
-                compact: phone,
-                onOpenLink: _openLink,
-                onRun: _run,
-                onCopy: c.actions.copyNote,
-                copied: c.actions.copied,
+        // A short panel (a 70%-height freeform window with the keyboard up)
+        // leaves the tabs out so the text keeps the room.
+        child: LayoutBuilder(
+          builder: (context, box) => Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (box.maxHeight >= kNoteTabsMinHeight) ...[
+                Padding(
+                  padding: EdgeInsets.fromLTRB(phone ? 4 : 8, phone ? 0 : 4, phone ? 4 : 8, 0),
+                  child: NoteTabsBar(controller: c, compact: phone),
+                ),
+                Divider(height: 1, color: WoiColors.stroke),
+              ],
+              Expanded(
+                child: NoteEditor(
+                  key: const ValueKey('note-editor'),
+                  notes: c.notes,
+                  compact: phone,
+                  onOpenLink: _openLink,
+                  onRun: _run,
+                  onCopy: c.actions.copyNote,
+                  copied: c.actions.copied,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
