@@ -228,3 +228,39 @@ turn), send key events to the current app (esc/back, ctrl+c copy, paste, select 
   typing) and the meter fill is quantized to 1/80 steps, so a key costs ~1 frame. What remains is the full-window
   software raster (~20 ms a frame) plus the editor rebuild; sustained 11 keys/s still reads ~80%, a 3 keys/s pace ~10%.
 - Reply: the voice level publishes at 10 Hz (was 15).
+
+## Real-room echo (echo15)
+P0: on built-in speakers + mic the PipeWire WebRTC canceller removes only ~15–30 dB in a real room; server VAD
+heard the residual as the user and Woi answered its own words ("Pointer moved…" → user turn "Boiner moot").
+Layers, from the device to the conversation:
+- **Canceller (unchanged), measured** — `qa/aec/offline_matrix.sh` runs WebRTC AEC3 with PipeWire's config offline on
+  a rendered echo path (speaker drive + clip, room IR, delay jump, drift; `render_echo.py`, `aec3_offline.cc`,
+  `erle.py`): ERLE only 12.7 dB at reply starts / 17.9 dB in the body (residual −34 / −41 dBFS), near-end loss 0.9
+  dB, double-talk near-end −27 dB; reference 20–300 ms off barely matters, 600 ms early breaks it (1 dB). The VAD
+  proxy still sees 1 false start per 30 s of Woi speech (8 without a canceller). `qa/aec/pw_latency.sh`: the
+  canceller itself adds ~47 ms at node.latency 480/48000 (62 ms in double talk), ~65 ms at 960; 256 crashes PW 1.6.7.
+- **Echo guard** (`core/pipeline/echo_guard.dart`) — knows Woi's playback sample-exactly and compares each 10 ms mic
+  frame in 8 bands with the echo that playback can produce (delay window −40..600 ms, lag tracked by envelope
+  correlation, per-band coupling learned on echo-only frames). In hands-free, while echo is expected the server gets
+  silence instead of the mic; a near-end onset (≥2 bands 8 dB above predicted echo, 100 ms) opens the gate and the
+  held 400 ms is sent first, so the user's first syllable is not lost. No added latency outside Woi's speech (the mic
+  passes straight through); push-to-talk and Android managed capture are not gated.
+- **Soft local barge-in** — a local onset pauses playback instead of cutting; the server's speech start confirms
+  (cancel + hold as before), otherwise playback resumes after 900 ms where it paused.
+- **Transcript guard + self-talk breaker** (`core/pipeline/echo_transcript.dart`) — a user turn that starts while Woi
+  is audible is held (tool calls too) until its transcript is final; if it matches what Woi was saying (consonant
+  skeletons, voiced/voiceless merged) it is dropped (reply, tool calls, server item, bubble) and the cut-off reply
+  plays on. Three echo turns within 90 s pause hands-free (mic → muted) with a notice.
+- **QA** — `WOI_AUDIO_SINK` / `WOI_AUDIO_SOURCE` pin playback, mic and AEC to given nodes; `qa/aec/e2e_echo.sh` runs
+  the release build on :11 (Direct, gpt-realtime-2.1) with its voice fed back through a virtual room (drive ×3 +
+  clip, IR, 150 ms) on qa_e2e_* null sinks.
+
+Numbers (`qa/aec/guard_eval.sh`, 12 rigs = turns/stress × 3 seeds × near-end −24/−30 dBFS, 505 s of Woi speech):
+| stream to server VAD | false user turns |
+|---|---|
+| raw mic (no canceller) | 130 (15.5/min) |
+| canceller only (before) | 24 (2.85/min) |
+| canceller + echo guard (after) | 9 (1.07/min), 0 in the conversational "turns" rigs except 1 at −24 dBFS |
+False local onsets (pauses): guard 19 vs old broadband BargeInDetector 34. Barge-in detection: guard 11/18 vs old
+14/18 items over Woi's speech; guard detects 200–380 ms after speech start (median 330 ms, capture time, plus
+~50 ms canceller latency). The transcript guard catches the remaining echo turns that do get through.
