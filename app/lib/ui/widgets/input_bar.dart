@@ -8,6 +8,7 @@ import 'camera_preview.dart';
 import 'context_meter.dart';
 import 'controls.dart';
 import 'status_chip.dart';
+import 'throttled_builder.dart';
 import 'voice_status.dart';
 
 /// The bottom input bar: text field, send/stop and mic button, and a status
@@ -32,12 +33,42 @@ class _InputBarState extends State<InputBar> {
   AppController get c => widget.controller;
   TurnPipeline get pipeline => c.pipeline;
 
+  // What the bar shows of the pipeline: it rebuilds when one of these
+  // changes, not on every pipeline notification (a streaming reply notifies
+  // up to 15 times a second).
+  late SelectedListenable<Object> _shown = _select();
+
+  SelectedListenable<Object> _select() {
+    final p = pipeline;
+    return SelectedListenable<Object>(
+      p,
+      () => (p.status, p.phase, p.reconnecting, p.reconnectWaiting, p.pttHeld, p.statusDetail, p.conversation),
+    );
+  }
+
+  @override
+  void didUpdateWidget(InputBar old) {
+    super.didUpdateWidget(old);
+    if (old.controller.pipeline != pipeline) {
+      // The builder below still listens to the old one until it rebuilds.
+      final stale = _shown;
+      WidgetsBinding.instance.addPostFrameCallback((_) => stale.dispose());
+      _shown = _select();
+    }
+  }
+
+  @override
+  void dispose() {
+    _shown.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
       // The context manager too: "Compacting memory…" (an animation) must
       // end when the compaction does, not at the next pipeline change.
-      listenable: Listenable.merge([c, pipeline, c.camera.active, c.contextManager]),
+      listenable: Listenable.merge([c, _shown, c.camera.active, c.contextManager]),
       builder: (context, _) {
         final status = pipeline.status;
         if (status == SessionStatus.connected) _wasConnected = true;
@@ -73,35 +104,41 @@ class _InputBarState extends State<InputBar> {
           ),
         );
 
+        final voiceState = ListenableBuilder(
+          listenable: pipeline.levelSourcesChanged,
+          builder: (context, _) => VoiceStatusIndicator(
+            mode: mode,
+            micLevel: pipeline.micLevel,
+            outputLevel: pipeline.outputLevel,
+            // Between reconnect attempts: still (the label says it).
+            animate: mode == VoiceMode.reconnecting ? !pipeline.reconnectWaiting : null,
+            compact: phone,
+          ),
+        );
+        final link = ConnectionStatusChip(
+          state: linkStateFor(status, wasConnected: _wasConnected, reconnecting: pipeline.reconnecting),
+          model: c.activeVoiceModel,
+          backend: c.activeBackendMode,
+          voice: s.activeVoice,
+          detail: pipeline.statusDetail,
+          onRetry: pipeline.connect,
+          compact: phone,
+        );
         final status_ = Row(
           children: [
-            // Flexible: on 360 px phones the label ellipsizes instead of
-            // overflowing the row.
-            Flexible(
-              child: ListenableBuilder(
-                listenable: pipeline.levelSourcesChanged,
-                builder: (context, _) => VoiceStatusIndicator(
-                  mode: mode,
-                  micLevel: pipeline.micLevel,
-                  outputLevel: pipeline.outputLevel,
-                  // Between reconnect attempts: still (the label says it).
-                  animate: mode == VoiceMode.reconnecting ? !pipeline.reconnectWaiting : null,
-                ),
+            // The voice state and the connection get all the room the
+            // buttons on the right leave (a Spacer here took a third of it:
+            // at 360 px the labels were cut to "Mi…" and "real…"). Phones
+            // show short labels and a dot-only connection chip (details in
+            // its tooltip), so every voice state fits; elsewhere the labels
+            // ellipsize rather than overflow.
+            Expanded(
+              child: Row(
+                children: phone
+                    ? [Flexible(child: voiceState), const SizedBox(width: 2), link]
+                    : [Flexible(child: voiceState), _dot(), Flexible(child: link)],
               ),
             ),
-            _dot(),
-            Flexible(
-              child: ConnectionStatusChip(
-                state: linkStateFor(status, wasConnected: _wasConnected, reconnecting: pipeline.reconnecting),
-                model: c.activeVoiceModel,
-                backend: c.activeBackendMode,
-                voice: s.activeVoice,
-                detail: pipeline.statusDetail,
-                onRetry: pipeline.connect,
-                compact: phone,
-              ),
-            ),
-            const Spacer(),
             CameraToggle(
               on: c.cameraOn,
               busy: c.cameraBusy,

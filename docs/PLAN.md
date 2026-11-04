@@ -229,3 +229,22 @@ turn), send key events to the current app (esc/back, ctrl+c copy, paste, select 
   typing) and the meter fill is quantized to 1/80 steps, so a key costs ~1 frame. What remains is the full-window
   software raster (~20 ms a frame) plus the editor rebuild; sustained 11 keys/s still reads ~80%, a 3 keys/s pace ~10%.
 - Reply: the voice level publishes at 10 Hz (was 15).
+
+### Perf (perf16)
+- Typing in a note rebuilds only the text field: toolbar, AI chip and preview rebuild only when what they show
+  changes; the footer (words, chars, save state) is a `ThrottledBuilder` (<= 4 Hz) in its own layer; the field sits
+  in repaint boundaries; highlighting merges adjacent same-style runs (~35% less text layout per key on a 4,400-char
+  note); the editor scrollbar stays visible (no fade frames per Enter).
+- A streaming reply rebuilds only its own bubble (`messageRenderSignature` per tile, `RepaintBoundary`); the
+  pipeline coalesces transcript deltas to at most ~15 notifications/s (one trailing notify per burst; phase
+  changes notify at once). `ThrottledBuilder`: <= 1 rebuild per interval, final state always shown.
+- Test counts (unit/widget): 10 calls/s for 3 s at 250 ms → 9–12 runs; 500 ms of changes every 50 ms → 4 builds;
+  30 deltas in one interval → 1 notification; a delta leaves other tiles' builds untouched.
+- Typing A/B on :11 (release, 10 keys/s, 30 s, 3 samples each, load avg ~30–50): main 50.1 / 59.1 / 51.6% CPU
+  (avg 53.6%), 17.5–21.5 frames/s, RSS growth +69–74 MB → perf16 47.0 / 46.0 / 47.8% (avg 46.9%), 14.7–17.9
+  frames/s, RSS growth +38–49 MB. Sustained 10 keys/s is still above 30%; the floor is the full-window software
+  raster (~20 ms/frame on llvmpipe).
+- RAM while typing: Dart heap stays ~15–26 MB; the growth is native (anon) memory, ~+50 MB over 60 s, and stays
+  after typing stops (MALLOC_ARENA_MAX=2 no help; with NO_AT_BRIDGE=1 idle RSS fell to ~100 MB — the AT-SPI
+  bridge is the lead). Reduced, not fixed.
+- Video viewer on llvmpipe (~290%) not touched in this branch.

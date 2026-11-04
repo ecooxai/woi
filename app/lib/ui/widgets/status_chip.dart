@@ -58,7 +58,11 @@ class ConnectionStatusChip extends StatelessWidget {
   final String? detail;
   final VoidCallback? onRetry;
 
-  /// Phones: short model name (or the state when not connected).
+  /// Phones: only the coloured dot (plus Retry when down); the model and
+  /// state are in the tooltip (long-press). At 360 px the row has no room
+  /// for "realtime-2.1": it truncated to "real…" and squeezed the voice
+  /// state next to it to "Mi…", and that state already says
+  /// offline / connecting.
   final bool compact;
 
   @override
@@ -79,26 +83,18 @@ class ConnectionStatusChip extends StatelessWidget {
       decoration: BoxDecoration(shape: BoxShape.circle, color: color),
     );
 
-    final text = compact
-        ? Text(
-            state == LinkState.connected ? shortModelName(model) : label,
-            style: _style(state == LinkState.connected ? WoiColors.textDim : color),
-            maxLines: 1,
-            softWrap: false,
-            overflow: TextOverflow.ellipsis,
-          )
-        : Text.rich(
-            TextSpan(
-              children: [
-                TextSpan(text: model, style: _style(WoiColors.textDim)),
-                TextSpan(text: ' · ', style: _style(WoiColors.textFaint)),
-                TextSpan(text: label, style: _style(state == LinkState.connected ? WoiColors.textDim : color)),
-              ],
-            ),
-            maxLines: 1,
-            softWrap: false,
-            overflow: TextOverflow.ellipsis,
-          );
+    final text = Text.rich(
+      TextSpan(
+        children: [
+          TextSpan(text: model, style: _style(WoiColors.textDim)),
+          TextSpan(text: ' · ', style: _style(WoiColors.textFaint)),
+          TextSpan(text: label, style: _style(state == LinkState.connected ? WoiColors.textDim : color)),
+        ],
+      ),
+      maxLines: 1,
+      softWrap: false,
+      overflow: TextOverflow.ellipsis,
+    );
 
     return Semantics(
       container: true,
@@ -113,11 +109,10 @@ class ConnectionStatusChip extends StatelessWidget {
               child: Row(
                 key: const ValueKey('connection-status'),
                 mainAxisSize: MainAxisSize.min,
-                children: [
-                  dot,
-                  const SizedBox(width: 6),
-                  Flexible(child: text),
-                ],
+                children: compact
+                    // A 7 px dot is too small to long-press: pad it.
+                    ? [Padding(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8), child: dot)]
+                    : [dot, const SizedBox(width: 6), Flexible(child: text)],
               ),
             ),
           ),
