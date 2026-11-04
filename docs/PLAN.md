@@ -148,3 +148,14 @@ Linux first (finish), then Android:
 Android (after Linux): default assistant (VoiceInteractionService, long-press home, always send assist screenshot),
 "open with"/share-target intents for image/audio/video/text files, screen share (MediaProjection continuous frames per
 turn), send key events to the current app (esc/back, ctrl+c copy, paste, select all) via AccessibilityService.
+
+## Spec 2026-11-03 #4 (user): Android assistant as a floating overlay
+- Invoking the assistant (long-press home, power-button long-press / assist gesture, ASSIST intent) must NOT switch to
+  the Woi app: Woi shows a floating panel OVER the current app (VoiceInteractionSession window / overlay), the
+  underlying app stays visible above it.
+- Default panel height: 60% of the screen height, anchored at the bottom; the user can drag-resize (handle) up to 95%
+  (and down to a minimum, e.g. 35%); size remembered.
+- The panel holds the compact Woi UI: transcript of the current turn(s), input bar with status + mic, and an
+  "open full app" button. The assist screenshot of the underlying app is attached as before. Dismiss with
+  back / tap outside / swipe down; actions (click/type/send_keys via accessibility) operate on the app underneath
+  (the panel must not steal those events: hide/shrink during gestures if needed).
