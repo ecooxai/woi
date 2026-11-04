@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -30,13 +31,19 @@ import 'settings_screen.dart';
 
 export '../../core/app_actions.dart' show HomeView;
 
+/// From this width the chat (history and input) is always docked on the
+/// right and the left pane shows the selected tab (Note, Terminal,
+/// Settings).
 const kWideBreakpoint = 1000.0;
+
+/// The docked chat pane never gets narrower than this.
+const kChatPaneMinWidth = 360.0;
+
+/// A docked chat pane narrower than this gets the compact input bar.
+const kCompactComposerWidth = 560.0;
 
 /// Below this width the phone layout is used (48dp targets, compact bars).
 const kPhoneBreakpoint = 640.0;
-
-/// Width from which the note and the chat can be shown side by side.
-const kSplitBreakpoint = 1280.0;
 
 /// Note panel height below which the note tabs are left out.
 const kNoteTabsMinHeight = 220.0;
@@ -61,9 +68,21 @@ class _HomeScreenState extends State<HomeScreen> {
   HomeView get _view => c.actions.view.value;
   set _view(HomeView v) => c.actions.view.value = v;
 
-  /// Wide desktop: note and chat side by side.
-  bool get _split => c.actions.split.value;
   double _width = 0;
+
+  /// Kept across the wide / narrow layouts (reparented, not rebuilt):
+  /// editor text and selection, transcript scroll, composer text.
+  final _noteKey = GlobalKey(debugLabel: 'note-panel');
+  final _chatKey = GlobalKey(debugLabel: 'chat-panel');
+  final _composerKey = GlobalKey(debugLabel: 'composer');
+  final _settingsKey = GlobalKey(debugLabel: 'settings-view');
+  final _terminalKey = GlobalKey(debugLabel: 'terminal-view');
+
+  /// The last non-chat tab: what the left pane shows in the wide layout.
+  HomeView _leftView = HomeView.note;
+
+  /// Chat pane share while the divider is dragged (persisted on release).
+  double? _dragFraction;
   String? _convId;
 
   /// Unseen activity in the hidden view (tab badges).
@@ -73,7 +92,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @visibleForTesting
   HomeView get view => _view;
-  bool get _splitActive => _split && _width >= kSplitBreakpoint && AppActions.isNoteOrChat(_view);
+
+  /// Wide window: chat docked on the right, always visible.
+  bool get _wide => _width >= kWideBreakpoint;
+  bool get _chatVisible => _wide || _view == HomeView.chat;
+  bool get _noteVisible => (_wide ? _leftView : _view) == HomeView.note;
+
+  @visibleForTesting
+  bool get wide => _wide;
 
   AppController get c => widget.controller;
   TurnPipeline get pipeline => c.pipeline;
@@ -84,7 +110,6 @@ class _HomeScreenState extends State<HomeScreen> {
     // A new (empty) conversation opens on its note.
     _view = pipeline.conversation.messages.isEmpty ? HomeView.note : HomeView.chat;
     c.actions.view.addListener(_onViewChanged);
-    c.actions.split.addListener(_onViewChanged);
     _compactSub = pipeline.compactionEvents.listen(_onCompacted);
     pipeline.addListener(_onPipeline);
     _onPipeline();
@@ -98,7 +123,6 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     c.actions.view.removeListener(_onViewChanged);
-    c.actions.split.removeListener(_onViewChanged);
     HardwareKeyboard.instance.removeHandler(_onKey);
     c.notes.removeListener(_onNotes);
     pipeline.removeListener(_onPipeline);
@@ -108,36 +132,38 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  /// Selects a top-level tab (Ctrl+1..4). In the side-by-side layout Note
-  /// and Chat stay side by side.
+  /// Selects a top-level tab (Ctrl+1..4). In the wide layout the chat is
+  /// always shown, so "Chat" just focuses the composer.
   void setView(HomeView v) => c.actions.showView(v);
-
-  void toggleSplit() {
-    if (_width < kSplitBreakpoint) return;
-    c.actions.toggleSplit();
-  }
 
   /// The view changed (buttons, shortcuts or voice): clear the badges of
   /// whatever is visible now.
   void _onViewChanged() {
     if (!mounted) return;
     setState(() {
-      if (_view == HomeView.note || _splitActive) _noteBadge = false;
-      if (_view == HomeView.chat || _splitActive) _seenMessages = pipeline.conversation.messages.length;
+      if (_view != HomeView.chat) {
+        _leftView = _view;
+      } else if (_leftView == HomeView.settings) {
+        // Leaving Settings for the chat (Esc, voice): the note comes back.
+        _leftView = HomeView.note;
+      }
+      if (_noteVisible) _noteBadge = false;
+      if (_chatVisible) _seenMessages = pipeline.conversation.messages.length;
     });
+    if (_wide && _view == HomeView.chat) _focusComposer();
   }
 
   void _onNotes() {
     final seq = c.notes.lastAiEdit?.seq;
     if (seq != null && seq != _seenAiSeq) {
       _seenAiSeq = seq;
-      if (_view != HomeView.note && !_splitActive && mounted) setState(() => _noteBadge = true);
+      if (!_noteVisible && mounted) setState(() => _noteBadge = true);
     }
   }
 
   /// Unread messages while the note is shown.
   int get _chatBadge {
-    if (_view == HomeView.chat || _splitActive) return 0;
+    if (_chatVisible) return 0;
     final msgs = pipeline.conversation.messages;
     var n = 0;
     for (var i = _seenMessages; i < msgs.length; i++) {
@@ -158,7 +184,7 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       }
     }
-    if (_view == HomeView.chat || _splitActive) _seenMessages = conv.messages.length;
+    if (_chatVisible) _seenMessages = conv.messages.length;
     final s = pipeline.status;
     if (s == _lastStatus) return;
     final prev = _lastStatus;
@@ -184,14 +210,14 @@ class _HomeScreenState extends State<HomeScreen> {
   bool get _typing {
     final ctx = FocusManager.instance.primaryFocus?.context;
     if (ctx == null) return false;
-    return ctx.widget is EditableText || ctx.findAncestorWidgetOfExactType<EditableText>() != null ||
+    return ctx.widget is EditableText ||
+        ctx.findAncestorWidgetOfExactType<EditableText>() != null ||
         terminalHasFocus();
   }
 
   /// Global shortcuts. Space = push-to-talk (when not typing), Esc =
   /// interrupt (or leave Settings), Ctrl+K = type, Ctrl+N = new note,
-  /// Ctrl+1..4 = Note / Chat / Terminal / Settings tab (Ctrl+, = Settings),
-  /// Ctrl+\ = side by side.
+  /// Ctrl+1..4 = Note / Chat / Terminal / Settings tab (Ctrl+, = Settings).
   bool _onKey(KeyEvent e) {
     if (!mounted) return false;
     // A dialog or popup is on top: it handles its own keys.
@@ -210,7 +236,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (e is! KeyDownEvent) return false;
     final inTerminal = terminalHasFocus();
     if (ctrl && key == LogicalKeyboardKey.keyK && !inTerminal) {
-      if (_view == HomeView.terminal) setView(HomeView.chat);
+      if (_view == HomeView.terminal && !_wide) setView(HomeView.chat);
       _focusComposer();
       return true;
     }
@@ -220,10 +246,6 @@ class _HomeScreenState extends State<HomeScreen> {
         setView(tab);
         return true;
       }
-    }
-    if (ctrl && key == LogicalKeyboardKey.backslash && !inTerminal) {
-      toggleSplit();
-      return true;
     }
     if (ctrl && key == LogicalKeyboardKey.comma) {
       setView(HomeView.settings);
@@ -295,6 +317,35 @@ class _HomeScreenState extends State<HomeScreen> {
 
   bool get _phone => _width < kPhoneBreakpoint;
 
+  /// The chat pane's share of the width (wide layout).
+  double _chatFraction(double width) {
+    final f = (_dragFraction ?? c.settings.chatPaneFraction).clamp(kChatPaneMinFraction, kChatPaneMaxFraction);
+    // Never so narrow that the input bar's status row gets cramped.
+    return width <= 0 ? f : f.clamp(math.min(kChatPaneMinWidth / width, kChatPaneMaxFraction), kChatPaneMaxFraction);
+  }
+
+  void _dragDivider(double dx) {
+    if (_width <= 0) return;
+    setState(() {
+      _dragFraction = (_chatFraction(_width) - dx / _width).clamp(kChatPaneMinFraction, kChatPaneMaxFraction);
+    });
+  }
+
+  void _endDrag() {
+    final f = _dragFraction;
+    if (f == null) return;
+    unawaited(
+      c.updateSettings(c.settings.copyWith(chatPaneFraction: f)).whenComplete(() {
+        if (mounted) setState(() => _dragFraction = null);
+      }),
+    );
+  }
+
+  void _resetDivider() {
+    setState(() => _dragFraction = kDefaultChatPaneFraction);
+    _endDrag();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -310,45 +361,9 @@ class _HomeScreenState extends State<HomeScreen> {
           child: LayoutBuilder(
             builder: (context, box) {
               _width = box.maxWidth;
-              c.actions.splitAvailable = _width >= kSplitBreakpoint;
-              final phone = _phone;
-              final pad = phone ? 8.0 : 16.0;
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Padding(
-                    padding: EdgeInsets.fromLTRB(phone ? 0 : pad - 8, phone ? 0 : 4, phone ? 0 : pad - 8, phone ? 0 : 6),
-                    // Only the unread badge follows the pipeline.
-                    child: SelectorBuilder<int>(
-                      listenable: pipeline,
-                      selector: () => _chatBadge,
-                      builder: (context, _) => _header(),
-                    ),
-                  ),
-                  Expanded(
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(horizontal: pad),
-                      child: _main(box),
-                    ),
-                  ),
-                  Padding(
-                    padding: EdgeInsets.fromLTRB(pad, pad, pad, pad),
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(maxWidth: _splitActive ? double.infinity : 980),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            EditReviewCard(review: c.review, maxDiffHeight: phone ? 160 : 220),
-                            InputBar(controller: c, focusNode: _composerFocus, phone: phone),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              );
+              // The chat is always beside the left pane: "split" is implied.
+              c.actions.splitAvailable = _wide;
+              return ColoredBox(color: WoiColors.bg1, child: _wide ? _wideLayout(box) : _narrowLayout(box));
             },
           ),
         ),
@@ -358,51 +373,134 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // ---------------------------------------------------------------- layouts
 
-  Widget _main(BoxConstraints box) {
-    if (_splitActive) {
-      return Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(flex: 11, child: _notePanel()),
-          const SizedBox(width: 16),
-          Expanded(flex: 9, child: _chatPanel(maxBubble: 560)),
-        ],
-      );
-    }
-    return switch (_view) {
-      HomeView.note => _notePanel(),
-      HomeView.chat => _chatPanel(maxBubble: _phone ? box.maxWidth * 0.86 : 720),
-      HomeView.settings => SettingsView(key: const ValueKey('settings-view'), controller: c),
-      HomeView.terminal => GlassPanel(
-        key: const ValueKey('terminal-view'),
-        padding: EdgeInsets.zero,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(WoiRadii.lg),
-          child: TerminalPanel(hub: c.terminals, actions: c.actions, fontSize: _phone ? 12 : 13.5),
+  /// Tabs on top, the selected tab below, the composer at the bottom.
+  Widget _narrowLayout(BoxConstraints box) {
+    final phone = _phone;
+    final pad = phone ? 8.0 : 12.0;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Only the unread badge follows the pipeline.
+        SelectorBuilder<int>(listenable: pipeline, selector: () => _chatBadge, builder: (context, _) => _header()),
+        const Divider(height: 1),
+        Expanded(
+          child: switch (_view) {
+            HomeView.note => _notePanel(),
+            HomeView.chat => _chatPanel(maxBubble: phone ? box.maxWidth * 0.86 : 720),
+            HomeView.settings => _settingsPanel(),
+            HomeView.terminal => _terminalPanel(),
+          },
         ),
-      ),
-    };
+        Padding(
+          padding: EdgeInsets.fromLTRB(pad, phone ? 4 : 8, pad, pad),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 980),
+              child: _composer(phone: phone),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
-  Widget _chatPanel({required double maxBubble}) => GlassPanel(
-    key: const ValueKey('chat-panel'),
-    padding: EdgeInsets.zero,
-    // Hard-edge clip: an anti-aliased rounded clip over the scrolling list
-    // is redrawn with coverage every frame (expensive on software GL).
-    child: ClipRRect(
-      borderRadius: BorderRadius.circular(WoiRadii.lg),
-      clipBehavior: Clip.hardEdge,
-      child: _transcriptArea(maxBubble: maxBubble, wide: !_phone),
+  /// Left: the selected tab (Note, Terminal, Settings). Right: the chat
+  /// history and the composer, whatever tab is selected. A draggable
+  /// divider between them (double-click resets it).
+  Widget _wideLayout(BoxConstraints box) {
+    final chatW = (box.maxWidth * _chatFraction(box.maxWidth)).roundToDouble();
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _header(),
+              const Divider(height: 1),
+              Expanded(
+                child: switch (_leftView) {
+                  HomeView.settings => _settingsPanel(),
+                  HomeView.terminal => _terminalPanel(),
+                  _ => _notePanel(),
+                },
+              ),
+            ],
+          ),
+        ),
+        PaneDivider(
+          key: const ValueKey('pane-divider'),
+          onDrag: _dragDivider,
+          onDragEnd: _endDrag,
+          onReset: _resetDivider,
+        ),
+        SizedBox(
+          key: const ValueKey('chat-pane'),
+          width: chatW,
+          child: ColoredBox(
+            color: WoiColors.bg1,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _chatHeader(),
+                const Divider(height: 1),
+                Expanded(child: _chatPanel(maxBubble: math.min(560, chatW - 48))),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                  child: _composer(phone: chatW < kCompactComposerWidth),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Edit preview and input bar; one instance moved between the layouts.
+  Widget _composer({required bool phone}) => KeyedSubtree(
+    key: _composerKey,
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        EditReviewCard(review: c.review, maxDiffHeight: phone ? 160 : 220),
+        InputBar(controller: c, focusNode: _composerFocus, phone: phone),
+      ],
+    ),
+  );
+
+  Widget _settingsPanel() => KeyedSubtree(
+    key: _settingsKey,
+    child: SettingsView(key: const ValueKey('settings-view'), controller: c),
+  );
+
+  Widget _terminalPanel() => KeyedSubtree(
+    key: _terminalKey,
+    child: KeyedSubtree(
+      key: const ValueKey('terminal-view'),
+      child: TerminalPanel(hub: c.terminals, actions: c.actions, fontSize: _phone ? 12 : 13.5),
+    ),
+  );
+
+  Widget _chatPanel({required double maxBubble}) => KeyedSubtree(
+    key: _chatKey,
+    child: KeyedSubtree(
+      key: const ValueKey('chat-panel'),
+      // Hard-edge clip: an anti-aliased rounded clip over the scrolling
+      // list is redrawn with coverage every frame (expensive on software GL).
+      child: ClipRect(
+        child: _transcriptArea(maxBubble: maxBubble, wide: !_phone),
+      ),
     ),
   );
 
   Widget _notePanel() {
     final phone = _phone;
-    return GlassPanel(
-      key: const ValueKey('note-panel'),
-      padding: EdgeInsets.zero,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(WoiRadii.lg),
+    return KeyedSubtree(
+      key: _noteKey,
+      child: KeyedSubtree(
+        key: const ValueKey('note-panel'),
         // A short panel (a 70%-height freeform window with the keyboard up)
         // leaves the tabs out so the text keeps the room.
         child: LayoutBuilder(
@@ -411,10 +509,10 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               if (box.maxHeight >= kNoteTabsMinHeight) ...[
                 Padding(
-                  padding: EdgeInsets.fromLTRB(phone ? 4 : 8, phone ? 0 : 4, phone ? 4 : 8, 0),
+                  padding: EdgeInsets.symmetric(horizontal: phone ? 4 : 8),
                   child: NoteTabsBar(controller: c, compact: phone),
                 ),
-                Divider(height: 1, color: WoiColors.stroke),
+                const Divider(height: 1),
               ],
               Expanded(
                 child: NoteEditor(
@@ -443,7 +541,7 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
     pipeline.sendText(text);
-    if (_splitActive) return;
+    if (_chatVisible) return;
     final short = text.length > 60 ? '${text.substring(0, 59)}…' : text;
     messenger?.hideCurrentSnackBar();
     messenger?.showSnackBar(
@@ -472,51 +570,74 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// The top-level tab strip, starting at the left edge, plus the few
   /// window-level actions on the right (status lives in the input bar).
+  /// Wide: no Chat tab (the chat is always on the right) and the history
+  /// button moves to the chat pane's header.
   Widget _header() {
     final phone = _phone;
+    final wide = _wide;
     final t = phone ? kTouchTarget : 36.0;
+    final h = phone ? kTouchTarget : 44.0;
     return SizedBox(
-      height: phone ? kTouchTarget : 44,
+      height: h,
       child: Row(
         children: [
+          SizedBox(width: phone ? 0 : 4),
           Expanded(
             child: Align(
               alignment: Alignment.centerLeft,
               child: SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: HomeTabs(
-                  view: _view,
+                  view: wide ? _leftView : _view,
                   onChanged: setView,
-                  split: _splitActive,
+                  hideChat: wide,
                   noteBadge: _noteBadge,
                   chatBadge: _chatBadge,
                   compact: phone,
-                  height: phone ? kTouchTarget : 44,
+                  height: h,
                 ),
               ),
             ),
           ),
-          if (_width >= kSplitBreakpoint)
-            GlassIconButton(
-              key: const ValueKey('split-toggle'),
-              icon: Icons.vertical_split_outlined,
-              tooltip: _splitActive ? 'Single view (Ctrl+\\)' : 'Note and chat side by side (Ctrl+\\)',
-              onPressed: toggleSplit,
-              active: _split && AppActions.isNoteOrChat(_view),
-              size: t,
-            ),
           if (Platform.isAndroid) ScreenShareButton(size: t),
-          GlassIconButton(
-            key: const ValueKey('open-history'),
-            icon: Icons.history,
-            tooltip: 'All conversations',
-            onPressed: _openHistory,
-            size: t,
-          ),
+          if (!wide) _historyButton(t),
+          SizedBox(width: phone ? 0 : 4),
         ],
       ),
     );
   }
+
+  Widget _historyButton(double size) => GlassIconButton(
+    key: const ValueKey('open-history'),
+    icon: Icons.history,
+    tooltip: 'All conversations',
+    onPressed: _openHistory,
+    size: size,
+  );
+
+  /// Wide: the chat pane's title row (same height as the tab strip, so
+  /// both hairlines line up).
+  Widget _chatHeader() => SizedBox(
+    height: 44,
+    child: Row(
+      children: [
+        const SizedBox(width: 16),
+        Icon(kHomeTabs[HomeView.chat]!.$1, size: 17, color: WoiColors.textDim),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            'Chat',
+            key: const ValueKey('chat-pane-title'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: body(13.5, weight: FontWeight.w600, color: WoiColors.text),
+          ),
+        ),
+        _historyButton(36),
+        const SizedBox(width: 4),
+      ],
+    ),
+  );
 
   Widget _transcriptArea({required double maxBubble, required bool wide}) {
     return Stack(

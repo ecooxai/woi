@@ -39,7 +39,14 @@ enum BackendMode {
 const kVoiceModels = ['gpt-live-1.1', 'gpt-live-1', 'gpt-live-1-codex'];
 
 /// Models that work on wss://api.openai.com/v1/realtime (§2.1).
-const kRealtimeModels = ['gpt-realtime-2.1', 'gpt-realtime-2.1-mini', 'gpt-realtime-2', 'gpt-realtime-1.5', 'gpt-realtime', 'gpt-realtime-mini'];
+const kRealtimeModels = [
+  'gpt-realtime-2.1',
+  'gpt-realtime-2.1-mini',
+  'gpt-realtime-2',
+  'gpt-realtime-1.5',
+  'gpt-realtime',
+  'gpt-realtime-mini',
+];
 
 /// Voices of the realtime WebSocket models (direct and API-key modes).
 const kVoices = ['marin', 'cedar', 'alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse'];
@@ -78,6 +85,13 @@ const kLiveDefaultVoice = 'cove';
 /// [AppSettings.editApplyDelay] value: edits wait for an explicit Apply.
 const kRequireApproval = -1;
 
+/// Default share of the window width taken by the chat pane (wide layout).
+const kDefaultChatPaneFraction = 0.42;
+
+/// Bounds of [AppSettings.chatPaneFraction].
+const kChatPaneMinFraction = 0.25;
+const kChatPaneMaxFraction = 0.6;
+
 /// Choices for [AppSettings.editApplyDelay] (seconds).
 const kEditApplyDelays = [0, 3, 5, 10, kRequireApproval];
 
@@ -109,6 +123,7 @@ class AppSettings {
     this.fallbackToDirectOnLimit = false,
     this.echoCancellation = true,
     this.usageGuardPercent = 20,
+    this.chatPaneFraction = kDefaultChatPaneFraction,
   });
 
   final BackendMode backendMode;
@@ -171,10 +186,14 @@ class AppSettings {
   /// microphone: PipeWire WebRTC echo canceller on Linux, the platform
   /// AEC/NS/AGC on Android, libwebrtc's AEC for gpt-live.
   final bool echoCancellation;
+
   /// When either Codex usage window (5 h, week) has less than this many
   /// percent remaining, delegation and compaction use gpt-6-luna even if a
   /// more expensive model is selected. 0 = off.
   final int usageGuardPercent;
+
+  /// Wide two-pane layout: share of the width taken by the chat pane.
+  final double chatPaneFraction;
 
   /// The voice used by the current backend mode.
   String get activeVoice => backendMode == BackendMode.gptLive ? liveVoice : voice;
@@ -211,6 +230,7 @@ class AppSettings {
     bool? echoCancellation,
     bool? fallbackToDirectOnLimit,
     int? usageGuardPercent,
+    double? chatPaneFraction,
   }) => AppSettings(
     backendMode: backendMode ?? this.backendMode,
     apiKey: apiKey ?? this.apiKey,
@@ -238,6 +258,7 @@ class AppSettings {
     fallbackToDirectOnLimit: fallbackToDirectOnLimit ?? this.fallbackToDirectOnLimit,
     echoCancellation: echoCancellation ?? this.echoCancellation,
     usageGuardPercent: usageGuardPercent ?? this.usageGuardPercent,
+    chatPaneFraction: chatPaneFraction ?? this.chatPaneFraction,
   );
 
   /// Whether a change requires reconnecting the live session.
@@ -276,6 +297,7 @@ class AppSettings {
     'fallbackToDirectOnLimit': fallbackToDirectOnLimit,
     'echoCancellation': echoCancellation,
     'usageGuardPercent': usageGuardPercent,
+    'chatPaneFraction': chatPaneFraction,
   };
 
   factory AppSettings.fromJson(Map<String, Object?> j) {
@@ -319,6 +341,10 @@ class AppSettings {
       fallbackToDirectOnLimit: b('fallbackToDirectOnLimit', d.fallbackToDirectOnLimit),
       echoCancellation: b('echoCancellation', d.echoCancellation),
       usageGuardPercent: i('usageGuardPercent', d.usageGuardPercent).clamp(0, 100),
+      chatPaneFraction: ((j['chatPaneFraction'] as num?)?.toDouble() ?? d.chatPaneFraction).clamp(
+        kChatPaneMinFraction,
+        kChatPaneMaxFraction,
+      ),
     );
   }
 }

@@ -186,7 +186,9 @@ void main() {
       await done(t);
     });
 
-    testWidgets('Copy: click copies the note; right-click / long-press menu copies line, paragraph, section', (t) async {
+    testWidgets('Copy: click copies the note; right-click / long-press menu copies line, paragraph, section', (
+      t,
+    ) async {
       final clip = <String>[];
       t.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
         if (call.method == 'Clipboard.setData') clip.add((call.arguments as Map)['text'] as String);
@@ -296,7 +298,7 @@ void main() {
   });
 
   group('HomeScreen views', () {
-    testWidgets('new chat opens the note; Ctrl+1/Ctrl+2 switch; split on wide windows', (t) async {
+    testWidgets('new chat opens the note; Ctrl+1/Ctrl+2 switch; single view below the wide breakpoint', (t) async {
       late FakePlatform fp;
       late AppController c;
       await t.runAsync(() async {
@@ -310,7 +312,7 @@ void main() {
         await c.init();
       });
       expect(c.initError, isNull);
-      await t.binding.setSurfaceSize(const Size(1400, 900));
+      await t.binding.setSurfaceSize(const Size(900, 900));
       addTearDown(() => t.binding.setSurfaceSize(null));
       await t.pumpWidget(
         MaterialApp(
@@ -338,15 +340,7 @@ void main() {
       await t.pump(const Duration(milliseconds: 500));
       expect(view(), HomeView.chat);
 
-      // Wide window: split shows both.
-      await t.tap(find.byKey(const ValueKey('split-toggle')));
-      await t.pump(const Duration(milliseconds: 500));
-      expect(find.byKey(const ValueKey('note-editor-field')), findsOneWidget);
-      expect(find.byKey(const ValueKey('chat-panel')), findsOneWidget);
-
       // AI note edits from the chat badge the note tab when it is hidden.
-      await _ctrl(t, LogicalKeyboardKey.backslash);
-      await t.pump(const Duration(milliseconds: 500));
       await _ctrl(t, LogicalKeyboardKey.digit2);
       c.notes.applyEdit(NoteEditMode.append, text: '- meeting at 3pm');
       await t.pump(const Duration(milliseconds: 500));

@@ -10,7 +10,7 @@ import 'package:woi/ui/theme.dart';
 import '../fakes/fakes.dart';
 
 void main() {
-  testWidgets('tabs and split still work after the Settings tab and a fatal backend error', (t) async {
+  testWidgets('tabs and the docked chat still work after the Settings tab and a fatal backend error', (t) async {
     late FakePlatform fp;
     late AppController c;
     ScriptedBackend? backend;
@@ -38,9 +38,10 @@ void main() {
       await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 15)));
       await t.pump(const Duration(milliseconds: 20));
     }
-    await t.tap(find.byKey(const ValueKey('view-chat')));
-    await t.pump(const Duration(milliseconds: 300));
+    // Wide: no Chat tab, the chat is always docked on the right.
+    expect(find.byKey(const ValueKey('view-chat')), findsNothing);
     expect(find.byKey(const ValueKey('chat-panel')), findsOneWidget);
+    expect(find.byKey(const ValueKey('note-panel')), findsOneWidget);
     await t.runAsync(() async {
       await t.tap(find.byKey(const ValueKey('view-settings')));
       await Future<void>.delayed(const Duration(milliseconds: 300));
@@ -50,10 +51,12 @@ void main() {
       await t.pump(const Duration(milliseconds: 20));
     }
     expect(find.byKey(const ValueKey('settings-view')), findsOneWidget);
-    expect(find.byKey(const ValueKey('chat-panel')), findsNothing);
+    expect(find.byKey(const ValueKey('chat-panel')), findsOneWidget, reason: 'chat stays on the right');
+    expect(find.byKey(const ValueKey('note-panel')), findsNothing);
     // Esc leaves Settings for the tab shown before it.
     await t.sendKeyEvent(LogicalKeyboardKey.escape);
     await t.pump(const Duration(milliseconds: 300));
+    expect(find.byKey(const ValueKey('note-panel')), findsOneWidget);
     expect(find.byKey(const ValueKey('chat-panel')), findsOneWidget);
     for (var i = 0; i < 40; i++) {
       await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 15)));
@@ -67,8 +70,6 @@ void main() {
     await t.tap(find.byKey(const ValueKey('view-note')));
     await t.pump(const Duration(milliseconds: 300));
     expect(find.byKey(const ValueKey('note-panel')), findsOneWidget);
-    await t.tap(find.byKey(const ValueKey('split-toggle')));
-    await t.pump(const Duration(milliseconds: 300));
     expect(find.byKey(const ValueKey('chat-panel')), findsOneWidget);
     await t.pumpWidget(const SizedBox());
     await t.runAsync(() async {
