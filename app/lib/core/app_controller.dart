@@ -262,8 +262,12 @@ class AppController extends ChangeNotifier {
     try {
       _settings = await _settingsStore.load();
       // Woi listens from launch: a mic muted in the last session comes back
-      // on (push-to-talk stays push-to-talk).
-      if (_settings.micMode == MicMode.muted) {
+      // on (push-to-talk stays push-to-talk). QA: WOI_MIC_MODE=muted (or
+      // handsFree / pushToTalk) sets the launch mode for this run only.
+      final forced = MicMode.values.asNameMap()[Platform.environment['WOI_MIC_MODE']];
+      if (forced != null) {
+        _settings = _settings.copyWith(micMode: forced);
+      } else if (_settings.micMode == MicMode.muted) {
         _settings = _settings.copyWith(micMode: MicMode.handsFree);
         unawaited(_settingsStore.save(_settings));
       }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
@@ -435,13 +436,33 @@ class _TypingDots extends StatefulWidget {
   State<_TypingDots> createState() => _TypingDotsState();
 }
 
-class _TypingDotsState extends State<_TypingDots> with SingleTickerProviderStateMixin {
-  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 1100))
-    ..repeat();
+/// Three dots stepping at 5 fps (not a 60 fps controller: each frame is a
+/// full raster on software GL), in their own repaint boundary. They stop
+/// after [_maxRun]: a transcript that never arrives must not keep an idle
+/// window rendering.
+class _TypingDotsState extends State<_TypingDots> {
+  static const _step = Duration(milliseconds: 200);
+  static const _maxRun = Duration(seconds: 20);
+  final _tick = ValueNotifier<int>(0);
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(_step, (t) {
+      if (t.tick * _step.inMilliseconds >= _maxRun.inMilliseconds) {
+        t.cancel();
+        _tick.value = -1; // still: all dots half lit
+        return;
+      }
+      _tick.value = t.tick;
+    });
+  }
 
   @override
   void dispose() {
-    _c.dispose();
+    _timer?.cancel();
+    _tick.dispose();
     super.dispose();
   }
 
@@ -456,22 +477,25 @@ class _TypingDotsState extends State<_TypingDots> with SingleTickerProviderState
             Text(widget.label!, style: body(13, color: widget.color.withValues(alpha: 0.85))),
             const SizedBox(width: 8),
           ],
-          AnimatedBuilder(
-            animation: _c,
-            builder: (context, _) => Row(
-              children: List.generate(3, (i) {
-                final v = ((_c.value * 3 - i) % 3);
-                final a = v < 1 ? (1 - (v - 0.5).abs() * 2).clamp(0.25, 1.0) : 0.25;
-                return Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 2),
-                  width: 6,
-                  height: 6,
-                  decoration: BoxDecoration(
-                    color: widget.color.withValues(alpha: a),
-                    shape: BoxShape.circle,
-                  ),
-                );
-              }),
+          RepaintBoundary(
+            child: ValueListenableBuilder<int>(
+              valueListenable: _tick,
+              builder: (context, tick, _) => Row(
+                children: List.generate(3, (i) {
+                  // One bright dot walking left to right (6 steps per cycle).
+                  final p = tick < 0 ? -1 : tick % 6;
+                  final a = tick < 0 ? 0.5 : (p == i * 2 || p == i * 2 + 1 ? 1.0 : 0.3);
+                  return Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 2),
+                    width: 6,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      color: widget.color.withValues(alpha: a),
+                      shape: BoxShape.circle,
+                    ),
+                  );
+                }),
+              ),
             ),
           ),
         ],

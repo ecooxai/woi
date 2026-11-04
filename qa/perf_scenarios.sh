@@ -16,6 +16,7 @@
 #      SIZE (window size, default "1600 900").
 #      PERF_SETTINGS (extra settings.json members, e.g. '"backendMode": "direct"'
 #      to stay off gpt-live while its quota is exhausted).
+# The mic mode is forced with WOI_MIC_MODE (a muted mic otherwise comes back on at launch).
 # Each scenario starts the app fresh with HOME and XDG_DATA_HOME in a
 # sandbox seeded by qa/lib/make_perf_seed.py (200-message chat + notes);
 # CODEX_HOME keeps the real login. Only processes started here are killed.
@@ -61,7 +62,7 @@ launch() {
   python3 "$QA_DIR/lib/make_perf_seed.py" "$data/woi" --messages 200 --notes 8 >/dev/null
   printf '{"micMode": "%s", "autoScreenshot": false%s}\n' "$mic" "${PERF_SETTINGS:+, $PERF_SETTINGS}" >"$data/woi/settings.json"
   ln -sf "$BIN" "$SANDBOX/$PNAME"
-  (cd "$SANDBOX" && exec env HOME="$SANDBOX" CODEX_HOME="$REAL_HOME/.codex" XDG_DATA_HOME="$data" "$@" \
+  (cd "$SANDBOX" && exec env HOME="$SANDBOX" CODEX_HOME="$REAL_HOME/.codex" XDG_DATA_HOME="$data" WOI_MIC_MODE="$mic" "$@" \
     "$SANDBOX/$PNAME" >"$OUT/app-$name.log" 2>&1) &
   APP_PID=$!
   local wid="" t=0

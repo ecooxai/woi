@@ -498,6 +498,14 @@ class TurnPipeline extends ChangeNotifier {
       await _openMic();
       _managed?.setInputEnabled(_forwarding);
     }
+    if (_userSpeaking && !_forwarding) {
+      // Switched to push-to-talk mid-utterance: no more audio reaches the
+      // server, so close the turn like a talk-button release (otherwise
+      // "Hearing you…" and the bubble's dots stay up forever).
+      final b = _backend;
+      if (b != null && _status == SessionStatus.connected) b.sendAudio(Uint8List(kVoiceBytesPerSecond * 8 ~/ 10));
+      _onSpeechStopped();
+    }
     _changed();
   }
 

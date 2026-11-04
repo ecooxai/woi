@@ -342,6 +342,17 @@ void main() {
       await h.dispose();
     });
 
+    test('switching to push-to-talk mid-utterance closes the turn', () async {
+      final h = await Harness.create();
+      h.scripted.emit(const SpeechStarted());
+      expect(h.pipeline.phase, AssistantPhase.userSpeaking);
+      final before = h.scripted.audioBytes;
+      await h.pipeline.setMicMode(MicMode.pushToTalk);
+      expect(h.pipeline.phase, isNot(AssistantPhase.userSpeaking), reason: 'no stuck "Hearing you…"');
+      expect(h.scripted.audioBytes, before + 800 * 48, reason: 'closed with trailing silence');
+      await h.dispose();
+    });
+
     test('local VAD drives turns when the backend has no server VAD', () async {
       final h = await Harness.create(backend: () => ScriptedBackend(serverVad: false));
       await h.speak(600, amplitude: 30); // calibration on quiet room noise
