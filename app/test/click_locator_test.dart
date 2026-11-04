@@ -25,6 +25,7 @@ final page = [
   el('button', 'Back', 42, 9, 26, 26),
   el('entry', 'Search mail', 156, 9, 380, 26),
   el('button', 'Settings', 1502, 9, 26, 26),
+  el('button', 'Close window', 1574, 14, 16, 16),
   el('list item', '', 8, 58, 194, 27),
   el('link', 'Inbox', 8, 58, 194, 27),
   el('list item', '', 8, 116, 194, 27),
@@ -36,6 +37,7 @@ final page = [
   el('button', 'Edit', 853, 113, 42, 20),
   el('table cell', 'Delete', 952, 107, 138, 33),
   el('button', 'Delete', 960, 113, 58, 20),
+  el('table cell', 'Bob Chen', 230, 139, 174, 34),
   el('table cell', 'Edit', 845, 139, 108, 34),
   el('button', 'Edit', 853, 146, 42, 20),
   el('button', 'Delete', 960, 146, 58, 20),
@@ -169,11 +171,25 @@ void main() {
     });
 
     test('leaves ambiguous or unnamed targets to vision', () {
-      expect(match("the Edit button in Alice Martin's row"), isNull, reason: 'two Edit buttons');
+      expect(match('the Edit button'), isNull, reason: 'two Edit buttons');
+      expect(match("the Edit button in Carla Diaz's row"), isNull, reason: 'no such row in the tree');
       expect(match('the Privacy tab'), isNull, reason: 'Privacy button and link');
       expect(match('the gear icon at the top right'), isNull);
       expect(match('the search bar'), isNull, reason: '"Address and search bar" is not in the description');
       expect(match('click open the Settings'), startsWith("button 'Settings'"), reason: 'filler "open" never matches');
+    });
+
+    test('the row of a named cell picks among duplicates', () {
+      expect(match('"Edit" button in Alice Martin\'s row of the mail list'), startsWith("button 'Edit' @853,113"));
+      expect(match('"Delete" button in Bob Chen\'s row'), startsWith("button 'Delete' @960,146"));
+      expect(match('"Edit" button in the Bob Chen row', hint: const Point(870, 120)), startsWith("button 'Edit' @853,146"));
+    });
+
+    test('a quoted label may be part of the name of the named role', () {
+      expect(match('"Close" button (X) in the top-right corner'), startsWith("button 'Close window'"));
+      expect(match('"Menu" button with three lines at the far left'), startsWith("button 'Main menu'"));
+      expect(match('"Close" link in the footer'), isNull, reason: 'role must fit');
+      expect(match('"Open" item'), isNull, reason: 'filler-only quote');
     });
 
     test('a hint picks among duplicates only when clearly nearer', () {

@@ -1,0 +1,279 @@
+{
+ "layout": 1,
+ "screen": [
+  1600,
+  900
+ ],
+ "targets": [
+  {
+   "id": "close",
+   "ask": "the close (X) icon at the top right of the window title bar",
+   "x": 1561,
+   "y": 63,
+   "w": 22,
+   "h": 22,
+   "kind": "icon"
+  },
+  {
+   "id": "maximize",
+   "ask": "the maximize (square) icon in the window title bar",
+   "x": 1535,
+   "y": 63,
+   "w": 22,
+   "h": 22,
+   "kind": "icon"
+  },
+  {
+   "id": "minimize",
+   "ask": "the minimize (_) icon in the window title bar",
+   "x": 1509,
+   "y": 63,
+   "w": 22,
+   "h": 22,
+   "kind": "icon"
+  },
+  {
+   "id": "menu",
+   "ask": "the hamburger menu icon (three lines) at the left of the toolbar",
+   "x": 111,
+   "y": 99,
+   "w": 22,
+   "h": 22,
+   "kind": "icon"
+  },
+  {
+   "id": "back",
+   "ask": "the back arrow icon in the toolbar",
+   "x": 142,
+   "y": 99,
+   "w": 22,
+   "h": 22,
+   "kind": "icon"
+  },
+  {
+   "id": "forward",
+   "ask": "the forward arrow icon in the toolbar",
+   "x": 175,
+   "y": 99,
+   "w": 22,
+   "h": 22,
+   "kind": "icon"
+  },
+  {
+   "id": "reload",
+   "ask": "the reload (circular arrow) icon in the toolbar",
+   "x": 205,
+   "y": 99,
+   "w": 22,
+   "h": 22,
+   "kind": "icon"
+  },
+  {
+   "id": "star",
+   "ask": "the star icon in the toolbar",
+   "x": 237,
+   "y": 99,
+   "w": 22,
+   "h": 22,
+   "kind": "icon"
+  },
+  {
+   "id": "search",
+   "ask": "the Search text field in the toolbar",
+   "x": 290,
+   "y": 99,
+   "w": 359,
+   "h": 22,
+   "kind": "field"
+  },
+  {
+   "id": "settings",
+   "ask": "the gear (settings) icon in the toolbar",
+   "x": 1557,
+   "y": 99,
+   "w": 22,
+   "h": 22,
+   "kind": "icon"
+  },
+  {
+   "id": "music",
+   "ask": "the music note icon in the toolbar, left of the gear icon",
+   "x": 1525,
+   "y": 99,
+   "w": 22,
+   "h": 22,
+   "kind": "icon"
+  },
+  {
+   "id": "folder_drafts",
+   "ask": "the Drafts folder in the left sidebar",
+   "x": 105,
+   "y": 177,
+   "w": 217,
+   "h": 30,
+   "kind": "row"
+  },
+  {
+   "id": "folder_archive",
+   "ask": "the Archive folder in the left sidebar",
+   "x": 105,
+   "y": 237,
+   "w": 217,
+   "h": 30,
+   "kind": "row"
+  },
+  {
+   "id": "folder_trash",
+   "ask": "the Trash folder in the left sidebar",
+   "x": 105,
+   "y": 297,
+   "w": 217,
+   "h": 30,
+   "kind": "row"
+  },
+  {
+   "id": "name",
+   "ask": "the Name input field",
+   "x": 415,
+   "y": 209,
+   "w": 373,
+   "h": 28,
+   "kind": "field"
+  },
+  {
+   "id": "email",
+   "ask": "the Email input field",
+   "x": 415,
+   "y": 265,
+   "w": 373,
+   "h": 28,
+   "kind": "field"
+  },
+  {
+   "id": "remember",
+   "ask": "the 'Remember me' checkbox (the small box itself)",
+   "x": 415,
+   "y": 315,
+   "w": 16,
+   "h": 16,
+   "kind": "checkbox"
+  },
+  {
+   "id": "newsletter",
+   "ask": "the 'Send newsletter' checkbox (the small box itself)",
+   "x": 595,
+   "y": 315,
+   "w": 16,
+   "h": 16,
+   "kind": "checkbox"
+  },
+  {
+   "id": "save",
+   "ask": "the Save button",
+   "x": 415,
+   "y": 355,
+   "w": 82,
+   "h": 26,
+   "kind": "button"
+  },
+  {
+   "id": "cancel",
+   "ask": "the Cancel button",
+   "x": 507,
+   "y": 355,
+   "w": 89,
+   "h": 26,
+   "kind": "button"
+  },
+  {
+   "id": "delete",
+   "ask": "the Delete account button",
+   "x": 606,
+   "y": 355,
+   "w": 148,
+   "h": 26,
+   "kind": "button"
+  },
+  {
+   "id": "export",
+   "ask": "the 'Export as PDF' link",
+   "x": 415,
+   "y": 397,
+   "w": 100,
+   "h": 16,
+   "kind": "link"
+  },
+  {
+   "id": "page3",
+   "ask": "the page number 3 button in the pager",
+   "x": 479,
+   "y": 441,
+   "w": 28,
+   "h": 28,
+   "kind": "icon"
+  },
+  {
+   "id": "page5",
+   "ask": "the page number 5 button in the pager",
+   "x": 543,
+   "y": 441,
+   "w": 28,
+   "h": 28,
+   "kind": "icon"
+  },
+  {
+   "id": "upgrade",
+   "ask": "the big 'Upgrade to Pro' button",
+   "x": 1245,
+   "y": 333,
+   "w": 240,
+   "h": 64,
+   "kind": "button"
+  },
+  {
+   "id": "download",
+   "ask": "the Download button on the report card",
+   "x": 1257,
+   "y": 513,
+   "w": 90,
+   "h": 28,
+   "kind": "button"
+  },
+  {
+   "id": "share",
+   "ask": "the Share button on the report card",
+   "x": 1357,
+   "y": 513,
+   "w": 70,
+   "h": 28,
+   "kind": "button"
+  },
+  {
+   "id": "more",
+   "ask": "the three-dots (more) icon on the report card",
+   "x": 1471,
+   "y": 451,
+   "w": 24,
+   "h": 24,
+   "kind": "icon"
+  },
+  {
+   "id": "help",
+   "ask": "the question mark (help) icon in the bottom status bar",
+   "x": 1559,
+   "y": 842,
+   "w": 20,
+   "h": 20,
+   "kind": "icon"
+  },
+  {
+   "id": "wifi",
+   "ask": "the 'W' icon in the bottom status bar, left of the help icon",
+   "x": 1533,
+   "y": 842,
+   "w": 20,
+   "h": 20,
+   "kind": "icon"
+  }
+ ]
+}

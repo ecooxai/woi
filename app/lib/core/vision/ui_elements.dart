@@ -100,14 +100,16 @@ bool nameOccurs(String target, UiElement e) {
 /// The element [target] means, when the accessibility tree says so
 /// unambiguously. Candidates are the elements whose name occurs in the
 /// description, narrowed to the role it names ("the Save button") and then
-/// to the longest name ("Delete account" over "Delete"). One left: that one.
-/// Several (five "Edit" buttons): [hint], the voice model's guess, decides
-/// only when one is much nearer than the rest. Null = let vision decide.
+/// to the longest name ("Delete account" over "Delete"). A quoted label with
+/// no exact match may be part of one name of the named role ("'Close'
+/// button" for "Close window"). One left: that one. Several (five "Edit"
+/// buttons): the one in the row of another element the description names
+/// ("Edit in Alice Martin's row"), else [hint], the voice model's guess, when
+/// one is much nearer than the rest. Null = let vision decide.
 UiElement? matchElement(String target, List<UiElement> els, {Point<int>? hint}) {
-  var c = [
-    for (final e in els)
-      if (e.bounds.width > 1 && e.bounds.height > 1 && nameOccurs(target, e)) e,
-  ];
+  final usable = [for (final e in els) if (e.bounds.width > 1 && e.bounds.height > 1) e];
+  var c = [for (final e in usable) if (nameOccurs(target, e)) e];
+  if (c.isEmpty) c = _partialQuoted(target, usable);
   if (c.isEmpty) return null;
   final byRole = [for (final e in c) if (roleFits(target, e.role) ?? true) e];
   if (byRole.isNotEmpty) c = byRole;
@@ -121,10 +123,47 @@ UiElement? matchElement(String target, List<UiElement> els, {Point<int>? hint}) 
     if (!distinct.any((d) => _sameName(d, e) && _contains(e.bounds, d.bounds))) distinct.add(e);
   }
   if (distinct.length == 1) return distinct.first;
+  final inRow = _inAnchorRow(target, distinct, usable);
+  if (inRow != null) return inRow;
   if (hint == null) return null;
   distinct.sort((a, b) => _dist(a, hint).compareTo(_dist(b, hint)));
   final d0 = _dist(distinct[0], hint), d1 = _dist(distinct[1], hint);
   return d0 <= 0.5 * d1 ? distinct[0] : null;
+}
+
+/// Elements of the role [target] names whose name contains its quoted label.
+List<UiElement> _partialQuoted(String target, List<UiElement> els) {
+  final q = quotedLabel(target);
+  if (q == null) return const [];
+  final qw = _words(q);
+  if (qw.isEmpty || qw.every(_stop.contains)) return const [];
+  return [
+    for (final e in els)
+      if (roleFits(target, e.role) == true && ' ${_words(e.name).join(' ')} '.contains(' ${qw.join(' ')} ')) e,
+  ];
+}
+
+/// The only candidate on the same row as an anchor: another element whose
+/// name the description mentions (unquoted), e.g. a table cell.
+UiElement? _inAnchorRow(String target, List<UiElement> cands, List<UiElement> els) {
+  final hay = ' ${_words(target).join(' ')} ';
+  final candNames = {for (final c in cands) _words(c.name).join(' ')};
+  final anchors = [
+    for (final e in els)
+      if (!candNames.contains(_words(e.name).join(' ')) &&
+          _words(e.name).isNotEmpty &&
+          !_words(e.name).every(_stop.contains) &&
+          hay.contains(' ${_words(e.name).join(' ')} '))
+        e,
+  ];
+  if (anchors.isEmpty) return null;
+  bool sameRow(UiElement c, UiElement a) {
+    final cy = c.bounds.top + c.bounds.height / 2;
+    return cy >= a.bounds.top && cy <= a.bounds.bottom && a.bounds.height < 3 * c.bounds.height + 40;
+  }
+
+  final hits = [for (final c in cands) if (anchors.any((a) => sameRow(c, a))) c];
+  return hits.length == 1 ? hits.first : null;
 }
 
 int _area(UiElement e) => e.bounds.width * e.bounds.height;

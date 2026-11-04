@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mailbox - Woi click bench</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 13px "DejaVu Sans", sans-serif; background: #f4f5f7; color: #222; width: 1600px; height: 900px; overflow: hidden; }
+  button { font: inherit; cursor: pointer; }
+  .bar { position: absolute; left: 0; top: 0; width: 1600px; height: 44px; background: #2d3e50; display: flex; align-items: center; padding: 0 10px; gap: 6px; }
+  .ib { width: 26px; height: 26px; border: 0; border-radius: 4px; background: #3d5266; color: #fff; padding: 0; font-size: 14px; line-height: 26px; }
+  .tiny { width: 16px; height: 16px; font-size: 10px; line-height: 16px; }
+  #search { margin-left: 18px; width: 380px; height: 26px; border: 0; border-radius: 4px; padding: 0 8px; }
+  .side { position: absolute; left: 0; top: 44px; width: 210px; height: 856px; background: #e9ecf0; padding: 12px 8px; }
+  .side ul { list-style: none; margin: 0; padding: 0; }
+  .side li { margin: 2px 0; }
+  .side li a { display: block; padding: 6px 10px; color: #223; text-decoration: none; border-radius: 4px; }
+  .main { position: absolute; left: 230px; top: 64px; width: 1350px; }
+  .tabs { display: flex; gap: 2px; margin-bottom: 14px; }
+  .tabs button { border: 1px solid #ccd; background: #fff; padding: 6px 16px; border-radius: 4px 4px 0 0; }
+  table { border-collapse: collapse; width: 860px; background: #fff; }
+  td { border-bottom: 1px solid #e3e3e3; padding: 6px 8px; }
+  td button { padding: 2px 8px; border: 1px solid #bbc; background: #f7f7f9; border-radius: 3px; font-size: 12px; }
+  .form { position: absolute; left: 900px; top: 0; width: 430px; background: #fff; border: 1px solid #dde; border-radius: 6px; padding: 16px; }
+  .form label.l { display: block; margin: 10px 0 3px; font-size: 12px; color: #555; }
+  .form input[type=text], .form input[type=email], .form select { width: 100%; height: 28px; border: 1px solid #bbc; border-radius: 3px; padding: 0 6px; font: inherit; }
+  .row { display: flex; align-items: center; gap: 6px; margin: 8px 0; }
+  .btns { display: flex; gap: 8px; margin-top: 14px; }
+  .btns button { padding: 6px 14px; border-radius: 4px; border: 1px solid #99a; background: #f3f3f6; }
+  .primary { background: #2b6cb0 !important; color: #fff; border-color: #2b6cb0 !important; }
+  .danger { background: #c53030 !important; color: #fff; border-color: #c53030 !important; }
+  .pager { margin-top: 14px; display: flex; gap: 4px; }
+  .pager a { display: inline-block; min-width: 22px; padding: 2px 6px; text-align: center; border: 1px solid #ccd; border-radius: 3px; color: #2b6cb0; text-decoration: none; font-size: 12px; }
+  .foot { position: absolute; left: 230px; top: 840px; display: flex; gap: 14px; align-items: center; }
+  .foot a { color: #2b6cb0; font-size: 11px; }
+  .dot { width: 12px; height: 12px; border-radius: 6px; background: #48bb78; display: inline-block; cursor: pointer; }
+  .card { position: absolute; left: 1130px; top: 560px; width: 450px; height: 200px; background: #fff; border: 1px solid #dde; border-radius: 6px; padding: 12px; }
+  .chips span { display: inline-block; padding: 3px 9px; margin: 3px; border-radius: 12px; background: #edf2f7; cursor: pointer; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="bar">
+  <button class="ib" data-t="menu" data-ask="the menu button (three lines) at the far left of the top bar" aria-label="Main menu">&#9776;</button>
+  <button class="ib" data-t="back" data-ask="the Back button in the top bar" aria-label="Back">&#8592;</button>
+  <button class="ib" data-t="forward" data-ask="the Forward button in the top bar" aria-label="Forward">&#8594;</button>
+  <button class="ib" data-t="reload" data-ask="the Reload button" aria-label="Reload">&#8635;</button>
+  <input id="search" type="text" placeholder="Search mail" aria-label="Search mail" data-t="search" data-ask="the Search mail field">
+  <button class="ib" data-t="go" data-ask="the magnifier button right of the search field" aria-label="Run search">&#128269;</button>
+  <span style="flex:1"></span>
+  <button class="ib" data-t="bell" data-ask="the bell (notifications) icon in the top bar" aria-label="Notifications">&#128276;</button>
+  <button class="ib" data-t="gear" data-ask="the gear icon in the top bar" aria-label="Settings">&#9881;</button>
+  <div class="ib" data-t="avatar" data-ask="the round avatar with the letter A at the top right" style="border-radius:13px;background:#d69e2e;text-align:center" onclick="">A</div>
+  <button class="ib tiny" data-t="close" data-ask="the tiny close (x) button at the very top right" aria-label="Close window" style="margin-left:8px">&#10005;</button>
+</div>
+
+<nav class="side">
+  <ul>
+    <li><a href="#" data-t="inbox" data-ask="Inbox in the left sidebar">Inbox</a></li>
+    <li><a href="#">Starred</a></li>
+    <li><a href="#" data-t="sent" data-ask="Sent in the sidebar">Sent</a></li>
+    <li><a href="#">Drafts</a></li>
+    <li><a href="#" data-t="spam" data-ask="the Spam folder">Spam</a></li>
+    <li><a href="#">Trash</a></li>
+    <li><a href="#" data-t="archive" data-ask="the Archive folder in the sidebar">Archive</a></li>
+  </ul>
+</nav>
+
+<div class="main">
+  <div class="tabs">
+    <button data-t="tab_general" data-ask="the General tab">General</button>
+    <button>Privacy</button>
+    <button data-t="tab_advanced" data-ask="the Advanced tab">Advanced</button>
+    <button>Labels</button>
+  </div>
+  <table>
+    <tr><td>Alice Martin</td><td>Quarterly report draft</td><td>09:12</td><td><button data-t="edit_1" data-ask="the Edit button in Alice Martin's row" aria-label="Edit">Edit</button></td><td><button aria-label="Delete">Delete</button></td></tr>
+    <tr><td>Bob Chen</td><td>Lunch on Friday?</td><td>08:47</td><td><button aria-label="Edit">Edit</button></td><td><button data-t="del_2" data-ask="the Delete button in Bob Chen's row" aria-label="Delete">Delete</button></td></tr>
+    <tr><td>Carla Diaz</td><td>Invoice #4471</td><td>Yesterday</td><td><button aria-label="Edit">Edit</button></td><td><button aria-label="Delete">Delete</button></td></tr>
+    <tr><td>Dev Ops</td><td>Deploy finished</td><td>Yesterday</td><td><button data-t="edit_4" data-ask="the Edit button in the Dev Ops row" aria-label="Edit">Edit</button></td><td><button aria-label="Delete">Delete</button></td></tr>
+    <tr><td>Eve Novak</td><td>Re: contract</td><td>Mon</td><td><button aria-label="Edit">Edit</button></td><td><button aria-label="Delete">Delete</button></td></tr>
+  </table>
+  <div class="pager">
+    <a href="#" aria-label="Previous page" data-t="prev" data-ask="the previous-page arrow below the table">&lsaquo;</a>
+    <a href="#">1</a><a href="#">2</a><a href="#" data-t="page3" data-ask="page 3 in the pager below the table">3</a><a href="#">4</a><a href="#">5</a><a href="#">6</a><a href="#">7</a>
+    <a href="#" aria-label="Next page">&rsaquo;</a>
+  </div>
+
+  <div class="form">
+    <b>Profile</b>
+    <label class="l" for="name">Full name</label>
+    <input id="name" type="text" data-t="name" data-ask="the Full name field">
+    <label class="l" for="email">Email</label>
+    <input id="email" type="email" data-t="email" data-ask="the Email field">
+    <label class="l" for="lang">Language</label>
+    <select id="lang" data-t="lang" data-ask="the Language dropdown"><option>English</option><option>Deutsch</option></select>
+    <div class="row"><input type="checkbox" id="rem" data-t="remember" data-ask="the Remember me checkbox"><label for="rem">Remember me</label></div>
+    <div class="row"><input type="checkbox" id="news"><label for="news">Send me the newsletter</label></div>
+    <div class="row"><input type="radio" name="plan" id="p1"><label for="p1">Free</label><input type="radio" name="plan" id="p2" data-t="pro" data-ask="the Pro radio button"><label for="p2">Pro</label></div>
+    <div class="btns">
+      <button class="primary" data-t="save" data-ask="the Save button">Save</button>
+      <button data-t="cancel" data-ask="the Cancel button in the profile form">Cancel</button>
+      <button class="danger" data-t="delete_acct" data-ask="the red Delete account button">Delete account</button>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <b>Labels</b>
+  <div class="chips">
+    <span data-t="chip_work" data-ask="the Work label chip">Work</span><span>Family</span><span data-t="chip_travel" data-ask="the Travel chip">Travel</span><span>Receipts</span>
+  </div>
+  <div style="margin-top:20px;display:flex;align-items:center;gap:8px">Sync status <span class="dot" data-t="dot" data-ask="the small green status dot next to Sync status"></span></div>
+  <div style="position:absolute;right:12px;bottom:12px;font-size:18px;cursor:pointer" data-t="kebab" data-ask="the three-dots icon at the bottom right of the Labels card">&#8942;</div>
+</div>
+
+<div class="foot">
+  <a href="#" data-t="privacy" data-ask="the Privacy link in the footer">Privacy</a>
+  <a href="#">Terms</a>
+  <a href="#" data-t="help" data-ask="the Help link at the bottom">Help</a>
+  <a href="#">Status</a>
+</div>
+
+<script>
+  document.addEventListener('click', e => e.preventDefault(), true);
+  function boxes() {
+    const dx = window.screenX + (window.outerWidth - window.innerWidth) / 2;
+    const dy = window.screenY + (window.outerHeight - window.innerHeight);
+    return [...document.querySelectorAll('[data-t]')].map(el => {
+      const r = el.getBoundingClientRect();
+      return { id: el.dataset.t, ask: el.dataset.ask, x: Math.round(r.left + dx), y: Math.round(r.top + dy),
+               w: Math.round(r.width), h: Math.round(r.height), kind: el.tagName.toLowerCase(),
+               named: !!(el.getAttribute('aria-label') || el.labels?.length || (el.tagName === 'A' || el.tagName === 'BUTTON') && el.textContent.trim()) };
+    });
+  }
+  function post(path, body) { fetch(path, { method: 'POST', body: JSON.stringify(body) }); }
+  window.addEventListener('load', () => setTimeout(() => post('/layout', {
+    screen: [screen.width, screen.height], win: [window.screenX, window.screenY, window.innerWidth, window.innerHeight],
+    targets: boxes() }), 300));
+  document.addEventListener('mousedown', e => {
+    const t = e.target.closest('[data-t]');
+    post('/click', { sx: e.screenX, sy: e.screenY, cx: e.clientX, cy: e.clientY, hit: t ? t.dataset.t : null });
+  }, true);
+</script>
+</body>
+</html>

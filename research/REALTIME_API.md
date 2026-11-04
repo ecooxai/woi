@@ -441,3 +441,39 @@ wrapped in `<read>` tags, retry on mismatch, silence trimmed, 0.25 s lead-in and
 then verified in a VAD-off session with `gpt-4o-mini-transcribe`, and all 10 matched (normalized similarity 1.0).
 Each was also run through `gpt-realtime-1.5` with a 9-tool desktop toolset, and all 10 produced the expected
 tool (`01_hello` → no tool, spoken reply).
+
+## 8. Click accuracy (VERIFIED, qa/click_bench, Nov 2026)
+
+**Why clicks miss:** the voice model cannot point precisely. The app's coordinate mapping is not the cause.
+- **Mapping is correct.** Oracle centres → `Screenshot.toScreen` → xdotool → browser mousedown hit 35/35 targets, each at the planned pixel. The one real bug was the clamp to x/y ≥ 0 instead of ≥ the monitor origin, which broke monitors at an offset; it is fixed.
+- **Realtime downscales images.** An input_image costs 65 + 129·tiles tokens, with the short side capped at 512 px. A 1600x900 screen is seen at about 910x512 whatever size is sent. `detail: original` is rejected.
+- **No correctable bias.** An affine fit of the misses leaves 110 px (x) / 49 px (y) median residual, so the errors are noise, not a scale or offset bug.
+- **luna sees native resolution** and lands within about 1 px.
+- **OpenAI says so too.** The vision guide: "The model struggles with tasks requiring precise spatial localization". The computer-use guide uses `detail: original` and maps coordinates back.
+
+**Synthetic pages** (1600x900, 3 layouts, 90 targets):
+
+| method | hit | median err | latency |
+|---|---|---|---|
+| gpt-realtime-2.1 x/y (base) | 12% | 66 px | 2.1 s |
+| + native res / 512 px image / size note | 13-14% | 60-71 px | 1.3-2.1 s |
+| + grid overlay | 17% | 55 px | 5.5 s |
+| + two-stage zoom (2x crop) | 26% | 34 px | 4.0 s |
+| + set-of-marks ids, oracle element list | 99-100% | – | 1.1 s |
+| gpt-6-luna as locator, effort low | 100% | ~1 px | 2.4 s |
+| luna on a 640x400 crop around the hint | 100% | 0.5 px | 1.9 s |
+
+**Real page in Chromium on :11** (35 targets, 14 of them ≤ 24 px; realtime stage ≈ 2.2 s in every row):
+
+| method | hit | median err | locate time (median / p90) |
+|---|---|---|---|
+| old tool: realtime x/y | 9% | 108 px | 0 |
+| target + AT-SPI element match only | 80% | 0 px | 85 / 170 ms |
+| target + luna vision only | 100% | 0 px | 2.0 / 3.8 s |
+| target + chain (element, then vision) | 100% | 0 px | 83 ms / 1.8 s (28 found by element at ~80 ms, 7 by vision at ~1.8 s) |
+
+**Design:** click_screen takes `target`, the quoted visible label plus kind and place, and x/y as a hint.
+- ElementLocator matches the label against the accessibility tree: AT-SPI on Linux, AccessibilityNodeInfo on Android. It only accepts an unambiguous match, using role, longest name, partial quote, the row anchor and the hint.
+- If that fails, VisionLocator asks gpt-6-luna (effort low), using a fresh capture up to 1920 px wide.
+- If both fail, the model's x/y is used.
+- Element matching misses unnamed widgets (divs, chips, dots) and synonyms ("magnifier" for "Run search"); vision covers those.
