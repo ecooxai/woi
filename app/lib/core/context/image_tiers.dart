@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/message.dart';
 import '../responses/responses_client.dart';
+import '../util/usage_limit.dart';
 
 /// How a screenshot is currently represented in the model's context.
 enum ImageTier {
@@ -131,6 +132,20 @@ class ImageCompactor {
   int applied = 0;
   Object? lastError;
 
+  /// Descriptions need the Responses API; after a usage limit (429) they are
+  /// skipped until it resets (each retry is one more refused request).
+  /// Downscaling is local and goes on.
+  UsageLimit? describeLimit;
+  DateTime? _describeLimitSeen;
+
+  bool _describeBlocked(DateTime now) {
+    final l = describeLimit;
+    if (l == null) return false;
+    if (l.activeAt(now, seenAt: _describeLimitSeen)) return true;
+    describeLimit = null;
+    return false;
+  }
+
   /// Plans and applies tier changes for [messages]; [onChanged] after each.
   Future<void> run(List<Message> messages, {required ApplyImage apply, VoidCallback? onChanged}) {
     final next = _tail.then((_) => _run(messages, apply, onChanged));
@@ -144,6 +159,7 @@ class ImageCompactor {
     for (final (m, tier) in policy.plan(List.of(messages)).reversed) {
       final img = m.image;
       if (img == null || m.compacted) continue;
+      if (tier == ImageTier.described && _describeBlocked(DateTime.now())) continue;
       try {
         final original = await File(img.path).readAsBytes();
         final label = imageLabel(m);
@@ -177,7 +193,14 @@ class ImageCompactor {
         onChanged?.call();
       } catch (e) {
         lastError = e;
-        debugPrint('image tiers: ${m.id} -> ${tier.name} failed: $e');
+        final limit = tier == ImageTier.described ? UsageLimit.parse(e) : null;
+        if (limit != null) {
+          describeLimit = limit;
+          _describeLimitSeen = DateTime.now();
+          debugPrint('image tiers: descriptions paused: ${limit.message}');
+        } else {
+          debugPrint('image tiers: ${m.id} -> ${tier.name} failed: $e');
+        }
       }
     }
   }

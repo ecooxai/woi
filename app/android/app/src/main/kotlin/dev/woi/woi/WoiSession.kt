@@ -18,7 +18,6 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
 import java.io.File
-import java.io.FileOutputStream
 
 /** Lets the user pick Woi as the "Digital assistant app". */
 class WoiVoiceInteractionService : VoiceInteractionService() {
@@ -158,21 +157,14 @@ class WoiSession(ctx: Context) : VoiceInteractionSession(ctx) {
             var sw = w
             var sh = h
             try {
-                // Hardware bitmaps can't be scaled/compressed reliably on
-                // every GPU (black thumbnails): copy to software first.
-                val src = if (screenshot.config == Bitmap.Config.HARDWARE) screenshot.copy(Bitmap.Config.ARGB_8888, false) else screenshot
-                val maxW = 720
-                val scaled = if (w > maxW) Bitmap.createScaledBitmap(src, maxW, (h.toLong() * maxW / w).toInt(), true) else src
-                sw = scaled.width
-                sh = scaled.height
                 val dir = File(context.cacheDir, "assist").apply { mkdirs() }
                 dir.listFiles()?.forEach { it.delete() }
                 val f = File(dir, "assist-${System.currentTimeMillis()}.png")
-                FileOutputStream(f).use { scaled.compress(Bitmap.CompressFormat.PNG, 100, it) }
-                if (scaled !== src) scaled.recycle()
-                if (src !== screenshot) src.recycle()
+                val r = ScreenshotPng.write(screenshot, 720, f)
+                sw = r.width
+                sh = r.height
                 path = f.absolutePath
-                Log.i(WoiBridge.TAG, "assist screenshot ${w}x$h -> ${sw}x$sh in ${SystemClock.elapsedRealtime() - t0} ms")
+                Log.i(WoiBridge.TAG, "assist screenshot ${w}x$h (${r.source}) -> ${sw}x$sh in ${SystemClock.elapsedRealtime() - t0} ms")
             } catch (e: Exception) {
                 Log.w(WoiBridge.TAG, "assist screenshot failed", e)
             }

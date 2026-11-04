@@ -54,6 +54,7 @@ class Harness {
     Compressor? compressor,
     int threshold = 100000,
     ImageCompactor? Function(HistoryStore store)? images,
+    void Function(TurnPipeline p)? setup,
   }) async {
     final fp = await FakePlatform.create();
     final store = HistoryStore(fp.services.paths);
@@ -88,6 +89,7 @@ class Harness {
       onScreenshotCaptured: (s) => env.lastScreenshot = s,
       imageCompactor: images?.call(store),
     );
+    setup?.call(h.pipeline);
     await h.pipeline.start();
     return h;
   }
@@ -156,6 +158,34 @@ void main() {
       expect(p.imagesReduced, 5);
       expect(p.imagesDescribed, 1);
       expect(p.imagesSaved, greaterThan(5 * 400));
+      await h.dispose();
+    });
+
+    test('a usage limit (429) pauses descriptions until it resets; downscaling goes on', () async {
+      var asked = 0;
+      final h = await Harness.create(
+        images: (store) => ImageCompactor(
+          policy: const ImageTierPolicy(rawRecentTurns: 0, fullCount: 1, reducedCount: 1),
+          downscale: (png, w, h) async => Uint8List.fromList(png.take(16).toList()),
+          describe: (png, note) async {
+            asked++;
+            throw Exception('Responses API error 429: The usage limit has been reached');
+          },
+          save: store.saveImage,
+        ),
+      );
+      for (var i = 0; i < 5; i++) {
+        final shot = await h.fp.screen.capture();
+        await h.pipeline.attachScreenshot(shot, note: 'shot $i');
+      }
+      await h.pipeline.compactImages();
+      await h.pipeline.compactImages();
+      expect(asked, 1, reason: 'one refused request, then no more until the reset');
+      expect(h.pipeline.imageCompactor!.describeLimit, isNotNull);
+      final shots = h.conv.messages.where((m) => m.image != null).toList();
+      expect(shots.map(imageTierOf), isNot(contains(ImageTier.described)));
+      expect(shots.map(imageTierOf), contains(ImageTier.reduced));
+      expect(imageTierOf(shots.last), ImageTier.full);
       await h.dispose();
     });
   });
@@ -873,6 +903,41 @@ void main() {
       h.scripted.emit(const BackendError('invalid model', code: 'invalid_request', fatal: true));
       expect(h.pipeline.reconnecting, isFalse);
       expect(h.pipeline.status, SessionStatus.error);
+      await h.dispose();
+    });
+  });
+
+  group('auto connect (launch)', () {
+    test('a failed connect at launch keeps retrying until connected; the mic opens', () async {
+      var n = 0;
+      final h = await Harness.create(
+        backend: () {
+          n++;
+          return ScriptedBackend()..connectError = n <= 3 ? StateError('network down') : null;
+        },
+        setup: (p) => p.reconnectBaseDelay = const Duration(milliseconds: 10),
+      );
+      expect(h.pipeline.status, SessionStatus.error, reason: 'the failure stays visible until the next attempt');
+      await waitFor(() => h.pipeline.status == SessionStatus.connected, timeout: const Duration(seconds: 3));
+      expect(n, 4);
+      expect(h.fp.audio.mic, isNotNull, reason: 'hands-free listening after the reconnect');
+      await h.dispose();
+    });
+
+    test('a usage limit at launch does not retry right away', () async {
+      var n = 0;
+      final h = await Harness.create(
+        backend: () {
+          n++;
+          return ScriptedBackend()
+            ..connectError = StateError('HTTP 429 {"error":{"type":"usage_limit_reached","resets_in_seconds":3600}}');
+        },
+        setup: (p) => p.reconnectBaseDelay = const Duration(milliseconds: 5),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      expect(n, 1);
+      expect(h.pipeline.reconnecting, isFalse);
+      expect(h.pipeline.usageLimit, isNotNull);
       await h.dispose();
     });
   });
