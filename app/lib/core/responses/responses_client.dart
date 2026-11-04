@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import '../auth/auth.dart';
+import '../util/usage_limit.dart';
 
 /// ChatGPT-login endpoint (research/REALTIME_API.md §4).
 final kCodexResponsesUrl = Uri.parse('https://chatgpt.com/backend-api/codex/responses');
@@ -11,11 +12,15 @@ final kCodexResponsesUrl = Uri.parse('https://chatgpt.com/backend-api/codex/resp
 /// Public API endpoint used with an API key.
 final kOpenAiResponsesUrl = Uri.parse('https://api.openai.com/v1/responses');
 
-class ResponsesException implements Exception {
-  ResponsesException(this.message, {this.status, this.code});
+class ResponsesException implements Exception, HasErrorBody {
+  ResponsesException(this.message, {this.status, this.code, this.errorBody});
   final String message;
   final int? status;
   final String? code;
+
+  /// The raw (redacted) error response, e.g. the 429 usage-limit JSON.
+  @override
+  final String? errorBody;
   @override
   String toString() => 'Responses API error${status == null ? '' : ' $status'}: $message';
 }
@@ -216,7 +221,7 @@ class ResponsesClient {
           if (j is Map) {
             final err = j['error'];
             if (err is Map) {
-              code = err['code'] as String?;
+              code = (err['code'] ?? err['type']) as String?;
               msg = err['message'] as String? ?? text;
             } else if (j['detail'] != null) {
               msg = '${j['detail']}';
@@ -227,6 +232,7 @@ class ResponsesClient {
           redactSecrets(msg.length > 500 ? msg.substring(0, 500) : msg),
           status: res.statusCode,
           code: code,
+          errorBody: redactSecrets(text.length > 2000 ? text.substring(0, 2000) : text),
         );
       }
       return await _collect(res.transform(const SseParser()), sw, quota, onTextDelta, onFunctionCall).timeout(timeout);

@@ -26,11 +26,11 @@ class UsageLimit {
   static UsageLimit? parse(Object? error, {DateTime? now}) {
     if (error == null) return null;
     if (error is UsageLimitException) return error.limit;
-    final text = '$error';
-    final typed = text.contains('usage_limit_reached');
+    final body = error is HasErrorBody ? error.errorBody : null;
+    final text = body == null ? '$error' : '$error $body';
+    final typed = text.contains('usage_limit_reached') || text.contains('usage limit has been reached');
     final http429 =
-        RegExp(r'\b429\b').hasMatch(text) &&
-        (text.contains('HTTP') || text.contains('status') || text.contains('Too Many'));
+        RegExp(r'\b429\b').hasMatch(text) && RegExp(r'HTTP|status|Too Many|error', caseSensitive: false).hasMatch(text);
     if (!typed && !http429) return null;
     DateTime? at;
     final a = _resetsAt.firstMatch(text);
@@ -69,6 +69,12 @@ class UsageLimit {
 
   @override
   String toString() => message;
+}
+
+/// An exception that keeps the server's raw error body (its message may be
+/// shortened for display), so [UsageLimit.parse] finds `resets_at`.
+abstract interface class HasErrorBody {
+  String? get errorBody;
 }
 
 /// Thrown instead of retrying while a [UsageLimit] is known to be active.

@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:woi/core/responses/responses_client.dart';
 import 'package:woi/core/util/usage_limit.dart';
 
 void main() {
@@ -32,6 +33,18 @@ void main() {
     expect(UsageLimit.parse('HTTP 401 unauthorized'), isNull);
     expect(UsageLimit.parse('connection lost after 4290 ms'), isNull);
     expect(UsageLimit.parse(null), isNull);
+  });
+
+  test('Responses API errors: the short message alone, and with the raw body (reset time)', () {
+    expect(UsageLimit.parse('Responses API error 429: The usage limit has been reached'), isNotNull);
+    final e = ResponsesException(
+      'The usage limit has been reached',
+      status: 429,
+      code: 'usage_limit_reached',
+      errorBody: '{"error":{"type":"usage_limit_reached","resets_at":1793900663}}',
+    );
+    expect(UsageLimit.parse(e)!.resetsAt, DateTime.fromMillisecondsSinceEpoch(1793900663 * 1000));
+    expect(UsageLimit.parse(ResponsesException('bad request', status: 400)), isNull);
   });
 
   test('formatReset is short and local', () {
