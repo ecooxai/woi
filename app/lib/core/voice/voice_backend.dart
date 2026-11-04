@@ -128,8 +128,14 @@ class Usage extends BackendEvent {
 /// The user started talking. A repeated [itemId] continues that turn (e.g.
 /// a short pause the server treats as one turn) instead of opening a new one.
 class SpeechStarted extends BackendEvent {
-  const SpeechStarted({this.itemId});
+  const SpeechStarted({this.itemId, this.deferred = false});
   final String? itemId;
+
+  /// The server started a turn while Woi was speaking but neither cut Woi
+  /// off nor will answer it by itself: the pipeline decides
+  /// ([VoiceBackend.acceptTurn] to interrupt, [VoiceBackend.dropEchoTurn]
+  /// for echo).
+  final bool deferred;
 }
 
 class SpeechStopped extends BackendEvent {
@@ -203,6 +209,10 @@ abstract class VoiceBackend {
   /// and close the tool calls its reply made ([callIds]) without running
   /// them or asking for another reply.
   void dropEchoTurn({String? itemId, List<String> callIds = const []}) => stopAndDrop();
+
+  /// A [SpeechStarted.deferred] turn is the user after all: it gets a reply
+  /// once it ends (the caller interrupts Woi with [cancelResponse]).
+  void acceptTurn() {}
 
   /// While held, the next reply must not become audible (the pipeline is
   /// still deciding whether the user's interruption was just "stop").

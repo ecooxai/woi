@@ -41,8 +41,9 @@ Future<void> _pump() async {
 }
 
 class _Rig {
-  _Rig({int keepRecentTurns = 2, int maxReconnectAttempts = 3}) {
+  _Rig({int keepRecentTurns = 2, int maxReconnectAttempts = 3, bool defer = false}) {
     backend = RealtimeWsBackend(
+      deferInterrupts: defer,
       connector: server.connect,
       credentialsProvider: () async => _creds,
       playback: PlaybackTracker(outputLatency: Duration.zero, now: () => clock),
@@ -331,6 +332,48 @@ void main() {
   });
 
   group('interruption', () {
+    test('defer mode: far_field; while Woi speaks the server neither cuts nor answers; the client decides', () async {
+      final r = _Rig(defer: true);
+      await r.connect();
+      final first = r.ws.ofType('session.update').first['session'] as Map;
+      final input = (first['audio'] as Map)['input'] as Map;
+      expect((input['noise_reduction'] as Map)['type'], 'far_field');
+      expect((input['turn_detection'] as Map)['interrupt_response'], isTrue);
+      r.respond('r1');
+      await _pump();
+      final upd = r.ws.ofType('session.update').last['session'] as Map;
+      final td = ((upd['audio'] as Map)['input'] as Map)['turn_detection'] as Map;
+      expect(td['interrupt_response'], isFalse);
+      expect(td['create_response'], isFalse);
+      r.ws.push({'type': 'session.updated', 'session': upd});
+      r.audioItem('r1', 'a1', 3000);
+      await _pump();
+      // Echo: deferred, not cut; dropped without cancelling the reply.
+      r.ws.push({'type': 'input_audio_buffer.speech_started', 'item_id': 'u1'});
+      await _pump();
+      expect(r.of<SpeechStarted>().single.deferred, isTrue);
+      expect(r.ws.ofType('response.cancel'), isEmpty);
+      r.userTurn('u1', 'Boiner moot.');
+      r.ws.push({'type': 'input_audio_buffer.speech_stopped', 'item_id': 'u1'});
+      await _pump();
+      r.backend.dropEchoTurn(itemId: 'u1');
+      expect(r.ws.ofType('response.cancel'), isEmpty);
+      expect(r.ws.ofType('conversation.item.delete').single['item_id'], 'u1');
+      // The user: accepted, Woi cut (cancelResponse), answered after it ends.
+      r.ws.push({'type': 'input_audio_buffer.speech_started', 'item_id': 'u2'});
+      await _pump();
+      expect(r.of<SpeechStarted>().last.deferred, isTrue);
+      r.backend.cancelResponse();
+      r.backend.acceptTurn();
+      expect(r.ws.ofType('response.cancel'), hasLength(1));
+      r.done('r1', status: 'cancelled');
+      r.userTurn('u2', 'Stop.');
+      r.ws.push({'type': 'input_audio_buffer.speech_stopped', 'item_id': 'u2'});
+      await _pump();
+      expect(r.ws.ofType('response.create'), hasLength(1));
+      await r.dispose();
+    });
+
     test('speech_started stops playback; truncate with played ms after the cancelled response.done', () async {
       final r = _Rig();
       await r.connect();

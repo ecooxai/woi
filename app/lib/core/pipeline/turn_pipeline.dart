@@ -190,6 +190,73 @@ class TurnPipeline extends ChangeNotifier {
   /// Send silence instead of the mic while Woi's echo may be in it (until a
   /// local onset). Off: it cost real barge-ins.
   bool echoGate = false;
+
+  /// How long a deferred server turn ([SpeechStarted.deferred]) waits for
+  /// its transcript before it interrupts Woi anyway.
+  Duration deferWindow = const Duration(milliseconds: 600);
+  bool _deferPending = false;
+  DateTime? _deferredAt;
+  Message? _deferMsg;
+  Timer? _deferTimer;
+
+  /// Deferred turns: interrupted Woi (local detector, timeout, transcript)
+  /// / dropped as echo without cutting Woi.
+  int deferredInterrupts = 0;
+  int deferredEchoDrops = 0;
+  final List<int> deferredDecisionMs = [];
+
+  /// The deferred turn is the user: the usual cut + hold, then the backend
+  /// answers it.
+  void _confirmDeferred(String why) {
+    _deferTimer?.cancel();
+    _deferTimer = null;
+    final m = _deferMsg;
+    if (!_deferPending || m == null) return;
+    _deferPending = false;
+    _deferMsg = null;
+    deferredInterrupts++;
+    final at = _deferredAt;
+    if (at != null) deferredDecisionMs.add(DateTime.now().difference(at).inMilliseconds);
+    debugPrint('deferred turn: interrupting ($why)');
+    final interrupted = _bargeIn();
+    _backend?.acceptTurn();
+    if (interrupted || _echoSuspects.containsKey(m.id) || (_holding && _holdMsg == null)) _beginHold(m);
+    _changed();
+  }
+
+  /// Transcript of a deferred turn: echo → drop it (Woi was never cut);
+  /// clearly not echo (or "stop") → interrupt now.
+  void _checkDeferred(Message m, {required bool done}) {
+    if (!_deferPending || !identical(m, _deferMsg)) return;
+    final text = m.text.trim();
+    final said = _echoSuspects[m.id];
+    if (text.isEmpty) {
+      if (done) _dropDeferred(m);
+      return;
+    }
+    if (isStopPhrase(text) || couldBecomeStopPhrase(text) && done) return _confirmDeferred('stop');
+    if (said == null) return _confirmDeferred('no reference');
+    if (done) {
+      if (isEchoOf(text, said)) return _dropDeferred(m);
+      return _confirmDeferred('transcript');
+    }
+    final words = RegExp(r'\S+').allMatches(text).length;
+    if (words >= 4 && echoScore(text, said) < echoThreshold - 0.3) _confirmDeferred('transcript');
+  }
+
+  void _dropDeferred(Message m) {
+    _deferTimer?.cancel();
+    _deferTimer = null;
+    _deferPending = false;
+    _deferMsg = null;
+    deferredEchoDrops++;
+    final at = _deferredAt;
+    if (at != null) deferredDecisionMs.add(DateTime.now().difference(at).inMilliseconds);
+    _cutTail = null;
+    _onEchoTurn(m);
+    // Woi's reply was never cut: it plays on.
+    _dropUntil = null;
+  }
   final PcmRing _gatedPcm = PcmRing(kVoiceBytesPerSecond * 4 ~/ 10); // 400 ms
   bool _gating = false;
   // Soft barge-in: a local onset pauses Woi (keeping what was not heard yet
@@ -813,12 +880,16 @@ class TurnPipeline extends ChangeNotifier {
     // The floor is the old detector's mic RMS; the guard's is the excess over
     // the predicted echo.
     _guard.minRms = options().bargeInFloor / 3;
-    if (_guard.process(chunk, audible: _assistantAudible && !_userSpeaking) && options().localBargeIn) _localOnset();
+    if (_guard.process(chunk, audible: _assistantAudible && (!_userSpeaking || _deferPending)) &&
+        options().localBargeIn) {
+      _localOnset();
+    }
   }
 
   /// The user started talking over the assistant (local detector): cut the
   /// audio right away; the server confirms the turn a few hundred ms later.
   void _localOnset() {
+    if (_deferPending) return _confirmDeferred('local detector');
     if (_userSpeaking || !_assistantAudible) return;
     localOnsets++;
     _lastOnsetAt = DateTime.now();
@@ -993,13 +1064,14 @@ class TurnPipeline extends ChangeNotifier {
     return true;
   }
 
-  void _onSpeechStarted({String? itemId}) {
+  void _onSpeechStarted({String? itemId, bool deferred = false}) {
     if (_userSpeaking) return;
     if (_micMode == MicMode.muted) {
       // The mic is off, so this is not the user (gpt-live opens a server
       // "user turn" for typed context, noise or echo): no barge-in, no phase
       // change, no empty bubble.
       debugPrint('speech start ignored: mic muted');
+      if (deferred) _backend?.dropEchoTurn(itemId: itemId);
       return;
     }
     _earconTimer?.cancel();
@@ -1019,9 +1091,17 @@ class TurnPipeline extends ChangeNotifier {
             _assistantAudible ||
             _guard.echoExpected ||
             (now.isBefore(_echoWindowUntil) && leaked));
-    final interrupted = _bargeIn();
+    // Deferred (the server did not cut Woi off): interrupt now when the
+    // local detector heard the user, else wait up to [deferWindow] for the
+    // transcript to tell echo from the user; Woi talks on meanwhile.
+    final local = _paused != null || (onset != null && now.difference(onset) < const Duration(milliseconds: 1500));
+    final defer = deferred && echoLikely && !local;
+    final interrupted = defer ? false : _bargeIn();
+    if (deferred && !defer) _backend?.acceptTurn();
     _dropUntil = null;
     _userSpeaking = true;
+    _deferPending = defer;
+    _deferredAt = defer ? now : null;
     onTurnStart?.call();
     debugPrint('user speech start (interrupted=$interrupted) t=${DateTime.now().millisecondsSinceEpoch}');
     _utterancePcm.clear();
@@ -1050,7 +1130,13 @@ class TurnPipeline extends ChangeNotifier {
       ];
       if (_echoSuspects[msg.id]!.isEmpty) _echoSuspects.remove(msg.id);
     }
-    if (interrupted || _echoSuspects.containsKey(msg.id) || (_holding && _holdMsg == null)) _beginHold(msg);
+    if (defer) {
+      _deferMsg = msg;
+      _deferTimer?.cancel();
+      _deferTimer = Timer(deferWindow, () => _confirmDeferred('timeout'));
+    } else if (interrupted || _echoSuspects.containsKey(msg.id) || (_holding && _holdMsg == null)) {
+      _beginHold(msg);
+    }
     final opts = options();
     _screenshotTimer?.cancel();
     _screenshotTimer = null;
@@ -1091,10 +1177,11 @@ class TurnPipeline extends ChangeNotifier {
     if (!_userSpeaking) return;
     _userSpeaking = false;
     debugPrint('user speech stop t=${DateTime.now().millisecondsSinceEpoch}');
-    // The orb switches to "thinking" right here, before any server event.
-    _awaitingResponse = true;
+    // The orb switches to "thinking" right here, before any server event
+    // (not for a deferred turn: Woi is still talking).
+    _awaitingResponse = !_deferPending;
     _touchTurn();
-    _scheduleThinkingEarcon();
+    if (!_deferPending) _scheduleThinkingEarcon();
     final msg = _currentUtterance;
     _currentUtterance = null;
     // Utterance shorter than the delay: grab the screen now so the image
@@ -1394,14 +1481,15 @@ class TurnPipeline extends ChangeNotifier {
       }
     }
     switch (e) {
-      case SpeechStarted(:final itemId):
-        _onSpeechStarted(itemId: itemId);
+      case SpeechStarted(:final itemId, :final deferred):
+        _onSpeechStarted(itemId: itemId, deferred: deferred);
       case SpeechStopped():
         _onSpeechStopped();
       case UserTranscriptDelta(:final text, :final itemId):
         final m = _userForTranscript(itemId);
         m.text += text;
         if (identical(m, _holdMsg)) _checkHold();
+        _checkDeferred(m, done: false);
         _persistSoon();
         _changed();
       case UserTranscriptDone(:final text, :final itemId, :final noSpeech):
@@ -1417,6 +1505,13 @@ class TurnPipeline extends ChangeNotifier {
         }
         _conv.touch();
         context.onConversationChanged();
+        if (_deferPending && identical(m, _deferMsg)) {
+          _checkDeferred(m, done: true);
+          if (!_conv.messages.contains(m)) {
+            _changed();
+            return;
+          }
+        }
         final local =
             !_stopHandled.contains(m.id) && _isLatestUser(m) && (localCommand?.call(m.text, typed: false) ?? false);
         if (local) {
@@ -1441,7 +1536,7 @@ class TurnPipeline extends ChangeNotifier {
         if (text.isNotEmpty) _assistant().text = text;
         _changed();
       case AssistantAudioDelta(:final pcm16):
-        if (_discardUntilDone || _userSpeaking) return;
+        if (_discardUntilDone || (_userSpeaking && !_deferPending)) return;
         _assistant();
         _awaitingResponse = false;
         _play(pcm16);
