@@ -82,19 +82,44 @@ class LinuxAudioIO implements AudioIO, EchoCancellable {
     throw MissingTool(['pw-record', 'parecord']);
   }
 
+  // WOI_AUDIO_SINK / WOI_AUDIO_SOURCE: play to / record from given nodes
+  // instead of the defaults (QA on virtual devices).
+  static final _sink = PipewireEchoCancel.audioTarget('WOI_AUDIO_SINK');
+  static final _source = PipewireEchoCancel.audioTarget('WOI_AUDIO_SOURCE');
+
   (String, List<String>) _playbackCommand() {
     final pw = which('pw-play');
     if (pw != null) {
       return (
         pw,
-        ['--raw', '--rate', _rate, '--channels', '1', '--format', 's16', '--latency', '${playbackLatencyMs}ms', '-'],
+        [
+          '--raw',
+          if (_sink case final s?) ...['--target', s],
+          '--rate',
+          _rate,
+          '--channels',
+          '1',
+          '--format',
+          's16',
+          '--latency',
+          '${playbackLatencyMs}ms',
+          '-',
+        ],
       );
     }
     final pa = which('pacat');
     if (pa != null) {
       return (
         pa,
-        ['--playback', '--raw', '--rate=$_rate', '--channels=1', '--format=s16le', '--latency-msec=$playbackLatencyMs'],
+        [
+          '--playback',
+          '--raw',
+          if (_sink != null) '--device=$_sink',
+          '--rate=$_rate',
+          '--channels=1',
+          '--format=s16le',
+          '--latency-msec=$playbackLatencyMs',
+        ],
       );
     }
     throw MissingTool(['pw-play', 'pacat']);
@@ -111,7 +136,7 @@ class LinuxAudioIO implements AudioIO, EchoCancellable {
   Future<MicStream> openMic() async {
     final target = _echoCancellation ? await _aec.acquire() : null;
     try {
-      final (exe, args) = _captureCommand(target: target);
+      final (exe, args) = _captureCommand(target: target ?? _source);
       final (e, a) = withDefaultSigpipe(exe, args);
       final proc = await Process.start(e, a);
       return _LinuxMic(proc, target == null ? null : _aec.release);
