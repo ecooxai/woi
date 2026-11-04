@@ -64,8 +64,22 @@ class FakePcmPlayer implements PcmPlayer {
   Future<void> close() async => closed = true;
 }
 
-class FakeAudioIO implements AudioIO {
+class FakeAudioIO implements AudioIO, EchoCancellable {
   FakeMic? mic;
+
+  @override
+  bool echoCancellation = true;
+
+  /// [echoCancellation] at each [openMic].
+  final micOpens = <bool>[];
+  bool echoCancellationDisposed = false;
+
+  @override
+  String get echoCancellationStatus => echoCancellation ? 'fake canceller' : 'off';
+
+  @override
+  Future<void> disposeEchoCancellation() async => echoCancellationDisposed = true;
+
   final player = FakePcmPlayer();
 
   /// Players opened after [player] (e.g. the thinking earcon's).
@@ -74,7 +88,10 @@ class FakeAudioIO implements AudioIO {
   final playedFiles = <String>[];
 
   @override
-  Future<MicStream> openMic() async => mic = FakeMic();
+  Future<MicStream> openMic() async {
+    micOpens.add(echoCancellation);
+    return mic = FakeMic();
+  }
   @override
   Future<PcmPlayer> openPlayer() async {
     if (!_playerOpened) {

@@ -41,3 +41,16 @@ abstract class AudioIO {
   /// Human-readable description of the backend in use (for diagnostics).
   String get description;
 }
+
+/// Optional [AudioIO] capability: removing what the speakers play from the
+/// microphone. A change applies to mics opened afterwards.
+abstract class EchoCancellable {
+  bool get echoCancellation;
+  set echoCancellation(bool on);
+
+  /// Human-readable state ("active ...", "off", "unavailable: ...").
+  String get echoCancellationStatus;
+
+  /// Releases the canceller (app exit).
+  Future<void> disposeEchoCancellation();
+}

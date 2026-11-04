@@ -107,6 +107,7 @@ class AppSettings {
     this.editApplyDelay = 5,
     this.cameraReplacesScreenshot = false,
     this.fallbackToDirectOnLimit = false,
+    this.echoCancellation = true,
   });
 
   final BackendMode backendMode;
@@ -165,6 +166,11 @@ class AppSettings {
   /// with Direct realtime instead until the limit resets.
   final bool fallbackToDirectOnLimit;
 
+  /// Remove what the speakers play (Woi's voice, music, videos) from the
+  /// microphone: PipeWire WebRTC echo canceller on Linux, the platform
+  /// AEC/NS/AGC on Android, libwebrtc's AEC for gpt-live.
+  final bool echoCancellation;
+
   /// The voice used by the current backend mode.
   String get activeVoice => backendMode == BackendMode.gptLive ? liveVoice : voice;
 
@@ -197,6 +203,7 @@ class AppSettings {
     AppTheme? theme,
     int? editApplyDelay,
     bool? cameraReplacesScreenshot,
+    bool? echoCancellation,
     bool? fallbackToDirectOnLimit,
   }) => AppSettings(
     backendMode: backendMode ?? this.backendMode,
@@ -223,6 +230,7 @@ class AppSettings {
     editApplyDelay: editApplyDelay ?? this.editApplyDelay,
     cameraReplacesScreenshot: cameraReplacesScreenshot ?? this.cameraReplacesScreenshot,
     fallbackToDirectOnLimit: fallbackToDirectOnLimit ?? this.fallbackToDirectOnLimit,
+    echoCancellation: echoCancellation ?? this.echoCancellation,
   );
 
   /// Whether a change requires reconnecting the live session.
@@ -259,6 +267,7 @@ class AppSettings {
     'editApplyDelay': editApplyDelay,
     'cameraReplacesScreenshot': cameraReplacesScreenshot,
     'fallbackToDirectOnLimit': fallbackToDirectOnLimit,
+    'echoCancellation': echoCancellation,
   };
 
   factory AppSettings.fromJson(Map<String, Object?> j) {
@@ -300,6 +309,7 @@ class AppSettings {
           : d.editApplyDelay,
       cameraReplacesScreenshot: b('cameraReplacesScreenshot', d.cameraReplacesScreenshot),
       fallbackToDirectOnLimit: b('fallbackToDirectOnLimit', d.fallbackToDirectOnLimit),
+      echoCancellation: b('echoCancellation', d.echoCancellation),
     );
   }
 }

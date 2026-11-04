@@ -246,6 +246,10 @@ class TurnPipeline extends ChangeNotifier {
   /// Where assistant audio goes: the managed backend's level tracker (audio
   /// already audible via WebRTC) or the platform player.
   PcmPlayer? get _out => _managed?.managedPlayer ?? _player;
+
+  /// True while the backend captures the microphone itself (gpt-live's
+  /// WebRTC): capture settings then need a new call, not [reopenMic].
+  bool get backendManagesAudio => _managed != null;
   bool _micManaged = false;
 
   /// Bumps when the mic or player (and so the level listenables) change.
@@ -495,6 +499,18 @@ class TurnPipeline extends ChangeNotifier {
       await _closeMic();
       if (_userSpeaking) _onSpeechStopped();
     } else if (_status == SessionStatus.connected) {
+      await _openMic();
+      _managed?.setInputEnabled(_forwarding);
+    }
+    _changed();
+  }
+
+  /// Closes and re-opens an open microphone so a capture setting (echo
+  /// cancellation) takes effect.
+  Future<void> reopenMic() async {
+    if (_mic == null) return;
+    await _closeMic();
+    if (_micMode != MicMode.muted && _status == SessionStatus.connected) {
       await _openMic();
       _managed?.setInputEnabled(_forwarding);
     }

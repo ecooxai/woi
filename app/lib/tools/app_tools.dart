@@ -113,7 +113,8 @@ ToolDefinition appControlTool(AppActions actions) => ToolDefinition(
     description:
         'Control Woi itself. show_view (view: note, chat, terminal, split, single); '
         'set_setting (key: theme [light|dark|system], mic_mode [hands_free|push_to_talk|muted], voice, '
-        'voice_model, compaction_threshold [tokens], run_in_terminal [on|off], edit_apply_delay [0|3|5|10|approval]; value); '
+        'voice_model, compaction_threshold [tokens], run_in_terminal [on|off], edit_apply_delay [0|3|5|10|approval], '
+        'echo_cancellation [on|off]; value); '
         'terminal_new; terminal_run (command typed into a shell tab; tab: number/title/"new"); terminal_close (tab); '
         'viewer_open (path), viewer_close, viewer_pause, viewer_play, viewer_seek (seconds: relative, or to=true for '
         'absolute); apply_edit / reject_edit (the pending edit preview); undo_edit ("undo that": reverts your last '
