@@ -356,3 +356,16 @@ window is not too short: suspects started with 6 to 35 s still left in it (`queu
 is queued), so extending the tail would change nothing. `audible=n` on every turn even while the guard expected echo
 (`_out.isPlaying` reads false while playback is queued): suspects still get flagged through the guard and the window.
 Barge-in latencies swing a lot between single runs (the stop latency depends on when the onset fires); no rule change.
+
+`audible=n` explained (echo22, 2026-11-04): the player clock was right (`PlaybackClock.isPlaying` is true from the
+first write until the queued audio has played; now unit-tested). The per-turn log read `_assistantAudible` *after*
+`_bargeIn()` / the local-onset `_pause()` had stopped the player, and every suspect turn in `after-lang2` was
+`local=y` (paused or cut), so it always said `n`. Fix: the state is snapshotted before the cut and logged as
+`audible=y` (playing/queued) | `p` (paused by a local onset) | `t` (echo tail) | `n`. `_assistantAudible` now also
+covers a 300 ms room tail after playback ends or is cut (echo suspicion, the onset detector's `audible`, the local
+VAD's sensitivity, the gate); phase, `_bargeIn`, the local onset (nothing to pause in the tail) and the Android
+half-duplex gate (`_sendGated`, it has its own 300 ms hangover) use the player state only, so their behaviour is
+unchanged. Expected E2E effect: none on decisions (suspects were already flagged via the guard / echo window), only
+truthful logs. `e2e_echo.sh` now reads mic.wav's samples from the file length (pw-record is killed, so the header
+sizes are never finalized); re-parsed `after-lang2`: mic p50 −25.0 / p90 −19.9 dBFS. **Open:** `e2e_echo.sh
+after-audible` was not run (time limit); run it to confirm no regression and get per-turn `audible=` tags.
