@@ -123,6 +123,7 @@ object WoiBridge {
                 result.success(true)
             }
             // --- audio ---
+            "aecStatus" -> result.success(WoiAudio.status)
             "playerOpen" -> result.success(WoiAudio.playerOpen())
             "playerWrite" -> {
                 WoiAudio.playerWrite(call.arguments as ByteArray)

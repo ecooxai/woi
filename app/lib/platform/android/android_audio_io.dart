@@ -7,17 +7,36 @@ import '../../core/audio/wav.dart';
 import '../audio_io.dart';
 import 'android_bridge.dart';
 
-/// PCM16 / 24 kHz / mono through AudioRecord (VOICE_COMMUNICATION source,
-/// platform AEC + noise suppression) and a streaming AudioTrack
-/// (WoiAudio.kt). gpt-live does not use this: flutter_webrtc captures and
-/// plays with its own echo-cancelled audio device module.
-class AndroidAudioIO implements AudioIO {
+/// PCM16 / 24 kHz / mono through AudioRecord and a streaming AudioTrack
+/// (WoiAudio.kt). With [echoCancellation] on (default) the mic records from
+/// the VOICE_COMMUNICATION source with the platform echo canceller and noise
+/// suppressor; off, from the plain MIC source. Playback stays a normal
+/// (loudspeaker, media-volume) assistant stream either way. gpt-live does not
+/// use this: flutter_webrtc captures and plays with its own echo-cancelled
+/// audio device module.
+class AndroidAudioIO implements AudioIO, EchoCancellable {
   AndroidAudioIO({AndroidBridge? bridge}) : _bridge = bridge ?? AndroidBridge.instance;
 
   final AndroidBridge _bridge;
+  bool _echoCancellation = true;
+
+  /// What the last mic open got (WoiAudio "aecStatus").
+  String _aecStatus = 'not started';
 
   @override
-  String get description => 'Android AudioRecord (AEC) / AudioTrack';
+  bool get echoCancellation => _echoCancellation;
+
+  @override
+  set echoCancellation(bool on) => _echoCancellation = on;
+
+  @override
+  String get echoCancellationStatus => _echoCancellation ? _aecStatus : 'off (setting)';
+
+  @override
+  Future<void> disposeEchoCancellation() async {}
+
+  @override
+  String get description => 'Android AudioRecord / AudioTrack; echo cancellation: $echoCancellationStatus';
 
   Future<void> _ensureMicPermission() async {
     final ok = await _bridge.requestPermissions(['android.permission.RECORD_AUDIO']);
@@ -27,7 +46,17 @@ class AndroidAudioIO implements AudioIO {
   @override
   Future<MicStream> openMic() async {
     await _ensureMicPermission();
-    return _AndroidMic();
+    final mic = _AndroidMic(echoCancellation: _echoCancellation);
+    unawaited(_refreshAecStatus());
+    return mic;
+  }
+
+  Future<void> _refreshAecStatus() async {
+    // The recorder starts on the channel's listen; ask once it has.
+    await Future<void>.delayed(const Duration(milliseconds: 500));
+    try {
+      _aecStatus = await _bridge.call<String>('aecStatus') ?? _aecStatus;
+    } catch (_) {}
   }
 
   @override
@@ -44,8 +73,8 @@ class AndroidAudioIO implements AudioIO {
 }
 
 class _AndroidMic implements MicStream {
-  _AndroidMic() {
-    _sub = AndroidBridge.micChannel.receiveBroadcastStream().listen(
+  _AndroidMic({required bool echoCancellation}) {
+    _sub = AndroidBridge.micChannel.receiveBroadcastStream({'aec': echoCancellation}).listen(
       (data) {
         if (data is! Uint8List || data.isEmpty) return;
         final m = rmsToMeter(pcm16Rms(data));
