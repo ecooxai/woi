@@ -1,8 +1,10 @@
 import 'dart:io';
+import 'dart:math';
 
 import '../core/delegate/delegate_backend.dart';
 import '../core/models/message.dart';
 import '../core/settings/settings.dart';
+import '../core/vision/click_locator.dart';
 import '../core/voice/voice_backend.dart';
 import '../platform/files.dart';
 import '../platform/input_control.dart';
@@ -22,6 +24,7 @@ class ToolEnvironment {
     required this.settings,
     required this.onScreenshot,
     this.terminalShell,
+    this.locator,
   });
 
   final PlatformServices platform;
@@ -37,6 +40,33 @@ class ToolEnvironment {
 
   /// Most recent screenshot the model saw: click coordinates are relative to it.
   Screenshot? lastScreenshot;
+
+  /// Finds click_screen `target`s precisely (accessibility tree, then a
+  /// vision model on a full-resolution capture); null: x/y only.
+  ClickLocator? locator;
+}
+
+/// click_screen: what to click and how it was found.
+typedef ClickPlan = ({Point<int> point, Map<String, Object?> info});
+
+/// Resolves a click_screen call to a real screen point: [target] through
+/// [locator] (the model's x/y as the hint), else x/y mapped from [shot]
+/// (the screenshot the model saw). x/y alone (gpt-live delegation, mock)
+/// skip the locator.
+Future<ClickPlan> planClick({String target = '', int? x, int? y, Screenshot? shot, ClickLocator? locator}) async {
+  final guess = x == null || y == null ? null : (shot?.toScreen(x, y) ?? Point(x, y));
+  final t = target.trim();
+  if (t.isNotEmpty && locator != null) {
+    try {
+      final found = await locator.locate(t, hint: guess);
+      return (point: found.point, info: found.toJson());
+    } on LocateFailure catch (e) {
+      if (guess == null) throw ToolFailure('could not find "$t" on screen (${e.reason}); give x/y or describe it differently');
+      return (point: guess, info: {'located_by': 'model_xy', 'locate_error': e.reason});
+    }
+  }
+  if (guess == null) throw ToolFailure(t.isEmpty ? 'give target (what to click) or x/y' : 'give x/y');
+  return (point: guess, info: const <String, Object?>{});
 }
 
 const _maxDirEntries = 300;
@@ -86,23 +116,30 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
     ToolDefinition(
       spec: _spec(
         'click_screen',
-        'Click at a position given in the coordinates of the latest screenshot.',
+        'Click a UI element on screen. Always give target: the element\'s visible label in quotes, its kind and '
+            'where it is (e.g. "\'Save\' button in the Profile dialog", "\'Search\' field in the toolbar", '
+            '"gear icon at the top right"); Woi then finds it precisely. Also give x/y, your estimate in pixels '
+            'of the latest screenshot (a hint, and the click point if the target cannot be found).',
         {
-          'x': {'type': 'integer', 'description': 'X in screenshot pixels'},
-          'y': {'type': 'integer', 'description': 'Y in screenshot pixels'},
+          'target': {'type': 'string', 'description': 'What to click: quoted visible label + kind + location'},
+          'x': {'type': 'integer', 'description': 'X in screenshot pixels (estimate)'},
+          'y': {'type': 'integer', 'description': 'Y in screenshot pixels (estimate)'},
           'button': {
             'type': 'string',
             'enum': ['left', 'right', 'middle'],
           },
           'double': {'type': 'boolean', 'description': 'Double-click'},
         },
-        ['x', 'y'],
       ),
       handler: (args, call) async {
-        final x = args.integer('x', 0), y = args.integer('y', 0);
-        final shot = env.lastScreenshot;
-        final pt = shot?.toScreen(x, y);
-        final sx = pt?.x ?? x, sy = pt?.y ?? y;
+        final plan = await planClick(
+          target: args.str('target'),
+          x: args['x'] is num ? args.integer('x', 0) : null,
+          y: args['y'] is num ? args.integer('y', 0) : null,
+          shot: env.lastScreenshot,
+          locator: env.locator,
+        );
+        final sx = plan.point.x, sy = plan.point.y;
         final button = MouseButton.values.asNameMap()[args.str('button', 'left')] ?? MouseButton.left;
         if (args.boolean('double')) {
           await p.input.doubleClick(sx, sy, button: button);
@@ -112,6 +149,7 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
         return {
           'ok': true,
           'screen_xy': [sx, sy],
+          ...plan.info,
         };
       },
     ),

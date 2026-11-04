@@ -41,6 +41,7 @@ import 'terminal/terminal_hub.dart';
 import 'usage/codex_usage.dart';
 import 'usage/model_guard.dart';
 import 'util/usage_limit.dart';
+import 'vision/click_locator.dart';
 import 'voice/backend_factory.dart';
 import 'voice/pinned_context.dart';
 import 'voice/voice_backend.dart';
@@ -56,8 +57,9 @@ the real outcome; if a tool failed, was rejected or did nothing, say that plainl
 paths or command output.
 Say any acknowledgement ("on it", "one moment") at most once per request; do not repeat filler while waiting.
 Screenshots of the user's screen are attached while they speak; use them to resolve what they refer to.
-click_screen takes x/y in the pixel coordinates of the latest screenshot image (not the real screen);
-the app scales them to real screen pixels. Take a screenshot first if you have none or the screen changed.
+click_screen: always describe the element in target (its visible label in quotes, kind and place, e.g.
+"'Save' button in the Profile dialog"); Woi locates it precisely. Also pass x/y, your estimate in the pixel
+coordinates of the latest screenshot image. Take a screenshot first if you have none or the screen changed.
 Tools: click_screen, type_text, send_keys, take_screenshot, run_bash, read_file, list_dir, edit_file,
 write_file, show_file (show a file, image, audio or video to the user inside Woi), read_note, update_note,
 note_control, app_control, delegate_task.
@@ -164,6 +166,20 @@ class AppController extends ChangeNotifier {
 
   /// The model `delegate_task` actually uses (see [compactionChoice]).
   ModelChoice get delegationChoice => _guard(_settings.delegateModel);
+
+  /// click_screen `target` resolution: the accessibility tree first (exact,
+  /// ~0.2 s), then $kCheapModel on a full-resolution capture (~2 s; the
+  /// realtime models see screenshots at ~512 px and miss by ~60 px). QA:
+  /// WOI_CLICK_LOCATOR=off | element | vision.
+  ClickLocator? _clickLocator() {
+    final mode = Platform.environment['WOI_CLICK_LOCATOR'] ?? 'auto';
+    if (mode == 'off') return null;
+    final els = platform.elements;
+    return ChainLocator([
+      if (els != null && mode != 'vision') ElementLocator(els),
+      if (mode != 'element') VisionLocator(client: responses, screen: platform.screen, model: () => kCheapModel),
+    ]);
+  }
 
   /// The usage window that is below the guard threshold, if any.
   (String, UsageWindow)? get lowUsage => usage.snapshot?.lowWindow(_settings.usageGuardPercent);
@@ -374,6 +390,7 @@ class AppController extends ChangeNotifier {
         settings: () => _settings,
         onScreenshot: (shot, note) => p.attachScreenshot(shot, note: note),
         terminalShell: TerminalShell(terminals),
+        locator: _clickLocator(),
       );
       tools = ToolRegistry()
         // send_keys supersedes key_combo (targets the user's app, not Woi).

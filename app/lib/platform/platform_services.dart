@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import '../core/auth/pkce_login.dart';
+import '../core/vision/ui_elements.dart';
 import 'app_paths.dart';
 import 'audio_io.dart';
 import 'camera.dart';
@@ -32,6 +33,7 @@ class PlatformServices {
     this.isMobile = false,
     CameraService? camera,
     this.mediaGrab = const NoMediaGrabber(),
+    this.elements,
   }) : _camera = camera; // ignore: prefer_initializing_formals
 
   final AppPaths paths;
@@ -65,6 +67,11 @@ class PlatformServices {
 
   /// Video frame / audio clip extraction for media context.
   final MediaGrabber mediaGrab;
+
+  /// Clickable elements from the accessibility tree (AT-SPI, Android
+  /// accessibility); null where none is wired. click_screen targets matched
+  /// here skip the vision model.
+  final ElementSource? elements;
 
   /// Desktop platforms. Android needs async setup:
   /// `createAndroidPlatform()` (platform/android/android_platform.dart).

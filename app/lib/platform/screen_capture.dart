@@ -30,9 +30,17 @@ class Screenshot {
 
   /// Maps a point in screenshot space back to real screen coordinates.
   Point<int> toScreen(num x, num y) => Point(
-    (originX + x * scaleX).round().clamp(0, originX + originalWidth - 1),
-    (originY + y * scaleY).round().clamp(0, originY + originalHeight - 1),
+    (originX + x * scaleX).round().clamp(originX, originX + originalWidth - 1),
+    (originY + y * scaleY).round().clamp(originY, originY + originalHeight - 1),
   );
+
+  /// Maps a real screen point into this image's pixels (inverse of
+  /// [toScreen]); null when it lies outside the captured area.
+  Point<int>? fromScreen(num x, num y) {
+    final ix = ((x - originX) / scaleX).round(), iy = ((y - originY) / scaleY).round();
+    if (ix < 0 || iy < 0 || ix >= width || iy >= height) return null;
+    return Point(ix, iy);
+  }
 }
 
 abstract class ScreenCapture {

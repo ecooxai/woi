@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 import '../app_paths.dart';
 import '../files.dart';
 import '../platform_services.dart';
+import 'atspi_elements.dart';
 import 'linux_audio_io.dart';
 import 'linux_camera.dart';
 import 'linux_files.dart';
@@ -33,5 +34,6 @@ PlatformServices createLinuxPlatform({bool secondaryWindows = true}) {
     viewer: LinuxMediaViewer(useSecondaryWindow: secondaryWindows),
     camera: LinuxCameraService(device: Platform.environment['WOI_CAMERA'] ?? '/dev/video0'),
     mediaGrab: const FfmpegMediaGrabber(),
+    elements: AtspiElementSource(),
   );
 }
