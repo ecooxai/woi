@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
@@ -54,6 +55,8 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
     this.vadThreshold = 0.5,
     this.vadPrefixPaddingMs = 300,
     this.vadSilenceMs = 500,
+    this.noiseReduction = 'far_field',
+    this.deferInterrupts = true,
     this.maxReconnectAttempts = 5,
     this.reconnectBaseDelay = const Duration(milliseconds: 500),
     this.connectTimeout = const Duration(seconds: 15),
@@ -77,6 +80,13 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
   final double vadThreshold;
   final int vadPrefixPaddingMs;
   final int vadSilenceMs;
+
+  /// `far_field`: laptop speakers + built-in mic (no headset detection yet).
+  final String noiseReduction;
+
+  /// interrupt_response / create_response false while Woi speaks
+  /// ([SpeechStarted.deferred]).
+  bool deferInterrupts;
   final int maxReconnectAttempts;
   final Duration reconnectBaseDelay;
   final Duration connectTimeout;
@@ -204,16 +214,9 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
       'audio': {
         'input': {
           'format': {'type': 'audio/pcm', 'rate': kVoiceSampleRate},
-          'noise_reduction': {'type': 'near_field'},
+          'noise_reduction': {'type': noiseReduction},
           'transcription': {'model': transcriptionModel},
-          'turn_detection': {
-            'type': 'server_vad',
-            'threshold': vadThreshold,
-            'prefix_padding_ms': vadPrefixPaddingMs,
-            'silence_duration_ms': vadSilenceMs,
-            'create_response': true,
-            'interrupt_response': true,
-          },
+          'turn_detection': _turnDetection(speaking: false),
         },
         'output': {
           'format': {'type': 'audio/pcm', 'rate': kVoiceSampleRate},
@@ -224,6 +227,69 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
       'tool_choice': 'auto',
     },
   };
+
+  /// Server VAD. While Woi speaks ([deferInterrupts]) it neither cuts the
+  /// response nor answers a turn by itself: residual echo would do both.
+  Map<String, Object?> _turnDetection({required bool speaking}) => {
+    'type': 'server_vad',
+    'threshold': vadThreshold,
+    'prefix_padding_ms': vadPrefixPaddingMs,
+    'silence_duration_ms': vadSilenceMs,
+    'create_response': !speaking,
+    'interrupt_response': !speaking,
+  };
+
+  /// What the client asked for last / what the server last confirmed.
+  bool _deferSent = false;
+  bool _deferActive = false;
+  Timer? _deferOffTimer;
+
+  // A turn the server started in defer mode: undecided until [acceptTurn]
+  // or [dropEchoTurn]; an accepted one is answered when it ends.
+  bool _deferredTurn = false;
+  bool _turnAccepted = false;
+
+  void _setDefer(bool on) {
+    _deferOffTimer?.cancel();
+    _deferOffTimer = null;
+    if (!deferInterrupts || !_ready || on == _deferSent) return;
+    _deferSent = on;
+    _send({
+      'type': 'session.update',
+      'session': {
+        'type': 'realtime',
+        'audio': {
+          'input': {'turn_detection': _turnDetection(speaking: on)},
+        },
+      },
+    });
+  }
+
+  /// Back to normal turn taking once the reply's audio and its echo tail
+  /// are over.
+  void _deferOffLater() {
+    if (!_deferSent) return;
+    final left = playback.unheard().fold<int>(0, (a, u) => max(a, u.receivedMs - u.playedMs));
+    _deferOffTimer?.cancel();
+    _deferOffTimer = Timer(Duration(milliseconds: left + 1300), () {
+      _deferOffTimer = null;
+      if (_activeResponseId == null && !_responseRequested && !_deferredTurn) _setDefer(false);
+    });
+  }
+
+  @override
+  void acceptTurn() {
+    if (!_deferredTurn) return;
+    _deferredTurn = false;
+    _turnAccepted = true;
+    if (!_userSpeaking) _answerAccepted();
+  }
+
+  void _answerAccepted() {
+    _turnAccepted = false;
+    if (_pendingCalls.isEmpty) _requestResponse();
+    _deferOffLater();
+  }
 
   Future<void> _open({String? initialContext}) async {
     final cfg = _config!;
@@ -285,6 +351,12 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
     _cancelSent = false;
     _cancelOnCreate = false;
     _userSpeaking = false;
+    _deferSent = false;
+    _deferActive = false;
+    _deferOffTimer?.cancel();
+    _deferOffTimer = null;
+    _deferredTurn = false;
+    _turnAccepted = false;
     _staleCallNames.addAll({for (final c in _pendingCalls) c: _callNames[c] ?? 'tool'});
     _pendingCalls.clear();
     _suppressResponseId = null;
@@ -547,6 +619,40 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
 
   DateTime? _dropResponsesUntil;
 
+  @override
+  void dropEchoTurn({String? itemId, List<String> callIds = const []}) {
+    // The reply to the echo is normally under way (or done) by the time its
+    // transcript is final: cancel it; only a reply not created yet is caught
+    // by the short drop window.
+    if (_deferredTurn) {
+      // Defer mode: nothing was cut and nothing answers the echo; Woi
+      // talks on. Only the server's user item goes.
+      _deferredTurn = false;
+      _deferOffLater();
+    } else {
+      final pending = _activeResponseId != null || _responseRequested;
+      cancelResponse();
+      _dropResponsesUntil = pending ? null : DateTime.now().add(const Duration(milliseconds: 1500));
+    }
+    if (!_ready) return;
+    for (final c in callIds) {
+      if (!_pendingCalls.remove(c)) continue;
+      _send({
+        'type': 'conversation.item.create',
+        'item': {
+          'type': 'function_call_output',
+          'call_id': c,
+          'output': '{"skipped":"not run: the user turn was Woi\'s own voice heard back (echo)"}',
+        },
+      });
+    }
+    if (itemId != null && _itemById(itemId) != null) _send({'type': 'conversation.item.delete', 'item_id': itemId});
+    echoTurnsDropped++;
+  }
+
+  /// User turns deleted as echo (diagnostics).
+  int echoTurnsDropped = 0;
+
   void _requestResponse() {
     _dropResponsesUntil = null;
     _wantResponse = true;
@@ -632,9 +738,18 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
     switch (type) {
       case 'session.created':
       case 'session.updated':
+        final td = (((ev['session'] as Map?)?['audio'] as Map?)?['input'] as Map?)?['turn_detection'];
+        if (td is Map && td['interrupt_response'] is bool) _deferActive = td['interrupt_response'] == false;
         final hs = _handshake;
         if (hs != null && !hs.isCompleted) hs.complete();
 
+      case 'input_audio_buffer.speech_started' when _deferActive && !_deferredTurn && !_turnAccepted:
+        // The server did not cut Woi off: the pipeline decides whether this
+        // is the user (local detector / transcript) or Woi's echo.
+        _dropResponsesUntil = null;
+        _userSpeaking = true;
+        _deferredTurn = true;
+        _emit(SpeechStarted(itemId: ev['item_id'] as String?, deferred: true));
       case 'input_audio_buffer.speech_started':
         // Stop local playback first (the pipeline does it on SpeechStarted);
         // the played position is frozen right now.
@@ -647,6 +762,13 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
         // Server VAD creates the response, which includes any tool output.
         if (_pendingCalls.isEmpty) _wantResponse = false;
         _emit(SpeechStopped(itemId: ev['item_id'] as String?));
+        // In defer mode the server does not answer: an accepted turn is
+        // answered here.
+        if (_turnAccepted && _deferActive) {
+          _answerAccepted();
+        } else if (_turnAccepted) {
+          _turnAccepted = false;
+        }
 
       case 'conversation.item.added' || 'conversation.item.created':
         _onItemAdded(ev);
@@ -677,6 +799,7 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
         _activeResponseId = r?['id'] as String? ?? 'resp';
         _responseRequested = false;
         _cancelSent = false;
+        _setDefer(true);
         final drop = _dropResponsesUntil;
         if (drop != null && DateTime.now().isBefore(drop)) _cancelOnCreate = true;
         if (_cancelOnCreate) {
@@ -763,6 +886,7 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
     _truncateAfterDone.clear();
     pending.forEach(_sendTruncate);
     _emit(ResponseDone(cancelled: cancelled || suppressed));
+    _deferOffLater();
     _refreshPinnedNote();
     _maybeCreateResponse();
     _maybeApplySummary();

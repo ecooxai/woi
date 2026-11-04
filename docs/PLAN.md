@@ -248,3 +248,77 @@ turn), send key events to the current app (esc/back, ctrl+c copy, paste, select 
   after typing stops (MALLOC_ARENA_MAX=2 no help; with NO_AT_BRIDGE=1 idle RSS fell to ~100 MB — the AT-SPI
   bridge is the lead). Reduced, not fixed.
 - Video viewer on llvmpipe (~290%) not touched in this branch.
+
+## Real-room echo (echo15)
+P0: on built-in speakers + mic the PipeWire WebRTC canceller removes only ~15–30 dB in a real room; server VAD
+heard the residual as the user and Woi answered its own words ("Pointer moved…" → user turn "Boiner moot").
+Layers, from the device to the conversation:
+- **Canceller (unchanged), measured** — `qa/aec/offline_matrix.sh` runs WebRTC AEC3 with PipeWire's config offline on
+  a rendered echo path (speaker drive + clip, room IR, delay jump, drift; `render_echo.py`, `aec3_offline.cc`,
+  `erle.py`): ERLE only 12.7 dB at reply starts / 17.9 dB in the body (residual −34 / −41 dBFS), near-end loss 0.9
+  dB, double-talk near-end −27 dB; reference 20–300 ms off barely matters, 600 ms early breaks it (1 dB). The VAD
+  proxy still sees 1 false start per 30 s of Woi speech (8 without a canceller). `qa/aec/pw_latency.sh`: the
+  canceller itself adds ~47 ms at node.latency 480/48000 (62 ms in double talk), ~65 ms at 960; 256 crashes PW 1.6.7.
+- **Echo guard** (`core/pipeline/echo_guard.dart`) — knows Woi's playback sample-exactly and compares each 10 ms mic
+  frame in 8 bands with the echo that playback can produce (delay window −40..600 ms, lag tracked by envelope
+  correlation, per-band coupling learned on echo-only frames). In hands-free, while echo is expected the server gets
+  silence instead of the mic; a near-end onset (≥2 bands 8 dB above predicted echo, 100 ms) opens the gate and the
+  held 400 ms is sent first, so the user's first syllable is not lost. No added latency outside Woi's speech (the mic
+  passes straight through); push-to-talk and Android managed capture are not gated.
+- **Soft local barge-in** — a local onset pauses playback instead of cutting; the server's speech start confirms
+  (cancel + hold as before), otherwise playback resumes after 900 ms where it paused.
+- **Transcript guard + self-talk breaker** (`core/pipeline/echo_transcript.dart`) — a user turn that starts while Woi
+  is audible is held (tool calls too) until its transcript is final; if it matches what Woi was saying (consonant
+  skeletons, voiced/voiceless merged) it is dropped (reply, tool calls, server item, bubble) and the cut-off reply
+  plays on. Three echo turns within 90 s pause hands-free (mic → muted) with a notice.
+- **QA** — `WOI_AUDIO_SINK` / `WOI_AUDIO_SOURCE` pin playback, mic and AEC to given nodes; `qa/aec/e2e_echo.sh` runs
+  the release build on :11 (Direct, gpt-realtime-2.1) with its voice fed back through a virtual room (drive ×3 +
+  clip, IR, 150 ms) on qa_e2e_* null sinks.
+
+Numbers (`qa/aec/guard_eval.sh`, 12 rigs = turns/stress × 3 seeds × near-end −24/−30 dBFS, 505 s of Woi speech):
+| stream to server VAD | false user turns |
+|---|---|
+| raw mic (no canceller) | 130 (15.5/min) |
+| canceller only (before) | 24 (2.85/min) |
+| canceller + echo guard (after) | 9 (1.07/min), 0 in the conversational "turns" rigs except 1 at −24 dBFS |
+False local onsets (pauses): guard 19 vs old broadband BargeInDetector 34. Barge-in detection: guard 11/18 vs old
+14/18 items over Woi's speech; guard detects 200–380 ms after speech start (median 330 ms, capture time, plus
+~50 ms canceller latency). The transcript guard catches the remaining echo turns that do get through.
+
+E2E (`qa/aec/e2e_echo.sh`, after build only, 2026-11-04; the before run was not completed): of 4 user turns 2 were
+self-talk ("That's", "What?"), 0 echo turns dropped by the transcript guard, 7 false local onsets (pause + resume),
+and "Stop" / the question barge-in stopped Woi only after 7.4 s / 8.3 s (the 2 fixture barge-ins never became user
+turns). Mic level p50 −25 dBFS. **Open:** the guard is not yet good enough on this virtual room (clip + IR, no
+real speaker roll-off, so its low-band advantage is gone) — false onsets and missed barge-ins; needs the before run
+for comparison and tuning (onset threshold vs the room's coupling) before the live :0 app leaves push-to-talk.
+
+Barge-in first (2026-11-04): the silence gate is now **off by default** (`TurnPipeline.echoGate`). Offline it lost
+7/18 real interrupts. Lowering the onset threshold did not get them back (margin 6/4 dB, onset 60 ms: 12/18, 45-54
+false onsets). The misses are short words in double talk only 2-3 dB above the predicted echo; the gate then kept
+them from the server, which is what made "Stop" take 7.4 s in the E2E. The server now always gets the canceller's
+output, so barge-in recall is back to canceller + server VAD (the pre-echo15 behaviour) plus the local soft pause.
+Echo turns are left to the transcript guard and the self-talk breaker, so the server sees false turns at the
+canceller rate again (2.85/min offline). After an onset the guard re-arms once the near end has been quiet for 200 ms
+(before: once per reply).
+
+Deferred turns + far_field (2026-11-04): the session uses `noise_reduction: far_field` (no headset detection yet;
+gpt-realtime-2.1 echoes `{"type":"far_field","strength":1.0}`). From `response.created` until the reply's audio plus
+1.3 s of echo tail are over, `session.update` sets turn_detection `create_response` / `interrupt_response` false;
+verified live on gpt-realtime-2.1: a partial update (only `audio.input.turn_detection`) is accepted mid-response
+(`session.updated` ~0.5 s later), the response then plays on through a server speech start and no response is
+created for the turn. Such a turn reaches the pipeline as `SpeechStarted(deferred)`: local detector fired (onset
+within 1.5 s or paused) → cut + `acceptTurn` at once; else Woi talks on while the pipeline waits up to 600 ms
+(`deferWindow`) for the transcript (echo → item deleted, Woi never cut; not echo / stop → cut), then interrupts
+anyway. Accepted turns get `response.create` when they end. Measured: the final transcript ("Stop.") arrives
+~1.4 s after `speech_started`, so the 600 ms window practically always times out and only the local detector
+saves latency; echo is still dropped later by the transcript guard (cut + resume) as before.
+E2E (`e2e_echo.sh after-defer`, gate off, deferred turns, far_field) vs the gate-on run above:
+| | gate on (before) | deferred + far_field |
+|---|---|---|
+| "Stop" stops Woi | 7.4 s | 0.54 s (local onset → immediate) |
+| question barge-in stops Woi | 8.3 s | 0.04 s (local pause) |
+| barge-ins that became user turns | 0/2 | 2/2 |
+| self-talk user turns | 2 | 2 ("아", "하고": echo transcribed as Korean, so the guard cannot match it) |
+| false local onsets (pause + resume) | 7 | 8 |
+One deferred turn occurred (timeout → cut). Next: pin the transcription `language` to the UI language so echo is
+transcribed in English and the guard can match it; a headset → `near_field` switch.

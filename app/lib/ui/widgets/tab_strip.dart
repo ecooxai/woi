@@ -76,9 +76,7 @@ class WoiTab extends StatelessWidget {
             constraints: BoxConstraints(minWidth: minWidth, maxWidth: maxWidth),
             padding: EdgeInsets.symmetric(horizontal: hPad),
             decoration: BoxDecoration(
-              border: Border(
-                bottom: BorderSide(color: selected ? WoiColors.cyan : Colors.transparent, width: 2),
-              ),
+              border: Border(bottom: BorderSide(color: selected ? WoiColors.cyan : Colors.transparent, width: 2)),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -118,9 +116,13 @@ class HomeTabs extends StatelessWidget {
     this.chatBadge = 0,
     this.compact = false,
     this.height = 44,
+    this.hideChat = false,
   });
 
   final HomeView view;
+
+  /// Wide two-pane layout: the chat is always on the right, so no Chat tab.
+  final bool hideChat;
   final ValueChanged<HomeView> onChanged;
 
   /// Note and chat are both shown.
@@ -149,7 +151,10 @@ class HomeTabs extends StatelessWidget {
         margin: const EdgeInsets.only(left: 6),
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
         decoration: BoxDecoration(color: WoiColors.cyan, borderRadius: BorderRadius.circular(999)),
-        child: Text('$chatBadge', style: body(10.5, weight: FontWeight.w700, color: WoiColors.onAccent)),
+        child: Text(
+          '$chatBadge',
+          style: body(10.5, weight: FontWeight.w700, color: WoiColors.onAccent),
+        ),
       ),
       _ => null,
     };
@@ -157,20 +162,47 @@ class HomeTabs extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         for (final v in HomeView.values)
-          WoiTab(
-            inkKey: ValueKey('view-${v.name}'),
-            primary: true,
-            icon: kHomeTabs[v]!.$1,
-            label: kHomeTabs[v]!.$2,
-            tooltip: '${kHomeTabs[v]!.$2} (Ctrl+${v.index + 1})',
-            selected: _selected(v),
-            showLabel: !compact || v == view,
-            badge: badgeFor(v),
-            height: height,
-            minWidth: compact ? kTouchTarget : 0,
-            onTap: () => onChanged(v),
-          ),
+          if (!(hideChat && v == HomeView.chat))
+            WoiTab(
+              inkKey: ValueKey('view-${v.name}'),
+              primary: true,
+              icon: kHomeTabs[v]!.$1,
+              label: kHomeTabs[v]!.$2,
+              tooltip: '${kHomeTabs[v]!.$2} (Ctrl+${v.index + 1})',
+              selected: _selected(v),
+              showLabel: !compact || v == view,
+              badge: badgeFor(v),
+              height: height,
+              minWidth: compact ? kTouchTarget : 0,
+              onTap: () => onChanged(v),
+            ),
       ],
     );
   }
+}
+
+/// The draggable divider between two side-by-side panes: a hairline with
+/// a wider grab area. Double-click (or double-tap) resets.
+class PaneDivider extends StatelessWidget {
+  const PaneDivider({super.key, required this.onDrag, required this.onDragEnd, required this.onReset});
+
+  /// Horizontal drag delta in logical pixels.
+  final ValueChanged<double> onDrag;
+  final VoidCallback onDragEnd;
+  final VoidCallback onReset;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    label: 'Resize panes',
+    child: MouseRegion(
+      cursor: SystemMouseCursors.resizeColumn,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onHorizontalDragUpdate: (d) => onDrag(d.delta.dx),
+        onHorizontalDragEnd: (_) => onDragEnd(),
+        onDoubleTap: onReset,
+        child: const SizedBox(width: 9, child: Center(child: VerticalDivider(width: 1))),
+      ),
+    ),
+  );
 }

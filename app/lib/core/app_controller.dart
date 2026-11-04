@@ -416,6 +416,9 @@ class AppController extends ChangeNotifier {
         onScreenshotCaptured: (s) => toolEnv.lastScreenshot = s,
         onTurnStart: () => unawaited(platform.input.rememberTargetWindow()),
         localCommand: _localCommand,
+        // Woi kept hearing itself: pause hands-free (the setting, so the mic
+        // control shows it); the pipeline posts the notice.
+        onSelfTalk: () => unawaited(setMicMode(MicMode.muted)),
         imageCompactor: ImageCompactor(
           downscale: uiDownscale,
           describe: responsesDescriber(responses, model: () => compactionChoice.model),

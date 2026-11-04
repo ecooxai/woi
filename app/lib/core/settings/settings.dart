@@ -52,7 +52,14 @@ enum BackendMode {
 const kVoiceModels = ['gpt-live-1.1', 'gpt-live-1', 'gpt-live-1-codex'];
 
 /// Models that work on wss://api.openai.com/v1/realtime (§2.1).
-const kRealtimeModels = ['gpt-realtime-2.1', 'gpt-realtime-2.1-mini', 'gpt-realtime-2', 'gpt-realtime-1.5', 'gpt-realtime', 'gpt-realtime-mini'];
+const kRealtimeModels = [
+  'gpt-realtime-2.1',
+  'gpt-realtime-2.1-mini',
+  'gpt-realtime-2',
+  'gpt-realtime-1.5',
+  'gpt-realtime',
+  'gpt-realtime-mini',
+];
 
 /// Voices of the realtime WebSocket models (direct and API-key modes).
 const kVoices = ['marin', 'cedar', 'alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse'];
@@ -91,6 +98,13 @@ const kLiveDefaultVoice = 'cove';
 /// [AppSettings.editApplyDelay] value: edits wait for an explicit Apply.
 const kRequireApproval = -1;
 
+/// Default share of the window width taken by the chat pane (wide layout).
+const kDefaultChatPaneFraction = 0.42;
+
+/// Bounds of [AppSettings.chatPaneFraction].
+const kChatPaneMinFraction = 0.25;
+const kChatPaneMaxFraction = 0.6;
+
 /// Choices for [AppSettings.editApplyDelay] (seconds).
 const kEditApplyDelays = [0, 3, 5, 10, kRequireApproval];
 
@@ -123,6 +137,7 @@ class AppSettings {
     this.echoCancellation = true,
     this.androidAudioRoute = AndroidAudioRoute.phone,
     this.usageGuardPercent = 20,
+    this.chatPaneFraction = kDefaultChatPaneFraction,
   });
 
   final BackendMode backendMode;
@@ -193,6 +208,9 @@ class AppSettings {
   /// more expensive model is selected. 0 = off.
   final int usageGuardPercent;
 
+  /// Wide two-pane layout: share of the width taken by the chat pane.
+  final double chatPaneFraction;
+
   /// The voice used by the current backend mode.
   String get activeVoice => backendMode == BackendMode.gptLive ? liveVoice : voice;
 
@@ -229,6 +247,7 @@ class AppSettings {
     AndroidAudioRoute? androidAudioRoute,
     bool? fallbackToDirectOnLimit,
     int? usageGuardPercent,
+    double? chatPaneFraction,
   }) => AppSettings(
     backendMode: backendMode ?? this.backendMode,
     apiKey: apiKey ?? this.apiKey,
@@ -257,6 +276,7 @@ class AppSettings {
     echoCancellation: echoCancellation ?? this.echoCancellation,
     androidAudioRoute: androidAudioRoute ?? this.androidAudioRoute,
     usageGuardPercent: usageGuardPercent ?? this.usageGuardPercent,
+    chatPaneFraction: chatPaneFraction ?? this.chatPaneFraction,
   );
 
   /// Whether a change requires reconnecting the live session.
@@ -296,6 +316,7 @@ class AppSettings {
     'echoCancellation': echoCancellation,
     'androidAudioRoute': androidAudioRoute.name,
     'usageGuardPercent': usageGuardPercent,
+    'chatPaneFraction': chatPaneFraction,
   };
 
   factory AppSettings.fromJson(Map<String, Object?> j) {
@@ -340,6 +361,10 @@ class AppSettings {
       echoCancellation: b('echoCancellation', d.echoCancellation),
       androidAudioRoute: AndroidAudioRoute.values.asNameMap()[j['androidAudioRoute']] ?? d.androidAudioRoute,
       usageGuardPercent: i('usageGuardPercent', d.usageGuardPercent).clamp(0, 100),
+      chatPaneFraction: ((j['chatPaneFraction'] as num?)?.toDouble() ?? d.chatPaneFraction).clamp(
+        kChatPaneMinFraction,
+        kChatPaneMaxFraction,
+      ),
     );
   }
 }
