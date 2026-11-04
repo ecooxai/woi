@@ -124,8 +124,10 @@ class EditReview extends ChangeNotifier {
       e
         ..countdown = null
         ..deadline = null;
+      debugPrint('edit preview shown: ${e.target.name} "${e.title}" (waiting for approval)');
       return;
     }
+    debugPrint('edit preview shown: ${e.target.name} "${e.title}" (auto-apply in ${secs}s)');
     final d = Duration(seconds: secs);
     e
       ..countdown = d
@@ -138,6 +140,7 @@ class EditReview extends ChangeNotifier {
     final wasCurrent = identical(e, current);
     _queue.remove(e);
     e._done.complete(ok);
+    debugPrint('edit ${ok ? 'applied' : 'rejected'}: ${e.target.name} "${e.title}"');
     onDecided?.call(e, ok);
     if (wasCurrent) _startCurrent();
     notifyListeners();

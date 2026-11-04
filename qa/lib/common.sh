@@ -12,9 +12,24 @@ QA_OUT=${QA_OUT:-/tmp/woi-qa-out}
 QA_SANDBOX=${QA_SANDBOX:-/tmp/woi-qa-sandbox}
 QA_REAL_HOME=${QA_REAL_HOME:-$HOME}
 QA_LIB=${QA_LIB:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}
-export DISPLAY=${DISPLAY:-:0}
+# The suite clicks, types and screenshots: it runs on a nested test display
+# (Xephyr/Xvfb), never on the user's desktop. QA_DISPLAY picks it (default
+# :11); :0 is refused.
+QA_DISPLAY=${QA_DISPLAY:-:11}
+case ${QA_DISPLAY#unix} in
+  :0 | :0.* | localhost:0 | localhost:0.*)
+    echo "refusing QA_DISPLAY=$QA_DISPLAY: that is the user's desktop; start a nested display (Xephyr :11)" >&2
+    exit 2 ;;
+esac
+export DISPLAY=$QA_DISPLAY
 export XAUTHORITY=${XAUTHORITY:-$QA_REAL_HOME/.Xauthority}
+xdotool getdisplaygeometry >/dev/null 2>&1 || { echo "no X display at $DISPLAY" >&2; exit 2; }
 mkdir -p "$QA_OUT"
+
+# Screen size and centre: the click target, the backdrop and the click check
+# follow the test display (1600x900 Xephyr, 1920x1080 Xvfb...).
+read -r QA_SCREEN_W QA_SCREEN_H < <(xdotool getdisplaygeometry)
+QA_CX=$((QA_SCREEN_W / 2)) QA_CY=$((QA_SCREEN_H / 2))
 
 qa_log() { printf '[%s] %s\n' "$(date +%T)" "$*" | tee -a "$QA_OUT/run.log" >&2; }
 
@@ -127,14 +142,14 @@ qa_start_backdrop() {
   local wid="" t=0
   while [ -z "$wid" ] && [ $t -lt 20 ]; do sleep 0.3; wid=$(xdotool search --name '^WOI-QA-BACKDROP$' 2>/dev/null | head -1); t=$((t + 1)); done
   [ -n "$wid" ] || return 1
-  xdotool windowsize "$wid" 1920 1080 windowmove "$wid" 0 0
+  xdotool windowsize "$wid" "$QA_SCREEN_W" "$QA_SCREEN_H" windowmove "$wid" 0 0
   sleep 0.3
 }
 
 qa_center_target() {
   local wid=$1 w h
   eval "$(xdotool getwindowgeometry --shell "$wid")"
-  xdotool windowmove "$wid" $((960 - WIDTH / 2)) $((540 - HEIGHT / 2))
+  xdotool windowmove "$wid" $((QA_CX - WIDTH / 2)) $((QA_CY - HEIGHT / 2))
   xdotool windowraise "$wid" 2>/dev/null
 }
 
@@ -155,9 +170,10 @@ qa_brightness() {
 }
 
 # ---------------------------------------------------------------- app
-# qa_launch_app NAME [settings-json]  -> sets APP_PID, APP_WID, APP_LOG
+# qa_launch_app NAME [settings-json] [VAR=value...]  -> sets APP_PID, APP_WID, APP_LOG
 qa_launch_app() {
   local name=$1 settings=${2:-}
+  shift; [ $# -gt 0 ] && shift
   local data="$QA_OUT/data-$name"
   rm -rf "$data" && mkdir -p "$data/woi"
   [ -n "$settings" ] && printf '%s\n' "$settings" >"$data/woi/settings.json"
@@ -168,13 +184,15 @@ qa_launch_app() {
   # HOME points at the sandbox: the app resolves relative paths (and `~`)
   # against $HOME, not the working directory. CODEX_HOME keeps the real login.
   (cd "$QA_SANDBOX" && exec env HOME="$QA_SANDBOX" CODEX_HOME="$QA_REAL_HOME/.codex" \
-    XDG_DATA_HOME="$data" stdbuf -oL -eL "$QA_OUT/woi-qa" >"$APP_LOG" 2>&1) &
+    XDG_DATA_HOME="$data" "$@" stdbuf -oL -eL "$QA_OUT/woi-qa" >"$APP_LOG" 2>&1) &
   APP_PID=$!
   qa_track_pid "$APP_PID"
   APP_WID="" ; local t=0
   while [ -z "$APP_WID" ] && [ $t -lt 40 ]; do
     sleep 0.5; t=$((t + 1))
     APP_WID=$(xdotool search --onlyvisible --pid "$(qa_app_pid)" 2>/dev/null | head -1)
+    # _NET_WM_PID can be missing on the main window: fall back to the title
+    [ -z "$APP_WID" ] && [ $t -ge 16 ] && APP_WID=$(xdotool search --onlyvisible --name '^Woi$' 2>/dev/null | head -1)
   done
   [ -n "$APP_WID" ] || { qa_log "app window not found"; return 1; }
   qa_log "app $name pid=$APP_PID wid=$APP_WID log=$APP_LOG"
@@ -253,3 +271,21 @@ qa_type_in_app() {
 }
 
 qa_play() { paplay -d qa_fixture_sink "$1"; }
+
+# ---------------------------------------------------------------- camera
+# Synthetic camera: the app reads V4L2 through `ffmpeg -f v4l2 ... pipe:1`.
+# qa_fake_camera puts an ffmpeg wrapper (qa/lib/fake_camera_ffmpeg.sh) first
+# on PATH that serves a still test card as MJPEG instead, so camera turns are
+# deterministic and no image of the real room leaves the machine. Echoes the
+# VAR=value list for qa_launch_app.
+qa_fake_camera() {
+  local dir=$QA_OUT/fakecam
+  mkdir -p "$dir"
+  convert -size 640x480 xc:'#f4f1e8' -fill '#d62828' -draw 'circle 170,260 170,170' \
+    -fill '#1d4ed8' -draw 'rectangle 360,170 540,350' -fill black -pointsize 44 \
+    -annotate +140+80 'WOI QA CAMERA' "$dir/card.jpg" 2>/dev/null || return 1
+  ln -sf "$QA_LIB/fake_camera_ffmpeg.sh" "$dir/ffmpeg"
+  : >"$dir/device"
+  echo "PATH=$dir:$PATH" "WOI_CAMERA=$dir/device" "WOI_DEBUG_CAMERA=1" "QA_CAMERA_CARD=$dir/card.jpg" \
+    "QA_REAL_FFMPEG=$(command -v ffmpeg)"
+}
