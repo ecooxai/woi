@@ -32,7 +32,7 @@ ToolDefinition noteControlTool(AppActions actions) => ToolDefinition(
         'apply themselves after a few seconds unless the user rejects them. Actions: '
         'append (text at the end), insert (text after the line containing "after", before "before", else at top), '
         'replace ("find" -> "text"), delete_text (remove "find"; a matching list item or line is removed whole), '
-        'undo / redo (the editor\'s undo stack), new (empty note), list, switch ("name": title words, '
+        'undo / redo (the editor\'s undo stack), new (empty note; "title" names it), list, switch ("name": title words, '
         '"previous", or a number), rename ("title"; "name" picks another note), delete ("name" or this note; '
         'the user confirms), copy (to the clipboard; "what": note [default], line, paragraph or section = the H1 '
         'section, all at the editor cursor: "copy this paragraph").',
@@ -48,7 +48,7 @@ ToolDefinition noteControlTool(AppActions actions) => ToolDefinition(
         'after': {'type': 'string'},
         'before': {'type': 'string'},
         'name': {'type': 'string', 'description': 'Which note (title words, "previous", number)'},
-        'title': {'type': 'string', 'description': 'New title for rename'},
+        'title': {'type': 'string', 'description': 'New title (rename, new)'},
         'what': {
           'type': 'string',
           'enum': ['note', 'line', 'paragraph', 'section'],
@@ -85,9 +85,9 @@ ToolDefinition noteControlTool(AppActions actions) => ToolDefinition(
         actions.noteRedo();
         return {'ok': true};
       case 'new':
-        await actions.newNote();
+        final t = await actions.newNote(title: args.strOrNull('title'));
         actions.showView(HomeView.note);
-        return {'ok': true};
+        return {'ok': true, 'done': t == 'new note' ? 'created a new note' : 'created note "$t"'};
       case 'list':
         final all = await actions.listNotes();
         final cur = actions.c.pipeline.conversation.id;
@@ -102,7 +102,7 @@ ToolDefinition noteControlTool(AppActions actions) => ToolDefinition(
         actions.showView(HomeView.note);
         return {'ok': true, 'note': t};
       case 'rename':
-        return {'ok': true, 'title': await actions.renameNote(_need(args, 'title', action), which: args.strOrNull('name'))};
+        return {'ok': true, 'renamed_to': await actions.renameNote(_need(args, 'title', action), which: args.strOrNull('name'))};
       case 'delete':
         call.onStatus?.call(ToolStatus.awaitingApproval);
         final deleted = await actions.deleteNote(which: args.strOrNull('name'));
@@ -127,8 +127,15 @@ ToolDefinition appControlTool(AppActions actions) => ToolDefinition(
         'set_setting (key: theme [light|dark|system], mic_mode [hands_free|push_to_talk|muted], voice, '
         'voice_model, compaction_threshold [tokens], run_in_terminal [on|off], edit_apply_delay [0|3|5|10|approval], '
         'echo_cancellation [on|off], usage_guard [percent left below which delegation/compaction use gpt-6-luna; '
-        '0 = off]; value); '
-        'terminal_new; terminal_run (command typed into a shell tab; tab: number/title/"new"); terminal_close (tab); '
+        '0 = off], auto_screenshot, screenshot_delay [s], camera_replaces_screenshot, thinking_chime, '
+        'confirm_commands, fallback_to_direct [on|off], backend [gpt_live|direct|api_key], compression_model / '
+        'delegate_model [gpt-6-luna|gpt-6.1-sol], chat_pane [percent of width in split view, 25-60], workspace '
+        '[folder]; value); '
+        'disconnect (ends the voice session after your reply; the user reconnects with Retry on the status chip); '
+        'reconnect (fresh session); clear_chat (deletes this chat\'s messages, keeps the note; the user approves); '
+        'compact (summarize the context now); '
+        'terminal_new; terminal_run (command typed into a shell tab; tab: number/title/"new"); terminal_close (tab); terminal_switch (tab); '
+        'terminal_rename (tab, title); '
         'viewer_open (path), viewer_close, viewer_pause, viewer_play, viewer_seek (seconds: relative, or to=true for '
         'absolute); apply_edit / reject_edit (the pending edit preview); undo_edit ("undo that": reverts your last '
         'note or file edit); usage ("how much usage do I have left": the ChatGPT plan\'s 5-hour and weekly limits, '
@@ -153,6 +160,12 @@ ToolDefinition appControlTool(AppActions actions) => ToolDefinition(
             'reject_edit',
             'undo_edit',
             'usage',
+            'disconnect',
+            'reconnect',
+            'clear_chat',
+            'compact',
+            'terminal_switch',
+            'terminal_rename',
           ],
         },
         'view': {'type': 'string'},
@@ -163,6 +176,7 @@ ToolDefinition appControlTool(AppActions actions) => ToolDefinition(
         'path': {'type': 'string'},
         'seconds': {'type': 'number'},
         'to': {'type': 'boolean'},
+        'title': {'type': 'string'},
       },
       'required': ['action'],
     },
@@ -211,6 +225,28 @@ ToolDefinition appControlTool(AppActions actions) => ToolDefinition(
         return {'ok': true, 'done': await actions.undoLastEdit()};
       case 'usage':
         return {'ok': true, ...await actions.usageStatus()};
+      case 'disconnect':
+        return {
+          'ok': true,
+          'done': actions.disconnect(),
+          'say': 'Confirm briefly, then tell the user to click Retry on the status chip to reconnect.',
+        };
+      case 'reconnect':
+        return {'ok': true, 'done': actions.reconnect()};
+      case 'clear_chat':
+        call.onStatus?.call(ToolStatus.awaitingApproval);
+        final r = await actions.clearChat();
+        call.onStatus?.call(ToolStatus.running);
+        return {'ok': true, 'done': r};
+      case 'compact':
+        return {'ok': true, 'done': actions.compactContext()};
+      case 'terminal_switch':
+        return {'ok': true, 'tab': actions.switchTerminalTab(args.strOrNull('tab'))};
+      case 'terminal_rename':
+        final s = actions.findTab(args.strOrNull('tab'));
+        final t = _need(args, 'title', action);
+        actions.renameTerminalTab(s, t);
+        return {'ok': true, 'renamed_to': t};
       default:
         throw ToolFailure('unknown action "$action"');
     }
