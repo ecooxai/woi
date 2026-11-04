@@ -19,7 +19,43 @@ import java.io.FileOutputStream
 class WoiVoiceInteractionService : VoiceInteractionService() {
     override fun onReady() {
         super.onReady()
+        instance = this
         Log.i(WoiBridge.TAG, "voice interaction service ready")
+    }
+
+    override fun onShutdown() {
+        if (instance === this) instance = null
+        super.onShutdown()
+    }
+
+    companion object {
+        /** Set while Woi is the active digital assistant. */
+        @Volatile var instance: WoiVoiceInteractionService? = null
+    }
+}
+
+/**
+ * ACTION_ASSIST / VOICE_ASSIST sent straight to Woi (`am start -a
+ * android.intent.action.ASSIST`, headset buttons, launchers): when Woi is the
+ * active assistant, open the real session so the system takes the assist
+ * screenshot of the app below; otherwise open Woi without one. Draws nothing.
+ */
+class WoiAssistActivity : android.app.Activity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        val svc = WoiVoiceInteractionService.instance
+        if (svc != null) {
+            Log.i(WoiBridge.TAG, "assist intent -> showSession")
+            svc.showSession(Bundle(), VoiceInteractionSession.SHOW_WITH_ASSIST or VoiceInteractionSession.SHOW_WITH_SCREENSHOT)
+        } else {
+            startActivity(
+                Intent(this, MainActivity::class.java)
+                    .putExtra(WoiSession.EXTRA_ASSIST, true)
+                    .putExtra(WoiSession.EXTRA_T0, System.currentTimeMillis())
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            )
+        }
+        finish()
     }
 }
 

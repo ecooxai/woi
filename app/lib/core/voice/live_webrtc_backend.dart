@@ -897,6 +897,8 @@ class LiveWebRtcBackend extends VoiceBackend
     _noteActivity();
     final t = text.trim();
     if (t.isEmpty) return;
+    // Typed turn -> "turn open" (first audio) latency in QA logs.
+    debugPrint('gpt-live typed turn t=${DateTime.now().millisecondsSinceEpoch}');
     final ex = _executor;
     // Typed text never starts a delegation on gpt-live, so action requests
     // are carried out here and the model only voices the real outcome.
