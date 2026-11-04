@@ -207,3 +207,16 @@ turn), send key events to the current app (esc/back, ctrl+c copy, paste, select 
   current H1 section.
 - Perf: on the embedded test display Woi uses too much CPU even when idle; find the cost. Target: < 30% most of the
   time (idle ≈ 0%) on :11 (software GL).
+
+### #7 editor + idle CPU: as built
+- Editor toolbar: one **Format** dropdown (headings, inline styles, lists, quote, code block, link, Preview) with the
+  shortcut shown on every entry; undo/redo; **Copy** (whole note, Ctrl+Shift+C; long-press / right-click: line,
+  paragraph, H1 section at the cursor, "Copied …" confirmation); Run. No edit/preview toggle: Preview is in the
+  menu (Ctrl+Shift+P), Esc or the "Preview ×" chip returns to editing. Voice: `note_control` `copy` + `what`, fast
+  path "copy this paragraph". Extraction is `lib/core/notes/note_copy.dart` (unit tested).
+- Idle CPU on :11 (software GL): with the mic really muted (or a silent source) Woi is already ~1% idle on every tab.
+  The high readings came from states that never ended or animated at 60 fps: switching to push-to-talk mid-utterance
+  left "Hearing you…" and the bubble's listening dots running forever (now the turn closes); the dots were a 60 fps
+  controller (now 5 fps steps, still after 20 s); tool spinners, progress sweeps and the compaction meter ran at the
+  display rate (now 12 fps timer-driven, in repaint boundaries). QA: `WOI_MIC_MODE` forces the launch mic mode,
+  `PERF_SILENT_MIC=1` gives `qa/perf_scenarios.sh` a silent PipeWire source, keys go through XTEST.
