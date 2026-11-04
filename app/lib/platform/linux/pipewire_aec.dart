@@ -222,10 +222,13 @@ exit $s
     _proc = null;
     if (p != null) {
       p.kill(ProcessSignal.sigterm);
-      await p.exitCode.timeout(const Duration(seconds: 2), onTimeout: () {
-        p.kill(ProcessSignal.sigkill);
-        return -9;
-      });
+      await p.exitCode.timeout(
+        const Duration(seconds: 2),
+        onTimeout: () {
+          p.kill(ProcessSignal.sigkill);
+          return -9;
+        },
+      );
       _status = 'off';
     }
     await _cleanupConf();

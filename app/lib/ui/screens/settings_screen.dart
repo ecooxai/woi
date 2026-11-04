@@ -588,6 +588,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ),
     _row(
       wide,
+      'Echo cancellation',
+      'Remove what the speakers play (Woi, music, videos) from the microphone so it is not heard as you.',
+      Align(
+        alignment: wide ? Alignment.centerRight : Alignment.centerLeft,
+        child: Switch(
+          value: _s.echoCancellation,
+          onChanged: (v) => _apply(_s.copyWith(echoCancellation: v)),
+        ),
+      ),
+      controlWidth: 120,
+    ),
+    _row(
+      wide,
       'Thinking chime',
       'A soft chime when you stop speaking, while Woi works on the reply.',
       Align(

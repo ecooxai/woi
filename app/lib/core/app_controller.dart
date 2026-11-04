@@ -7,6 +7,7 @@ import 'dart:io';
 
 import '../platform/platform_services.dart';
 import '../tools/builtin_tools.dart';
+import '../platform/audio_io.dart';
 import '../platform/camera.dart';
 import '../platform/media_viewer.dart';
 import '../tools/confirmation.dart';
@@ -60,8 +61,8 @@ write_file, show_file (show a file, image, audio or video to the user inside Woi
 note_control, app_control, delegate_task.
 note_control runs the notes: append/insert/replace/delete_text in this note, the editor's undo/redo, and new,
 switch, rename, delete, list of notes. app_control runs Woi itself: show_view (note, chat, terminal, split),
-set_setting (theme, voice, voice_model, mic_mode, compaction_threshold, run_in_terminal, edit_apply_delay),
-terminal tabs (terminal_new, terminal_run, terminal_close), the media viewer (viewer_open/close/pause/play/seek),
+set_setting (theme, voice, voice_model, mic_mode, compaction_threshold, run_in_terminal, edit_apply_delay,
+echo_cancellation), terminal tabs (terminal_new, terminal_run, terminal_close), the media viewer (viewer_open/close/pause/play/seek),
 apply_edit / reject_edit, and undo_edit for "undo that" (reverts your last note or file edit).
 Note and file edits appear as an inline diff that applies itself after a few seconds unless the user rejects it;
 the tool result tells you whether it was applied. Shell commands may need explicit approval.
@@ -261,6 +262,7 @@ class AppController extends ChangeNotifier {
   Future<void> init() async {
     try {
       _settings = await _settingsStore.load();
+      if (platform.audio case final EchoCancellable ec) ec.echoCancellation = _settings.echoCancellation;
       // Woi listens from launch: a mic muted in the last session comes back
       // on (push-to-talk stays push-to-talk).
       if (_settings.micMode == MicMode.muted) {
@@ -479,6 +481,7 @@ class AppController extends ChangeNotifier {
     if (next.workspaceDir != prev.workspaceDir) _applyWorkspace();
     notifyListeners();
     await _settingsStore.save(next);
+    if (next.echoCancellation != prev.echoCancellation) await _applyEchoCancellation(prev);
     if (next.micMode != prev.micMode) {
       await pipeline.setMicMode(next.micMode);
       if (_inBackground) _scheduleBackgroundSuspend();
@@ -493,6 +496,19 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> setMicMode(MicMode mode) => updateSettings(_settings.copyWith(micMode: mode));
+
+  /// Applies [AppSettings.echoCancellation]: the platform canceller takes it
+  /// on the next mic open (reopened now); gpt-live's WebRTC mic needs a new
+  /// call.
+  Future<void> _applyEchoCancellation(AppSettings prev) async {
+    if (platform.audio case final EchoCancellable ec) ec.echoCancellation = _settings.echoCancellation;
+    if (prev.sessionDiffers(_settings)) return; // reconnecting anyway
+    if (pipeline.backendManagesAudio) {
+      await pipeline.connect();
+    } else {
+      await pipeline.reopenMic();
+    }
+  }
 
   Future<void> refreshCodexAuth() async {
     codexAuth = await CodexAuthInfo.load(path: authManager.path);
@@ -719,6 +735,7 @@ class AppController extends ChangeNotifier {
     await camera.close();
     await notes.flush();
     if (_ready) await pipeline.shutdown();
+    if (platform.audio case final EchoCancellable ec) await ec.disposeEchoCancellation();
     terminals.dispose();
   }
 }
