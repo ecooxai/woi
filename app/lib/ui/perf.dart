@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:fvp/fvp.dart' as fvp;
 
 /// Image cache budget for the main window. Thumbnails are decoded at
 /// `cacheWidth` (≤640 px, ~1.6 MB each), the camera preview bypasses the
@@ -33,6 +34,44 @@ void configureImageCache({int maxBytes = kMainImageCacheBytes, int maxCount = kM
   }
   if (w < 640 || h < 360) return (1920, 1080);
   return (w, h);
+}
+
+/// Texture cap for one video. fvp fits the texture into (maxWidth,
+/// maxHeight) keeping the aspect ratio, which also *upscales* a small video
+/// to the cap: a 640x360 clip got a 1600x900 render target, ~6x the fill
+/// work per frame for no visible gain (the widget scales the texture anyway).
+/// A square cap of the video's longer side fits the video at its own size
+/// (in either orientation, rotation included); larger videos stay capped at
+/// [limit]. Unknown size: [limit].
+(int, int) videoTextureCap((int, int) limit, (int, int)? video) {
+  final (lw, lh) = limit;
+  if (video == null || video.$1 <= 0 || video.$2 <= 0) return limit;
+  final m = video.$1 > video.$2 ? video.$1 : video.$2;
+  return (m < lw ? m : lw, m < lh ? m : lh);
+}
+
+/// Registers fvp (libmdk) as the video_player backend with this session's
+/// decoders and a texture cap: the display size, or [video]'s own size when
+/// smaller (see [videoTextureCap]). Called once per engine at startup and
+/// again before each video is opened (the options are global to the engine).
+void registerVideoPlayer({(int, int)? video}) {
+  final (tw, th) = videoTextureCap(videoTextureLimit(), video);
+  fvp.registerWith(options: {'maxWidth': tw, 'maxHeight': th, 'video.decoders': ?videoDecoders()});
+}
+
+/// Coded size of the first video stream (ffprobe), or null when unknown.
+Future<(int, int)?> probeVideoSize(String path, {String ffprobe = 'ffprobe'}) async {
+  try {
+    final r = await Process.run(ffprobe, [
+      '-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height', '-of', 'csv=p=0', path, //
+    ]).timeout(const Duration(seconds: 3));
+    final parts = '${r.stdout}'.trim().split(',');
+    if (parts.length < 2) return null;
+    final w = int.tryParse(parts[0].trim()), h = int.tryParse(parts[1].trim());
+    return w == null || h == null ? null : (w, h);
+  } catch (_) {
+    return null;
+  }
 }
 
 /// libmdk video decoders for this session, or null for fvp's default

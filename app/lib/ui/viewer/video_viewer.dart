@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../platform/media_viewer.dart';
+import '../perf.dart';
 import '../theme.dart';
 import 'viewer_commands.dart';
 
@@ -81,8 +82,14 @@ class VideoViewerBodyState extends State<VideoViewerBody> implements PlaybackPro
     _commands = viewerCommands.stream.listen(_onCommand);
     activePlayback = this;
     _c.addListener(_onValue);
-    _c
-        .initialize()
+    // Real player: cap the texture at the video's own size first (no
+    // upscaling, see videoTextureCap); fvp reads the cap when it creates the
+    // texture in initialize().
+    final ready = widget.controllerFactory == null
+        ? probeVideoSize(widget.path).then((size) => registerVideoPlayer(video: size))
+        : Future<void>.value();
+    ready
+        .then((_) => _c.initialize())
         .then((_) {
           if (!mounted) return;
           setState(() {});

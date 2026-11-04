@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:fvp/fvp.dart' as fvp;
 import 'package:logging/logging.dart';
 
 import 'core/voice/live_register.dart';
@@ -16,16 +15,14 @@ void main(List<String> args) {
   WidgetsFlutterBinding.ensureInitialized();
   // In-app video (show_file) through libmdk; registered in every engine,
   // the viewer sub-window included (its plugins are registered by the runner).
-  // Video textures are capped at the display size (scaled by libmdk while
-  // decoding) so a 4K file does not upload 4K frames for a smaller window.
+  // Video textures are capped at the display size, or the video's own size
+  // when smaller (registerVideoPlayer, again per video in the viewer).
   // WOI_MDK_LOG=1 prints libmdk / fvp logs (decoder, renderer, GL).
   if (Platform.environment['WOI_MDK_LOG'] == '1') {
     Logger.root.level = Level.ALL;
     Logger.root.onRecord.listen((r) => debugPrint('[${r.loggerName}] ${r.message}'));
   }
-  final (tw, th) = videoTextureLimit();
-  final decoders = videoDecoders();
-  fvp.registerWith(options: {'maxWidth': tw, 'maxHeight': th, 'video.decoders': ?decoders});
+  registerVideoPlayer();
 
   // desktop_multi_window starts sub-windows with ['multi_window', id, argument].
   if (args.length >= 3 && args[0] == 'multi_window' && args[2].startsWith(LinuxMediaViewer.windowTag)) {
