@@ -113,11 +113,13 @@ ToolDefinition appControlTool(AppActions actions) => ToolDefinition(
     description:
         'Control Woi itself. show_view (view: note, chat, terminal, split, single); '
         'set_setting (key: theme [light|dark|system], mic_mode [hands_free|push_to_talk|muted], voice, '
-        'voice_model, compaction_threshold [tokens], run_in_terminal [on|off], edit_apply_delay [0|3|5|10|approval]; value); '
+        'voice_model, compaction_threshold [tokens], run_in_terminal [on|off], edit_apply_delay [0|3|5|10|approval], usage_guard [percent left below which delegation/compaction use '
+        'gpt-6-luna; 0 = off]; value); '
         'terminal_new; terminal_run (command typed into a shell tab; tab: number/title/"new"); terminal_close (tab); '
         'viewer_open (path), viewer_close, viewer_pause, viewer_play, viewer_seek (seconds: relative, or to=true for '
         'absolute); apply_edit / reject_edit (the pending edit preview); undo_edit ("undo that": reverts your last '
-        'note or file edit).',
+        'note or file edit); usage ("how much usage do I have left": the ChatGPT plan\'s 5-hour and weekly limits, '
+        'used/left percent and reset times).',
     parameters: {
       'type': 'object',
       'properties': {
@@ -137,6 +139,7 @@ ToolDefinition appControlTool(AppActions actions) => ToolDefinition(
             'apply_edit',
             'reject_edit',
             'undo_edit',
+            'usage',
           ],
         },
         'view': {'type': 'string'},
@@ -193,6 +196,8 @@ ToolDefinition appControlTool(AppActions actions) => ToolDefinition(
         return {'ok': true};
       case 'undo_edit':
         return {'ok': true, 'done': await actions.undoLastEdit()};
+      case 'usage':
+        return {'ok': true, ...await actions.usageStatus()};
       default:
         throw ToolFailure('unknown action "$action"');
     }

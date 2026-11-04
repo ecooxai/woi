@@ -193,8 +193,10 @@ class AppController extends ChangeNotifier {
     ];
     return 'ChatGPT usage low: $label window ${w.remainingPercent.round()}% left'
         '${r == null ? '' : ' (resets ${UsageLimit.formatReset(r)})'}'
-        '${models.isEmpty ? '.' : '. ${models.join('; ')}.'}';
+        '${models.isEmpty ? '.' : '. ${_cap(models.join('; '))}.'}';
   }
+
+  static String _cap(String s) => s.isEmpty ? s : '${s[0].toUpperCase()}${s.substring(1)}';
 
   /// Polls the usage endpoint only while it can answer and the app is in use.
   void _syncUsagePolling() {
