@@ -220,3 +220,8 @@ turn), send key events to the current app (esc/back, ctrl+c copy, paste, select 
   controller (now 5 fps steps, still after 20 s); tool spinners, progress sweeps and the compaction meter ran at the
   display rate (now 12 fps timer-driven, in repaint boundaries). QA: `WOI_MIC_MODE` forces the launch mic mode,
   `PERF_SILENT_MIC=1` gives `qa/perf_scenarios.sh` a silent PipeWire source, keys go through XTEST.
+- Typing: every keystroke re-counted the pinned note's tokens, sent a `session.update` and started the context
+  meter's 700 ms tween (~45 frames per key). The pinned-note sync is now debounced (600 ms, at most every 3 s while
+  typing) and the meter fill is quantized to 1/80 steps, so a key costs ~1 frame. What remains is the full-window
+  software raster (~20 ms a frame) plus the editor rebuild; sustained 11 keys/s still reads ~80%, a 3 keys/s pace ~10%.
+- Reply: the voice level publishes at 10 Hz (was 15).
