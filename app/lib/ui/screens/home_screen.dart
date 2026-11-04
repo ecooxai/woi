@@ -193,8 +193,12 @@ class _HomeScreenState extends State<HomeScreen> {
     // A dialog or popup is on top: it handles its own keys.
     if (ModalRoute.of(context)?.isCurrent != true) return false;
     final key = e.logicalKey;
-    final ctrl = HardwareKeyboard.instance.isControlPressed || HardwareKeyboard.instance.isMetaPressed;
-    if (key == LogicalKeyboardKey.space && !_typing && !ctrl && c.settings.micMode == MicMode.pushToTalk) {
+    final kb = HardwareKeyboard.instance;
+    // Ctrl alone: Ctrl+Shift / Ctrl+Alt combinations belong to the focused
+    // widget (the editor's Format shortcuts, e.g. Ctrl+Alt+1 = Heading 1).
+    final anyCtrl = kb.isControlPressed || kb.isMetaPressed;
+    final ctrl = anyCtrl && !kb.isShiftPressed && !kb.isAltPressed;
+    if (key == LogicalKeyboardKey.space && !_typing && !anyCtrl && c.settings.micMode == MicMode.pushToTalk) {
       if (e is KeyDownEvent) pipeline.pttDown();
       if (e is KeyUpEvent) pipeline.pttUp();
       return true;
@@ -226,7 +230,7 @@ class _HomeScreenState extends State<HomeScreen> {
       return true;
     }
     // A pending edit preview: Enter applies (unless typing something), Esc rejects.
-    if (c.review.hasPending && !ctrl) {
+    if (c.review.hasPending && !anyCtrl) {
       if (key == LogicalKeyboardKey.escape && !inTerminal) return c.review.reject();
       if ((key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.numpadEnter) && _enterApplies()) {
         return c.review.apply();
@@ -405,6 +409,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 compact: phone,
                 onOpenLink: _openLink,
                 onRun: _run,
+                onCopy: c.actions.copyNote,
+                copied: c.actions.copied,
               ),
             ),
           ],

@@ -1,16 +1,20 @@
+import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/notes/note_controller.dart';
+import '../../core/notes/note_copy.dart';
 import '../../core/notes/note_ops.dart';
 import '../theme.dart';
 import 'markdown_syntax.dart';
 import 'markdown_view.dart';
 
-/// Source, side-by-side or rendered.
-enum NoteViewMode { edit, split, preview }
+/// Highlighted source (the default; checklists and links work there too)
+/// or the rendered preview (Format menu or Ctrl+Shift+P; Esc goes back).
+enum NoteViewMode { edit, preview }
 
 class _UndoIntent extends Intent {
   const _UndoIntent();
@@ -18,11 +22,6 @@ class _UndoIntent extends Intent {
 
 class _RedoIntent extends Intent {
   const _RedoIntent();
-}
-
-class _WrapIntent extends Intent {
-  const _WrapIntent(this.marker);
-  final String marker;
 }
 
 class _NewlineIntent extends Intent {
@@ -41,6 +40,69 @@ class _ToggleCheckIntent extends Intent {
 class _RunIntent extends Intent {
   const _RunIntent();
 }
+
+class _FormatIntent extends Intent {
+  const _FormatIntent(this.op);
+  final NoteFormat op;
+}
+
+class _CopyIntent extends Intent {
+  const _CopyIntent(this.scope);
+  final NoteCopyScope scope;
+}
+
+class _PreviewIntent extends Intent {
+  const _PreviewIntent();
+}
+
+/// The Format menu's entries, in menu order.
+enum NoteFormat {
+  h1('Heading 1', Icons.title_rounded, SingleActivator(LogicalKeyboardKey.digit1, control: true, alt: true)),
+  h2('Heading 2', Icons.title_rounded, SingleActivator(LogicalKeyboardKey.digit2, control: true, alt: true)),
+  h3('Heading 3', Icons.title_rounded, SingleActivator(LogicalKeyboardKey.digit3, control: true, alt: true)),
+  bold('Bold', Icons.format_bold_rounded, SingleActivator(LogicalKeyboardKey.keyB, control: true)),
+  italic('Italic', Icons.format_italic_rounded, SingleActivator(LogicalKeyboardKey.keyI, control: true)),
+  strike(
+    'Strikethrough',
+    Icons.format_strikethrough_rounded,
+    SingleActivator(LogicalKeyboardKey.keyS, control: true, shift: true),
+  ),
+  bullet(
+    'Bulleted list',
+    Icons.format_list_bulleted_rounded,
+    SingleActivator(LogicalKeyboardKey.keyL, control: true, shift: true),
+  ),
+  number(
+    'Numbered list',
+    Icons.format_list_numbered_rounded,
+    SingleActivator(LogicalKeyboardKey.keyO, control: true, shift: true),
+  ),
+  check('Checklist', Icons.checklist_rounded, SingleActivator(LogicalKeyboardKey.keyX, control: true, shift: true)),
+  quote('Quote', Icons.format_quote_rounded, SingleActivator(LogicalKeyboardKey.keyQ, control: true, shift: true)),
+  code('Inline code', Icons.code_rounded, SingleActivator(LogicalKeyboardKey.keyE, control: true)),
+  codeBlock(
+    'Code block',
+    Icons.data_object_rounded,
+    SingleActivator(LogicalKeyboardKey.keyE, control: true, shift: true),
+  ),
+  link('Link', Icons.link_rounded, SingleActivator(LogicalKeyboardKey.keyH, control: true, shift: true));
+
+  const NoteFormat(this.label, this.icon, this.shortcut);
+  final String label;
+  final IconData icon;
+  final SingleActivator shortcut;
+
+  /// Menu groups (a divider between them).
+  static const groups = [
+    [h1, h2, h3],
+    [bold, italic, strike, code],
+    [bullet, number, check, quote],
+    [codeBlock, link],
+  ];
+}
+
+const _copyNoteKey = SingleActivator(LogicalKeyboardKey.keyC, control: true, shift: true);
+const _previewKey = SingleActivator(LogicalKeyboardKey.keyP, control: true, shift: true);
 
 /// The text "Run" sends: the selection, or else the line at the cursor
 /// (trimmed). Empty when there is nothing to send.
@@ -86,15 +148,25 @@ class NoteEditor extends StatefulWidget {
     this.onOpenLink,
     this.initialMode,
     this.onRun,
+    this.onCopy,
+    this.copied,
   });
 
   final NoteController notes;
+
+  /// Copies the note or the line / paragraph / H1 section at the cursor and
+  /// returns the confirmation label (AppActions.copyNote, shared with voice).
+  /// Null: the editor copies to the clipboard itself.
+  final Future<String> Function(NoteCopyScope scope)? onCopy;
+
+  /// Copies made elsewhere (voice): the editor shows the same confirmation.
+  final ValueListenable<({String label, int seq})?>? copied;
 
   /// "Run": sends the cursor line or the selection to the assistant as a
   /// user turn. Null disables the button (e.g. while offline).
   final ValueChanged<String>? onRun;
 
-  /// Phone layout: smaller toolbar, no split mode.
+  /// Phone layout: touch-size toolbar, icon-only Format / Copy.
   final bool compact;
 
   /// Called for clicked links / file paths in the preview.
@@ -110,9 +182,16 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
 
   late final MarkdownEditingController _ctrl = MarkdownEditingController(text: widget.notes.text);
   final _focus = FocusNode(debugLabel: 'note-editor');
+  final _previewFocus = FocusNode(debugLabel: 'note-preview');
   final _editScroll = ScrollController();
   final _previewScroll = ScrollController();
   late NoteViewMode _mode = widget.initialMode ?? _lastMode;
+  final _formatMenu = MenuController();
+  final _copyMenu = MenuController();
+
+  /// "Copied …" confirmation, cleared by [_copyTimer].
+  String? _copyLabel;
+  Timer? _copyTimer;
   late final AnimationController _glow = AnimationController(vsync: this, duration: const Duration(milliseconds: 900))
     ..addListener(_onGlow);
   bool _syncing = false;
@@ -122,10 +201,10 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
   NoteViewMode get mode => _effectiveMode;
   MarkdownEditingController get textController => _ctrl;
 
-  NoteViewMode get _effectiveMode => _dense && _mode == NoteViewMode.split ? NoteViewMode.edit : _mode;
+  NoteViewMode get _effectiveMode => _mode;
 
-  /// Narrow pane (phone, or the note half of the side-by-side view): fewer
-  /// toolbar buttons, icon-only mode switch, no in-editor split.
+  /// Narrow pane (phone, or the note half of the side-by-side view):
+  /// icon-only Format / Copy buttons, shorter footer.
   bool _dense = false;
 
   @override
@@ -133,6 +212,7 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
     super.initState();
     _ctrl.addListener(_onText);
     notes.addListener(_onNotes);
+    widget.copied?.addListener(_onCopied);
     _syncAi();
   }
 
@@ -144,14 +224,21 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
       widget.notes.addListener(_onNotes);
       _onNotes();
     }
+    if (oldWidget.copied != widget.copied) {
+      oldWidget.copied?.removeListener(_onCopied);
+      widget.copied?.addListener(_onCopied);
+    }
   }
 
   @override
   void dispose() {
     notes.removeListener(_onNotes);
+    widget.copied?.removeListener(_onCopied);
+    _copyTimer?.cancel();
     _ctrl.removeListener(_onText);
     _ctrl.dispose();
     _focus.dispose();
+    _previewFocus.dispose();
     _editScroll.dispose();
     _previewScroll.dispose();
     _glow.dispose();
@@ -160,12 +247,22 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
 
   void setMode(NoteViewMode m) {
     setState(() => _mode = _lastMode = m);
-    if (m != NoteViewMode.preview) _focus.requestFocus();
+    if (m == NoteViewMode.preview) {
+      // After the menu closes (it restores focus to where it was).
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _mode == NoteViewMode.preview) _previewFocus.requestFocus();
+      });
+    } else {
+      _focus.requestFocus();
+    }
   }
 
   // ------------------------------------------------------------------ sync
 
   void _onText() {
+    // The cursor for "copy this paragraph" (voice reads it later).
+    final sel = _ctrl.selection;
+    notes.cursor = sel.isValid ? sel.extentOffset : -1;
     if (_syncing) return;
     if (_ctrl.text != notes.text) notes.setText(_ctrl.text);
   }
@@ -314,13 +411,93 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
     _focus.requestFocus();
   }
 
-  void _heading() => _editLines((l, _) {
+  /// Makes the touched lines headings of [level]; the same level again
+  /// turns them back into plain text.
+  void _heading(int level) => _editLines((l, _) {
     final m = RegExp(r'^(#{1,6})\s+').firstMatch(l);
-    if (m == null) return '# $l';
-    final level = m.group(1)!.length;
-    final rest = l.substring(m.end);
-    return level >= 3 ? rest : '${'#' * (level + 1)} $rest';
+    final rest = m == null ? l : l.substring(m.end);
+    return m != null && m.group(1)!.length == level ? rest : '${'#' * level} $rest';
   });
+
+  /// Runs a Format menu entry (also its keyboard shortcut).
+  void format(NoteFormat op) {
+    if (_mode == NoteViewMode.preview) setMode(NoteViewMode.edit);
+    switch (op) {
+      case NoteFormat.h1:
+        _heading(1);
+      case NoteFormat.h2:
+        _heading(2);
+      case NoteFormat.h3:
+        _heading(3);
+      case NoteFormat.bold:
+        _wrap('**');
+      case NoteFormat.italic:
+        _wrap('*');
+      case NoteFormat.strike:
+        _wrap('~~');
+      case NoteFormat.code:
+        _wrap('`');
+      case NoteFormat.bullet:
+        _linePrefix('bullet');
+      case NoteFormat.number:
+        _linePrefix('number');
+      case NoteFormat.check:
+        _linePrefix('check');
+      case NoteFormat.quote:
+        _linePrefix('quote');
+      case NoteFormat.codeBlock:
+        _codeBlock();
+      case NoteFormat.link:
+        _link();
+    }
+  }
+
+  void togglePreview() => setMode(_mode == NoteViewMode.preview ? NoteViewMode.edit : NoteViewMode.preview);
+
+  // ------------------------------------------------------------------ copy
+
+  /// Copies [scope] at the cursor and shows "Copied …".
+  Future<void> copy(NoteCopyScope scope) async {
+    final sel = _ctrl.selection;
+    notes.cursor = sel.isValid ? sel.extentOffset : -1;
+    final onCopy = widget.onCopy;
+    try {
+      if (onCopy != null) {
+        // The shared action notifies [NoteEditor.copied], which shows it.
+        final label = await onCopy(scope);
+        if (widget.copied == null) _showCopied(label);
+      } else {
+        final text = noteCopyText(notes.text, notes.cursorOrEnd, scope);
+        if (text.trim().isEmpty) throw StateError('nothing');
+        await Clipboard.setData(ClipboardData(text: text));
+        _showCopied(noteCopyLabel(scope, text));
+      }
+    } catch (_) {
+      _showCopied(scope == NoteCopyScope.note ? 'Nothing to copy' : 'No ${scope.label} here', failed: true);
+    }
+  }
+
+  bool _copyFailed = false;
+
+  void _onCopied() {
+    final c = widget.copied?.value;
+    if (c != null) _showCopied(c.label);
+  }
+
+  void _showCopied(String label, {bool failed = false}) {
+    if (!mounted) return;
+    _copyTimer?.cancel();
+    setState(() {
+      _copyLabel = label;
+      _copyFailed = failed;
+    });
+    _copyTimer = Timer(const Duration(milliseconds: 1600), () {
+      if (mounted) setState(() => _copyLabel = null);
+    });
+  }
+
+  @visibleForTesting
+  String? get copyLabel => _copyLabel;
 
   void _linePrefix(String kind) => _editLines((l, i) {
     final m = _listLine.firstMatch(l);
@@ -463,20 +640,7 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
 
   Widget _build() {
     final m = _effectiveMode;
-    final editor = _editorPane();
-    final preview = _previewPane();
-    final content = switch (m) {
-      NoteViewMode.edit => editor,
-      NoteViewMode.preview => preview,
-      NoteViewMode.split => Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(child: editor),
-          Container(width: 1, color: WoiColors.stroke),
-          Expanded(child: preview),
-        ],
-      ),
-    };
+    final content = m == NoteViewMode.preview ? _previewPane() : _editorPane();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -492,6 +656,7 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
                 ),
               ),
               Positioned(left: 0, right: 0, bottom: 12, child: Center(child: _aiChip())),
+              Positioned(top: 8, right: widget.compact ? 8 : 14, child: _copiedToast()),
             ],
           ),
         ),
@@ -507,9 +672,9 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
         const SingleActivator(LogicalKeyboardKey.keyZ, meta: true): const _UndoIntent(),
         const SingleActivator(LogicalKeyboardKey.keyZ, control: true, shift: true): const _RedoIntent(),
         const SingleActivator(LogicalKeyboardKey.keyY, control: true): const _RedoIntent(),
-        const SingleActivator(LogicalKeyboardKey.keyB, control: true): const _WrapIntent('**'),
-        const SingleActivator(LogicalKeyboardKey.keyI, control: true): const _WrapIntent('*'),
-        const SingleActivator(LogicalKeyboardKey.keyE, control: true): const _WrapIntent('`'),
+        for (final f in NoteFormat.values) f.shortcut: _FormatIntent(f),
+        _copyNoteKey: const _CopyIntent(NoteCopyScope.note),
+        _previewKey: const _PreviewIntent(),
         const SingleActivator(LogicalKeyboardKey.enter): const _NewlineIntent(),
         const SingleActivator(LogicalKeyboardKey.numpadEnter): const _NewlineIntent(),
         const SingleActivator(LogicalKeyboardKey.tab): const _IndentIntent(false),
@@ -521,7 +686,9 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
         actions: <Type, Action<Intent>>{
           _UndoIntent: _FnAction<_UndoIntent>((_) => notes.undo()),
           _RedoIntent: _FnAction<_RedoIntent>((_) => notes.redo()),
-          _WrapIntent: _FnAction<_WrapIntent>((i) => _wrap(i.marker)),
+          _FormatIntent: _FnAction<_FormatIntent>((i) => format(i.op)),
+          _CopyIntent: _FnAction<_CopyIntent>((i) => copy(i.scope)),
+          _PreviewIntent: _FnAction<_PreviewIntent>((_) => togglePreview()),
           _NewlineIntent: _FnAction<_NewlineIntent>((_) => _newline(), enabled: _listAtCursor),
           _IndentIntent: _FnAction<_IndentIntent>((i) => _indent(i.outdent), enabled: _onListLine),
           _ToggleCheckIntent: _FnAction<_ToggleCheckIntent>((_) => _toggleCheckAtCursor()),
@@ -565,7 +732,16 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
     );
   }
 
-  Widget _previewPane() => LayoutBuilder(
+  /// The rendered note; Esc or Ctrl+Shift+P goes back to the source.
+  Widget _previewPane() => CallbackShortcuts(
+    bindings: {
+      const SingleActivator(LogicalKeyboardKey.escape): () => setMode(NoteViewMode.edit),
+      _previewKey: () => setMode(NoteViewMode.edit),
+    },
+    child: Focus(focusNode: _previewFocus, autofocus: true, child: _previewBody()),
+  );
+
+  Widget _previewBody() => LayoutBuilder(
     builder: (context, box) {
       final hPad = widget.compact ? 18.0 : math.max(28.0, (box.maxWidth - 820) / 2);
       return MarkdownView(
@@ -600,42 +776,20 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
   );
 
   Widget _toolbar() {
-    final m = _effectiveMode;
-    final editing = m != NoteViewMode.preview;
+    final preview = _effectiveMode == NoteViewMode.preview;
+    final phone = widget.compact;
     Widget btn(IconData icon, String tip, VoidCallback? onTap, {Key? key}) =>
-        _ToolButton(key: key, icon: icon, tooltip: tip, onTap: onTap, compact: widget.compact);
-    final format = <Widget>[
-      btn(Icons.title_rounded, 'Heading', editing ? _heading : null),
-      btn(Icons.format_bold_rounded, 'Bold (Ctrl+B)', editing ? () => _wrap('**') : null),
-      btn(Icons.format_italic_rounded, 'Italic (Ctrl+I)', editing ? () => _wrap('*') : null),
-      btn(Icons.format_list_bulleted_rounded, 'Bulleted list', editing ? () => _linePrefix('bullet') : null),
-      btn(
-        Icons.checklist_rounded,
-        'Checklist',
-        editing ? () => _linePrefix('check') : null,
-        key: const ValueKey('tb-check'),
-      ),
-      if (!_dense)
-        btn(Icons.format_list_numbered_rounded, 'Numbered list', editing ? () => _linePrefix('number') : null),
-      if (!_dense) btn(Icons.format_quote_rounded, 'Quote', editing ? () => _linePrefix('quote') : null),
-      btn(Icons.code_rounded, 'Code (Ctrl+E)', editing ? _codeBlock : null),
-      btn(Icons.link_rounded, 'Link', editing ? _link : null),
-    ];
-    final history = <Widget>[
-      btn(Icons.undo_rounded, 'Undo (Ctrl+Z)', notes.canUndo ? notes.undo : null, key: const ValueKey('tb-undo')),
-      btn(Icons.redo_rounded, 'Redo (Ctrl+Shift+Z)', notes.canRedo ? notes.redo : null, key: const ValueKey('tb-redo')),
-    ];
-    final modes = _ModeSwitch(mode: m, compact: _dense, onChanged: setMode);
+        _ToolButton(key: key, icon: icon, tooltip: tip, onTap: onTap, compact: phone);
+    final height = phone ? kTouchTarget : 32.0;
     final runBtn = Tooltip(
       message: widget.onRun == null
           ? 'Run (connect first)'
           : 'Run: send the current line or selection to Woi (Ctrl+R)',
-      // Tonal, the same weight as the tabs and the mode switch.
       child: FilledButton.icon(
         key: const ValueKey('note-run'),
         onPressed: widget.onRun == null ? null : run,
         style: FilledButton.styleFrom(
-          minimumSize: Size(0, widget.compact ? kTouchTarget : 32),
+          minimumSize: Size(0, height),
           padding: const EdgeInsets.only(left: 10, right: 14),
           textStyle: body(13, weight: FontWeight.w600),
           backgroundColor: WoiColors.cyan.withValues(alpha: 0.10),
@@ -650,31 +804,209 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
       ),
     );
     return Padding(
-      padding: EdgeInsets.fromLTRB(widget.compact ? 8 : 14, 8, widget.compact ? 8 : 14, 8),
+      padding: EdgeInsets.fromLTRB(phone ? 8 : 14, 8, phone ? 8 : 14, 8),
       child: Row(
         children: [
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  ...format,
-                  Container(
-                    width: 1,
-                    height: 20,
-                    margin: const EdgeInsets.symmetric(horizontal: 6),
-                    color: WoiColors.stroke,
-                  ),
-                  ...history,
-                ],
-              ),
-            ),
+          _formatButton(height),
+          const SizedBox(width: 4),
+          btn(Icons.undo_rounded, 'Undo (Ctrl+Z)', notes.canUndo ? notes.undo : null, key: const ValueKey('tb-undo')),
+          btn(
+            Icons.redo_rounded,
+            'Redo (Ctrl+Shift+Z)',
+            notes.canRedo ? notes.redo : null,
+            key: const ValueKey('tb-redo'),
           ),
-          const SizedBox(width: 8),
-          modes,
+          if (preview) ...[
+            const SizedBox(width: 8),
+            Flexible(child: _previewChip(height)),
+          ],
+          const Spacer(),
+          _copyButton(height),
           const SizedBox(width: 8),
           runBtn,
         ],
+      ),
+    );
+  }
+
+  /// Quiet text button look shared by Format and Copy.
+  ButtonStyle _quiet(double height) => TextButton.styleFrom(
+    minimumSize: Size(height, height),
+    padding: EdgeInsets.symmetric(horizontal: _dense ? 8 : 10),
+    foregroundColor: WoiColors.textDim,
+    textStyle: body(13, weight: FontWeight.w600),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(WoiRadii.sm + 2)),
+  );
+
+  /// One dropdown for every Markdown format, with its shortcut; the
+  /// preview toggle sits at the bottom.
+  Widget _formatButton(double height) {
+    final preview = _effectiveMode == NoteViewMode.preview;
+    final items = <Widget>[];
+    for (final (gi, group) in NoteFormat.groups.indexed) {
+      if (gi > 0) items.add(const Divider(height: 9));
+      for (final f in group) {
+        items.add(
+          MenuItemButton(
+            key: ValueKey('fmt-${f.name}'),
+            leadingIcon: f.index <= NoteFormat.h3.index
+                ? SizedBox(
+                    width: 18,
+                    child: Text(
+                      'H${f.index + 1}',
+                      textAlign: TextAlign.center,
+                      style: body(12, weight: FontWeight.w700, color: WoiColors.textDim),
+                    ),
+                  )
+                : Icon(f.icon, size: 18),
+            shortcut: f.shortcut,
+            onPressed: () => format(f),
+            child: Text(f.label),
+          ),
+        );
+      }
+    }
+    items
+      ..add(const Divider(height: 9))
+      ..add(
+        MenuItemButton(
+          key: const ValueKey('fmt-preview'),
+          leadingIcon: Icon(preview ? Icons.edit_outlined : Icons.visibility_outlined, size: 18),
+          shortcut: _previewKey,
+          onPressed: togglePreview,
+          child: Text(preview ? 'Back to editing' : 'Preview'),
+        ),
+      );
+    return MenuAnchor(
+      controller: _formatMenu,
+      menuChildren: items,
+      child: Tooltip(
+        message: 'Format',
+        child: TextButton(
+          key: const ValueKey('note-format'),
+          style: _quiet(height),
+          onPressed: () => _formatMenu.isOpen ? _formatMenu.close() : _formatMenu.open(),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.text_format_rounded, size: 20),
+              if (!_dense) ...[const SizedBox(width: 6), const Text('Format')],
+              const SizedBox(width: 2),
+              const Icon(Icons.arrow_drop_down_rounded, size: 18),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _previewChip(double height) => Tooltip(
+    message: 'Back to editing (Esc, Ctrl+Shift+P)',
+    child: InkWell(
+      key: const ValueKey('note-preview-close'),
+      onTap: () => setMode(NoteViewMode.edit),
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        height: _dense ? 32 : 28,
+        padding: const EdgeInsets.only(left: 10, right: 6),
+        decoration: BoxDecoration(
+          color: WoiColors.violet.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Text(
+                'Preview',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: body(12, weight: FontWeight.w600, color: WoiColors.violet),
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(Icons.close_rounded, size: 15, color: WoiColors.violet),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  /// Copy: a click copies the whole note; long-press / right-click (or the
+  /// caret) offers the line, paragraph or H1 section at the cursor.
+  Widget _copyButton(double height) {
+    final done = _copyLabel != null && !_copyFailed;
+    Widget item(NoteCopyScope s, IconData icon, String label, {SingleActivator? shortcut}) => MenuItemButton(
+      key: ValueKey('copy-${s.name}'),
+      leadingIcon: Icon(icon, size: 18),
+      shortcut: shortcut,
+      onPressed: () => copy(s),
+      child: Text(label),
+    );
+    void openMenu([Offset? at]) => _copyMenu.open(position: at);
+    return MenuAnchor(
+      controller: _copyMenu,
+      menuChildren: [
+        item(NoteCopyScope.note, Icons.description_outlined, 'Copy note', shortcut: _copyNoteKey),
+        const Divider(height: 9),
+        item(NoteCopyScope.line, Icons.short_text_rounded, 'Copy line'),
+        item(NoteCopyScope.paragraph, Icons.notes_rounded, 'Copy paragraph'),
+        item(NoteCopyScope.section, Icons.title_rounded, 'Copy H1 section'),
+      ],
+      child: GestureDetector(
+        onSecondaryTapUp: (d) => openMenu(d.localPosition),
+        child: Tooltip(
+          message: 'Copy note (Ctrl+Shift+C) · long-press or right-click: line, paragraph, section',
+          child: TextButton(
+            key: const ValueKey('note-copy'),
+            style: _quiet(height).copyWith(
+              foregroundColor: WidgetStatePropertyAll(done ? WoiColors.mint : WoiColors.textDim),
+            ),
+            onPressed: () => copy(NoteCopyScope.note),
+            onLongPress: openMenu,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(done ? Icons.check_rounded : Icons.content_copy_rounded, size: 17),
+                if (!_dense) ...[const SizedBox(width: 6), Text(done ? 'Copied' : 'Copy')],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Brief "Copied paragraph (3 lines)" under the toolbar's right end.
+  Widget _copiedToast() {
+    final l = _copyLabel;
+    return IgnorePointer(
+      child: AnimatedOpacity(
+        opacity: l == null ? 0 : 1,
+        duration: WoiMotion.fast,
+        child: l == null
+            ? const SizedBox.shrink()
+            : Container(
+                key: const ValueKey('note-copied'),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: WoiColors.bg1,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: (_copyFailed ? WoiColors.amber : WoiColors.mint).withValues(alpha: 0.5)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      _copyFailed ? Icons.info_outline_rounded : Icons.check_rounded,
+                      size: 14,
+                      color: _copyFailed ? WoiColors.amber : WoiColors.mint,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(l, style: body(12, weight: FontWeight.w600)),
+                  ],
+                ),
+              ),
       ),
     );
   }
@@ -721,7 +1053,7 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
             child: _dense
                 ? const SizedBox.shrink()
                 : Text(
-                    'Markdown  ·  Ctrl+B  Ctrl+I  Ctrl+E  ·  Ctrl+Enter toggles a todo  ·  Ctrl+R runs a line',
+                    'Markdown  ·  Ctrl+Enter toggles a todo  ·  Ctrl+R runs a line  ·  Ctrl+Shift+P preview',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.right,
@@ -828,73 +1160,4 @@ class _ToolButton extends StatelessWidget {
       ),
     ),
   );
-}
-
-/// Edit / Split / Preview pill switch.
-class _ModeSwitch extends StatelessWidget {
-  const _ModeSwitch({required this.mode, required this.onChanged, this.compact = false});
-  final NoteViewMode mode;
-  final ValueChanged<NoteViewMode> onChanged;
-  final bool compact;
-
-  @override
-  Widget build(BuildContext context) {
-    final items = [
-      (NoteViewMode.edit, Icons.edit_outlined, 'Edit'),
-      if (!compact) (NoteViewMode.split, Icons.vertical_split_outlined, 'Split'),
-      (NoteViewMode.preview, Icons.visibility_outlined, 'Preview'),
-    ];
-    return Container(
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: WoiColors.glass,
-        borderRadius: BorderRadius.circular(WoiRadii.md),
-        border: Border.all(color: WoiColors.stroke),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (final (m, icon, label) in items)
-            Semantics(
-              selected: m == mode,
-              button: true,
-              label: label,
-              child: Tooltip(
-                message: label,
-                child: InkWell(
-                  key: ValueKey('note-mode-${m.name}'),
-                  onTap: () => onChanged(m),
-                  borderRadius: BorderRadius.circular(WoiRadii.sm),
-                  child: Container(
-                    padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 10, vertical: compact ? 8 : 5),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(WoiRadii.sm),
-                      color: m == mode ? WoiColors.bg1 : null,
-                      border: Border.all(color: m == mode ? WoiColors.stroke : Colors.transparent),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(icon, size: 15, color: m == mode ? WoiColors.text : WoiColors.textDim),
-                        if (!compact) ...[
-                          const SizedBox(width: 6),
-                          Text(
-                            label,
-                            style: body(
-                              12,
-                              weight: FontWeight.w600,
-                              color: m == mode ? WoiColors.text : WoiColors.textDim,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
 }

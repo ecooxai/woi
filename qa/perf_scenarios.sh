@@ -8,6 +8,8 @@
 #   OUT_DIR   CSVs / summaries / app logs land here
 #   scenarios idle listen typing scroll video camera   (default: the first five)
 #             idle10 = 10 min idle (RSS growth check)
+#             tab-note tab-chat tab-terminal tab-settings = idle (muted) on that tab
+#             reply = a typed question answered with a long spoken reply (needs a connection)
 #
 # Env: QA_DISPLAY (default :11; :0 refused), SECS (seconds per scenario, default 60),
 #      SANDBOX (default /tmp/woi-perf-sandbox), PNAME (process name, default woi-perf),
@@ -36,6 +38,8 @@ SANDBOX=${SANDBOX:-/tmp/woi-perf-sandbox}
 # Process/binary name (<= 15 chars); change it to run beside another perf run.
 PNAME=${PNAME:-woi-perf}
 mkdir -p "$OUT"
+# Frame counts every 10 s in each app log (summarized after each scenario).
+export WOI_FRAME_STATS=${WOI_FRAME_STATS-1}
 APP_PID=""
 
 cleanup() { [ -n "$APP_PID" ] && kill "$APP_PID" 2>/dev/null; wait 2>/dev/null; }
@@ -134,8 +138,27 @@ for s in $SCENARIOS; do
       sleep 6
       monitor "$SECS" camera   # ffmpeg (the camera reader) is a child: included
       ;;
+    tab-note | tab-chat | tab-terminal | tab-settings)
+      launch "$s" muted || continue
+      n=$(case $s in tab-note) echo 1 ;; tab-chat) echo 2 ;; tab-terminal) echo 3 ;; *) echo 4 ;; esac)
+      xdotool windowactivate --sync "$WID" 2>/dev/null; xdotool key --window "$WID" "ctrl+$n"; sleep 3
+      center 50 50 # pointer parked inside the window (hover effects)
+      monitor "$SECS" "$s"
+      ;;
+    reply)
+      launch reply muted || continue
+      xdotool windowactivate --sync "$WID" 2>/dev/null; xdotool key --window "$WID" ctrl+k; sleep 1
+      xdotool type --delay 20 "${REPLY_PROMPT:-Tell me a calm story about a lighthouse keeper, about one minute long.}"
+      xdotool key Return
+      monitor "$SECS" reply
+      ;;
     *) echo "unknown scenario $s" >&2; continue ;;
   esac
   stop_app
+  if [ -f "$OUT/$s.summary.txt" ]; then
+    # Frames per second while monitored (WOI_FRAME_STATS lines, 10 s each).
+    awk '/frames\[main\]/ { split($2, a, "f/"); f += a[1]; t += a[2] + 0 } END { if (t) printf "frames/s %.1f (%d frames in %d s)\n", f / t, f, t }' \
+      "$OUT/app-$s.log" >>"$OUT/$s.summary.txt"
+  fi
   cat "$OUT/$s.summary.txt" 2>/dev/null
 done
