@@ -243,6 +243,7 @@ turn), send key events to the current app (esc/back, ctrl+c copy, paste, select 
   (avg 53.6%), 17.5–21.5 frames/s, RSS growth +69–74 MB → perf16 47.0 / 46.0 / 47.8% (avg 46.9%), 14.7–17.9
   frames/s, RSS growth +38–49 MB. Sustained 10 keys/s is still above 30%; the floor is the full-window software
   raster (~20 ms/frame on llvmpipe).
-- RAM while typing: Dart heap stays ~15–26 MB; the growth is native (anon) memory and settles once typing
-  stops. Not fixed, only reduced.
+- RAM while typing: Dart heap stays ~15–26 MB; the growth is native (anon) memory, ~+50 MB over 60 s, and stays
+  after typing stops (MALLOC_ARENA_MAX=2 no help; with NO_AT_BRIDGE=1 idle RSS fell to ~100 MB — the AT-SPI
+  bridge is the lead). Reduced, not fixed.
 - Video viewer on llvmpipe (~290%) not touched in this branch.
