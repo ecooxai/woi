@@ -8,6 +8,7 @@ import '../platform_services.dart';
 import 'android_audio_io.dart';
 import 'android_bridge.dart';
 import 'android_camera.dart';
+import 'android_elements.dart';
 import 'android_input_control.dart';
 import 'android_media_viewer.dart';
 import 'android_screen_capture.dart';
@@ -48,9 +49,11 @@ Future<PlatformServices> createAndroidPlatform({AndroidBridge? bridge}) async {
     authPath: androidAuthPath(info),
     camera: AndroidCameraService(bridge: b),
     autoScreenshot: () => screen.autoCapture,
+    elements: AndroidElementSource(bridge: b),
     deviceNote:
         'Woi runs on an Android phone (${info.model}, Android SDK ${info.sdk}, screen '
-        '${info.screenWidth}x${info.screenHeight}), not a desktop. click_screen taps and type_text types into the app '
+        '${info.screenWidth}x${info.screenHeight}; click_screen x/y are still pixels of the latest screenshot image), not a desktop. '
+        'click_screen taps and type_text types into the app '
         'the user is using (Woi steps aside first; when opened by the assistant gesture Woi is a bottom panel floating over that '
         'app, which stays open); send_keys supports back/esc, home (keys "home" = launcher home screen, not back), recents, enter, '
         'copy, paste, cut and select all only. The camera tool opens the back camera. Screenshots come from screen share (when on) or the assistant gesture. '

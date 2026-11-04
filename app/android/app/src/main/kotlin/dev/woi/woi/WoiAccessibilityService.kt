@@ -208,6 +208,55 @@ class WoiAccessibilityService : AccessibilityService() {
         return ok
     }
 
+    /**
+     * Visible elements of the app windows (not Woi's, not the system bars) for
+     * click_screen target matching: role, name (text, content description or
+     * hint) and bounds in screen pixels, the same space dispatchGesture uses.
+     */
+    private fun elements(max: Int): List<Map<String, Any>> {
+        val out = ArrayList<Map<String, Any>>()
+        val roots = windows.filter { w ->
+            val pkg = w.root?.packageName?.toString()
+            pkg != null && pkg != packageName && pkg != "com.android.systemui" &&
+                w.type != android.view.accessibility.AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY
+        }.sortedByDescending { it.layer }.mapNotNull { it.root }
+        val r = android.graphics.Rect()
+        fun walk(n: AccessibilityNodeInfo, depth: Int) {
+            if (out.size >= max || depth > 60 || !n.isVisibleToUser) return
+            val name = (n.text ?: n.contentDescription ?: (if (Build.VERSION.SDK_INT >= 26) n.hintText else null))
+                ?.toString()?.trim().orEmpty()
+            val actionable = n.isClickable || n.isEditable || n.isCheckable || n.isLongClickable
+            if (name.isNotEmpty() || actionable) {
+                n.getBoundsInScreen(r)
+                if (r.width() > 1 && r.height() > 1) {
+                    out.add(mapOf("role" to androidRole(n), "name" to name.take(120),
+                        "x" to r.left, "y" to r.top, "w" to r.width(), "h" to r.height()))
+                }
+            }
+            for (i in 0 until n.childCount) n.getChild(i)?.let { walk(it, depth + 1) }
+        }
+        for (root in roots) walk(root, 0)
+        return out
+    }
+
+    private fun androidRole(n: AccessibilityNodeInfo): String {
+        val c = n.className?.toString().orEmpty()
+        return when {
+            n.isEditable || c.endsWith("EditText") -> "entry"
+            c.endsWith("CheckBox") -> "check box"
+            c.endsWith("Switch") || c.endsWith("SwitchCompat") -> "switch"
+            c.endsWith("RadioButton") -> "radio button"
+            c.endsWith("ToggleButton") -> "toggle button"
+            c.endsWith("Spinner") -> "combo box"
+            c.endsWith("Button") || c.endsWith("ImageButton") -> "button"
+            c.endsWith("TabWidget") || c.contains("Tab") -> "page tab"
+            n.isCheckable -> "check box"
+            n.isClickable && c.endsWith("ImageView") -> "button"
+            n.isClickable -> "button"
+            else -> "label"
+        }
+    }
+
     private fun screenshot(maxWidth: Int, result: MethodChannel.Result) {
         if (Build.VERSION.SDK_INT < 30) return result.error("unsupported", "needs Android 11", null)
         takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
@@ -257,6 +306,15 @@ class WoiAccessibilityService : AccessibilityService() {
                     val name = call.argument<String>("name") ?: ""
                     try { r.success(s.nodeAction(name)) } catch (e: Exception) {
                         if (name == "enter") s.imeEnterSoon(e, r) else r.error("failed", e.message, null)
+                    }
+                }
+                // Read only: no stepping aside (Woi's own windows are skipped).
+                "elements" -> WoiBridge.io.execute {
+                    try {
+                        val els = s.elements(call.argument<Int>("max") ?: 600)
+                        WoiBridge.main.post { result.success(els) }
+                    } catch (e: Exception) {
+                        WoiBridge.main.post { result.error("failed", e.message, null) }
                     }
                 }
                 "focusTarget" -> s.aside(150, result) { r ->

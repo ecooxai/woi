@@ -148,7 +148,7 @@ object WoiBridge {
                 ctx.startActivity(i)
                 result.success(true)
             }
-            "click", "doubleClick", "typeText", "global", "node", "a11yScreenshot", "focusTarget" ->
+            "click", "doubleClick", "typeText", "global", "node", "a11yScreenshot", "focusTarget", "elements" ->
                 WoiAccessibilityService.handle(call, result)
             // --- screen share ---
             "shareStart" -> {
