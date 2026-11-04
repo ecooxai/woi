@@ -522,6 +522,7 @@ class AppController extends ChangeNotifier {
     cameraReplacesScreenshot: _settings.cameraReplacesScreenshot,
     onsetMicWithManagedAudio: !platform.isMobile,
     bargeInFloor: platform.isMobile && _settings.echoCancellation ? 0.05 : 0.02,
+    halfDuplexWhileSpeaking: platform.audio is AudioRouted && _settings.androidAudioRoute == AndroidAudioRoute.media,
   );
 
   Future<SessionConfig> _sessionConfig(Conversation c) async {

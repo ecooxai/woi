@@ -518,6 +518,49 @@ void main() {
       await h.dispose();
     });
 
+    test('half-duplex (Android media route): echo goes out as silence, an onset reopens the mic', () async {
+      final h = await Harness.create(
+        options: const PipelineOptions(autoScreenshot: false, halfDuplexWhileSpeaking: true),
+      );
+      final b = h.scripted;
+      final mic = h.fp.audio.mic!;
+      bool silent(Uint8List c) => c.every((x) => x == 0);
+      b.emit(const AssistantTranscriptDelta('Once upon a time '));
+      b.sentAudio.clear();
+      for (var i = 0; i < 40; i++) {
+        b.emit(AssistantAudioDelta(pcm(20, amplitude: 8000)));
+        mic.push(pcm(20, amplitude: 300));
+      }
+      expect(h.pipeline.localOnsets, 0);
+      expect(b.sentAudio, hasLength(40));
+      expect(b.sentAudio.every(silent), isTrue, reason: 'echo never reaches the server');
+      b.sentAudio.clear();
+      for (var i = 0; i < 10; i++) {
+        mic.push(pcm(20, amplitude: 9000));
+      }
+      expect(h.pipeline.localOnsets, 1);
+      expect(b.cancels, 1);
+      // Lead-in chunks plus the onset chunk and the rest are real audio.
+      final real = b.sentAudio.where((c) => !silent(c)).length;
+      expect(real, greaterThanOrEqualTo(9), reason: 'the user is heard, including the lead-in');
+      await h.dispose();
+    });
+
+    test('half-duplex off (default): the mic goes to the server while Woi speaks', () async {
+      final h = await Harness.create(options: const PipelineOptions(autoScreenshot: false));
+      final b = h.scripted;
+      final mic = h.fp.audio.mic!;
+      b.emit(const AssistantTranscriptDelta('Once upon a time '));
+      b.sentAudio.clear();
+      for (var i = 0; i < 5; i++) {
+        b.emit(AssistantAudioDelta(pcm(20, amplitude: 8000)));
+        mic.push(pcm(20, amplitude: 300));
+      }
+      expect(b.sentAudio.where((c) => c.any((x) => x != 0)), hasLength(5));
+      expect(h.pipeline.gatedChunks, 0);
+      await h.dispose();
+    });
+
     test('"stop" while speaking: stopped locally, its spoken answer is dropped (no bubble)', () async {
       final h = await Harness.create(options: const PipelineOptions(autoScreenshot: false));
       final b = h.scripted;
@@ -994,8 +1037,7 @@ void main() {
   });
 
   group('idle power and usage limit (iter8)', () {
-    const limit429 =
-        'gpt-live call failed: HTTP 429 {"error":{"type":"usage_limit_reached","resets_at":4102444800}}';
+    const limit429 = 'gpt-live call failed: HTTP 429 {"error":{"type":"usage_limit_reached","resets_at":4102444800}}';
 
     test('the mic only opens once connected; a failed connect releases the backend', () async {
       final h = await Harness.create(backend: () => ScriptedBackend()..connectError = StateError('network down'));
@@ -1101,7 +1143,11 @@ void main() {
       gate.complete("what's in this image\n[media attached]");
       await waitFor(() => h.scripted.texts.length == 2);
       expect(h.scripted.texts.last, contains('[media attached]'));
-      expect(ofKind(h.conv, MessageKind.user).last.text, "what's in this image", reason: 'transcript keeps the typed text');
+      expect(
+        ofKind(h.conv, MessageKind.user).last.text,
+        "what's in this image",
+        reason: 'transcript keeps the typed text',
+      );
       await h.dispose();
     });
 

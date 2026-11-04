@@ -49,7 +49,16 @@ class PipelineOptions {
     this.cameraReplacesScreenshot = false,
     this.onsetMicWithManagedAudio = true,
     this.bargeInFloor = 0.02,
+    this.halfDuplexWhileSpeaking = false,
   });
+
+  /// Android media route: while Woi's audio plays (and briefly after), send
+  /// silence to the server instead of the mic, so residual echo of Woi's
+  /// own voice can neither trigger server VAD (auto-interrupt) nor become a
+  /// user turn. The local onset detector still sees the real mic; when it
+  /// fires, playback stops and the real audio (with ~160 ms of lead-in)
+  /// flows again.
+  final bool halfDuplexWhileSpeaking;
 
   /// Minimum mic RMS for a local barge-in onset while Woi speaks. Android's
   /// platform echo canceller removes the echo almost completely but leaves
@@ -598,16 +607,61 @@ class TurnPipeline extends ChangeNotifier {
 
   bool get _forwarding => _micMode == MicMode.handsFree || (_micMode == MicMode.pushToTalk && _pttHeld);
 
+  // Half-duplex gate (media route): recent real chunks held back while
+  // silence went to the server, and the end of the post-playback hangover.
+  final List<Uint8List> _gated = [];
+  DateTime _gateUntil = DateTime.fromMillisecondsSinceEpoch(0);
+  static const _gateHangover = Duration(milliseconds: 300);
+
+  /// Sends [chunk], or silence while the half-duplex gate is closed.
+  /// Returns true when it already fed the onset detector.
+  bool _sendGated(VoiceBackend b, Uint8List chunk) {
+    final before = localOnsets;
+    _feedOnset(chunk);
+    final now = DateTime.now();
+    if (localOnsets != before) {
+      // The user talks over Woi: the lead-in goes out with this chunk.
+      _gateUntil = now;
+      for (final c in _gated) {
+        b.sendAudio(c);
+      }
+      _gated.clear();
+      b.sendAudio(chunk);
+      return true;
+    }
+    if (_assistantAudible && !_userSpeaking) _gateUntil = now.add(_gateHangover);
+    if (now.isBefore(_gateUntil)) {
+      gatedChunks++;
+      _gated.add(chunk);
+      if (_gated.length > 2) _gated.removeAt(0);
+      b.sendAudio(Uint8List(chunk.length));
+    } else {
+      _gated.clear();
+      b.sendAudio(chunk);
+    }
+    return true;
+  }
+
+  /// Mic chunks replaced by silence by the half-duplex gate (tests/diagnostics).
+  int gatedChunks = 0;
+
   void _onMicChunk(Uint8List chunk) {
     final b = _backend;
     if (b == null || _status != SessionStatus.connected || !_forwarding) return;
-    if (!_micManaged) b.sendAudio(chunk);
+    var onsetFed = false;
+    if (!_micManaged) {
+      if (options().halfDuplexWhileSpeaking && _micMode == MicMode.handsFree) {
+        onsetFed = _sendGated(b, chunk);
+      } else {
+        b.sendAudio(chunk);
+      }
+    }
     if (_userSpeaking) {
       _utterancePcm.add(chunk);
     } else {
       _preRoll.add(chunk);
     }
-    if (!_micManaged && _micMode == MicMode.handsFree) _feedOnset(chunk);
+    if (!onsetFed && !_micManaged && _micMode == MicMode.handsFree) _feedOnset(chunk);
     if (!b.hasServerVad && _micMode == MicMode.handsFree) {
       _localVad.sensitivityScale = _assistantAudible ? 2.5 : 1.0;
       switch (_localVad.process(chunk)) {

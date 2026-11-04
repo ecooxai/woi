@@ -17,9 +17,11 @@ import android.util.Log
  *    HAL's call echo canceller (referenced to the whole output mix, other
  *    apps' media included) runs. Output goes to a headset when one is
  *    connected (Bluetooth / wired / USB), else the loudspeaker.
- *  - "media": playback is an ordinary USAGE_MEDIA stream, capture uses
- *    VOICE_RECOGNITION plus the AcousticEchoCanceler effect where the device
- *    has one; the shared Dart echo guard covers the rest.
+ *  - "media": playback is an ordinary USAGE_MEDIA stream on the recorder's
+ *    session, capture uses VOICE_COMMUNICATION in MODE_NORMAL plus the
+ *    AcousticEchoCanceler/NoiseSuppressor effects; other apps' media pauses
+ *    while the mic is open (transient focus), and the Dart pipeline sends
+ *    silence while Woi speaks unless the local barge-in detector fires.
  *
  * Also owns the transient audio focus (other apps' music ducks while Woi
  * speaks).
@@ -140,10 +142,39 @@ object WoiAudioRoute {
 
     private var focus: AudioFocusRequest? = null
 
+    // Media route: other apps' media pauses while Woi's mic is open. Their
+    // audio is not in the AEC reference there (only Woi's own track is), so
+    // a podcast would otherwise reach the server as user speech.
+    private var listenFocus: AudioFocusRequest? = null
+
+    fun requestListenFocus() {
+        WoiBridge.main.post {
+            if (listenFocus != null || isPhone) return@post
+            val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                .setAudioAttributes(
+                    AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANT)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
+                )
+                .setOnAudioFocusChangeListener { }
+                .build()
+            listenFocus = req
+            val r = am().requestAudioFocus(req)
+            Log.i(WoiBridge.TAG, "media route: listen focus (other media pauses) result=$r")
+        }
+    }
+
+    fun abandonListenFocus() {
+        WoiBridge.main.post {
+            val req = listenFocus ?: return@post
+            listenFocus = null
+            am().abandonAudioFocusRequest(req)
+        }
+    }
+
     /** Other apps duck (or pause) while Woi speaks. Any thread. */
     fun requestSpeechFocus() {
         WoiBridge.main.post {
-            if (focus != null) return@post
+            if (focus != null || listenFocus != null) return@post
             val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
                 .setAudioAttributes(playbackAttributes())
                 .setOnAudioFocusChangeListener { }

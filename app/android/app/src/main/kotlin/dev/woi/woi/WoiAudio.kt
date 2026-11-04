@@ -161,12 +161,12 @@ object WoiAudio {
         val phone = WoiAudioRoute.isPhone
         // Phone route: VOICE_COMMUNICATION in MODE_IN_COMMUNICATION runs the
         // HAL's call echo canceller (referenced to the output mix). Media
-        // route: VOICE_RECOGNITION (no call processing) plus the AEC effect.
-        val source = when {
-            !micAec -> MediaRecorder.AudioSource.MIC
-            phone -> MediaRecorder.AudioSource.VOICE_COMMUNICATION
-            else -> MediaRecorder.AudioSource.VOICE_RECOGNITION
-        }
+        // route: VOICE_COMMUNICATION in MODE_NORMAL plus the AEC/NS effects
+        // on the record session, and Woi's media track plays on that same
+        // session so the effect has it as its echo reference.
+        // (VOICE_RECOGNITION + AEC left most of Woi's voice in the capture
+        // on a MI 8: the effect had no reference for a separate media track.)
+        val source = if (micAec) MediaRecorder.AudioSource.VOICE_COMMUNICATION else MediaRecorder.AudioSource.MIC
         val rec = AudioRecord(
             source, RATE,
             AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(min, CHUNK_BYTES * 4)
@@ -181,7 +181,7 @@ object WoiAudio {
         if (micAec) {
             if (AcousticEchoCanceler.isAvailable()) aec = AcousticEchoCanceler.create(rec.audioSessionId)?.apply { enabled = true }
             if (NoiseSuppressor.isAvailable()) ns = NoiseSuppressor.create(rec.audioSessionId)?.apply { enabled = true }
-            val src = if (phone) "VOICE_COMMUNICATION, call mode" else "VOICE_RECOGNITION"
+            val src = if (phone) "VOICE_COMMUNICATION, call mode" else "VOICE_COMMUNICATION, media mode"
             status = when {
                 aec?.enabled == true -> "active ($route: $src + platform AEC${if (ns?.enabled == true) " + NS" else ""})"
                 phone -> "active ($route: $src; call echo canceller, no separate AEC effect)"
@@ -192,8 +192,13 @@ object WoiAudio {
         }
         rec.startRecording()
         record = rec
+        syncPlayerRoute()
+        if (!phone) WoiAudioRoute.requestListenFocus()
         micThread = Thread({
             val buf = ByteArray(CHUNK_BYTES)
+            // Residual-echo diagnostics: mean mic RMS while Woi's track plays.
+            var echoSum = 0.0
+            var echoN = 0
             while (record === rec) {
                 var off = 0
                 while (off < buf.size && record === rec) {
@@ -206,6 +211,15 @@ object WoiAudio {
                     continue
                 }
                 val chunk = buf.copyOf(off)
+                if (!paused) {
+                    echoSum += rms(chunk); echoN++
+                    if (echoN == 25) {
+                        Log.i(WoiBridge.TAG, "mic rms while playing (2 s): %.4f".format(echoSum / echoN))
+                        echoSum = 0.0; echoN = 0
+                    }
+                } else if (echoN > 0) {
+                    echoSum = 0.0; echoN = 0
+                }
                 WoiBridge.main.post { if (record === rec) events.success(chunk) }
             }
         }, "woi-mic").apply {
@@ -224,7 +238,19 @@ object WoiAudio {
         }, 1500)
     }
 
+    private fun rms(pcm: ByteArray): Double {
+        var sum = 0.0
+        var i = 0
+        while (i + 1 < pcm.size) {
+            val v = ((pcm[i].toInt() and 0xff) or (pcm[i + 1].toInt() shl 8)) / 32768.0
+            sum += v * v
+            i += 2
+        }
+        return Math.sqrt(sum / maxOf(1, pcm.size / 2))
+    }
+
     private fun stopRecord() {
+        WoiAudioRoute.abandonListenFocus()
         val rec = record ?: return
         record = null
         try { rec.stop() } catch (_: Exception) {}
@@ -245,13 +271,18 @@ object WoiAudio {
     private val trackLock = Object()
     // Whether [track] was built for the call path (USAGE_VOICE_COMMUNICATION).
     private var trackCall = false
+    // The record session [track] shares (0: none).
+    private var trackSession = 0
 
     private fun wantCallTrack() = WoiAudioRoute.isPhone && WoiAudioRoute.inCommunication
 
     /** Rebuilds the track when the call mode changed under it. Main thread. */
     private fun syncPlayerRoute() {
-        if (track != null && trackCall != wantCallTrack()) playerClose()
+        if (track != null && (trackCall != wantCallTrack() || trackSession != wantSession())) playerClose()
     }
+
+    /** The recorder's session for the track (both routes, AEC on), else 0. */
+    private fun wantSession() = if (record != null && micAec) ourSession else 0
 
     fun playerOpen(): Boolean {
         if (track != null) return true
@@ -263,7 +294,8 @@ object WoiAudio {
         else AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
         val b = AudioTrack.Builder()
-        if (trackCall && record != null) b.setSessionId(ourSession)
+        trackSession = wantSession()
+        if (trackSession != 0) b.setSessionId(trackSession)
         val t = b
             .setAudioAttributes(attrs)
             .setAudioFormat(

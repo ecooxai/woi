@@ -92,6 +92,7 @@ class FakeAudioIO implements AudioIO, EchoCancellable {
     micOpens.add(echoCancellation);
     return mic = FakeMic();
   }
+
   @override
   Future<PcmPlayer> openPlayer() async {
     if (!_playerOpened) {
@@ -334,7 +335,12 @@ class ScriptedBackend extends VoiceBackend {
   }
 
   @override
-  void sendAudio(Uint8List pcm16) => audioBytes += pcm16.length;
+  void sendAudio(Uint8List pcm16) {
+    audioBytes += pcm16.length;
+    sentAudio.add(pcm16);
+  }
+
+  final List<Uint8List> sentAudio = [];
   @override
   void sendText(String text) => texts.add(text);
   @override
@@ -437,7 +443,11 @@ class FakeCamera extends CameraService {
 extension FakeCameraJpeg on FakeCamera {
   void pushJpeg(Uint8List jpeg) {
     final s = jpegSize(jpeg)!;
-    (frames as ValueNotifier<CameraFrame?>).value =
-        CameraFrame(jpeg: jpeg, width: s.$1, height: s.$2, capturedAt: DateTime.now());
+    (frames as ValueNotifier<CameraFrame?>).value = CameraFrame(
+      jpeg: jpeg,
+      width: s.$1,
+      height: s.$2,
+      capturedAt: DateTime.now(),
+    );
   }
 }
