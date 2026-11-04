@@ -176,10 +176,10 @@ void main() {
 
       for (final k in [
         'view-note',
-        'view-chat',
         'view-terminal',
         'view-settings',
-        'split-toggle',
+        'pane-divider',
+        'chat-pane',
         'open-history',
         'input-bar',
         'composer-field',
@@ -206,12 +206,16 @@ void main() {
       expect(find.textContaining('gpt-live-1.1'), findsOneWidget);
       // No "Woi" title: the tabs start at the left edge, in order.
       expect(find.text('Woi'), findsNothing);
-      final xs = [for (final v in HomeView.values) t.getTopLeft(find.byKey(ValueKey('view-${v.name}'))).dx];
+      // Wide: no Chat tab (the chat is docked on the right).
+      final xs = [
+        for (final v in HomeView.values)
+          if (v != HomeView.chat) t.getTopLeft(find.byKey(ValueKey('view-${v.name}'))).dx,
+      ];
       expect(xs.first, lessThan(24));
       for (var i = 1; i < xs.length; i++) {
         expect(xs[i], greaterThan(xs[i - 1]));
       }
-      for (final l in ['Note', 'Chat', 'Terminal', 'Settings']) {
+      for (final l in ['Note', 'Terminal', 'Settings']) {
         expect(
           find.descendant(of: find.byType(HomeTabs), matching: find.text(l)),
           findsOneWidget,
@@ -333,7 +337,7 @@ void main() {
     testWidgets('Settings is a tab: Ctrl+4, Ctrl+, and voice select it, Esc goes back', (t) async {
       final env = _Env();
       await env.start(t);
-      await _pumpHome(t, env.c, const Size(1400, 900));
+      await _pumpHome(t, env.c, const Size(900, 900));
       final a = env.c.actions;
       Future<void> ctrl(LogicalKeyboardKey k) async {
         await t.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
@@ -385,7 +389,12 @@ void main() {
       t.view.viewPadding = const FakeViewPadding(bottom: 48 * dpr);
       addTearDown(t.view.reset);
       await t.runAsync(() async {
-        await t.pumpWidget(MaterialApp(theme: buildWoiTheme(), home: HomeScreen(controller: env.c)));
+        await t.pumpWidget(
+          MaterialApp(
+            theme: buildWoiTheme(),
+            home: HomeScreen(controller: env.c),
+          ),
+        );
         await Future<void>.delayed(const Duration(milliseconds: 200));
       });
       await _settle(t);
@@ -461,7 +470,7 @@ void main() {
     testWidgets('Run sends the cursor line as a user turn shown in the chat', (t) async {
       final env = _Env();
       await env.start(t);
-      await _pumpHome(t, env.c, const Size(1400, 900));
+      await _pumpHome(t, env.c, const Size(900, 900));
       expect(env.c.pipeline.status, SessionStatus.connected);
 
       final editor = t.state<NoteEditorState>(find.byType(NoteEditor));
