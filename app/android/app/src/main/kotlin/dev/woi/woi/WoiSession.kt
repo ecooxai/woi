@@ -53,7 +53,8 @@ class WoiAssistActivity : android.app.Activity() {
             Log.i(WoiBridge.TAG, "assist intent -> showSession")
             svc.showSession(Bundle(), VoiceInteractionSession.SHOW_WITH_ASSIST or VoiceInteractionSession.SHOW_WITH_SCREENSHOT)
         } else {
-            startActivity(
+            WoiLaunch.start(
+                this,
                 Intent(this, MainActivity::class.java)
                     .putExtra(WoiSession.EXTRA_ASSIST, true)
                     .putExtra(WoiSession.EXTRA_T0, System.currentTimeMillis())

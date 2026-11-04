@@ -141,14 +141,16 @@ object WoiOverlay {
         s?.hide()
     }
 
-    /** "Open full app": the panel goes, MainActivity comes to the front. */
+    /** "Open full app": the panel goes, MainActivity comes to the front (in
+     *  the bottom freeform window when it isn't running yet, WoiLaunch). */
     fun openApp(ctx: Context) {
         val s = session
         hide()
         val i = Intent(ctx, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         try {
-            (s?.context ?: ctx).startActivity(i)
+            val c = s?.context ?: ctx
+            WoiLaunch.start(c, i)
         } catch (e: Exception) {
             Log.w(WoiBridge.TAG, "open app from overlay failed; startAssistantActivity", e)
             try { s?.startAssistantActivity(i) } catch (e2: Exception) { Log.w(WoiBridge.TAG, "startAssistantActivity failed", e2) }
