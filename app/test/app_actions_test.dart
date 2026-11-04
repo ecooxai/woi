@@ -93,6 +93,19 @@ void main() {
     expect(() => a.replaceInNote('nothing here', 'x'), throwsA(isA<AppActionError>()));
   });
 
+  test('typing syncs the pinned note once after a pause, not per keystroke', () async {
+    var changes = 0;
+    c.contextManager.addListener(() => changes++);
+    final before = c.contextManager.pinnedTokens;
+    for (final ch in 'a fairly long line typed one key at a time'.split('')) {
+      c.notes.setText(c.notes.text + ch);
+    }
+    expect(changes, 0, reason: 'no meter update per keystroke');
+    await Future<void>.delayed(AppController.pinnedNoteDebounce + const Duration(milliseconds: 100));
+    expect(changes, 1);
+    expect(c.contextManager.pinnedTokens, greaterThan(before));
+  });
+
   test('countdown edit is applied by the local "apply" command', () async {
     await c.updateSettings(c.settings.copyWith(editApplyDelay: 10));
     final f = a.appendToNote('- later');

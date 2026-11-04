@@ -454,7 +454,29 @@ class AppController extends ChangeNotifier {
   }
 
   /// Keeps the pinned note current in the context meter and the live session.
+  /// Pinned-note sync: [pinnedNoteDebounce] after typing pauses, and at
+  /// least every [pinnedNoteMaxWait] during long typing runs. Per keystroke
+  /// it re-counted the note's tokens (the context meter then animated
+  /// without pause: ~25 fps of full rasters on software GL) and sent the
+  /// whole instructions in a session.update.
+  static const pinnedNoteDebounce = Duration(milliseconds: 600);
+  static const pinnedNoteMaxWait = Duration(seconds: 3);
+  Timer? _pinnedTimer;
+  DateTime? _pinnedPendingSince;
+
   void _onNoteChanged() {
+    if (notes.revision == _pinnedRevision) return;
+    final now = DateTime.now();
+    final since = _pinnedPendingSince ??= now;
+    if (now.difference(since) >= pinnedNoteMaxWait) return _syncPinnedNote();
+    _pinnedTimer?.cancel();
+    _pinnedTimer = Timer(pinnedNoteDebounce, _syncPinnedNote);
+  }
+
+  void _syncPinnedNote() {
+    _pinnedTimer?.cancel();
+    _pinnedTimer = null;
+    _pinnedPendingSince = null;
     if (notes.revision == _pinnedRevision) return;
     _pinnedRevision = notes.revision;
     contextManager.pinnedTokens = pinnedNoteTokens(notes.text);
@@ -719,6 +741,8 @@ class AppController extends ChangeNotifier {
   void compactNow() => contextManager.maybeCompress(force: true);
 
   Future<void> shutdown() async {
+    _pinnedTimer?.cancel();
+    _pinnedTimer = null;
     _backgroundTimer?.cancel();
     await camera.close();
     await notes.flush();
