@@ -35,11 +35,14 @@ abstract class Shell {
 }
 
 /// Keeps the head and tail of long output.
-(String, bool) truncateMiddle(String s, int max) {
-  if (s.length <= max) return (s, false);
+///
+/// [dropped]: chars already removed from the middle of [s] upstream (added
+/// to the reported count).
+(String, bool) truncateMiddle(String s, int max, {int dropped = 0}) {
+  if (s.length <= max) return (s, dropped > 0);
   final head = (max * 0.75).floor();
   final tail = max - head;
-  final cut = s.length - head - tail;
+  final cut = s.length - head - tail + dropped;
   return (
     '${s.substring(0, head)}\n…[$cut chars truncated]…\n'
         '${s.substring(s.length - tail)}',

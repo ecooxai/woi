@@ -90,7 +90,13 @@ void main() {
 
   test('closing the AI tab during a run finishes it', () async {
     final f = hub.runCommand('sleep 5', timeout: const Duration(seconds: 10));
-    await Future<void>.delayed(const Duration(milliseconds: 300));
+    // Wait for the command to really start (a fixed delay raced the shell
+    // spawn on a loaded machine: closing too early left nothing to kill).
+    final deadline = DateTime.now().add(const Duration(seconds: 5));
+    while (!hub.aiCommandRunning && DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    expect(hub.aiCommandRunning, isTrue);
     final sw = Stopwatch()..start();
     hub.close(hub.aiSession());
     final r = await f;
@@ -103,6 +109,18 @@ void main() {
     expect(r.truncated, isTrue);
     expect(r.stdout, startsWith('1\n2\n'));
     expect(r.stdout, endsWith('5000'));
+  });
+
+  test('the tail of long output survives however it is chunked', () async {
+    // The pause guarantees a second chunk after the kept head is full (the
+    // tail used to be dropped then: only the first chunk was kept).
+    final r = await hub.runCommand('seq 1 2000; sleep 0.3; seq 2001 4000', maxOutputChars: 200);
+    expect(r.truncated, isTrue);
+    expect(r.stdout, startsWith('1\n2\n'));
+    expect(r.stdout, endsWith('3999\n4000'));
+    final cut = int.parse(RegExp(r'\[(\d+) chars truncated\]').firstMatch(r.stdout)!.group(1)!);
+    // seq 1 4000 prints 18893 chars; 200 are kept.
+    expect(cut, closeTo(18893 - 200, 2));
   });
 
   test('cleanTerminalOutput strips escapes and CR redraws', () {

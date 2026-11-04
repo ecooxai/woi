@@ -271,6 +271,11 @@ class TerminalHub extends ChangeNotifier {
   int _cmdSeq = 0;
   _AiRun? _aiRun;
 
+  /// The AI shell has started running the current command (its start
+  /// marker arrived). For tests that must act while a command runs.
+  @visibleForTesting
+  bool get aiCommandRunning => _aiRun?.started ?? false;
+
   /// The tab that shows the AI's commands (created on first use).
   TerminalSession aiSession() {
     final existing = _ai;
@@ -424,11 +429,11 @@ done
         : code == 0
         ? '\x1b[2m[exit 0 · ${sw.elapsedMilliseconds} ms]\x1b[0m'
         : '\x1b[31m[exit $code · ${sw.elapsedMilliseconds} ms]\x1b[0m';
-    final raw = run.out.toString();
+    final raw = run.output;
     t.write('${raw.isEmpty || raw.endsWith('\n') ? '' : '\r\n'}$status\r\n\r\n');
     if (!s._disposed) s.notifyListeners();
     _changed();
-    final (out, truncated) = truncateMiddle(cleanTerminalOutput(raw), maxOutputChars);
+    final (out, truncated) = truncateMiddle(cleanTerminalOutput(raw), maxOutputChars, dropped: run.dropped);
     return ShellResult(
       exitCode: code,
       stdout: out,
@@ -468,12 +473,37 @@ class _AiRun {
   TermProcess? proc;
   bool started = false;
   String pending = '';
-  final out = StringBuffer();
   final done = Completer<int>();
 
+  // The first and the last ~cap/2 chars: callers truncate in the middle, so
+  // the tail (errors, summaries) must survive however the output is chunked.
+  // (Keeping only the first cap chars lost the tail whenever the pipe
+  // delivered it in small pieces, e.g. on a loaded machine.)
+  final _head = StringBuffer();
+  String _tail = '';
+  int _dropped = 0;
+  int get dropped => _dropped;
+
   void add(String s) {
-    if (s.isNotEmpty && out.length < cap) out.write(s);
+    if (s.isEmpty) return;
+    final half = cap ~/ 2;
+    if (_head.length < half) {
+      final take = s.length <= half - _head.length ? s.length : half - _head.length;
+      _head.write(s.substring(0, take));
+      s = s.substring(take);
+      if (s.isEmpty) return;
+    }
+    _tail += s;
+    if (_tail.length > 2 * half) {
+      final cut = _tail.length - half;
+      _dropped += cut;
+      _tail = _tail.substring(cut);
+    }
   }
+
+  /// What was kept ([dropped] chars are missing between head and tail;
+  /// truncateMiddle cuts there and reports them).
+  String get output => '$_head$_tail';
 
   void finish(int code) {
     if (!done.isCompleted) done.complete(code);
