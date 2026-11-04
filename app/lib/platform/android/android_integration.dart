@@ -34,6 +34,7 @@ class AndroidIntegration {
   StreamSubscription<AndroidEvent>? _sub;
   final List<AndroidEvent> _early = [];
   bool _voiceOn = false;
+  bool _overlay = false;
   bool _wasLogin = false;
 
   /// Last assist invocation (diagnostics / tests): shown -> attached ms.
@@ -76,7 +77,9 @@ class AndroidIntegration {
       if (o is AndroidUrlOpener) unawaited(o.done());
     }
     final wantVoice = !controller.needsLogin && controller.settings.micMode != MicMode.muted;
-    if (wantVoice != _voiceOn) {
+    // While the panel shows, keep the service even if muted: it can only be
+    // restarted while Woi is visible.
+    if (wantVoice != _voiceOn && (wantVoice || !_overlay || controller.needsLogin)) {
       _voiceOn = wantVoice;
       unawaited(bridge.call<bool>('voiceActive', {'on': wantVoice}).catchError((Object e) => false));
     }
@@ -84,7 +87,19 @@ class AndroidIntegration {
 
   Future<void> _onEvent(AndroidEvent e) async {
     if (e is OverlayEvent) {
-      if (!e.on) controller.assistantDismissed();
+      if (e.on) {
+        // The panel started the microphone service natively (it may only
+        // start while Woi is visible, and Android 14+ silences a background
+        // mic without it). The assist event unmutes the mic; only a session
+        // that can't listen (signed out) turns it off again.
+        _overlay = true;
+        _voiceOn = true;
+        if (controller.ready && controller.needsLogin) _onController();
+      } else {
+        _overlay = false;
+        controller.assistantDismissed();
+        _onController();
+      }
       return;
     }
     if (!controller.ready || controller.needsLogin) {

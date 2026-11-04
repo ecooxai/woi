@@ -97,9 +97,12 @@ object WoiBridge {
                 )
             )
             "requestPermissions" -> {
-                val act = activity ?: return result.success(false)
-                @Suppress("UNCHECKED_CAST")
                 val perms = (call.argument<List<String>>("permissions") ?: emptyList())
+                // Already granted: no activity needed. The assistant panel
+                // runs the engine without MainActivity (process started by the
+                // assist gesture), where asking was reported as "denied".
+                if (perms.all { hasPermission(ctx, it) }) return result.success(true)
+                val act = activity ?: return result.success(false)
                 act.requestPerms(perms.toTypedArray()) { granted -> result.success(granted) }
             }
             "openUrl" -> {

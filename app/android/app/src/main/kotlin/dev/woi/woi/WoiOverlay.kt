@@ -83,6 +83,13 @@ object WoiOverlay {
             hide()
         }
         val ctx = s.context
+        // Android 14+ only lets a non-foreground app record with a
+        // microphone-type foreground service, and that service may only be
+        // started while the app is visible: now (the session window is up).
+        // Dart keeps it in sync with the mic mode afterwards (voiceActive).
+        if (WoiBridge.hasPermission(ctx, android.Manifest.permission.RECORD_AUDIO)) {
+            WoiForegroundService.startVoice(ctx)
+        }
         val engine = WoiEngine.obtain(ctx)
         WoiBridge.activity?.releaseFlutterView()
         val texture = FlutterTextureView(ctx).apply { isOpaque = false }

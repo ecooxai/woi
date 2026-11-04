@@ -85,6 +85,15 @@ object WoiAudio {
             start()
         }
         Log.i(WoiBridge.TAG, "mic started aec=${aec?.enabled} ns=${ns?.enabled}")
+        // The system silences capture (zeros, no error) for apps that are
+        // neither in front nor running a microphone foreground service.
+        WoiBridge.main.postDelayed({
+            if (record === rec) {
+                val silenced = rec.activeRecordingConfiguration?.isClientSilenced
+                if (silenced == true) Log.w(WoiBridge.TAG, "mic is silenced by the system (background without a microphone FGS?)")
+                else Log.i(WoiBridge.TAG, "mic capturing (silenced=$silenced)")
+            }
+        }, 1500)
     }
 
     private fun stopMic() {
