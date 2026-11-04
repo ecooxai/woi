@@ -462,6 +462,23 @@ void main() {
       await r.dispose();
     });
 
+    test('the 60-minute session cap is not fatal: reconnects with the context', () async {
+      final r = _Rig();
+      await r.connect();
+      r.userTurn('u1', 'my name is Alice');
+      await _pump();
+      r.ws.push({
+        'type': 'error',
+        'error': {'type': 'invalid_request_error', 'code': 'session_expired', 'message': 'Your session hit the maximum duration of 60 minutes.'},
+      });
+      await waitUntil(() => r.server.sockets.length == 2 && r.backend.isReady);
+      await _pump();
+      expect(r.of<BackendError>().where((e) => e.fatal), isEmpty);
+      expect(r.backend.reconnects, 1);
+      expect(jsonEncode(r.ws.ofType('conversation.item.create')), contains('my name is Alice'));
+      await r.dispose();
+    });
+
     test('gives up after maxReconnectAttempts with a fatal error', () async {
       final r = _Rig(maxReconnectAttempts: 2);
       await r.connect();
