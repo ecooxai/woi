@@ -16,6 +16,9 @@
 #      SIZE (window size, default "1600 900").
 #      PERF_SETTINGS (extra settings.json members, e.g. '"backendMode": "direct"'
 #      to stay off gpt-live while its quota is exhausted).
+#      PERF_SILENT_MIC=1 records from a silent virtual source (a PipeWire null
+#      source loaded for this run, unloaded at exit) so "listen" measures
+#      listening in silence, not the room.
 # The mic mode is forced with WOI_MIC_MODE (a muted mic otherwise comes back on at launch).
 # Each scenario starts the app fresh with HOME and XDG_DATA_HOME in a
 # sandbox seeded by qa/lib/make_perf_seed.py (200-message chat + notes);
@@ -43,7 +46,23 @@ mkdir -p "$OUT"
 export WOI_FRAME_STATS=${WOI_FRAME_STATS-1}
 APP_PID=""
 
-cleanup() { [ -n "$APP_PID" ] && kill "$APP_PID" 2>/dev/null; wait 2>/dev/null; }
+SILENT_MOD=""
+if [ "${PERF_SILENT_MIC:-0}" = 1 ]; then
+  src="$PNAME-silence"
+  SILENT_MOD=$(pactl load-module module-null-sink media.class=Audio/Source/Virtual sink_name="$src" channel_map=mono) ||
+    { echo "cannot load a null source" >&2; exit 1; }
+  shim=$SANDBOX/silent-mic-bin
+  mkdir -p "$shim"
+  printf '#!/bin/sh\nexec %s --target %s "$@"\n' "$(command -v pw-record)" "$src" >"$shim/pw-record"
+  chmod +x "$shim/pw-record"
+  export PATH="$shim:$PATH"
+fi
+
+cleanup() {
+  [ -n "$APP_PID" ] && kill "$APP_PID" 2>/dev/null
+  wait 2>/dev/null
+  [ -n "$SILENT_MOD" ] && pactl unload-module "$SILENT_MOD"
+}
 trap cleanup EXIT
 trap 'exit 130' INT TERM
 

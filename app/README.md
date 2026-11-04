@@ -111,6 +111,13 @@ row inside their tab. On windows ≥1280 px wide, Ctrl+\ shows Note and Chat sid
 Terminal and Settings stay full size and going back to Note or Chat restores the split.
 Status (connection, voice phase, mic mode, context meter, camera) lives in the input bar.
 
+Note editor (`lib/ui/notes/note_editor.dart`): one **Format** dropdown holds every Markdown
+action with its shortcut (Ctrl+B, Ctrl+I, Ctrl+Alt+1..3, Ctrl+Shift+L/O/X/Q/E/H...) and
+Preview (Ctrl+Shift+P; Esc goes back). **Copy** copies the whole note (Ctrl+Shift+C);
+long-press or right-click picks the line, paragraph (between blank lines) or H1 section at
+the cursor (`lib/core/notes/note_copy.dart`). It goes through `AppActions.copyNote`, which
+voice also uses (`note_control` `copy` + `what`, fast path "copy this paragraph").
+
 ### Tests
 - `test/realtime_ws_backend_test.dart` uses a fake WebSocket to cover:
   - handshake and headers
