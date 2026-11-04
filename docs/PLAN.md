@@ -279,5 +279,26 @@ them from the server, which is what made "Stop" take 7.4 s in the E2E. The serve
 output, so barge-in recall is back to canceller + server VAD (the pre-echo15 behaviour) plus the local soft pause.
 Echo turns are left to the transcript guard and the self-talk breaker, so the server sees false turns at the
 canceller rate again (2.85/min offline). After an onset the guard re-arms once the near end has been quiet for 200 ms
-(before: once per reply). Open: interrupt_response=false while Woi speaks plus a local cancel decision, and
-`noise_reduction: far_field` for laptop speakers (both untested).
+(before: once per reply).
+
+Deferred turns + far_field (2026-11-04): the session uses `noise_reduction: far_field` (no headset detection yet;
+gpt-realtime-2.1 echoes `{"type":"far_field","strength":1.0}`). From `response.created` until the reply's audio plus
+1.3 s of echo tail are over, `session.update` sets turn_detection `create_response` / `interrupt_response` false;
+verified live on gpt-realtime-2.1: a partial update (only `audio.input.turn_detection`) is accepted mid-response
+(`session.updated` ~0.5 s later), the response then plays on through a server speech start and no response is
+created for the turn. Such a turn reaches the pipeline as `SpeechStarted(deferred)`: local detector fired (onset
+within 1.5 s or paused) → cut + `acceptTurn` at once; else Woi talks on while the pipeline waits up to 600 ms
+(`deferWindow`) for the transcript (echo → item deleted, Woi never cut; not echo / stop → cut), then interrupts
+anyway. Accepted turns get `response.create` when they end. Measured: the final transcript ("Stop.") arrives
+~1.4 s after `speech_started`, so the 600 ms window practically always times out and only the local detector
+saves latency; echo is still dropped later by the transcript guard (cut + resume) as before.
+E2E (`e2e_echo.sh after-defer`, gate off, deferred turns, far_field) vs the gate-on run above:
+| | gate on (before) | deferred + far_field |
+|---|---|---|
+| "Stop" stops Woi | 7.4 s | 0.54 s (local onset → immediate) |
+| question barge-in stops Woi | 8.3 s | 0.04 s (local pause) |
+| barge-ins that became user turns | 0/2 | 2/2 |
+| self-talk user turns | 2 | 2 ("아", "하고": echo transcribed as Korean, so the guard cannot match it) |
+| false local onsets (pause + resume) | 7 | 8 |
+One deferred turn occurred (timeout → cut). Next: pin the transcription `language` to the UI language so echo is
+transcribed in English and the guard can match it; a headset → `near_field` switch.
