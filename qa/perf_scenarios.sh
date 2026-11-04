@@ -16,6 +16,7 @@
 #      SIZE (window size, default "1600 900").
 #      PERF_SETTINGS (extra settings.json members, e.g. '"backendMode": "direct"'
 #      to stay off gpt-live while its quota is exhausted).
+#      PERF_SHOTS=DIR saves a screenshot of the window at the end of each scenario.
 #      PERF_SILENT_MIC=1 records from a silent virtual source (a PipeWire null
 #      source loaded for this run, unloaded at exit) so "listen" measures
 #      listening in silence, not the room.
@@ -124,11 +125,16 @@ for s in $SCENARIOS; do
       monitor "$SECS" typing &
       mon=$!
       end=$((SECONDS + SECS))
+      keys=0
       while [ $SECONDS -lt $end ]; do
-        xdotool type --delay 90 "- typing perf check, the quick brown fox jumps over the lazy dog " 2>/dev/null
+        # `--`: the text starts with "-" (without it xdotool took it for an
+        # option, typed nothing, and the loop became an Enter flood).
+        xdotool type --delay 90 -- "- typing perf check, the quick brown fox jumps over the lazy dog " 2>/dev/null
         xdotool key Return 2>/dev/null
+        keys=$((keys + 65))
       done
       wait $mon
+      echo "keys sent: $keys in $SECS s ($((keys / SECS))/s)" >>"$OUT/typing.summary.txt"
       ;;
     scroll)
       launch scroll muted || continue
@@ -179,6 +185,11 @@ for s in $SCENARIOS; do
       ;;
     *) echo "unknown scenario $s" >&2; continue ;;
   esac
+  # PERF_SHOTS=DIR: a screenshot of the window as the scenario ends
+  # (checks that the keys / reply really landed).
+  if [ -n "${PERF_SHOTS:-}" ] && [ -n "$APP_PID" ]; then
+    mkdir -p "$PERF_SHOTS" && import -window "$WID" "$PERF_SHOTS/$s.png" 2>/dev/null
+  fi
   stop_app
   if [ -f "$OUT/$s.summary.txt" ]; then
     # Frames rendered while monitored (WOI_FRAME_STATS logs a line on the

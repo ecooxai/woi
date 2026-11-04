@@ -24,6 +24,7 @@ import '../widgets/message_tile.dart';
 import '../widgets/input_bar.dart';
 import '../widgets/screen_share_button.dart';
 import '../widgets/tab_strip.dart';
+import '../widgets/throttled_builder.dart';
 import 'history_drawer.dart';
 import 'settings_screen.dart';
 
@@ -317,7 +318,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   Padding(
                     padding: EdgeInsets.fromLTRB(phone ? 0 : pad - 8, phone ? 0 : 4, phone ? 0 : pad - 8, phone ? 0 : 6),
-                    child: ListenableBuilder(listenable: pipeline, builder: (context, _) => _header()),
+                    // Only the unread badge follows the pipeline.
+                    child: SelectorBuilder<int>(
+                      listenable: pipeline,
+                      selector: () => _chatBadge,
+                      builder: (context, _) => _header(),
+                    ),
                   ),
                   Expanded(
                     child: Padding(
@@ -516,8 +522,12 @@ class _HomeScreenState extends State<HomeScreen> {
     return Stack(
       children: [
         Positioned.fill(
-          child: ListenableBuilder(
+          // The list follows the conversation's shape (messages added or
+          // removed, screenshots for click markers); each tile follows its
+          // own message, so a streaming reply rebuilds only its bubble.
+          child: SelectorBuilder<Object>(
             listenable: pipeline,
+            selector: _transcriptShape,
             builder: (context, _) => _transcript(maxBubble: maxBubble, wide: wide),
           ),
         ),
@@ -528,6 +538,17 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Center(child: BannerStack(controller: _banners)),
         ),
       ],
+    );
+  }
+
+  Object _transcriptShape() {
+    final msgs = pipeline.conversation.messages;
+    if (msgs.isEmpty) return (pipeline.conversation.id, pipeline.status == SessionStatus.connected);
+    // By identity: a message object replaced under the same id rebuilds too.
+    return (
+      identityHashCode(pipeline.conversation),
+      msgs.length,
+      Object.hashAll([for (final m in msgs) Object.hash(identityHashCode(m), identityHashCode(m.image))]),
     );
   }
 
@@ -569,8 +590,9 @@ class _HomeScreenState extends State<HomeScreen> {
         itemBuilder: (context, i) {
           final idx = msgs.length - 1 - i;
           final m = msgs[idx];
-          return MessageTile(
+          return LiveMessageTile(
             key: ValueKey(m.id),
+            listenable: pipeline,
             message: m,
             audio: c.platform.audio,
             viewer: c.platform.viewer,

@@ -50,6 +50,21 @@ String voiceModeLabel(VoiceMode m) => switch (m) {
   VoiceMode.compacting => 'Compacting memory…',
 };
 
+/// Phone status row: the same states in at most ~11 characters (the row
+/// also holds the camera, mic-mode and context buttons at 360 px).
+String voiceModeShortLabel(VoiceMode m) => switch (m) {
+  VoiceMode.offline => 'Offline',
+  VoiceMode.connecting => 'Connecting…',
+  VoiceMode.reconnecting => 'Reconnect…',
+  VoiceMode.idle => 'Muted',
+  VoiceMode.listening => 'Listening',
+  VoiceMode.hearing => 'Hearing…',
+  VoiceMode.thinking => 'Thinking…',
+  VoiceMode.speaking => 'Speaking',
+  VoiceMode.tool => 'Working…',
+  VoiceMode.compacting => 'Compacting…',
+};
+
 Color voiceModeColor(VoiceMode m) => switch (m) {
   VoiceMode.offline => WoiColors.textFaint,
   VoiceMode.connecting => WoiColors.textDim,
@@ -161,7 +176,11 @@ class VoiceStatusIndicator extends StatefulWidget {
     this.outputLevel,
     this.showLabel = true,
     this.animate,
+    this.compact = false,
   });
+
+  /// Phones: [voiceModeShortLabel], the full label in a tooltip.
+  final bool compact;
 
   final VoiceMode mode;
 
@@ -226,43 +245,44 @@ class _VoiceStatusIndicatorState extends State<VoiceStatusIndicator> {
     final m = widget.mode;
     final color = voiceModeColor(m);
     final label = voiceModeLabel(m);
+    final Widget row = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        RepaintBoundary(
+          child: SizedBox(
+            width: 18,
+            height: 16,
+            child: CustomPaint(
+              key: const ValueKey('voice-indicator'),
+              painter: _IndicatorPainter(
+                color: color,
+                bars: voiceModeShowsLevel(m),
+                pulsing: _animates,
+                level: _level,
+                phase: _phase,
+              ),
+            ),
+          ),
+        ),
+        if (widget.showLabel) ...[
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              widget.compact ? voiceModeShortLabel(m) : label,
+              key: const ValueKey('voice-label'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: body(12, weight: FontWeight.w500, color: m == VoiceMode.idle ? WoiColors.textDim : color),
+            ),
+          ),
+        ],
+      ],
+    );
     return Semantics(
       label: 'Voice: $label',
       liveRegion: true,
       container: true,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          RepaintBoundary(
-            child: SizedBox(
-              width: 18,
-              height: 16,
-              child: CustomPaint(
-                key: const ValueKey('voice-indicator'),
-                painter: _IndicatorPainter(
-                  color: color,
-                  bars: voiceModeShowsLevel(m),
-                  pulsing: _animates,
-                  level: _level,
-                  phase: _phase,
-                ),
-              ),
-            ),
-          ),
-          if (widget.showLabel) ...[
-            const SizedBox(width: 6),
-            Flexible(
-              child: Text(
-                label,
-                key: const ValueKey('voice-label'),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: body(12, weight: FontWeight.w500, color: m == VoiceMode.idle ? WoiColors.textDim : color),
-              ),
-            ),
-          ],
-        ],
-      ),
+      child: widget.compact ? Tooltip(message: label, child: row) : row,
     );
   }
 }

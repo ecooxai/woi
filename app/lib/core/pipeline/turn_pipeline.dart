@@ -295,8 +295,24 @@ class TurnPipeline extends ChangeNotifier {
 
   void _changed() {
     if (_disposed) return;
+    _deltaNotify?.cancel();
+    _deltaNotify = null;
     _lastPhase = phase;
     notifyListeners();
+  }
+
+  /// Transcript deltas arrive 20-60 times a second while a reply streams;
+  /// each notification rebuilt the transcript and the input bar and drew a
+  /// frame. For deltas the listeners hear at most every
+  /// [transcriptNotifyInterval] (any other change, or a phase change, still
+  /// notifies at once and takes the pending delta along).
+  Duration transcriptNotifyInterval = const Duration(milliseconds: 66);
+  Timer? _deltaNotify;
+
+  void _changedSoon() {
+    if (_disposed) return;
+    if (phase != _lastPhase || transcriptNotifyInterval == Duration.zero) return _changed();
+    _deltaNotify ??= Timer(transcriptNotifyInterval, _changed);
   }
 
   // ---------------------------------------------------------------- session
@@ -1138,7 +1154,7 @@ class TurnPipeline extends ChangeNotifier {
         m.text += text;
         if (identical(m, _holdMsg)) _checkHold();
         _persistSoon();
-        _changed();
+        _changedSoon();
       case UserTranscriptDone(:final text, :final itemId, :final noSpeech):
         final m = _userForTranscript(itemId);
         if (text.isNotEmpty) m.text = text;
@@ -1168,7 +1184,7 @@ class TurnPipeline extends ChangeNotifier {
         _assistant().text += text;
         _awaitingResponse = false;
         _persistSoon();
-        _changed();
+        _changedSoon();
       case AssistantTranscriptDone(:final text):
         if (_discardUntilDone) return;
         if (text.isNotEmpty) _assistant().text = text;
@@ -1434,6 +1450,7 @@ class TurnPipeline extends ChangeNotifier {
     await store.flush(_conv);
     await _compactionEvents.close();
     _levelsChanged.dispose();
+    _deltaNotify?.cancel();
     _disposed = true;
     dispose();
   }
