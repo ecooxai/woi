@@ -340,3 +340,18 @@ transcript guard ("What?"), 0 by the new rule, 20 false local onsets (vs 8), 5 d
 degraded: the echo guard never locked a lag (`lag null` on every onset), `mic.wav` came out empty, and the full test
 suite ran concurrently. Needs a clean re-run; log the final user transcript + echo-suspect state per turn to see
 why "어?" passed (likely not an echo suspect: started outside Woi's audible window / 20 s `_spoken` horizon).
+Each user turn now logs one line at its final transcript: `user turn: "<40 chars>" suspect= deferred= local=
+audible= guard= window=<ms left in the echo window> -> kept | kept (stop|deferred: why) | dropped (short: why |
+echo match | deferred echo match)`.
+E2E `after-lang2` (clean: rig checked first with a pw-record capture, no test suite running, mic.wav 17 MB of audio
+but no finalized WAV header so mic levels were still skipped): "Stop" 0.83 s (vs 0.54 s), question barge-in 0.38 s
+(vs 0.04 s), 0 echo turns dropped, 0 short-rule drops, 0 deferred turns (vs 1 timeout), 14 false local onsets (vs 8),
+3 non-fixture turns (vs 2): "maq" and 2 empty. All three had `local=y` (the local detector had paused Woi), so the
+short rule correctly did not apply. "maq" is the "Stop" fixture itself mistranscribed over the echo (onset at the
+fixture time, `interrupted=true`): Woi was stopped by the barge-in, not by the stop phrase. The 2 empty turns were
+released with no reply. "어?" did not recur. `lag null` on every onset is normal on this rig: the after-defer
+reference run logged `lag null` too, so the guard not locking a lag was not what degraded `after-lang`. The echo
+window is not too short: suspects started with 6 to 35 s still left in it (`queuedMs` + 1.3 s, and the whole reply
+is queued), so extending the tail would change nothing. `audible=n` on every turn even while the guard expected echo
+(`_out.isPlaying` reads false while playback is queued): suspects still get flagged through the guard and the window.
+Barge-in latencies swing a lot between single runs (the stop latency depends on when the onset fires); no rule change.
