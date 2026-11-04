@@ -243,6 +243,7 @@ class TurnPipeline extends ChangeNotifier {
       return;
     }
     if (isStopPhrase(text) || couldBecomeStopPhrase(text) && done) return _confirmDeferred('stop');
+    if (done && _shortEcho(m, text, said ?? const [])) return _dropDeferred(m);
     if (said == null) return _confirmDeferred('no reference');
     if (done) {
       if (isEchoOf(text, said)) return _dropDeferred(m);
@@ -979,7 +980,7 @@ class TurnPipeline extends ChangeNotifier {
       final said = suspect;
       if (done) {
         _echoSuspects.remove(m.id);
-        if (isEchoOf(text, said)) {
+        if (isEchoOf(text, said) || _shortEcho(m, text, said)) {
           _onEchoTurn(m);
           return;
         }
@@ -993,6 +994,28 @@ class TurnPipeline extends ChangeNotifier {
   /// The "user" turn was Woi's own reply heard back (residual echo the
   /// server took for speech): no reply, no tool action, no bubble; what the
   /// echo cut off plays on. Repeated echo pauses hands-free listening.
+  bool _shortEcho(Message m, String text, List<String> said) {
+    if (_localOnsetTurns.contains(m.id)) return false; // the detector heard the user
+    final user = <String>[];
+    for (final x in _conv.messages.reversed) {
+      if (x.kind != MessageKind.user || identical(x, m) || x.text.trim().isEmpty) continue;
+      user.add(x.text);
+      if (user.length >= 5) break;
+    }
+    final why = shortEchoReason(text, said: said, userRecent: user);
+    if (why == null) return false;
+    shortEchoDrops++;
+    debugPrint('echo turn: short transcript "$text" taken as echo ($why, no local onset)');
+    return true;
+  }
+
+  /// Turns that began with (or right after) a local near-end onset: never
+  /// dropped by the short-transcript rule ([shortEchoReason]).
+  final Set<String> _localOnsetTurns = {};
+
+  /// Echo turns dropped by the short foreign/filler transcript rule.
+  int shortEchoDrops = 0;
+
   void _onEchoTurn(Message m) {
     echoTurnsDropped++;
     final now = DateTime.now();
@@ -1147,6 +1170,7 @@ class TurnPipeline extends ChangeNotifier {
     }
     _utterancePcm.add(_preRoll.drain());
     _currentUtterance = msg;
+    if (local) _localOnsetTurns.add(msg.id);
     if (echoLikely) {
       _echoSuspects[msg.id] = [
         for (final r in _spoken)

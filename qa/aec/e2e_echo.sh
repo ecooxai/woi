@@ -168,10 +168,16 @@ other = [m for m in users if m not in mine]
 asst = [m for m in msgs if m.get("kind") == "assistant"]
 log = open(f"{out}/app-{name}.log", errors="replace").read()
 barge = open(f"{out}/barge.txt").read().split("\n") if glob.glob(f"{out}/barge.txt") else []
-with wave.open(f"{out}/mic.wav") as w:
-    b = w.readframes(w.getnframes())
-x = struct.unpack(f"<{len(b)//2}h", b)
-fr = [math.sqrt(sum(v * v for v in x[i:i+2400]) / 2400) for i in range(0, len(x) - 2400, 2400)]
+# pw-record may leave mic.wav empty or headerless (stream never linked):
+# skip the level part instead of crashing the summary.
+fr = []
+try:
+    with wave.open(f"{out}/mic.wav") as w:
+        b = w.readframes(w.getnframes())
+    x = struct.unpack(f"<{len(b)//2}h", b[:len(b) // 2 * 2])
+    fr = [math.sqrt(sum(v * v for v in x[i:i+2400]) / 2400) for i in range(0, len(x) - 2400, 2400)]
+except (OSError, EOFError, wave.Error, struct.error) as e:
+    print(f"mic.wav unusable ({e}); mic levels skipped", file=sys.stderr)
 act = sorted(v for v in fr if v > 30)
 lvl = lambda q: round(20 * math.log10(act[int(q * (len(act) - 1))] / 32768), 1) if act else None
 print(json.dumps({
@@ -180,6 +186,8 @@ print(json.dumps({
     "self_talk_turns": [m.get("text") for m in other],
     "assistant_replies": len(asst), "replies_interrupted": sum(1 for m in asst if m.get("interrupted")),
     "echo_turns_dropped": log.count("echo turn dropped"),
+    "short_echo_drops": log.count("taken as echo"),
+    "deferred_interrupts": log.count("deferred turn: interrupting"),
     "local_onsets_resumed": log.count("onset not confirmed"),
     "self_talk_pauses": log.count("self-talk: pausing"),
     "barge_stop_ms": [l for l in barge if l],
