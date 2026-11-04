@@ -1,5 +1,7 @@
 import 'dart:math';
 
+import 'barge_in.dart' show isStopPhrase;
+
 /// Whether a user transcript is (most likely) Woi's own speech heard back:
 /// residual echo that reached the server's VAD and transcriber. The
 /// transcriber mis-hears it ("Pointer moved." → "Boiner moot.", "Jasne." →
@@ -149,4 +151,107 @@ double _fuzzyLcs(List<_Word> a, List<_Word> b, bool single) {
     prev = cur;
   }
   return prev[b.length];
+}
+
+/// Writing system of a transcript, by its letters (digits/punctuation ignored).
+enum TranscriptScript { latin, han, kana, hangul, cyrillic, greek, arabic, hebrew, thai, devanagari, other }
+
+TranscriptScript? _scriptOf(int r) {
+  if (r < 0x80) return (r >= 0x41 && r <= 0x5a) || (r >= 0x61 && r <= 0x7a) ? TranscriptScript.latin : null;
+  if (r >= 0xc0 && r <= 0x24f) return TranscriptScript.latin;
+  if (r >= 0x370 && r <= 0x3ff) return TranscriptScript.greek;
+  if (r >= 0x400 && r <= 0x52f) return TranscriptScript.cyrillic;
+  if (r >= 0x590 && r <= 0x5ff) return TranscriptScript.hebrew;
+  if (r >= 0x600 && r <= 0x6ff) return TranscriptScript.arabic;
+  if (r >= 0x900 && r <= 0x97f) return TranscriptScript.devanagari;
+  if (r >= 0xe00 && r <= 0xe7f) return TranscriptScript.thai;
+  if (r >= 0x1100 && r <= 0x11ff || r >= 0x3130 && r <= 0x318f || r >= 0xac00 && r <= 0xd7af) {
+    return TranscriptScript.hangul;
+  }
+  if (r >= 0x3040 && r <= 0x30ff) return TranscriptScript.kana;
+  if (r >= 0x3400 && r <= 0x9fff || r >= 0xf900 && r <= 0xfaff) return TranscriptScript.han;
+  if (r >= 0x1e00 && r <= 0x1eff) return TranscriptScript.latin;
+  final c = String.fromCharCode(r);
+  return RegExp(r'\p{L}', unicode: true).hasMatch(c) ? TranscriptScript.other : null;
+}
+
+/// The script most of [text]'s letters are written in (null: no letters).
+/// Japanese kana with kanji counts as kana.
+TranscriptScript? dominantScript(String text) {
+  final n = <TranscriptScript, int>{};
+  for (final r in text.runes) {
+    final s = _scriptOf(r);
+    if (s != null) n[s] = (n[s] ?? 0) + 1;
+  }
+  if (n.isEmpty) return null;
+  if ((n[TranscriptScript.kana] ?? 0) > 0 && n.keys.every((k) => k == TranscriptScript.kana || k == TranscriptScript.han)) {
+    return TranscriptScript.kana;
+  }
+  return n.entries.reduce((a, b) => b.value > a.value ? b : a).key;
+}
+
+/// Hesitation sounds in common languages: what the transcriber makes of a
+/// fragment of echo ("아", "嗯", "uh").
+const _fillers = {
+  'uh', 'um', 'umm', 'uhm', 'hmm', 'hm', 'mm', 'mmm', 'mhm', 'ah', 'oh', 'eh', 'er', 'erm', 'huh', 'ha', 'ooh', //
+  '아', '어', '오', '음', '으', '응', '흠', '에', '아아', '어어', //
+  '嗯', '啊', '呃', '哦', '额', '唔', '噢', '诶', '欸', '嗯嗯', '啊啊', //
+  'あ', 'え', 'ええ', 'うん', 'あの', 'えっと', 'ん', //
+  'э', 'а', 'ну', 'хм',
+};
+
+/// Short stop / wait requests in other languages (English ones are
+/// [isStopPhrase]'s): never treated as echo.
+const _foreignStops = {
+  '停', '停下', '停止', '停一下', '别说了', '别说', '等等', '等一下', '等下', '闭嘴', '够了', '算了', '暂停', '好了', //
+  '멈춰', '그만', '잠깐', '잠깐만', '스톱', '멈춰요', '그만해', //
+  'やめて', '止めて', '待って', 'ストップ', 'ちょっと待って', //
+  'stopp', 'halt', 'warte', 'arrête', 'basta', 'para', 'espera', 'stój', 'czekaj', 'стоп', 'хватит', 'подожди',
+};
+
+String _bare(String s) => s.toLowerCase().replaceAll(RegExp(r"[^\p{L}\p{N}' ]", unicode: true), ' ').trim().replaceAll(RegExp(r'\s+'), ' ');
+
+/// Whether [text] is an explicit stop / wait request (any language).
+bool isStopRequest(String text) {
+  final b = _bare(text);
+  if (b.isEmpty) return false;
+  return _foreignStops.contains(b) || _foreignStops.contains(b.replaceAll(' ', '')) || b.split(' ').every(_foreignStops.contains);
+}
+
+/// A user transcript that is short (≤ 2 words, ≤ 4 Han/kana characters).
+bool isShortTranscript(String text) {
+  final b = _bare(text);
+  if (b.isEmpty) return false;
+  final words = b.split(' ');
+  if (words.length > 2) return false;
+  final cjk = b.runes.where((r) {
+    final s = _scriptOf(r);
+    return s == TranscriptScript.han || s == TranscriptScript.kana;
+  }).length;
+  return cjk <= 4;
+}
+
+/// Why a short user transcript heard while Woi speaks (or in its echo
+/// tail), with no local near-end onset, is most likely a mis-transcribed
+/// fragment of Woi's own echo rather than the user; null when it may be the
+/// user. Echo of English speech is often transcribed as another language
+/// ("아", "하고"), which [isEchoOf] cannot match.
+///
+/// Echo when it is short ([isShortTranscript]) and either a pure filler
+/// ("uh", "아", "嗯") or written in a script that is neither that of Woi's
+/// reply ([said]) nor of any of the user's recent turns ([userRecent]).
+/// Explicit stop requests ("stop", "停", "wait", "그만") are never echo.
+String? shortEchoReason(String transcript, {required List<String> said, required List<String> userRecent}) {
+  final t = transcript.trim();
+  if (t.isEmpty || !isShortTranscript(t)) return null;
+  if (isStopPhrase(t) || isStopRequest(t)) return null;
+  final b = _bare(t);
+  if (_fillers.contains(b) || b.split(' ').every(_fillers.contains)) return 'filler';
+  final s = dominantScript(t);
+  if (s == null) return null;
+  final woi = dominantScript(said.join(' '));
+  final user = {for (final u in userRecent) dominantScript(u)}..remove(null);
+  if (woi == null && user.isEmpty) return null; // nothing to compare with
+  if (s != woi && !user.contains(s)) return 'script ${s.name}';
+  return null;
 }

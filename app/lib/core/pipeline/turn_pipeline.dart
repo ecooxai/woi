@@ -227,6 +227,7 @@ class TurnPipeline extends ChangeNotifier {
     final at = _deferredAt;
     if (at != null) deferredDecisionMs.add(DateTime.now().difference(at).inMilliseconds);
     debugPrint('deferred turn: interrupting ($why)');
+    _turnDecision[m.id] = 'kept (deferred: $why)';
     final interrupted = _bargeIn();
     _backend?.acceptTurn();
     if (interrupted || _echoSuspects.containsKey(m.id) || (_holding && _holdMsg == null)) _beginHold(m);
@@ -252,9 +253,13 @@ class TurnPipeline extends ChangeNotifier {
       return;
     }
     if (isStopPhrase(text) || couldBecomeStopPhrase(text) && done) return _confirmDeferred('stop');
+    if (done && _shortEcho(m, text, said ?? const [])) return _dropDeferred(m);
     if (said == null) return _confirmDeferred('no reference');
     if (done) {
-      if (isEchoOf(text, said)) return _dropDeferred(m);
+      if (isEchoOf(text, said)) {
+        _turnDecision[m.id] = 'dropped (deferred echo match)';
+        return _dropDeferred(m);
+      }
       return _confirmDeferred('transcript');
     }
     final words = RegExp(r'\S+').allMatches(text).length;
@@ -1042,7 +1047,8 @@ class TurnPipeline extends ChangeNotifier {
       final said = suspect;
       if (done) {
         _echoSuspects.remove(m.id);
-        if (isEchoOf(text, said)) {
+        if (isEchoOf(text, said) || _shortEcho(m, text, said)) {
+          _turnDecision.putIfAbsent(m.id, () => 'dropped (echo match)');
           _onEchoTurn(m);
           return;
         }
@@ -1056,6 +1062,46 @@ class TurnPipeline extends ChangeNotifier {
   /// The "user" turn was Woi's own reply heard back (residual echo the
   /// server took for speech): no reply, no tool action, no bubble; what the
   /// echo cut off plays on. Repeated echo pauses hands-free listening.
+  bool _shortEcho(Message m, String text, List<String> said) {
+    if (_localOnsetTurns.contains(m.id)) return false; // the detector heard the user
+    final user = <String>[];
+    for (final x in _conv.messages.reversed) {
+      if (x.kind != MessageKind.user || identical(x, m) || x.text.trim().isEmpty) continue;
+      user.add(x.text);
+      if (user.length >= 5) break;
+    }
+    final why = shortEchoReason(text, said: said, userRecent: user);
+    if (why == null) return false;
+    shortEchoDrops++;
+    _turnDecision[m.id] = 'dropped (short: $why)';
+    debugPrint('echo turn: short transcript "$text" taken as echo ($why, no local onset)');
+    return true;
+  }
+
+  /// Turns that began with (or right after) a local near-end onset: never
+  /// dropped by the short-transcript rule ([shortEchoReason]).
+  final Set<String> _localOnsetTurns = {};
+
+  /// Echo turns dropped by the short foreign/filler transcript rule.
+  int shortEchoDrops = 0;
+
+  /// Per user turn, for the one-line debug log at its final transcript:
+  /// the state at speech start and the echo decision.
+  final Map<String, String> _turnInfo = {};
+  final Map<String, String> _turnDecision = {};
+
+  void _logTurn(Message m, String text) {
+    final info = _turnInfo.remove(m.id) ?? 'suspect=? deferred=? local=?';
+    final kept = _conv.messages.contains(m);
+    final why = _turnDecision.remove(m.id);
+    final decision = kept
+        ? (why != null && why.startsWith('kept') ? why : 'kept')
+        : (why != null && why.startsWith('dropped') ? why : 'dropped (other)');
+    var t = text.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (t.length > 40) t = '${t.substring(0, 40)}…';
+    debugPrint('user turn: "$t" $info -> $decision');
+  }
+
   void _onEchoTurn(Message m) {
     echoTurnsDropped++;
     final now = DateTime.now();
@@ -1122,6 +1168,7 @@ class TurnPipeline extends ChangeNotifier {
     stopsHandled++;
     _cutTail = null;
     debugPrint('stop phrase "${m.text.trim()}": stopping locally');
+    _turnDecision[m.id] = 'kept (stop)';
     _held.clear();
     // Drop first: releasing the hold before it un-muted gpt-live for a moment.
     _backend?.stopAndDrop();
@@ -1210,6 +1257,11 @@ class TurnPipeline extends ChangeNotifier {
     }
     _utterancePcm.add(_preRoll.drain());
     _currentUtterance = msg;
+    if (local) _localOnsetTurns.add(msg.id);
+    _turnInfo[msg.id] =
+        'suspect=${echoLikely ? 'y' : 'n'} deferred=${defer ? 'y' : 'n'} local=${local ? 'y' : 'n'} '
+        'audible=${_assistantAudible ? 'y' : 'n'} guard=${_guard.echoExpected ? 'y' : 'n'} '
+        'window=${_echoWindowUntil.difference(now).inMilliseconds}ms';
     if (echoLikely) {
       _echoSuspects[msg.id] = [
         for (final r in _spoken)
@@ -1595,6 +1647,7 @@ class TurnPipeline extends ChangeNotifier {
         if (_deferPending && identical(m, _deferMsg)) {
           _checkDeferred(m, done: true);
           if (!_conv.messages.contains(m)) {
+            _logTurn(m, m.text);
             _changed();
             return;
           }
@@ -1609,6 +1662,7 @@ class TurnPipeline extends ChangeNotifier {
           _onStopPhrase(m);
         }
         _echoSuspects.remove(m.id);
+        _logTurn(m, m.text);
         if (_conv.messages.contains(m) && m.text.trim().isNotEmpty) _echoStreak = 0;
         _persistSoon();
         _changed();
