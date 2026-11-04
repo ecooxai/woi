@@ -271,3 +271,13 @@ and "Stop" / the question barge-in stopped Woi only after 7.4 s / 8.3 s (the 2 f
 turns). Mic level p50 −25 dBFS. **Open:** the guard is not yet good enough on this virtual room (clip + IR, no
 real speaker roll-off, so its low-band advantage is gone) — false onsets and missed barge-ins; needs the before run
 for comparison and tuning (onset threshold vs the room's coupling) before the live :0 app leaves push-to-talk.
+
+Barge-in first (2026-11-04): the silence gate is now **off by default** (`TurnPipeline.echoGate`). Offline it lost
+7/18 real interrupts. Lowering the onset threshold did not get them back (margin 6/4 dB, onset 60 ms: 12/18, 45-54
+false onsets). The misses are short words in double talk only 2-3 dB above the predicted echo; the gate then kept
+them from the server, which is what made "Stop" take 7.4 s in the E2E. The server now always gets the canceller's
+output, so barge-in recall is back to canceller + server VAD (the pre-echo15 behaviour) plus the local soft pause.
+Echo turns are left to the transcript guard and the self-talk breaker, so the server sees false turns at the
+canceller rate again (2.85/min offline). After an onset the guard re-arms once the near end has been quiet for 200 ms
+(before: once per reply). Open: interrupt_response=false while Woi speaks plus a local cancel decision, and
+`noise_reduction: far_field` for laptop speakers (both untested).

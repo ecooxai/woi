@@ -187,6 +187,9 @@ class TurnPipeline extends ChangeNotifier {
   final EchoGuard _guard;
   // Mic audio held back while the gate is closed: sent as the onset's
   // pre-roll when the user turns out to be talking over Woi.
+  /// Send silence instead of the mic while Woi's echo may be in it (until a
+  /// local onset). Off: it cost real barge-ins.
+  bool echoGate = false;
   final PcmRing _gatedPcm = PcmRing(kVoiceBytesPerSecond * 4 ~/ 10); // 400 ms
   bool _gating = false;
   // Soft barge-in: a local onset pauses Woi (keeping what was not heard yet
@@ -715,7 +718,11 @@ class TurnPipeline extends ChangeNotifier {
     // echo still on the way) the server gets silence instead, so residual
     // echo can't become a user turn. The guard opens it when the user talks
     // over Woi; the held-back audio goes first as the turn's start.
-    final gate = !_micManaged && _micMode == MicMode.handsFree && !_userSpeaking;
+    // Off by default: on real rooms it lost barge-ins (the local detector
+    // misses short words in double talk, and then the server never heard
+    // them). The server gets the canceller's output; echo turns are caught by
+    // the transcript guard instead.
+    final gate = echoGate && !_micManaged && _micMode == MicMode.handsFree && !_userSpeaking;
     final echo = gate && (_guard.echoExpected || _assistantAudible) && !_guard.gateOpen;
     final Uint8List out;
     if (echo) {
@@ -999,11 +1006,13 @@ class TurnPipeline extends ChangeNotifier {
     _earconTimer = null;
     final now = DateTime.now();
     // A turn that may be Woi's echo: it starts while Woi is (about to be)
-    // heard, or just after. With the mic gated, the server only got zeros
-    // while echo was expected, so just after a reply that ended normally
-    // echo can only have leaked through an onset that opened the gate.
+    // heard, or just after. With the mic gated ([echoGate]), the server only
+    // got zeros while echo was expected, so just after a reply that ended
+    // normally echo can only have leaked through an onset that opened the
+    // gate.
     final onset = _lastOnsetAt;
-    final leaked = _micManaged || (onset != null && now.difference(onset) < const Duration(seconds: 5));
+    final leaked =
+        !echoGate || _micManaged || (onset != null && now.difference(onset) < const Duration(seconds: 5));
     final echoLikely =
         _micMode == MicMode.handsFree &&
         (_paused != null ||

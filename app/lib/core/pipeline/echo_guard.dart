@@ -246,8 +246,8 @@ class EchoGuard {
 
   // ------------------------------------------------------------------ mic
 
-  /// Feeds mic audio that just arrived. Returns true once per reply when the
-  /// user starts talking over Woi (then [gateOpen] is true). [audible]: the
+  /// Feeds mic audio that just arrived. Returns true when the user starts
+  /// talking over Woi (again only after 200 ms without near-end speech) (then [gateOpen] is true). [audible]: the
   /// player reports playback; with no reference inside the delay window yet
   /// (the first output-latency ms of a reply, a coarse player clock) the
   /// upcoming reference stands in.
@@ -366,7 +366,14 @@ class EchoGuard {
         if (_replyFrames < 150 && _coupling[b] > _startPeak[b]) _startPeak[b] = _coupling[b];
       }
     }
-    if (_fired) return false;
+    if (_fired) {
+      // Woi talks on after an onset (a false one resumed, or double talk):
+      // once the near-end has been quiet for the hang time, allow another.
+      if (_userHangFrames > 0) return false;
+      _fired = false;
+      _voicedMs = 0;
+      _gapMs = 0;
+    }
     if (user) {
       _voicedMs += 10 + _gapMs;
       _gapMs = 0;

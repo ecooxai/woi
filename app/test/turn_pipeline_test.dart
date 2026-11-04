@@ -475,6 +475,7 @@ void main() {
         options: const PipelineOptions(autoScreenshot: false),
         echoGuard: EchoGuard(nowUs: () => 0),
       );
+      h.pipeline.echoGate = true; // off by default; covered here
       final b = h.scripted;
       final mic = h.fp.audio.mic!;
       b.emit(const AssistantTranscriptDelta('Once upon a time '));
