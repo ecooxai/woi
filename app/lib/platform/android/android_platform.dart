@@ -51,8 +51,8 @@ Future<PlatformServices> createAndroidPlatform({AndroidBridge? bridge}) async {
     deviceNote:
         'Woi runs on an Android phone (${info.model}, Android SDK ${info.sdk}, screen '
         '${info.screenWidth}x${info.screenHeight}), not a desktop. click_screen taps and type_text types into the app '
-        'the user is using (Woi steps aside first); send_keys supports back/esc, home, recents, enter, copy, paste, '
-        'cut and select all only. The camera tool opens the back camera. Screenshots come from screen share (when on) or the assistant gesture. '
+        'the user is using (Woi steps aside first); send_keys supports back/esc, home (keys "home" = launcher home screen, not back), recents, enter, '
+        'copy, paste, cut and select all only. The camera tool opens the back camera. Screenshots come from screen share (when on) or the assistant gesture. '
         'run_bash runs /system/bin/sh (toybox) in the app sandbox; home is ${info.filesDir}.',
     isMobile: true,
   );

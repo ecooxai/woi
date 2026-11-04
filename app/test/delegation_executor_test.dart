@@ -109,6 +109,42 @@ void main() {
     expect(rep.resultText, startsWith('Done.'));
   });
 
+  test('phone: no speculative capture for non-visual requests (it would send Woi to the back)', () async {
+    final r = _Runner();
+    final m = FakeDelegationModel([
+      DelegationModelTurn(
+        text: '',
+        calls: [
+          call('run_bash', {'command': 'date'}),
+        ],
+      ),
+    ]);
+    final ex = DelegationExecutor(
+      model: m,
+      tools: _tools,
+      runTool: r.call,
+      latestScreenshot: () => r.shot,
+      speculativeCapture: false,
+    );
+    final rep = await ex.execute('What time is it');
+    expect(r.runs.map((x) => x.$2), ['run_bash']);
+    expect(rep.freshCapture, isFalse);
+
+    // Visual requests still capture first.
+    r.runs.clear();
+    m.turns.add(
+      DelegationModelTurn(
+        text: '',
+        calls: [
+          call('click_screen', {'x': 1, 'y': 2}),
+        ],
+      ),
+    );
+    final rep2 = await ex.execute('Tap the Wi-Fi button');
+    expect(r.runs.map((x) => x.$2), ['take_screenshot', 'click_screen']);
+    expect(rep2.freshCapture, isTrue);
+  });
+
   test('non-visual requests skip the image and do not wait for a capture', () async {
     // Fresh screenshot available but not needed: text only.
     final r = _Runner()..shot = DelegationImage(png: Uint8List(4), capturedAt: DateTime.now());

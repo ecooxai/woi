@@ -3,14 +3,19 @@ import '../platform/input_control.dart';
 import 'tool_registry.dart';
 
 /// `send_keys`: key presses into another app's window (replaces key_combo).
-ToolDefinition sendKeysTool(InputControl input) => ToolDefinition(
-  spec: const ToolSpec(
+/// [phone]: Android, where `keys` also takes the system keys (home screen,
+/// recents, notifications).
+ToolDefinition sendKeysTool(InputControl input, {bool phone = false}) => ToolDefinition(
+  spec: ToolSpec(
     name: 'send_keys',
-    description:
-        'Press keys in another app (never in Woi). Default target: the app the user was '
-        'using (active non-Woi window). Use `action` for edit intents, mapped per app '
-        '(e.g. copy in a terminal = ctrl+shift+c), or `keys` for explicit chords: '
-        '"ctrl+c", "esc", "enter", "alt+tab", or a sequence "ctrl+a ctrl+c".',
+    description: phone
+        ? 'Press keys in the app the user was using on the phone (never in Woi). Use `action` for '
+              'copy/paste/cut/select_all/enter/back, or `keys` for system keys: "home" (go to the '
+              'launcher home screen), "back", "recents" (app switcher), "notifications", "quick_settings".'
+        : 'Press keys in another app (never in Woi). Default target: the app the user was '
+              'using (active non-Woi window). Use `action` for edit intents, mapped per app '
+              '(e.g. copy in a terminal = ctrl+shift+c), or `keys` for explicit chords: '
+              '"ctrl+c", "esc", "enter", "alt+tab", or a sequence "ctrl+a ctrl+c".',
     parameters: {
       'type': 'object',
       'properties': {

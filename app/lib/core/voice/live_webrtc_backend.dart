@@ -315,6 +315,7 @@ class LiveWebRtcBackend extends VoiceBackend
       pinnedNote: () => _pinnedNote,
       fastModel: delegationFastModel,
       reasoningEffort: delegationReasoningEffort,
+      speculativeCapture: !config.phone,
     );
   }
 

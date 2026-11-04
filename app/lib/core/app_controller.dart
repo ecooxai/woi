@@ -251,7 +251,7 @@ class AppController extends ChangeNotifier {
       tools = ToolRegistry()
         // send_keys supersedes key_combo (targets the user's app, not Woi).
         ..registerAll(builtinTools(toolEnv).where((t) => t.name != 'key_combo'))
-        ..register(sendKeysTool(platform.input))
+        ..register(sendKeysTool(platform.input, phone: platform.isMobile))
         ..registerAll(noteTools(notes, review: review, history: editHistory))
         ..registerAll(appTools(actions))
         ..registerAll(
@@ -396,6 +396,7 @@ class AppController extends ChangeNotifier {
       priorContext: c.summary,
       recentContext: contextManager.recentTurns(),
       environment: environmentNote(),
+      phone: platform.isMobile,
       pinnedNote: notes.text,
     );
   }
