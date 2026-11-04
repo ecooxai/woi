@@ -10,7 +10,7 @@ import '../audio/playback_clock.dart';
 import '../audio/wav.dart';
 import '../auth/auth.dart';
 import '../context/context_manager.dart';
-import '../media/media_context.dart' show isMediaQuestion, cameraCommand;
+import '../media/media_context.dart' show isMediaQuestion, isScreenQuestion, cameraCommand;
 import '../net/realtime_socket.dart';
 import '../notes/pinned_note.dart';
 import '../pipeline/vad.dart';
@@ -914,8 +914,11 @@ class LiveWebRtcBackend extends VoiceBackend
 
   /// "what do you see?" with the camera on, "what's in this image" with
   /// media open: only the delegation model can look, so it answers.
+  /// "what's on my screen?" with a screenshot held (assist gesture, screen
+  /// share, auto screenshot) likewise.
   bool _asksAboutContextImages(String t) =>
       isMediaQuestion(t) ||
+      (_latestImage != null && isScreenQuestion(t)) ||
       cameraCommand(t) != null ||
       (_contextImages.containsKey('camera') && DelegationExecutor.needsScreen(t));
 

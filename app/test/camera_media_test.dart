@@ -154,6 +154,24 @@ void main() {
     });
   });
 
+  test('isScreenQuestion', () {
+    for (final t in [
+      'What is on my screen?',
+      "what's on the screen",
+      'what do you see',
+      'What am I looking at?',
+      'describe my screen',
+      'what app is this?',
+      'what app am I in',
+      'what is in the screenshot',
+    ]) {
+      expect(isScreenQuestion(t), isTrue, reason: t);
+    }
+    for (final t in ['tell me a joke', 'take a screenshot', 'what time is it', 'turn the screen brightness up', 'tell me more about that']) {
+      expect(isScreenQuestion(t), isFalse, reason: t);
+    }
+  });
+
   group('media context grab (fake viewer)', () {
     late Directory dir;
     late _Viewer viewer;

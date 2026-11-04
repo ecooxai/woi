@@ -54,6 +54,21 @@ abstract final class ContextImageKind {
   static const media = 'media';
 }
 
+/// "what's on my screen?", "what am I looking at", "describe the screen",
+/// "what app is this", "read the screenshot": a question about the current
+/// screenshot (assist gesture / screen share), which only a delegation can see.
+bool isScreenQuestion(String text) {
+  final t = text.trim().toLowerCase();
+  if (t.isEmpty) return false;
+  return RegExp(
+    r"\b(?:what'?s|whats|what\s+is|what\s+do\s+you\s+see|anything)\s+(?:on|in)\s+(?:my|the|this)\s+(?:screen|display|phone)\b|"
+    r"\bwhat\s+(?:do|can)\s+you\s+see\b|\bwhat\s+am\s+i\s+(?:looking\s+at|seeing)\b|"
+    r"\b(?:describe|read|explain|summari[sz]e|look\s+at|check)\s+(?:my|the|this)\s+(?:screen|screenshot|display)\b|"
+    r"\bwhat\s+(?:app|application|screen|page|site|website)\s+(?:is\s+(?:this|that|open|shown|it)|am\s+i\s+(?:in|on|using))\b|"
+    r"\b(?:in|on)\s+(?:the|my|this)\s+(?:screenshot|assist\s+screenshot)\b",
+  ).hasMatch(t);
+}
+
 /// "what's in this image", "what is this song", "what are they saying",
 /// "what's happening in the video now"... A question about the item open in
 /// the viewer (only meaningful while one is open).
