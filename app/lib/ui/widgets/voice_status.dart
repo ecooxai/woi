@@ -82,9 +82,10 @@ bool voiceModeShowsLevel(VoiceMode m) => m == VoiceMode.hearing || m == VoiceMod
 
 /// Re-publishes an audio level at most [hz] times per second, quantized to
 /// [steps] levels, so a widget listening to it repaints only when the
-/// visible bar height actually changes (silence = no repaints).
+/// visible bar height actually changes (silence = no repaints). 10 Hz: on
+/// software GL every repaint is a full-window raster (~20 ms).
 class ThrottledLevel extends ChangeNotifier implements ValueListenable<double> {
-  ThrottledLevel({this.hz = 15, this.steps = 12});
+  ThrottledLevel({this.hz = 10, this.steps = 8});
 
   final int hz;
   final int steps;
