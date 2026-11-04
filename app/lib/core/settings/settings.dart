@@ -107,6 +107,7 @@ class AppSettings {
     this.editApplyDelay = 5,
     this.cameraReplacesScreenshot = false,
     this.fallbackToDirectOnLimit = false,
+    this.usageGuardPercent = 20,
   });
 
   final BackendMode backendMode;
@@ -165,6 +166,11 @@ class AppSettings {
   /// with Direct realtime instead until the limit resets.
   final bool fallbackToDirectOnLimit;
 
+  /// When either Codex usage window (5 h, week) has less than this many
+  /// percent remaining, delegation and compaction use gpt-6-luna even if a
+  /// more expensive model is selected. 0 = off.
+  final int usageGuardPercent;
+
   /// The voice used by the current backend mode.
   String get activeVoice => backendMode == BackendMode.gptLive ? liveVoice : voice;
 
@@ -198,6 +204,7 @@ class AppSettings {
     int? editApplyDelay,
     bool? cameraReplacesScreenshot,
     bool? fallbackToDirectOnLimit,
+    int? usageGuardPercent,
   }) => AppSettings(
     backendMode: backendMode ?? this.backendMode,
     apiKey: apiKey ?? this.apiKey,
@@ -223,6 +230,7 @@ class AppSettings {
     editApplyDelay: editApplyDelay ?? this.editApplyDelay,
     cameraReplacesScreenshot: cameraReplacesScreenshot ?? this.cameraReplacesScreenshot,
     fallbackToDirectOnLimit: fallbackToDirectOnLimit ?? this.fallbackToDirectOnLimit,
+    usageGuardPercent: usageGuardPercent ?? this.usageGuardPercent,
   );
 
   /// Whether a change requires reconnecting the live session.
@@ -259,6 +267,7 @@ class AppSettings {
     'editApplyDelay': editApplyDelay,
     'cameraReplacesScreenshot': cameraReplacesScreenshot,
     'fallbackToDirectOnLimit': fallbackToDirectOnLimit,
+    'usageGuardPercent': usageGuardPercent,
   };
 
   factory AppSettings.fromJson(Map<String, Object?> j) {
@@ -300,6 +309,7 @@ class AppSettings {
           : d.editApplyDelay,
       cameraReplacesScreenshot: b('cameraReplacesScreenshot', d.cameraReplacesScreenshot),
       fallbackToDirectOnLimit: b('fallbackToDirectOnLimit', d.fallbackToDirectOnLimit),
+      usageGuardPercent: i('usageGuardPercent', d.usageGuardPercent).clamp(0, 100),
     );
   }
 }
