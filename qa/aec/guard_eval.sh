@@ -51,7 +51,10 @@ print(f"{'rig':18s} {'Woi s':>6s} | VAD false turns raw/aec/gated | onsets false
 for d in sys.argv[1:]:
     r, a, g, q = (json.load(open(f"{d}/{n}.json")) for n in ("raw", "aec", "gated", "guard"))
     name = d.rstrip("/").split("/")[-1]
-    hits = [o["latency_ms"] for o in q["guard_onsets_true"]]
+    first = {}
+    for o in q["guard_onsets_true"]:
+        if o["over_woi"]: first.setdefault(o["item"], o["latency_ms"])
+    hits = list(first.values())  # first onset per near-end item
     print(f"{name:18s} {a['far_seconds']:6.1f} | {r['false_starts']:3d} {a['false_starts']:3d} {g['false_starts']:3d} "
           f"            | {len(q['guard_onsets_false']):3d} {len(q['old_onsets_false']):3d}            "
           f"| {len(hits)}/{q['near_items_over_woi']} {len(q['old_onsets_true'])}/{q['near_items_over_woi']} {hits}")

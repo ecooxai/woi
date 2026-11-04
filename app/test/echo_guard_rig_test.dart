@@ -122,6 +122,8 @@ void _run(String dir, String outPath) {
     final oldOnsets = <double>[];
     var gateWasOpen = false;
     final lagTrace = <String>[];
+    int? resumeAt;
+    var pausedFrom = 0;
     final dbg = env['WOI_AEC_DEBUG']?.split(',').map(double.parse).toList();
     if (dbg != null) {
       g.onFrame = (f, m, thr, user) {
@@ -156,19 +158,36 @@ void _run(String dir, String outPath) {
       nowUs = ((tMic + extraMs / 1000) * 1e6).round();
       if (hitNow) {
         final t = tMic;
-        final near = nearItems.where((it) => t >= it[0] - 0.05 && t <= it[1] + 0.3).toList();
+        final near = [
+          for (var i = 0; i < nearItems.length; i++)
+            if (t >= speechAt[i] - 0.05 && t <= nearItems[i][1] + 0.3) nearItems[i],
+        ];
         onsets.add({
           't': double.parse(t.toStringAsFixed(2)),
           // From speech start to detection, in capture time (the pipeline adds
           // WOI_AEC_DETECT_MS on top).
           if (near.isNotEmpty) 'latency_ms': ((t - speechAt[nearItems.indexOf(near.first)]) * 1000).round(),
           'true': near.isNotEmpty,
+          if (near.isNotEmpty) 'item': nearItems.indexOf(near.first),
+          if (near.isNotEmpty) 'over_woi': farItems.any((f) => near.first[0] >= f[0] && near.first[0] < f[1]),
           'lag_ms': g.lagMs,
         });
+        // A false onset pauses Woi (the pipeline's soft barge-in): its echo
+        // dies out ~300 ms later; the server hears the 400 ms pre-roll and
+        // that tail; unconfirmed, playback resumes after 900 ms and the
+        // guard re-arms. (The rendered mic keeps Woi playing: silence it.)
+        if (near.isEmpty) {
+          pausedFrom = e + _rate * 3 ~/ 10;
+          resumeAt = e + _rate * 9 ~/ 10;
+        }
+      }
+      if (resumeAt != null && e >= resumeAt) {
+        resumeAt = null;
+        g.rearm();
       }
       if (old.process(c, audible: nowUs / 1e6 < oldAudibleUntil)) oldOnsets.add(double.parse(tMic.toStringAsFixed(2)));
       final open = !g.echoExpected || g.gateOpen;
-      if (open) {
+      if (open && !(resumeAt != null && e > pausedFrom)) {
         final from = !gateWasOpen && g.gateOpen ? (e - chunk - preroll).clamp(0, n) : e - chunk;
         gated.setRange(from, e, mic, from);
       }
