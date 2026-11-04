@@ -737,6 +737,10 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
             return RepaintBoundary(
               child: Scrollbar(
                 controller: _editScroll,
+                // Always shown: a fading thumb animated ~40 frames per
+                // Enter while typing (fade in with the caret scroll, fade out
+                // 600 ms later), each a full-window raster on software GL.
+                thumbVisibility: true,
                 child: RepaintBoundary(
                   child: TextField(
                     key: const ValueKey('note-editor-field'),
