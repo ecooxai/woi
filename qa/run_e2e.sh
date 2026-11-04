@@ -11,6 +11,7 @@
 # compact = compaction (COMPACT_BACKEND=direct for Direct realtime); extras =
 # typed checks of camera, send_keys copy, note auto-apply + undo and "what is
 # in the video now" (EXTRAS_BACKEND=live for gpt-live, default direct).
+# MEDIA_BACKEND=direct / UX_BACKEND=direct run media / ux on Direct realtime.
 #
 # By default it builds HEAD into a throw-away git worktree (/tmp/woi-qa) so a
 # parallel `flutter build` in the main checkout cannot swap the binary under
@@ -265,8 +266,10 @@ import glob, json, os, sys
 fs = sorted(glob.glob(os.path.join(sys.argv[1], "woi", "conversations", "*.json")), key=os.path.getmtime)
 msgs = json.load(open(fs[-1])).get("messages", []) if fs else []
 last_user = max([i for i, m in enumerate(msgs) if m.get("kind") == "user"] or [0])
-print(" ".join(f"{m['tool'].get('name')}{m['tool'].get('args', '')[:80]}->{m['tool'].get('status')}"
-               for m in msgs[last_user:] if m.get("tool")))
+# tool calls, and context images attached to the turn ([img:media "Image from the viewer"])
+print(" ".join(f"{m['tool'].get('name')}{m['tool'].get('args', '')[:80]}->{m['tool'].get('status')}" if m.get("tool")
+               else f"[img:{(m.get('meta') or {}).get('imageKind', '?')} {m.get('text', '')[:40]!r}]"
+               for m in msgs[last_user:] if m.get("tool") or "image" in m))
 PY
 }
 
@@ -546,8 +549,12 @@ phase_media() {
 
 phase_ux() {
   local mode=ux
-  qa_launch_app $mode || return 1
-  qa_wait_log 'gpt-live connected' 40
+  if [ "${UX_BACKEND:-live}" = direct ]; then
+    qa_launch_app $mode '{"backendMode":"direct"}' || return 1; sleep 8
+  else
+    qa_launch_app $mode || return 1
+    qa_wait_log 'gpt-live connected' 40
+  fi
   qa_place_app 100 40 1280 860; sleep 2
   qa_shot "$APP_WID" ux_desktop_empty 1280 >/dev/null
   run_fixture $mode hello "$FIX/01_hello.wav"
@@ -713,9 +720,10 @@ phase_extras() {
   typed_turn ${mode}_video_now "What's happening in the video right now?" 6 60
   r=$(last_reply $mode); local u; u=$(last_user $mode)
   ok=FAIL
-  [[ $u == *"attached the media"* || $(recent_tools $mode) == *inspect_media* ]] &&
+  local rt; rt=$(recent_tools $mode)
+  [[ $u == *"attached the media"* || $rt == *inspect_media* || $rt == *"[img:media"* ]] &&
     [ "$(echo "$r" | grep -ciE 'test|pattern|colou?r|bar|number|count|frame|gradient')" -gt 0 ] && ok=PASS
-  result $mode video_current_frame "$LAST_LAT" 0 $ok "$(echo "$u" | grep -oE '\(video[^)]*\)|\([^)]*[0-9]+:[0-9]+[^)]*\)' | head -1 | cut -c1-80) reply: $(echo "$r" | cut -c1-160)"
+  result $mode video_current_frame "$LAST_LAT" 0 $ok "context: $(echo "$rt" | cut -c1-80) reply: $(echo "$r" | cut -c1-160)"
   close_viewers
 
   transcripts $mode

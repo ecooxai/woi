@@ -9,7 +9,7 @@
 #   scenarios idle listen typing scroll video camera   (default: the first five)
 #             idle10 = 10 min idle (RSS growth check)
 #
-# Env: DISPLAY (default :11), SECS (seconds per scenario, default 60),
+# Env: QA_DISPLAY (default :11; :0 refused), SECS (seconds per scenario, default 60),
 #      SANDBOX (default /tmp/woi-perf-sandbox), PNAME (process name, default woi-perf),
 #      SIZE (window size, default "1600 900").
 # Each scenario starts the app fresh with HOME and XDG_DATA_HOME in a
@@ -21,7 +21,12 @@ BIN=${1:?usage: perf_scenarios.sh BIN OUT_DIR [scenario...]}
 OUT=${2:?usage: perf_scenarios.sh BIN OUT_DIR [scenario...]}
 shift 2
 SCENARIOS=${*:-idle listen typing scroll video}
-export DISPLAY=${DISPLAY:-:11}
+# Test display: QA_DISPLAY (default :11); the user's desktop (:0) is refused.
+QA_DISPLAY=${QA_DISPLAY:-:11}
+case ${QA_DISPLAY#unix} in
+  :0 | :0.* | localhost:0 | localhost:0.*) echo "refusing QA_DISPLAY=$QA_DISPLAY (the user's desktop)" >&2; exit 2 ;;
+esac
+export DISPLAY=$QA_DISPLAY
 SECS=${SECS:-60}
 SIZE=${SIZE:-1600 900}
 REAL_HOME=$HOME
