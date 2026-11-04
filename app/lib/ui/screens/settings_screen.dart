@@ -170,7 +170,15 @@ class _SettingsViewState extends State<SettingsView> {
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, box) {
       final wide = box.maxWidth >= 900;
-      final bodies = [_connection(wide), _voice(wide), _context(wide), _screen(wide), _appearance(wide), _shortcuts(), _about()];
+      final bodies = [
+        _connection(wide),
+        _voice(wide),
+        _context(wide),
+        _screen(wide),
+        _appearance(wide),
+        _shortcuts(),
+        _about(),
+      ];
       final list = ListView(
         key: const ValueKey('settings-list'),
         controller: _scroll,
@@ -178,7 +186,9 @@ class _SettingsViewState extends State<SettingsView> {
         children: [
           for (var i = 0; i < bodies.length; i++)
             Padding(key: _keys[i], padding: const EdgeInsets.only(bottom: 16), child: _section(i, bodies[i], wide)),
-          Center(child: Text('Changes save automatically', style: body(12, color: WoiColors.textFaint))),
+          Center(
+            child: Text('Changes save automatically', style: body(12, color: WoiColors.textFaint)),
+          ),
         ],
       );
       if (!wide) return list;
@@ -257,12 +267,16 @@ class _SettingsViewState extends State<SettingsView> {
                       children: [
                         Icon(_sections[i].$1, size: 18, color: i == _active ? WoiColors.cyan : WoiColors.textDim),
                         const SizedBox(width: 12),
-                        Text(
-                          _sections[i].$2,
-                          style: body(
-                            14,
-                            weight: i == _active ? FontWeight.w600 : FontWeight.w400,
-                            color: i == _active ? WoiColors.text : WoiColors.textDim,
+                        Expanded(
+                          child: Text(
+                            _sections[i].$2,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: body(
+                              14,
+                              weight: i == _active ? FontWeight.w600 : FontWeight.w400,
+                              color: i == _active ? WoiColors.text : WoiColors.textDim,
+                            ),
                           ),
                         ),
                       ],
@@ -430,9 +444,8 @@ class _SettingsViewState extends State<SettingsView> {
       value: _s.activeVoice,
       label: _cap,
       columns: wide ? 5 : 2,
-      onChanged: (v) => _apply(
-        _s.backendMode == BackendMode.gptLive ? _s.copyWith(liveVoice: v) : _s.copyWith(voice: v),
-      ),
+      onChanged: (v) =>
+          _apply(_s.backendMode == BackendMode.gptLive ? _s.copyWith(liveVoice: v) : _s.copyWith(voice: v)),
     ),
   ];
 
@@ -584,7 +597,8 @@ class _SettingsViewState extends State<SettingsView> {
       wide,
       id: 'edit-delay',
       title: 'AI edits',
-      desc: 'Note and file edits show an inline diff first. They apply after the countdown unless you reject them '
+      desc:
+          'Note and file edits show an inline diff first. They apply after the countdown unless you reject them '
           '(Esc, "reject"); "undo that" reverts the last one.',
       options: kEditApplyDelays,
       value: _s.editApplyDelay,
@@ -819,7 +833,10 @@ class _SettingsViewState extends State<SettingsView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Semantics(header: true, child: Text(title, style: body(14, weight: FontWeight.w600))),
+          Semantics(
+            header: true,
+            child: Text(title, style: body(14, weight: FontWeight.w600)),
+          ),
           const SizedBox(height: 3),
           Text(desc, style: body(12.5, color: WoiColors.textDim, height: 1.35)),
           const SizedBox(height: 6),

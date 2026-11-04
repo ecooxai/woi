@@ -87,7 +87,12 @@ Future<void> _pumpHome(WidgetTester t, AppController c, Size size) async {
   // Pumped in the real zone so the note tabs' history read (file IO)
   // completes.
   await t.runAsync(() async {
-    await t.pumpWidget(MaterialApp(theme: buildWoiTheme(), home: HomeScreen(controller: c)));
+    await t.pumpWidget(
+      MaterialApp(
+        theme: buildWoiTheme(),
+        home: HomeScreen(controller: c),
+      ),
+    );
     await Future<void>.delayed(const Duration(milliseconds: 200));
   });
   await _settle(t);
@@ -113,6 +118,9 @@ ConversationSummary _sum(String id, int minutesAgo) => ConversationSummary(
   updatedAt: DateTime(2026, 11, 3, 12).subtract(Duration(minutes: minutesAgo)),
   messageCount: 0,
 );
+
+/// Full diagnostics of a caught layout error (null when there was none).
+String? _err(Object? e) => e == null ? null : (e is FlutterError ? e.toStringDeep() : '$e');
 
 void main() {
   group('note tabs model', () {
@@ -141,9 +149,19 @@ void main() {
     test('selection wins, else the cursor line, trimmed', () {
       const text = '# Plan\n  ls -la  \n\nlast';
       expect(runTextFor(const TextEditingValue(text: text, selection: TextSelection.collapsed(offset: 10))), 'ls -la');
-      expect(runTextFor(const TextEditingValue(text: text, selection: TextSelection(baseOffset: 2, extentOffset: 6))),
-          'Plan');
-      expect(runTextFor(TextEditingValue(text: text, selection: TextSelection.collapsed(offset: text.length))), 'last');
+      expect(
+        runTextFor(const TextEditingValue(text: text, selection: TextSelection(baseOffset: 2, extentOffset: 6))),
+        'Plan',
+      );
+      expect(
+        runTextFor(
+          TextEditingValue(
+            text: text,
+            selection: TextSelection.collapsed(offset: text.length),
+          ),
+        ),
+        'last',
+      );
       expect(runTextFor(const TextEditingValue(text: text, selection: TextSelection.collapsed(offset: 18))), '');
     });
   });
@@ -154,16 +172,34 @@ void main() {
       await env.start(t);
       await _pumpHome(t, env.c, const Size(1400, 900));
 
-      for (final k in ['view-note', 'view-chat', 'view-terminal', 'view-settings', 'split-toggle', 'open-history',
-        'input-bar', 'composer-field',
-        'mic-button', 'voice-indicator', 'voice-label', 'connection-status', 'context-compact',
-        'mic-mode-handsFree', 'mic-mode-pushToTalk', 'mic-mode-muted']) {
+      for (final k in [
+        'view-note',
+        'view-chat',
+        'view-terminal',
+        'view-settings',
+        'split-toggle',
+        'open-history',
+        'input-bar',
+        'composer-field',
+        'mic-button',
+        'voice-indicator',
+        'voice-label',
+        'connection-status',
+        'context-compact',
+        'mic-mode-handsFree',
+        'mic-mode-pushToTalk',
+        'mic-mode-muted',
+      ]) {
         expect(find.byKey(ValueKey(k)), findsOneWidget, reason: k);
       }
       // The status lives inside the input bar.
       final bar = find.byKey(const ValueKey('input-bar'));
       for (final k in ['voice-indicator', 'connection-status', 'context-compact', 'mic-mode-muted']) {
-        expect(find.descendant(of: bar, matching: find.byKey(ValueKey(k))), findsOneWidget, reason: k);
+        expect(
+          find.descendant(of: bar, matching: find.byKey(ValueKey(k))),
+          findsOneWidget,
+          reason: k,
+        );
       }
       expect(find.textContaining('gpt-live-1.1'), findsOneWidget);
       // No "Woi" title: the tabs start at the left edge, in order.
@@ -174,7 +210,11 @@ void main() {
         expect(xs[i], greaterThan(xs[i - 1]));
       }
       for (final l in ['Note', 'Chat', 'Terminal', 'Settings']) {
-        expect(find.descendant(of: find.byType(HomeTabs), matching: find.text(l)), findsOneWidget, reason: l);
+        expect(
+          find.descendant(of: find.byType(HomeTabs), matching: find.text(l)),
+          findsOneWidget,
+          reason: l,
+        );
       }
 
       // Mic mode toggle changes the setting.
@@ -243,7 +283,7 @@ void main() {
         final env = _Env();
         await env.start(t);
         await _pumpHome(t, env.c, size);
-        expect(t.takeException(), isNull);
+        expect(_err(t.takeException()), isNull);
         final strip = find.byType(HomeTabs);
         expect(t.getTopLeft(strip).dx, lessThan(8));
         expect(t.getTopRight(strip).dx, lessThanOrEqualTo(size.width - kTouchTarget));
@@ -265,7 +305,7 @@ void main() {
           expect(env.c.actions.view.value, v);
           expect(find.byKey(ValueKey(panel)), findsOneWidget, reason: panel);
           expect(find.descendant(of: strip, matching: find.text(kHomeTabs[v]!.$2)), findsOneWidget);
-          expect(t.takeException(), isNull, reason: v.name);
+          expect(_err(t.takeException()), isNull, reason: v.name);
         }
         await env.stop(t);
       });
@@ -329,8 +369,12 @@ void main() {
 
       await _tapIo(t, find.byKey(const ValueKey('note-tab-more')));
       expect(find.byKey(const ValueKey('note-more-search')), findsOneWidget);
-      expect(find.byWidgetPredicate((w) => w.key is ValueKey<String> &&
-          (w.key! as ValueKey<String>).value.startsWith('note-more-item-')), findsNWidgets(3));
+      expect(
+        find.byWidgetPredicate(
+          (w) => w.key is ValueKey<String> && (w.key! as ValueKey<String>).value.startsWith('note-more-item-'),
+        ),
+        findsNWidgets(3),
+      );
       await t.enterText(find.byKey(const ValueKey('note-more-search')), 'note 1');
       await t.pump();
       expect(find.text('Note 1'), findsOneWidget);
@@ -392,19 +436,34 @@ void main() {
       await env.start(t);
       await t.binding.setSurfaceSize(const Size(1400, 900));
       addTearDown(() => t.binding.setSurfaceSize(null));
-      await t.pumpWidget(MaterialApp(theme: buildWoiTheme(), home: Scaffold(body: SettingsView(controller: env.c))));
+      await t.pumpWidget(
+        MaterialApp(
+          theme: buildWoiTheme(),
+          home: Scaffold(body: SettingsView(controller: env.c)),
+        ),
+      );
       await _settle(t);
 
-      for (final id in ['backend', 'voice-model', 'realtime-model', 'voice', 'compression-model', 'delegate-model',
-        'theme']) {
+      for (final id in [
+        'backend',
+        'voice-model',
+        'realtime-model',
+        'voice',
+        'compression-model',
+        'delegate-model',
+        'theme',
+      ]) {
         final group = find.byKey(ValueKey('choices-$id'));
         await t.scrollUntilVisible(group, 200, scrollable: find.byType(Scrollable).first);
         expect(group, findsOneWidget, reason: id);
         expect(find.descendant(of: group, matching: find.byType(DropdownButtonFormField<String>)), findsNothing);
       }
       expect(find.byType(Radio<AppTheme>), findsNWidgets(3));
-      await t.scrollUntilVisible(find.byKey(const ValueKey('choices-backend')), -200,
-          scrollable: find.byType(Scrollable).first);
+      await t.scrollUntilVisible(
+        find.byKey(const ValueKey('choices-backend')),
+        -200,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(find.byType(Radio<BackendMode>), findsNWidgets(BackendMode.values.length));
 
       final list = find.byType(Scrollable).first;

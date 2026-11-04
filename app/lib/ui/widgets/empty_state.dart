@@ -141,7 +141,14 @@ class _HintChipState extends State<_HintChip> {
                   children: [
                     Icon(widget.data.icon, size: 18, color: accent),
                     const SizedBox(width: 8),
-                    Text('"${widget.data.label}"', style: body(14, weight: FontWeight.w500)),
+                    Flexible(
+                      child: Text(
+                        '"${widget.data.label}"',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: body(14, weight: FontWeight.w500),
+                      ),
+                    ),
                   ],
                 ),
               ),

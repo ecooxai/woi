@@ -43,7 +43,8 @@ class _InputBarState extends State<InputBar> {
         if (status == SessionStatus.connected) _wasConnected = true;
         final connected = status == SessionStatus.connected;
         final ph = pipeline.phase;
-        final canStop = ph == AssistantPhase.speaking || ph == AssistantPhase.thinking || ph == AssistantPhase.toolRunning;
+        final canStop =
+            ph == AssistantPhase.speaking || ph == AssistantPhase.thinking || ph == AssistantPhase.toolRunning;
         final s = c.settings;
         final phone = widget.phone;
         final mode = voiceModeFor(
@@ -74,14 +75,18 @@ class _InputBarState extends State<InputBar> {
 
         final status_ = Row(
           children: [
-            ListenableBuilder(
-              listenable: pipeline.levelSourcesChanged,
-              builder: (context, _) => VoiceStatusIndicator(
-                mode: mode,
-                micLevel: pipeline.micLevel,
-                outputLevel: pipeline.outputLevel,
-                // Between reconnect attempts: still (the label says it).
-                animate: mode == VoiceMode.reconnecting ? !pipeline.reconnectWaiting : null,
+            // Flexible: on 360 px phones the label ellipsizes instead of
+            // overflowing the row.
+            Flexible(
+              child: ListenableBuilder(
+                listenable: pipeline.levelSourcesChanged,
+                builder: (context, _) => VoiceStatusIndicator(
+                  mode: mode,
+                  micLevel: pipeline.micLevel,
+                  outputLevel: pipeline.outputLevel,
+                  // Between reconnect attempts: still (the label says it).
+                  animate: mode == VoiceMode.reconnecting ? !pipeline.reconnectWaiting : null,
+                ),
               ),
             ),
             _dot(),
@@ -97,7 +102,12 @@ class _InputBarState extends State<InputBar> {
               ),
             ),
             const Spacer(),
-            CameraToggle(on: c.cameraOn, busy: c.cameraBusy, onPressed: c.toggleCamera, size: phone ? kTouchTarget : 28),
+            CameraToggle(
+              on: c.cameraOn,
+              busy: c.cameraBusy,
+              onPressed: c.toggleCamera,
+              size: phone ? kTouchTarget : 28,
+            ),
             SizedBox(width: phone ? 0 : 8),
             phone
                 ? MicModeMenu(mode: s.micMode, onChanged: c.actions.setMicMode)
