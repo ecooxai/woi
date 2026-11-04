@@ -24,7 +24,10 @@ import java.util.concurrent.TimeUnit
  */
 object WoiAudio {
     private const val RATE = 24000
-    private const val CHUNK_BYTES = RATE * 2 * 40 / 1000 // 40 ms
+    // 80 ms: each chunk costs a thread wakeup, a platform-channel hop and a
+    // WebSocket message; 40 ms chunks made listening ~18% CPU, 80 ms ~12%.
+    // Server VAD and the local barge-in detector see audio <= 40 ms later.
+    private const val CHUNK_BYTES = RATE * 2 * 80 / 1000
 
     // ---------------- microphone ----------------
 

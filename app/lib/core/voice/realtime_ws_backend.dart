@@ -391,7 +391,9 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
   @override
   void sendAudio(Uint8List pcm16) {
     if (!_ready || pcm16.isEmpty) return;
-    _send({'type': 'input_audio_buffer.append', 'audio': base64Encode(pcm16)});
+    // Built by hand (12-25 times a second): base64 needs no JSON escaping,
+    // and jsonEncode would scan and copy the whole payload again.
+    _ws?.send('{"type":"input_audio_buffer.append","audio":"${base64Encode(pcm16)}"}');
   }
 
   @override
