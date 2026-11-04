@@ -43,7 +43,7 @@ class _HistoryDrawerState extends State<HistoryDrawer> {
       width: w < 420 ? w * 0.88 : 360,
       backgroundColor: WoiColors.bg1,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.horizontal(right: Radius.circular(WoiRadii.xl)),
+        borderRadius: BorderRadius.horizontal(left: Radius.circular(WoiRadii.xl)),
         side: BorderSide(color: WoiColors.stroke),
       ),
       child: SafeArea(

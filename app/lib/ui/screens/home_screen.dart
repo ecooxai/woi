@@ -23,6 +23,7 @@ import '../widgets/glass.dart';
 import '../widgets/message_tile.dart';
 import '../widgets/input_bar.dart';
 import '../widgets/screen_share_button.dart';
+import '../widgets/tab_strip.dart';
 import 'history_drawer.dart';
 import 'settings_screen.dart';
 
@@ -52,7 +53,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   SessionStatus? _lastStatus;
 
-  /// Note, chat or terminal: owned by [AppActions] (voice can switch it).
+  /// The selected tab: owned by [AppActions] (voice can switch it).
   HomeView get _view => c.actions.view.value;
   set _view(HomeView v) => c.actions.view.value = v;
 
@@ -68,7 +69,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @visibleForTesting
   HomeView get view => _view;
-  bool get _splitActive => _split && _width >= kSplitBreakpoint;
+  bool get _splitActive => _split && _width >= kSplitBreakpoint && AppActions.isNoteOrChat(_view);
 
   AppController get c => widget.controller;
   TurnPipeline get pipeline => c.pipeline;
@@ -103,16 +104,9 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  /// Switches between the note, the chat and the terminal (Ctrl+1/2/3).
-  void setView(HomeView v) {
-    if (_splitActive && v != HomeView.terminal) {
-      // Both visible: just focus the requested side.
-      if (v == HomeView.note) _noteBadge = false;
-      setState(() {});
-      return;
-    }
-    c.actions.showView(v);
-  }
+  /// Selects a top-level tab (Ctrl+1..4). In the side-by-side layout Note
+  /// and Chat stay side by side.
+  void setView(HomeView v) => c.actions.showView(v);
 
   void toggleSplit() {
     if (_width < kSplitBreakpoint) return;
@@ -191,11 +185,13 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   /// Global shortcuts. Space = push-to-talk (when not typing), Esc =
-  /// interrupt, Ctrl+K = type, Ctrl+, = settings, Ctrl+N = new chat,
-  /// Ctrl+1 / Ctrl+2 = note / chat, Ctrl+\ = side by side.
+  /// interrupt (or leave Settings), Ctrl+K = type, Ctrl+N = new note,
+  /// Ctrl+1..4 = Note / Chat / Terminal / Settings tab (Ctrl+, = Settings),
+  /// Ctrl+\ = side by side.
   bool _onKey(KeyEvent e) {
     if (!mounted) return false;
-    if (ModalRoute.of(context)?.isCurrent != true) return _onKeyOverSettings(e);
+    // A dialog or popup is on top: it handles its own keys.
+    if (ModalRoute.of(context)?.isCurrent != true) return false;
     final key = e.logicalKey;
     final ctrl = HardwareKeyboard.instance.isControlPressed || HardwareKeyboard.instance.isMetaPressed;
     if (key == LogicalKeyboardKey.space && !_typing && !ctrl && c.settings.micMode == MicMode.pushToTalk) {
@@ -210,24 +206,19 @@ class _HomeScreenState extends State<HomeScreen> {
       _focusComposer();
       return true;
     }
-    if (ctrl && (key == LogicalKeyboardKey.digit1 || key == LogicalKeyboardKey.numpad1)) {
-      setView(HomeView.note);
-      return true;
-    }
-    if (ctrl && (key == LogicalKeyboardKey.digit2 || key == LogicalKeyboardKey.numpad2)) {
-      setView(HomeView.chat);
-      return true;
-    }
-    if (ctrl && (key == LogicalKeyboardKey.digit3 || key == LogicalKeyboardKey.numpad3)) {
-      setView(HomeView.terminal);
-      return true;
+    if (ctrl) {
+      final tab = _digitTabs[key];
+      if (tab != null) {
+        setView(tab);
+        return true;
+      }
     }
     if (ctrl && key == LogicalKeyboardKey.backslash && !inTerminal) {
       toggleSplit();
       return true;
     }
     if (ctrl && key == LogicalKeyboardKey.comma) {
-      _openSettings();
+      setView(HomeView.settings);
       return true;
     }
     if (ctrl && key == LogicalKeyboardKey.keyN && !inTerminal) {
@@ -241,6 +232,10 @@ class _HomeScreenState extends State<HomeScreen> {
         return c.review.apply();
       }
     }
+    if (key == LogicalKeyboardKey.escape && !_typing && _view == HomeView.settings) {
+      c.actions.closeSettings();
+      return true;
+    }
     if (key == LogicalKeyboardKey.escape && !_typing) {
       final ph = pipeline.phase;
       if (ph == AssistantPhase.speaking || ph == AssistantPhase.thinking || ph == AssistantPhase.toolRunning) {
@@ -251,27 +246,16 @@ class _HomeScreenState extends State<HomeScreen> {
     return false;
   }
 
-  /// Settings (or a route above it) is on top: Esc closes the top route,
-  /// Ctrl+N goes home and starts a new chat, Ctrl+, does nothing.
-  bool _onKeyOverSettings(KeyEvent e) {
-    if (e is! KeyDownEvent || !_settingsOpen) return false;
-    final key = e.logicalKey;
-    final ctrl = HardwareKeyboard.instance.isControlPressed || HardwareKeyboard.instance.isMetaPressed;
-    final nav = Navigator.of(context);
-    if (ctrl && key == LogicalKeyboardKey.keyN) {
-      nav.popUntil((r) => r.isFirst);
-      c.actions.newNote();
-      return true;
-    }
-    if (ctrl && key == LogicalKeyboardKey.comma) return true;
-    if (key == LogicalKeyboardKey.escape && !_typing) {
-      nav.maybePop();
-      return true;
-    }
-    return false;
-  }
-
-  bool _settingsOpen = false;
+  static final _digitTabs = <LogicalKeyboardKey, HomeView>{
+    LogicalKeyboardKey.digit1: HomeView.note,
+    LogicalKeyboardKey.numpad1: HomeView.note,
+    LogicalKeyboardKey.digit2: HomeView.chat,
+    LogicalKeyboardKey.numpad2: HomeView.chat,
+    LogicalKeyboardKey.digit3: HomeView.terminal,
+    LogicalKeyboardKey.numpad3: HomeView.terminal,
+    LogicalKeyboardKey.digit4: HomeView.settings,
+    LogicalKeyboardKey.numpad4: HomeView.settings,
+  };
 
   /// Enter decides an edit preview unless it would type into something:
   /// only when no text field has focus, or the composer is empty.
@@ -299,33 +283,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Future<void> _openSettings() async {
-    if (_settingsOpen) return;
-    _settingsOpen = true;
-    try {
-      await Navigator.of(context).push(_settingsRoute());
-    } finally {
-      _settingsOpen = false;
-    }
-  }
-
-  Route<void> _settingsRoute() => PageRouteBuilder<void>(
-    transitionDuration: WoiMotion.slow,
-    reverseTransitionDuration: WoiMotion.medium,
-    pageBuilder: (_, _, _) => SettingsScreen(controller: c),
-    transitionsBuilder: (context, a, _, child) {
-      final curved = CurvedAnimation(parent: a, curve: WoiMotion.emphasized);
-      return FadeTransition(
-        opacity: curved,
-        child: SlideTransition(
-          position: Tween(begin: const Offset(0, 0.04), end: Offset.zero).animate(curved),
-          child: child,
-        ),
-      );
-    },
-  );
-
-  void _openHistory() => _scaffoldKey.currentState?.openDrawer();
+  void _openHistory() => _scaffoldKey.currentState?.openEndDrawer();
 
   bool get _phone => _width < kPhoneBreakpoint;
 
@@ -334,8 +292,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       key: _scaffoldKey,
       resizeToAvoidBottomInset: true,
-      drawer: HistoryDrawer(controller: c),
-      drawerEdgeDragWidth: _phone ? 32 : null,
+      endDrawer: HistoryDrawer(controller: c),
       // Only app-level changes (settings, conversation switch) rebuild the
       // screen; the transcript, header and input bar listen to the pipeline
       // themselves, the note editor to the note.
@@ -352,7 +309,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Padding(
-                    padding: EdgeInsets.fromLTRB(phone ? 0 : 8, phone ? 0 : 6, phone ? 0 : 8, phone ? 0 : 6),
+                    padding: EdgeInsets.fromLTRB(phone ? 0 : pad - 8, phone ? 0 : 4, phone ? 0 : pad - 8, phone ? 0 : 6),
                     child: ListenableBuilder(listenable: pipeline, builder: (context, _) => _header()),
                   ),
                   Expanded(
@@ -402,6 +359,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return switch (_view) {
       HomeView.note => _notePanel(),
       HomeView.chat => _chatPanel(maxBubble: _phone ? box.maxWidth * 0.86 : 720),
+      HomeView.settings => SettingsView(key: const ValueKey('settings-view'), controller: c),
       HomeView.terminal => GlassPanel(
         key: const ValueKey('terminal-view'),
         padding: EdgeInsets.zero,
@@ -491,54 +449,47 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // ------------------------------------------------------------------ parts
 
-  Widget _logo() => Semantics(
-    header: true,
-    label: 'Woi',
-    child: ExcludeSemantics(
-      child: Text('Woi', style: display(_phone ? 18 : 19, weight: FontWeight.w700, spacing: -0.4)),
-    ),
-  );
-
+  /// The top-level tab strip, starting at the left edge, plus the few
+  /// window-level actions on the right (status lives in the input bar).
   Widget _header() {
     final phone = _phone;
-    final t = phone ? kTouchTarget : 40.0;
-    final views = ViewSwitch(
-      view: _view,
-      onChanged: setView,
-      noteBadge: _noteBadge,
-      chatBadge: _chatBadge,
-      dimmed: _splitActive,
-      expand: false,
-      height: phone ? kTouchTarget - 8 : 32,
-      compact: phone,
-    );
+    final t = phone ? kTouchTarget : 36.0;
     return SizedBox(
-      height: phone ? kTouchTarget + 4 : 44,
+      height: phone ? kTouchTarget : 44,
       child: Row(
         children: [
-          GlassIconButton(icon: Icons.menu_rounded, tooltip: 'History', onPressed: _openHistory, size: t),
-          SizedBox(width: phone ? 2 : 8),
-          _logo(),
-          const Spacer(),
-          views,
-          if (_width >= kSplitBreakpoint) ...[
-            const SizedBox(width: 6),
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: HomeTabs(
+                  view: _view,
+                  onChanged: setView,
+                  split: _splitActive,
+                  noteBadge: _noteBadge,
+                  chatBadge: _chatBadge,
+                  compact: phone,
+                  height: phone ? kTouchTarget : 44,
+                ),
+              ),
+            ),
+          ),
+          if (_width >= kSplitBreakpoint)
             GlassIconButton(
               key: const ValueKey('split-toggle'),
               icon: Icons.vertical_split_outlined,
               tooltip: _splitActive ? 'Single view (Ctrl+\\)' : 'Note and chat side by side (Ctrl+\\)',
               onPressed: toggleSplit,
-              active: _splitActive,
-              size: 36,
+              active: _split && AppActions.isNoteOrChat(_view),
+              size: t,
             ),
-          ],
-          const Spacer(),
           if (Platform.isAndroid) ScreenShareButton(size: t),
           GlassIconButton(
-            key: const ValueKey('open-settings'),
-            icon: Icons.settings_outlined,
-            tooltip: 'Settings (Ctrl+,)',
-            onPressed: _openSettings,
+            key: const ValueKey('open-history'),
+            icon: Icons.history_rounded,
+            tooltip: 'All conversations',
+            onPressed: _openHistory,
             size: t,
           ),
         ],
@@ -612,128 +563,6 @@ class _HomeScreenState extends State<HomeScreen> {
             screenshot: m.kind == MessageKind.tool ? shots[idx] : null,
           );
         },
-      ),
-    );
-  }
-}
-
-/// Note | Chat segmented control with activity badges.
-class ViewSwitch extends StatelessWidget {
-  const ViewSwitch({
-    super.key,
-    required this.view,
-    required this.onChanged,
-    this.noteBadge = false,
-    this.chatBadge = 0,
-    this.expand = false,
-    this.dimmed = false,
-    this.height = 32,
-    this.compact = false,
-  });
-
-  /// Narrow screens: only the selected segment shows its label.
-  final bool compact;
-  final HomeView view;
-  final ValueChanged<HomeView> onChanged;
-  final bool noteBadge;
-  final int chatBadge;
-  final bool expand;
-  final double height;
-
-  /// Both views are visible (split): no selection highlight.
-  final bool dimmed;
-
-  @override
-  Widget build(BuildContext context) {
-    Widget seg(HomeView v, IconData icon, String label, String keys, {Widget? badge}) {
-      final on = !dimmed && v == view;
-      final child = Tooltip(
-        message: '$label ($keys)',
-        child: Semantics(
-          button: true,
-          selected: on,
-          label: label,
-          child: InkWell(
-            key: ValueKey('view-${v.name}'),
-            borderRadius: BorderRadius.circular(WoiRadii.sm),
-            onTap: () => onChanged(v),
-            child: Container(
-              height: height,
-              padding: EdgeInsets.symmetric(horizontal: compact && !on ? 10 : 12),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(WoiRadii.sm),
-                color: on ? WoiColors.bg1 : null,
-                border: Border.all(color: on ? WoiColors.stroke : Colors.transparent),
-                boxShadow: on ? [BoxShadow(color: WoiColors.shadow, blurRadius: 2, offset: const Offset(0, 1))] : null,
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(icon, size: 16, color: on ? WoiColors.text : WoiColors.textDim),
-                  if (!compact || on) ...[
-                    const SizedBox(width: 6),
-                    Text(
-                      label,
-                      style: body(13, weight: on ? FontWeight.w600 : FontWeight.w500, color: on ? WoiColors.text : WoiColors.textDim),
-                    ),
-                  ],
-                  ?badge,
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-      return expand ? Expanded(child: child) : child;
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: WoiColors.glassStrong,
-        borderRadius: BorderRadius.circular(WoiRadii.md),
-      ),
-      child: Row(
-        mainAxisSize: expand ? MainAxisSize.max : MainAxisSize.min,
-        children: [
-          seg(
-            HomeView.note,
-            Icons.description_outlined,
-            'Note',
-            'Ctrl+1',
-            badge: noteBadge
-                ? Container(
-                    key: const ValueKey('note-badge'),
-                    margin: const EdgeInsets.only(left: 6),
-                    width: 7,
-                    height: 7,
-                    decoration: BoxDecoration(shape: BoxShape.circle, color: WoiColors.violet),
-                  )
-                : null,
-          ),
-          const SizedBox(width: 2),
-          seg(
-            HomeView.chat,
-            Icons.chat_bubble_outline_rounded,
-            'Chat',
-            'Ctrl+2',
-            badge: chatBadge > 0
-                ? Container(
-                    key: const ValueKey('chat-badge'),
-                    margin: const EdgeInsets.only(left: 6),
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                    decoration: BoxDecoration(color: WoiColors.cyan, borderRadius: BorderRadius.circular(999)),
-                    child: Text(
-                      '$chatBadge',
-                      style: body(10.5, weight: FontWeight.w700, color: WoiColors.onAccent),
-                    ),
-                  )
-                : null,
-          ),
-          const SizedBox(width: 2),
-          seg(HomeView.terminal, Icons.terminal_rounded, 'Terminal', 'Ctrl+3'),
-        ],
       ),
     );
   }

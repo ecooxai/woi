@@ -6,6 +6,7 @@ import '../../core/app_controller.dart';
 import '../../core/notes/note.dart';
 import '../../core/storage/history_store.dart';
 import '../theme.dart';
+import '../widgets/tab_strip.dart';
 
 /// How many recent notes get their own tab.
 const kNoteTabs = 4;
@@ -206,39 +207,16 @@ class _Tab extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) {
-    final on = item.current;
-    return Semantics(
-      selected: on,
-      button: true,
-      label: 'Note: ${item.title}',
-      excludeSemantics: true,
-      child: Tooltip(
-        message: item.title,
-        waitDuration: const Duration(milliseconds: 800),
-        child: InkWell(
-          key: ValueKey('note-tab-${item.id}'),
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(WoiRadii.sm + 2),
-          child: Container(
-            height: height,
-            constraints: BoxConstraints(minWidth: compact ? 64 : 72, maxWidth: compact ? 150 : 200),
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(color: on ? WoiColors.cyan : Colors.transparent, width: 2)),
-            ),
-            alignment: Alignment.center,
-            child: Text(
-              item.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: body(13, weight: on ? FontWeight.w600 : FontWeight.w400, color: on ? WoiColors.text : WoiColors.textDim),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => WoiTab(
+    inkKey: ValueKey('note-tab-${item.id}'),
+    label: item.title,
+    tooltip: 'Note: ${item.title}',
+    selected: item.current,
+    onTap: onTap,
+    height: height,
+    minWidth: compact ? 64 : 72,
+    maxWidth: compact ? 150 : 200,
+  );
 }
 
 /// Searchable list of notes shown under the "More" button.

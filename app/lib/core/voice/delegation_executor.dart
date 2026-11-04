@@ -395,8 +395,8 @@ class DelegationExecutor {
       return [('app_control', {'action': 'reject_edit'})];
     }
     final view = RegExp(
-      r'^(?:switch|go|change|flip|jump)\s+(?:back\s+)?to\s+(?:the\s+)?(terminal|chat|note|notes|split|side by side)(?:\s+(?:view|tab|panel|screen|mode))?$'
-      r'|^(?:show|open)\s+(?:me\s+)?(?:the\s+)?(terminal|chat|split)(?:\s+(?:view|tab|panel|screen))?$'
+      r'^(?:switch|go|change|flip|jump)\s+(?:back\s+)?to\s+(?:the\s+)?(terminal|chat|note|notes|settings|preferences|split|side by side)(?:\s+(?:view|tab|panel|screen|mode))?$'
+      r'|^(?:show|open)\s+(?:me\s+)?(?:the\s+)?(terminal|chat|settings|preferences|split)(?:\s+(?:view|tab|panel|screen|page))?$'
       r'|^(?:show|open)\s+(?:me\s+)?(?:the\s+)?(note|notes)\s+(?:view|tab|panel|screen)$',
     ).firstMatch(t);
     if (view != null) {

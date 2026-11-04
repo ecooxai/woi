@@ -305,7 +305,7 @@ void main() {
       await env.start(t);
       await t.binding.setSurfaceSize(const Size(1400, 900));
       addTearDown(() => t.binding.setSurfaceSize(null));
-      await t.pumpWidget(MaterialApp(theme: buildWoiTheme(), home: SettingsScreen(controller: env.c)));
+      await t.pumpWidget(MaterialApp(theme: buildWoiTheme(), home: Scaffold(body: SettingsView(controller: env.c))));
       await _settle(t);
 
       for (final id in ['backend', 'voice-model', 'realtime-model', 'voice', 'compression-model', 'delegate-model',

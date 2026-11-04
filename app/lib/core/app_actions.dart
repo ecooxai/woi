@@ -13,8 +13,8 @@ import 'settings/settings.dart';
 import 'storage/history_store.dart';
 import 'terminal/terminal_hub.dart';
 
-/// The main views of a conversation.
-enum HomeView { note, chat, terminal }
+/// The top-level tabs, in tab order (Ctrl+1..4).
+enum HomeView { note, chat, terminal, settings }
 
 /// Failure of an app action, with a message for the user / model.
 class AppActionError implements Exception {
@@ -34,31 +34,46 @@ class AppActions {
 
   // ------------------------------------------------------------------ views
 
-  /// Shown view; the home screen renders whatever this says.
+  /// Selected tab; the home screen renders whatever this says.
   final view = ValueNotifier<HomeView>(HomeView.note);
 
-  /// Note and chat side by side (only effective when [splitAvailable]).
+  /// The tab before the current one (Esc in Settings goes back to it).
+  HomeView previousView = HomeView.note;
+
+  /// Note and chat side by side. Only effective when [splitAvailable] and
+  /// the Note or Chat tab is selected; Terminal and Settings stay full size
+  /// and going back to Note or Chat restores the split.
   final split = ValueNotifier<bool>(false);
 
   /// Set by the home screen from its width.
   bool splitAvailable = true;
 
-  bool get splitActive => split.value && splitAvailable;
+  bool get splitActive => split.value && splitAvailable && isNoteOrChat(view.value);
+
+  static bool isNoteOrChat(HomeView v) => v == HomeView.note || v == HomeView.chat;
 
   void showView(HomeView v) {
-    if (v == HomeView.terminal) {
-      split.value = false;
-      c.terminals.ensureTab();
-    }
+    if (v == HomeView.terminal) c.terminals.ensureTab();
+    if (v != view.value) previousView = view.value;
     view.value = v;
   }
 
-  /// "note", "chat", "terminal", "split" / "side by side", "single".
+  /// Leaves Settings for the tab shown before it.
+  void closeSettings() {
+    if (view.value != HomeView.settings) return;
+    showView(previousView == HomeView.settings ? HomeView.note : previousView);
+  }
+
+  /// "note", "chat", "terminal", "settings", "split" / "side by side", "single".
   String showViewNamed(String name) {
     final n = name.trim().toLowerCase();
+    if (RegExp(r'setting|preference|option|config').hasMatch(n)) {
+      showView(HomeView.settings);
+      return HomeView.settings.name;
+    }
     if (RegExp(r'split|side|both').hasMatch(n)) {
       if (!splitAvailable) throw AppActionError('the window is too narrow for side by side');
-      if (view.value == HomeView.terminal) view.value = HomeView.note;
+      if (!isNoteOrChat(view.value)) showView(HomeView.note);
       split.value = true;
       return 'note and chat side by side';
     }
@@ -72,13 +87,14 @@ class AppActions {
         ? HomeView.chat
         : n.contains('note')
         ? HomeView.note
-        : throw AppActionError('unknown view "$name" (note, chat, terminal, split)');
+        : throw AppActionError('unknown view "$name" (note, chat, terminal, settings, split)');
     showView(v);
     return v.name;
   }
 
   void toggleSplit() {
     if (!splitAvailable) return;
+    if (!split.value && !isNoteOrChat(view.value)) showView(HomeView.note);
     split.value = !split.value;
   }
 

@@ -81,7 +81,7 @@ class EmptyState extends StatelessWidget {
                 KeyHint(keys: ['Space'], label: 'hold to talk'),
                 KeyHint(keys: ['Ctrl', 'K'], label: 'type'),
                 KeyHint(keys: ['Esc'], label: 'interrupt'),
-                KeyHint(keys: ['Ctrl', ','], label: 'settings'),
+                KeyHint(keys: ['Ctrl', '4'], label: 'settings'),
               ],
             ),
           ],

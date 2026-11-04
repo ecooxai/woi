@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../../core/app_controller.dart';
 import '../../core/auth/auth.dart';
@@ -33,18 +32,19 @@ const kModelHints = <String, String>{
 
 enum _TestState { idle, testing, ok, failed }
 
-/// All user settings, grouped in sections with descriptions. Desktop gets a
-/// section rail; phone a single column. Changes apply immediately (text
-/// fields after a short pause) and persist to ~/.local/share/woi/settings.json.
-class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key, required this.controller});
+/// All user settings, shown inline in the Settings tab: sections with
+/// descriptions, a section rail on wide layouts, a single column on phones.
+/// Changes apply immediately (text fields after a short pause) and persist
+/// to ~/.local/share/woi/settings.json.
+class SettingsView extends StatefulWidget {
+  const SettingsView({super.key, required this.controller});
   final AppController controller;
 
   @override
-  State<SettingsScreen> createState() => _SettingsScreenState();
+  State<SettingsView> createState() => _SettingsViewState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> {
+class _SettingsViewState extends State<SettingsView> {
   late AppSettings _s = widget.controller.settings;
   late final _apiKey = TextEditingController(text: _s.apiKey);
   late final _compressionModel = TextEditingController(text: _s.compressionModel);
@@ -167,85 +167,53 @@ class _SettingsScreenState extends State<SettingsScreen> {
   ];
 
   @override
-  Widget build(BuildContext context) {
-    final width = MediaQuery.sizeOf(context).width;
-    final wide = width >= 900;
-    final bodies = [_connection(wide), _voice(wide), _context(wide), _screen(wide), _appearance(wide), _shortcuts(), _about()];
-    final list = ListView(
-      controller: _scroll,
-      padding: EdgeInsets.fromLTRB(wide ? 8 : 12, 8, wide ? 28 : 12, 40),
-      children: [
-        for (var i = 0; i < bodies.length; i++)
-          Padding(key: _keys[i], padding: const EdgeInsets.only(bottom: 16), child: _section(i, bodies[i])),
-      ],
-    );
-
-    return CallbackShortcuts(
-      bindings: {const SingleActivator(LogicalKeyboardKey.escape): () => Navigator.of(context).maybePop()},
-      // Focus inside the route so Esc reaches the shortcut.
-      child: Focus(
-        autofocus: true,
-        child: Scaffold(
-          body: WoiBackdrop(
-            child: SafeArea(
-              child: Column(
-                children: [
-                  Padding(
-                    padding: EdgeInsets.fromLTRB(wide ? 20 : 6, 10, 16, 6),
-                    child: Row(
-                      children: [
-                        GlassIconButton(
-                          icon: Icons.arrow_back_rounded,
-                          tooltip: 'Back (Esc)',
-                          size: wide ? 40 : kTouchTarget,
-                          onPressed: () => Navigator.of(context).maybePop(),
-                        ),
-                        const SizedBox(width: 14),
-                        Text('Settings', style: display(wide ? 24 : 20)),
-                        const Spacer(),
-                        if (wide) Text('Changes save automatically', style: body(12, color: WoiColors.textFaint)),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    child: wide
-                        ? Center(
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 1180),
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Padding(padding: const EdgeInsets.fromLTRB(20, 8, 12, 20), child: _rail()),
-                                  Expanded(
-                                    child: NotificationListener<ScrollNotification>(
-                                      onNotification: (_) {
-                                        _syncSection();
-                                        return false;
-                                      },
-                                      child: list,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          )
-                        : list,
-                  ),
-                ],
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, box) {
+      final wide = box.maxWidth >= 900;
+      final bodies = [_connection(wide), _voice(wide), _context(wide), _screen(wide), _appearance(wide), _shortcuts(), _about()];
+      final list = ListView(
+        key: const ValueKey('settings-list'),
+        controller: _scroll,
+        padding: EdgeInsets.fromLTRB(wide ? 8 : 0, wide ? 0 : 4, wide ? 8 : 0, 24),
+        children: [
+          for (var i = 0; i < bodies.length; i++)
+            Padding(key: _keys[i], padding: const EdgeInsets.only(bottom: 16), child: _section(i, bodies[i], wide)),
+          Center(child: Text('Changes save automatically', style: body(12, color: WoiColors.textFaint))),
+        ],
+      );
+      if (!wide) return list;
+      return Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1180),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(padding: const EdgeInsets.only(right: 12), child: _rail()),
+              Expanded(
+                child: NotificationListener<ScrollNotification>(
+                  onNotification: (_) {
+                    _syncSection();
+                    return false;
+                  },
+                  child: list,
+                ),
               ),
-            ),
+            ],
           ),
         ),
-      ),
-    );
-  }
+      );
+    },
+  );
 
   void _syncSection() {
+    final view = context.findRenderObject() as RenderBox?;
+    if (view == null || !view.attached) return;
+    final top = view.localToGlobal(Offset.zero).dy;
     var best = 0;
     for (var i = 0; i < _keys.length; i++) {
       final box = _keys[i].currentContext?.findRenderObject() as RenderBox?;
       if (box == null || !box.attached) continue;
-      if (box.localToGlobal(Offset.zero).dy < 220) best = i;
+      if (box.localToGlobal(Offset.zero).dy - top < 120) best = i;
     }
     if (best != _active) setState(() => _active = best);
   }
@@ -308,10 +276,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ),
   );
 
-  Widget _section(int i, List<Widget> children) {
+  Widget _section(int i, List<Widget> children, bool wide) {
     final (icon, title, desc) = _sections[i];
     return GlassPanel(
-      padding: const EdgeInsets.fromLTRB(22, 20, 22, 14),
+      padding: wide ? const EdgeInsets.fromLTRB(22, 20, 22, 14) : const EdgeInsets.fromLTRB(16, 16, 16, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -627,7 +595,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _row(
       wide,
       'Run in terminal',
-      'Show the AI\'s shell commands in the terminal view (Ctrl+3, "AI" tab). The output is still returned to the AI.',
+      'Show the AI\'s shell commands in the Terminal tab (Ctrl+3, "AI" sub-tab). The output is still returned to the AI.',
       Align(
         alignment: wide ? Alignment.centerRight : Alignment.centerLeft,
         child: Switch(
@@ -665,14 +633,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
       (['Esc'], 'Interrupt Woi · reject a confirmation · close dialogs'),
       (['Enter'], 'Approve a confirmation · send a message'),
       (['Shift', 'Enter'], 'New line in the message box'),
-      (['Ctrl', 'K'], 'Focus the message box'),
-      (['Ctrl', ','], 'Open settings'),
-      (['Ctrl', 'N'], 'New note / conversation'),
-      (['Ctrl', '1'], 'Show the note'),
-      (['Ctrl', '2'], 'Show the chat'),
+      (['Ctrl', '1'], 'Note tab'),
+      (['Ctrl', '2'], 'Chat tab'),
+      (['Ctrl', '3'], 'Terminal tab'),
+      (['Ctrl', '4'], 'Settings tab (also Ctrl+,; Esc goes back)'),
       (['Ctrl', '\\'], 'Note and chat side by side (wide windows)'),
+      (['Ctrl', 'K'], 'Focus the message box'),
+      (['Ctrl', 'N'], 'New note / conversation'),
       (['Ctrl', 'R'], 'Run the note line or selection as a message'),
-      (['Ctrl', '3'], 'Terminal view'),
       (['Ctrl', 'Shift', 'T'], 'New terminal tab (Ctrl+Shift+W closes it)'),
       (['Ctrl', 'Shift', 'C'], 'Copy in the terminal (Ctrl+Shift+V pastes)'),
     ];
