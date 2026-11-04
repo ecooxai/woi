@@ -321,9 +321,14 @@ class AppActions {
         }
         next = s.copyWith(editApplyDelay: d);
         done = d == kRequireApproval ? 'edits need approval' : 'edits apply after $d s';
+      case 'usage_guard' || 'usage_guard_percent' || 'usage_threshold':
+        final n = int.tryParse(RegExp(r'\d+').firstMatch(lv)?[0] ?? (RegExp(r'off|never').hasMatch(lv) ? '0' : ''));
+        if (n == null || n > 100) throw AppActionError('usage guard must be a percent (0 = off)');
+        next = s.copyWith(usageGuardPercent: n);
+        done = n == 0 ? 'usage guard off' : 'background work uses gpt-6-luna below $n% usage left';
       default:
         throw AppActionError(
-          'unknown setting "$key" (theme, mic_mode, voice, voice_model, compaction_threshold, run_in_terminal, edit_apply_delay)',
+          'unknown setting "$key" (theme, mic_mode, voice, voice_model, compaction_threshold, run_in_terminal, edit_apply_delay, usage_guard)',
         );
     }
     if (s.sessionDiffers(next)) {
@@ -337,6 +342,29 @@ class AppActions {
 
   @visibleForTesting
   Duration reconnectDelay = const Duration(seconds: 4);
+
+  /// "How much usage do I have left": the ChatGPT plan's 5-hour and weekly
+  /// windows (refetched when older than a minute; the endpoint is free) and
+  /// the models background work actually uses.
+  Future<Map<String, Object?>> usageStatus() async {
+    final u = c.usage;
+    final s0 = u.snapshot;
+    if (s0 == null || DateTime.now().difference(s0.updatedAt) > const Duration(minutes: 1)) await u.refresh();
+    final s = u.snapshot;
+    if (s == null) {
+      throw AppActionError(
+        u.error != null ? 'usage unavailable: ${u.error}' : 'usage is only available with a ChatGPT login',
+      );
+    }
+    final comp = c.compactionChoice, del = c.delegationChoice;
+    return {
+      'summary': s.describe(),
+      ...s.toJson(),
+      'delegation_model': del.model,
+      'compaction_model': comp.model,
+      'model_note': ?(del.reason ?? comp.reason),
+    };
+  }
 
   // --------------------------------------------------------------- terminal
 

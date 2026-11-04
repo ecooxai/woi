@@ -148,6 +148,10 @@ class ResponsesClient {
   final HttpClient Function() _httpClient;
   final Duration timeout;
 
+  /// Receives the `x-codex-*` plan quota headers of every response (all
+  /// clients, errors included): the app's CodexUsage listens here.
+  static void Function(Map<String, String> quota)? onQuotaHeaders;
+
   /// Keep one HttpClient (and its TLS connection) alive across requests;
   /// saves the handshake on latency-critical paths (gpt-live delegation).
   /// Call [close] when done.
@@ -212,6 +216,11 @@ class ResponsesClient {
         final lk = k.toLowerCase();
         if (lk.startsWith('x-codex-') && lk != 'x-codex-turn-state') quota[lk] = v.join(',');
       });
+      if (quota.isNotEmpty) {
+        try {
+          onQuotaHeaders?.call(Map.unmodifiable(quota));
+        } catch (_) {}
+      }
       if (res.statusCode != 200) {
         final text = await utf8.decodeStream(res).timeout(const Duration(seconds: 30), onTimeout: () => '');
         String? code;

@@ -100,6 +100,20 @@ meantime it is discarded and prepared again, so a response is never interrupted.
   writes and commands still go through the confirmation dialogs. Its final answer is short
   enough to be spoken.
 
+### Codex usage (`lib/core/usage/`)
+- `CodexUsage` tracks the ChatGPT plan's 5-hour ("primary") and weekly ("secondary") windows: used %,
+  remaining, reset time, plan. Sources: `GET chatgpt.com/backend-api/wham/usage` (what Codex CLI's `/status`
+  reads; free, no model quota) at launch and every 10 min while the app is active (not while backgrounded or
+  hidden, not with an API key), plus the `x-codex-primary/secondary-used-percent`, `-window-minutes`,
+  `-reset-at` / `-reset-after-seconds` and `x-codex-plan-type` headers of every Responses API call
+  (`ResponsesClient.onQuotaHeaders`). A 429 usage limit triggers a refetch.
+- `guardModel`: when either window has less than `usageGuardPercent` (default 20, 0 = off) left, delegation
+  (`GuardedDelegate`, `model_note` in the tool result) and compaction / screenshot descriptions use gpt-6-luna
+  even if gpt-6.1-sol is selected. `AppController.compactionChoice` / `delegationChoice` give the model and why.
+- UI: `CodexUsageMeter` (Settings → Context & models) shows "5h 34% used · week 71% used", reset times and the
+  override reason; the chat gets one notice per low period. Voice: `app_control` `usage`, and
+  `set_setting usage_guard`.
+
 ## UI (`lib/ui/screens/home_screen.dart`)
 One top-level tab strip at the left edge: **Note, Chat, Terminal, Settings** (Ctrl+1..4;
 Ctrl+, also opens Settings and Esc leaves it). `AppActions.view` owns the selected tab, so

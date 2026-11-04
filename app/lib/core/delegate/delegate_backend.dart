@@ -1,15 +1,19 @@
 class DelegateResult {
-  const DelegateResult({required this.output, this.success = true, this.model, this.tokensUsed});
+  const DelegateResult({required this.output, this.success = true, this.model, this.tokensUsed, this.modelNote});
   final String output;
   final bool success;
   final String? model;
   final int? tokensUsed;
+
+  /// Why [model] differs from the selected one (the usage guard), if it does.
+  final String? modelNote;
 
   Map<String, Object?> toJson() => {
     'ok': success,
     'output': output,
     if (model != null) 'model': model,
     if (tokensUsed != null) 'tokens': tokensUsed,
+    'model_note': ?modelNote,
   };
 }
 
