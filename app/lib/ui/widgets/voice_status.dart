@@ -159,9 +159,14 @@ class VoiceStatusIndicator extends StatefulWidget {
     this.micLevel,
     this.outputLevel,
     this.showLabel = true,
+    this.animate,
   });
 
   final VoiceMode mode;
+
+  /// Overrides [voiceModeAnimates] (e.g. no pulse while a reconnect waits
+  /// out its backoff: up to 30 s of frames for nothing).
+  final bool? animate;
   final ValueListenable<double>? micLevel;
   final ValueListenable<double>? outputLevel;
   final bool showLabel;
@@ -187,6 +192,8 @@ class _VoiceStatusIndicatorState extends State<VoiceStatusIndicator> {
     _sync();
   }
 
+  bool get _animates => widget.animate ?? voiceModeAnimates(widget.mode);
+
   void _sync() {
     final m = widget.mode;
     _level.source = !voiceModeShowsLevel(m)
@@ -194,7 +201,7 @@ class _VoiceStatusIndicatorState extends State<VoiceStatusIndicator> {
         : m == VoiceMode.speaking
         ? widget.outputLevel
         : widget.micLevel;
-    if (voiceModeAnimates(m)) {
+    if (_animates) {
       _pulse ??= Timer.periodic(const Duration(milliseconds: 83), (_) {
         _phase.value = (_phase.value + 1 / 18) % 1.0;
       });
@@ -234,7 +241,7 @@ class _VoiceStatusIndicatorState extends State<VoiceStatusIndicator> {
                 painter: _IndicatorPainter(
                   color: color,
                   bars: voiceModeShowsLevel(m),
-                  pulsing: voiceModeAnimates(m),
+                  pulsing: _animates,
                   level: _level,
                   phase: _phase,
                 ),

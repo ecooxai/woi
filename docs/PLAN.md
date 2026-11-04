@@ -32,6 +32,7 @@
 - Iter 5 (minimal light UI, status in input bar, note tabs/New/More/Run, radio settings, tabbed PTY terminal, bundled codex, native PKCE login screen, last-3-turns-raw; idle CPU on :11 472%→4.35%, RSS 1020→505 MB; 302 tests green): 81/100. Gaps: RSS >300 MB, video 324% / scroll 78% CPU on llvmpipe, terminal fd leak per closed tab, no camera/send_keys/voice control of all functions, no Android.
 - Iter 6 (send_keys, voice control of all app functions via AppActions, 5s auto-apply edits + undo, camera frames per turn, media context (image/video frame/audio), gpt-live auto-reconnect, black-video fix, NVIDIA/Mesa fix; QA on :11 43/46 with all 3 failures = ChatGPT quota 429; idle 3.4% CPU / 267 MB PSS): 85/100.
 - Iter 7 (Android on MI 8: default assistant via long-press home with assist screenshot, accessibility click/type/send_keys, screen share, Camera2, open/share intents → in-app viewer + questions, PKCE Custom Tab, terminal; typed turn → audio 0.9–1.1 s; PSS 183–213 MB; 396 tests green): 87/100. Gaps: Android idle CPU 28% (WebRTC threads), scroll/video ~3 cores on software GL, assist thumbnail renders black in chat, gpt-live/delegation/compaction re-test pending quota reset (~2026-11-05), fat APK (use --split-per-abi), mac/iOS not started.
+- Iter 8 (perf + polish): chat scroll on :11 324%→48% CPU (main window on Skia's CPU rasterizer when there is no DRI3 — llvmpipe JIT shaders in two GL contexts were ~60 ms CPU/frame; one SelectionArea per chat), camera on :11 107%→11.5%, idle RSS 320→200 MB; Android: muted foreground 0–2%, listening 14–15%, camera+preview 28–32%, reconnect backoff 20–36%→0% between attempts, image descriptions pause on 429; "black assist thumbnail" was a dark Camera frame (assist PNG verified fine; encoder now opaque sRGB). Gaps: video viewer ~290% on llvmpipe (needs GL), listening at the 15% edge, first camera tap shows no preview. Score: 89/100.
 
 ## Spec: image compaction (user requirement, 2026-11-02)
 When compaction runs, screenshots/images are tiered by recency:
@@ -159,3 +160,23 @@ turn), send key events to the current app (esc/back, ctrl+c copy, paste, select 
   "open full app" button. The assist screenshot of the underlying app is attached as before. Dismiss with
   back / tap outside / swipe down; actions (click/type/send_keys via accessibility) operate on the app underneath
   (the panel must not steal those events: hide/shrink during gestures if needed).
+
+## Spec 2026-11-03 #5 (user): Android app starts in a freeform window
+- Try to launch Woi (the full app, from the launcher and when the assistant hands off to "open full app") in a
+  freeform window by default: width 100% of the screen, height 70%, docked at the bottom.
+- Approach: the manifest `<layout android:defaultWidth="100%" android:defaultHeight="70%" android:gravity="bottom">`
+  on MainActivity plus `resizeableActivity`, and ActivityOptions.setLaunchBounds / launch windowing mode when Woi
+  launches itself. Needs freeform support on the device (Android 15: developer option
+  `enable_freeform_support`, or the desktop windowing mode); when it's unavailable, fall back to full screen without errors.
+- The assistant floating panel (#4: 60% by default, resizable to 95%) stays as is.
+
+## Spec 2026-11-03 #6 (user): testing on gpt-realtime-2.1, echo cancellation, unified tab UI
+- Testing defaults to Direct realtime with gpt-realtime-2.1 (free on the ChatGPT login; probed: 2.1 and 2.1-mini
+  exist, 2.2/3 don't). gpt-live costs quota: only test it when explicitly needed (`PHASES=live`). App default
+  realtime model: gpt-realtime-2.1.
+- Echo cancellation: the mic picks up system audio (other apps and Woi's own playback). Cancel it: Linux via a
+  PipeWire echo-cancel node (webrtc AEC; reference = the default sink's monitor, so all system audio is cancelled),
+  owned by the app, never changing the user's default devices; Android via VOICE_COMMUNICATION +
+  AcousticEchoCanceler/NoiseSuppressor (and WebRTC's AEC on gpt-live). Setting: on by default.
+- Unified, simplified UI: the whole app is tab-like: Note, Chat, Terminal, Settings are tabs in one tab strip that
+  starts at the left edge (no "Woi" title on the left); settings is a tab, not a separate screen/dialog.
