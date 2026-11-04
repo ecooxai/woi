@@ -77,6 +77,14 @@ sealed class AndroidEvent {
         return ClipDoneEvent((m['id'] as num).toInt());
       case 'stopAll':
         return const StopAllEvent();
+      case 'camera':
+        final jpeg = m['jpeg'];
+        if (jpeg is! Uint8List) return null;
+        return CameraFrameEvent(
+          jpeg: jpeg,
+          width: (m['width'] as num?)?.toInt() ?? 0,
+          height: (m['height'] as num?)?.toInt() ?? 0,
+        );
     }
     return null;
   }
@@ -136,6 +144,14 @@ class ShareStateEvent extends AndroidEvent {
 class ClipDoneEvent extends AndroidEvent {
   const ClipDoneEvent(this.id);
   final int id;
+}
+
+/// A camera frame (JPEG, upright) while the camera is open.
+class CameraFrameEvent extends AndroidEvent {
+  const CameraFrameEvent({required this.jpeg, required this.width, required this.height});
+  final Uint8List jpeg;
+  final int width;
+  final int height;
 }
 
 /// The notification's "Stop" action ended voice and sharing.

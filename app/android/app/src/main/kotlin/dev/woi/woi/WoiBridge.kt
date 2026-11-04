@@ -36,7 +36,8 @@ object WoiBridge {
     fun emit(event: Map<String, Any?>) {
         main.post {
             val s = sink
-            if (s == null) pending.add(event) else s.success(event)
+            // Camera frames are only useful live; never queue them.
+            if (s == null) { if (event["type"] != "camera") pending.add(event) } else s.success(event)
         }
     }
 
@@ -160,6 +161,14 @@ object WoiBridge {
                     val f = WoiScreen.frame(maxW)
                     main.post { result.success(f) }
                 }
+            }
+            // --- camera ---
+            "cameraOpen" -> WoiCamera.open(ctx, call.argument<Boolean>("front") ?: false) { err ->
+                if (err == null) result.success(true) else result.error("camera", err, null)
+            }
+            "cameraClose" -> {
+                WoiCamera.close()
+                result.success(true)
             }
             "moveToBack" -> {
                 result.success(activity?.moveTaskToBack(true) ?: false)
