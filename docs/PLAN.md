@@ -186,6 +186,9 @@ turn), send key events to the current app (esc/back, ctrl+c copy, paste, select 
   /status shows: e.g. the `x-codex-primary/secondary-used-percent` response headers or the backend usage endpoint)
   and show it in the UI. When EITHER window has < 20% remaining, delegation/compaction use gpt-6-luna even if the user
   selected gpt-6.1-sol (show why), and Woi tells the user when gpt-live/realtime quota is low.
+  - Done (usage14): `wham/usage` endpoint + `x-codex-*` headers → `CodexUsage`; guard threshold setting
+    `usageGuardPercent`; settings meter; one-time chat notice; `app_control usage`. Gap: the realtime/gpt-live
+    connections' own responses are not read for headers (only Responses API calls + the 10-min fetch).
 
 ## Spec 2026-11-04 #7 (user)
 - FIX FIRST: the Android assistant panel floating over another app can't use the mic (Android blocks capture for an
