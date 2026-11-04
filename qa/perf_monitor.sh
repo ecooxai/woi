@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Samples CPU% and RSS of every Woi process once per second and writes a CSV
+# Samples CPU%, RSS and PSS of every Woi process once per second and writes a CSV
 # plus a min/avg/max summary.
 #
 #   qa/perf_monitor.sh [-d SECONDS] [-o OUT.csv] [-l LABEL] [-c COMM_REGEX] [-p PID]...
@@ -15,11 +15,13 @@
 #
 # CPU% is per core (100 = one full core), computed from utime+stime deltas in
 # /proc/<pid>/stat over the real sampling interval, threads included. RSS is
-# VmRSS in MB. Each sample has one row per process and one TOTAL row; the
+# VmRSS in MB; PSS (proportional set size, /proc/<pid>/smaps_rollup) counts
+# shared libraries and memory pro rata, so the TOTAL PSS is what the process
+# tree really costs. Each sample has one row per process and one TOTAL row; the
 # set of processes is re-discovered every second so sub-windows and audio
 # helpers that start later are picked up.
 #
-# CSV columns: label,t_s,pid,comm,cpu_pct,rss_mb
+# CSV columns: label,t_s,pid,comm,cpu_pct,rss_mb,pss_mb
 set -u
 
 DURATION=60
@@ -59,7 +61,7 @@ pids() {
     }'
 }
 
-# Sets TICKS, RSS_KB and COMM for a pid without forking.
+# Sets TICKS, RSS_KB, PSS_KB and COMM for a pid without forking.
 stat_of() {
   local s rest f
   { read -r s </proc/$1/stat && read -r _ rss _ </proc/$1/statm; } 2>/dev/null || return 1
@@ -69,11 +71,16 @@ stat_of() {
   # f[0] = state (field 3), so utime (14) and stime (15) are f[11] and f[12].
   TICKS=$(( f[11] + f[12] ))
   RSS_KB=$(( rss * PAGE_KB ))
+  PSS_KB=0
+  local k v
+  while read -r k v _; do
+    [ "$k" = Pss: ] && { PSS_KB=$v; break; }
+  done 2>/dev/null </proc/$1/smaps_rollup
 }
 
 now_ms() { local t; t=$(date +%s%N); echo $(( t / 1000000 )); }
 
-echo "label,t_s,pid,comm,cpu_pct,rss_mb" >"$OUT"
+echo "label,t_s,pid,comm,cpu_pct,rss_mb,pss_mb" >"$OUT"
 declare -A PREV
 start=$(now_ms)
 prev_t=$start
@@ -91,7 +98,7 @@ while [ $stop = 0 ]; do
   prev_t=$now
   t=$(( now - start ))
   tsec=$(printf '%d.%d' $((t / 1000)) $((t % 1000 / 100)))
-  tot_cpu=0; tot_rss=0; seen=0; rows=""
+  tot_cpu=0; tot_rss=0; tot_pss=0; seen=0; rows=""
   declare -A CUR=()
   for p in $(pids); do
     stat_of "$p" || continue
@@ -99,8 +106,9 @@ while [ $stop = 0 ]; do
     [ -n "${PREV[$p]:-}" ] || continue # first sight: no delta yet
     # cpu in hundredths of a percent: ticks / HZ / (dt / 1000) * 100 * 100
     c=$(( (TICKS - PREV[$p]) * 10000000 / (HZ * dt) ))
-    tot_cpu=$(( tot_cpu + c )); tot_rss=$(( tot_rss + RSS_KB ))
-    rows+=$(printf '%s,%s,%s,%s,%d.%02d,%d.%d' "$LABEL" "$tsec" "$p" "$COMM" $((c / 100)) $((c % 100)) $((RSS_KB / 1024)) $((RSS_KB % 1024 * 10 / 1024)))$'\n'
+    tot_cpu=$(( tot_cpu + c )); tot_rss=$(( tot_rss + RSS_KB )); tot_pss=$(( tot_pss + PSS_KB ))
+    rows+=$(printf '%s,%s,%s,%s,%d.%02d,%d.%d,%d.%d' "$LABEL" "$tsec" "$p" "$COMM" $((c / 100)) $((c % 100)) \
+      $((RSS_KB / 1024)) $((RSS_KB % 1024 * 10 / 1024)) $((PSS_KB / 1024)) $((PSS_KB % 1024 * 10 / 1024)))$'\n'
     seen=1
   done
   PREV=()
@@ -108,8 +116,8 @@ while [ $stop = 0 ]; do
   unset CUR
   if [ $seen = 1 ]; then
     printf '%s' "$rows" >>"$OUT"
-    printf '%s,%s,0,TOTAL,%d.%02d,%d.%d\n' "$LABEL" "$tsec" $((tot_cpu / 100)) $((tot_cpu % 100)) \
-      $((tot_rss / 1024)) $((tot_rss % 1024 * 10 / 1024)) >>"$OUT"
+    printf '%s,%s,0,TOTAL,%d.%02d,%d.%d,%d.%d\n' "$LABEL" "$tsec" $((tot_cpu / 100)) $((tot_cpu % 100)) \
+      $((tot_rss / 1024)) $((tot_rss % 1024 * 10 / 1024)) $((tot_pss / 1024)) $((tot_pss % 1024 * 10 / 1024)) >>"$OUT"
   fi
   n=$((n + 1))
   [ "$DURATION" != 0 ] && [ $n -ge "$DURATION" ] && break
@@ -119,17 +127,17 @@ done
 awk -F, -v label="$LABEL" -v out="$OUT" '
   NR == 1 { next }
   {
-    k = $4; c = $5 + 0; r = $6 + 0
+    k = $4; c = $5 + 0; r = $6 + 0; q = $7 + 0
     if (!(k in cnt)) { cmin[k] = c; cmax[k] = c; rmin[k] = r; rmax[k] = r; rfirst[k] = r; keys[++nk] = k }
-    cnt[k]++; csum[k] += c; rsum[k] += r; rlast[k] = r
+    cnt[k]++; csum[k] += c; rsum[k] += r; rlast[k] = r; qsum[k] += q; if (q > qmax[k]) qmax[k] = q
     if (c < cmin[k]) cmin[k] = c; if (c > cmax[k]) cmax[k] = c
     if (r < rmin[k]) rmin[k] = r; if (r > rmax[k]) rmax[k] = r
   }
   END {
     printf "scenario: %s  (%s)\n", label, out
-    printf "%-16s %7s %8s %8s %8s %9s %9s %9s %10s\n", "process", "samples", "cpu_min", "cpu_avg", "cpu_max", "rss_min", "rss_avg", "rss_max", "rss_growth"
+    printf "%-16s %7s %8s %8s %8s %9s %9s %9s %10s %9s %9s\n", "process", "samples", "cpu_min", "cpu_avg", "cpu_max", "rss_min", "rss_avg", "rss_max", "rss_growth", "pss_avg", "pss_max"
     for (i = 1; i <= nk; i++) {
       k = keys[i]
-      printf "%-16s %7d %7.2f%% %7.2f%% %7.2f%% %7.1fMB %7.1fMB %7.1fMB %+8.1fMB\n", k, cnt[k], cmin[k], csum[k] / cnt[k], cmax[k], rmin[k], rsum[k] / cnt[k], rmax[k], rlast[k] - rfirst[k]
+      printf "%-16s %7d %7.2f%% %7.2f%% %7.2f%% %7.1fMB %7.1fMB %7.1fMB %+8.1fMB %7.1fMB %7.1fMB\n", k, cnt[k], cmin[k], csum[k] / cnt[k], cmax[k], rmin[k], rsum[k] / cnt[k], rmax[k], rlast[k] - rfirst[k], qsum[k] / cnt[k], qmax[k]
     }
   }' "$OUT" | tee "$SUMMARY"
