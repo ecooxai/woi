@@ -12,6 +12,8 @@
 # Env: QA_DISPLAY (default :11; :0 refused), SECS (seconds per scenario, default 60),
 #      SANDBOX (default /tmp/woi-perf-sandbox), PNAME (process name, default woi-perf),
 #      SIZE (window size, default "1600 900").
+#      PERF_SETTINGS (extra settings.json members, e.g. '"backendMode": "direct"'
+#      to stay off gpt-live while its quota is exhausted).
 # Each scenario starts the app fresh with HOME and XDG_DATA_HOME in a
 # sandbox seeded by qa/lib/make_perf_seed.py (200-message chat + notes);
 # CODEX_HOME keeps the real login. Only processes started here are killed.
@@ -53,7 +55,7 @@ launch() {
   local data=$SANDBOX/data-$name
   rm -rf "$data" && mkdir -p "$data/woi"
   python3 "$QA_DIR/lib/make_perf_seed.py" "$data/woi" --messages 200 --notes 8 >/dev/null
-  printf '{"micMode": "%s", "autoScreenshot": false}\n' "$mic" >"$data/woi/settings.json"
+  printf '{"micMode": "%s", "autoScreenshot": false%s}\n' "$mic" "${PERF_SETTINGS:+, $PERF_SETTINGS}" >"$data/woi/settings.json"
   ln -sf "$BIN" "$SANDBOX/$PNAME"
   (cd "$SANDBOX" && exec env HOME="$SANDBOX" CODEX_HOME="$REAL_HOME/.codex" XDG_DATA_HOME="$data" "$@" \
     "$SANDBOX/$PNAME" >"$OUT/app-$name.log" 2>&1) &
