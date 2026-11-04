@@ -11,6 +11,7 @@ import 'edits/edit_review.dart';
 import 'notes/note_copy.dart';
 import 'notes/note_ops.dart';
 import 'notes/note_text_ops.dart';
+import 'pipeline/turn_pipeline.dart';
 import 'settings/settings.dart';
 import 'storage/history_store.dart';
 import 'terminal/terminal_hub.dart';
@@ -102,7 +103,15 @@ class AppActions {
 
   // ------------------------------------------------------------------ notes
 
-  Future<void> newNote() => c.newConversation();
+  /// A new empty note (the current one if it is still empty), optionally
+  /// titled at once ("new note called Ideas"). Returns its title.
+  Future<String> newNote({String? title}) async {
+    await c.newConversation();
+    final t = title?.trim() ?? '';
+    if (t.isEmpty) return 'new note';
+    await c.renameConversation(c.pipeline.conversation.id, t);
+    return t;
+  }
 
   Future<List<ConversationSummary>> listNotes() => c.listConversations();
 
@@ -175,6 +184,81 @@ class AppActions {
     }
     await c.deleteConversation(id);
     return title;
+  }
+
+  /// Clears this conversation's chat messages and context summary; the note
+  /// and the title stay. [confirm] asks first with an approval card.
+  Future<String> clearChat({bool confirm = true}) async {
+    final old = c.pipeline.conversation;
+    if (old.messages.isEmpty && (old.summary ?? '').isEmpty) return 'the chat is already empty';
+    final n = old.messages.length;
+    if (confirm) {
+      final ok = await c.review.review(
+        PendingEdit(
+          target: EditTarget.note,
+          title: 'Clear the chat',
+          oldText: '$n messages',
+          newText: '',
+          summary: 'clear the chat history (the note stays)',
+          requireApproval: true,
+        ),
+      );
+      if (!ok) throw AppActionError('the user kept the chat');
+    }
+    final text = c.notes.text;
+    await c.deleteConversation(old.id);
+    if (text.isNotEmpty) c.notes.setText(text);
+    if (old.customTitle) await c.renameConversation(c.pipeline.conversation.id, old.title);
+    return 'cleared $n messages';
+  }
+
+  /// "Compact the context now": summarizes older turns in the background.
+  String compactContext() {
+    final m = c.contextManager;
+    if (m.compressing) return 'already compacting';
+    if (c.pipeline.conversation.messages.isEmpty) throw AppActionError('nothing to compact yet');
+    c.compactNow();
+    return 'compacting the context in the background';
+  }
+
+  // ------------------------------------------------------------- connection
+
+  /// Waited before checking whether the reply is still playing, and the
+  /// longest wait for it to finish (voice disconnect / reconnect).
+  @visibleForTesting
+  Duration replyStartGrace = const Duration(milliseconds: 1500);
+  @visibleForTesting
+  Duration replyMaxWait = const Duration(seconds: 20);
+  @visibleForTesting
+  Duration replyPoll = const Duration(milliseconds: 200);
+
+  /// Runs [f] once Woi has finished speaking its confirmation, so a voice
+  /// "disconnect" does not cut off its own audio.
+  Future<void> afterReply(Future<void> Function() f) async {
+    await Future<void>.delayed(replyStartGrace);
+    final until = DateTime.now().add(replyMaxWait);
+    bool busy() => switch (c.pipeline.phase) {
+      AssistantPhase.speaking || AssistantPhase.thinking || AssistantPhase.toolRunning => true,
+      _ => false,
+    };
+    while (busy() && DateTime.now().isBefore(until)) {
+      await Future<void>.delayed(replyPoll);
+    }
+    await f();
+  }
+
+  /// Ends the voice session after the spoken confirmation. It stays offline
+  /// (no auto reconnect) until the user clicks Retry on the status chip.
+  String disconnect() {
+    if (c.pipeline.status == SessionStatus.disconnected) throw AppActionError('already disconnected');
+    unawaited(afterReply(() => c.pipeline.suspend()));
+    return 'disconnecting after this reply';
+  }
+
+  /// A fresh voice session (after the confirmation), e.g. when it glitches.
+  String reconnect() {
+    unawaited(afterReply(() => c.pipeline.connect()));
+    return 'reconnecting after this reply';
   }
 
   /// Writes the system clipboard (tests swap it out).
@@ -344,10 +428,73 @@ class AppActions {
         if (n == null || n > 100) throw AppActionError('usage guard must be a percent (0 = off)');
         next = s.copyWith(usageGuardPercent: n);
         done = n == 0 ? 'usage guard off' : 'background work uses gpt-6-luna below $n% usage left';
+      case 'auto_screenshot' || 'screenshots' || 'screenshot':
+        final on = _onOff(lv, 'auto_screenshot');
+        next = s.copyWith(autoScreenshot: on);
+        done = 'auto screenshot ${on ? 'on' : 'off'}';
+      case 'screenshot_delay':
+        final m = RegExp(r'[\d.]+').firstMatch(lv);
+        if (m == null) throw AppActionError('screenshot delay needs seconds');
+        var secs = double.parse(m[0]!);
+        if (lv.contains('ms') || secs > 10) secs /= 1000;
+        final ms = (secs * 1000).round().clamp(0, 4000);
+        next = s.copyWith(screenshotDelayMs: ms);
+        done = 'screenshot delay ${(ms / 1000).toStringAsFixed(1)} s';
+      case 'camera_replaces_screenshot' || 'camera_replaces':
+        final on = _onOff(lv, 'camera_replaces_screenshot');
+        next = s.copyWith(cameraReplacesScreenshot: on);
+        done = on ? 'camera replaces the screenshot' : 'camera adds to the screenshot';
+      case 'thinking_chime' || 'chime' || 'thinking_earcon' || 'earcon':
+        final on = _onOff(lv, 'thinking_chime');
+        next = s.copyWith(thinkingEarcon: on);
+        done = 'thinking chime ${on ? 'on' : 'off'}';
+      case 'confirm_commands' || 'confirm_shell_commands' || 'confirm_before_bash' || 'confirm_bash':
+        final on = _onOff(lv, 'confirm_commands');
+        next = s.copyWith(confirmBeforeBash: on);
+        done = on ? 'shell commands need approval' : 'shell commands run without asking';
+      case 'fallback_to_direct' || 'direct_fallback' || 'fallback':
+        final on = _onOff(lv, 'fallback_to_direct');
+        next = s.copyWith(fallbackToDirectOnLimit: on);
+        done = 'Direct realtime fallback at the usage limit ${on ? 'on' : 'off'}';
+      case 'backend' || 'backend_mode' || 'connection':
+        final b = lv.contains('live')
+            ? BackendMode.gptLive
+            : lv.contains('direct') || lv.contains('realtime')
+            ? BackendMode.direct
+            : lv.contains('api') || lv.contains('key')
+            ? BackendMode.apiKey
+            : throw AppActionError('backend must be gpt_live, direct or api_key');
+        next = s.copyWith(backendMode: b);
+        done = 'backend ${b.label}';
+      case 'compression_model' || 'compaction_model' || 'delegate_model' || 'delegation_model':
+        final m = lv.contains('luna') ? 'gpt-6-luna' : (lv.contains('sol') ? 'gpt-6.1-sol' : null);
+        if (m == null) throw AppActionError('model must be gpt-6-luna or gpt-6.1-sol');
+        final del = k.startsWith('deleg');
+        next = del ? s.copyWith(delegateModel: m) : s.copyWith(compressionModel: m);
+        done = '${del ? 'delegate' : 'compression'} model $m';
+      case 'chat_pane' || 'chat_pane_fraction' || 'chat_width' || 'pane_split':
+        final m = RegExp(r'[\d.]+').firstMatch(lv);
+        final f = lv.contains('default') || lv.contains('reset')
+            ? kDefaultChatPaneFraction
+            : m == null
+            ? throw AppActionError('chat pane needs a percent of the width (25 to 60) or "default"')
+            : (double.parse(m[0]!) > 1 ? double.parse(m[0]!) / 100 : double.parse(m[0]!));
+        final cl = f.clamp(kChatPaneMinFraction, kChatPaneMaxFraction).toDouble();
+        next = s.copyWith(chatPaneFraction: cl);
+        done = 'chat pane ${(cl * 100).round()}% of the width';
+      case 'workspace' || 'workspace_dir' || 'workspace_folder':
+        final dir = RegExp(r'^(default|none|reset|empty)$').hasMatch(lv) ? '' : v;
+        if (dir.isNotEmpty && !Directory(dir.replaceFirst(RegExp(r'^~'), Platform.environment['HOME'] ?? '~')).existsSync()) {
+          throw AppActionError('folder not found: $dir');
+        }
+        next = s.copyWith(workspaceDir: dir);
+        done = dir.isEmpty ? 'workspace is the default folder' : 'workspace $dir';
       default:
         throw AppActionError(
           'unknown setting "$key" (theme, mic_mode, voice, voice_model, compaction_threshold, run_in_terminal, '
-          'edit_apply_delay, echo_cancellation, audio_route, usage_guard)',
+          'edit_apply_delay, echo_cancellation, audio_route, usage_guard, auto_screenshot, screenshot_delay, '
+          'camera_replaces_screenshot, thinking_chime, confirm_commands, fallback_to_direct, backend, '
+          'compression_model, delegate_model, chat_pane, workspace)',
         );
     }
     if (reconnects || s.sessionDiffers(next)) {
@@ -357,6 +504,15 @@ class AppActions {
     }
     await c.updateSettings(next);
     return done;
+  }
+
+  static final _on = RegExp(r'^(on|true|yes|enable|enabled|1)$');
+  static final _off = RegExp(r'^(off|false|no|disable|disabled|0)$');
+
+  static bool _onOff(String lv, String name) {
+    if (_on.hasMatch(lv)) return true;
+    if (_off.hasMatch(lv)) return false;
+    throw AppActionError('$name must be on or off');
   }
 
   @visibleForTesting
@@ -400,6 +556,14 @@ class AppActions {
   void selectTerminalTab(int index) => terminals.select(index);
 
   void renameTerminalTab(TerminalSession s, String title) => s.rename(title);
+
+  /// Selects a terminal tab and shows the Terminal view. Returns its title.
+  String switchTerminalTab(String? which) {
+    final s = findTab(which);
+    terminals.select(terminals.sessions.indexOf(s));
+    showView(HomeView.terminal);
+    return s.title;
+  }
 
   /// Tab by 1-based number, title, "current"/"last", or null = active.
   TerminalSession findTab(String? which) {

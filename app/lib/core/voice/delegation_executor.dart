@@ -262,7 +262,8 @@ class DelegationExecutor {
       'paths with update_note or note_control (append/insert/replace/delete_text); edits show a short preview and '
       'apply themselves. Other notes (new, switch, rename, delete, list) and the note\'s undo/redo: note_control. '
       'Woi itself (switch view note/chat/terminal/split, settings such as theme, voice, mic mode, terminal tabs, the '
-      'media viewer, apply/reject the edit preview, "undo that" = your last note or file edit): app_control. '
+      'media viewer, apply/reject the edit preview, "undo that" = your last note or file edit, disconnect, clear the '
+      'chat, compact the context): app_control. '
       'Never press keys, click or type for a stop, cancel or never-mind request: do nothing. '
       'If no tool fits, answer in one short sentence. Never claim something was done unless a tool result shows it.';
 
