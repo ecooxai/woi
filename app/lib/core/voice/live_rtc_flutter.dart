@@ -18,6 +18,15 @@ class FlutterLiveRtcTransport implements LiveRtcTransport {
 
   RTCPeerConnection? _pc;
   MediaStream? _mic;
+  RTCRtpSender? _micSender;
+  MediaStreamTrack? _micTrack;
+  // The track is detached from its sender while the mic stays off: with no
+  // sending audio stream libwebrtc stops the audio device module's
+  // recording (a disabled track still records and encodes silence: ~7% CPU
+  // on a phone). Re-attached on unmute.
+  bool _micAttached = true;
+  Timer? _detachTimer;
+  Future<void> _micOp = Future.value();
   RTCDataChannel? _dc;
   final List<MediaStreamTrack> _remoteAudio = [];
   bool _speakerEnabled = true;
@@ -102,8 +111,11 @@ class FlutterLiveRtcTransport implements LiveRtcTransport {
       // setMicEnabled() may have run before the track existed (a call that is
       // prepared muted, or Muted mode): the track must never start enabled.
       t.enabled = _micEnabled;
-      await pc.addTrack(t, mic);
+      _micSender = await pc.addTrack(t, mic);
+      _micTrack = t;
+      _micAttached = true;
     }
+    if (!_micEnabled) _scheduleDetach();
     _description =
         'flutter_webrtc (in: ${options.inputDeviceMatch ?? 'default'}, '
         'out: ${options.outputDeviceMatch ?? 'default'}, aec: ${options.echoCancellation})';
@@ -135,12 +147,47 @@ class FlutterLiveRtcTransport implements LiveRtcTransport {
     await pc.setRemoteDescription(RTCSessionDescription(sdp, 'answer'));
   }
 
+  /// How long the mic must stay off before recording stops (push-to-talk
+  /// presses close together keep the device open and start instantly).
+  static const detachAfter = Duration(seconds: 3);
+
   @override
   void setMicEnabled(bool enabled) {
     _micEnabled = enabled;
     for (final t in _mic?.getAudioTracks() ?? const <MediaStreamTrack>[]) {
       t.enabled = enabled;
     }
+    if (enabled) {
+      _detachTimer?.cancel();
+      _detachTimer = null;
+      if (!_micAttached) _setAttached(true);
+    } else {
+      _scheduleDetach();
+    }
+  }
+
+  void _scheduleDetach() {
+    _detachTimer?.cancel();
+    _detachTimer = Timer(detachAfter, () {
+      _detachTimer = null;
+      if (!_micEnabled && _micAttached) _setAttached(false);
+    });
+  }
+
+  void _setAttached(bool attached) {
+    _micAttached = attached;
+    // Serialized: a quick off/on must not apply out of order.
+    _micOp = _micOp.then((_) async {
+      final sender = _micSender;
+      final track = _micTrack;
+      if (sender == null || track == null || _pc == null) return;
+      try {
+        await sender.replaceTrack(attached ? track : null);
+        debugPrint('webrtc mic ${attached ? 'attached' : 'detached (recording stopped)'}');
+      } catch (e) {
+        debugPrint('webrtc mic ${attached ? 'attach' : 'detach'}: $e');
+      }
+    });
   }
 
   @override
@@ -153,8 +200,12 @@ class FlutterLiveRtcTransport implements LiveRtcTransport {
 
   @override
   Future<void> close() async {
+    _detachTimer?.cancel();
+    _detachTimer = null;
     final pc = _pc;
     _pc = null;
+    _micSender = null;
+    _micTrack = null;
     try {
       await _dc?.close();
     } catch (_) {}

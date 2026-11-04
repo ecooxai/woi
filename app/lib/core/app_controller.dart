@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show AppLifecycleState;
 
 import 'package:flutter/foundation.dart';
 
@@ -36,6 +37,7 @@ import 'responses/responses_client.dart';
 import 'settings/settings.dart';
 import 'storage/history_store.dart';
 import 'terminal/terminal_hub.dart';
+import 'util/usage_limit.dart';
 import 'voice/backend_factory.dart';
 import 'voice/pinned_context.dart';
 import 'voice/voice_backend.dart';
@@ -168,9 +170,30 @@ class AppController extends ChangeNotifier {
       _selection = null;
       return o();
     }
-    final sel = createVoiceBackend(BackendContext(settings: _settings, credentials: credentials));
-    _selection = sel;
-    final notice = sel.notice;
+    final limit = _liveLimit;
+    final BackendSelection sel;
+    if (_settings.backendMode == BackendMode.gptLive &&
+        _settings.fallbackToDirectOnLimit &&
+        limit != null &&
+        limit.activeAt(DateTime.now(), seenAt: _liveLimitSeen)) {
+      // gpt-live is out of quota: Direct realtime until the limit resets.
+      sel = createVoiceBackend(
+        BackendContext(
+          settings: _settings.copyWith(backendMode: BackendMode.direct),
+          credentials: credentials,
+        ),
+      );
+      _selection = BackendSelection(
+        backend: sel.backend,
+        mode: BackendMode.direct,
+        model: sel.model,
+        notice: 'gpt-live: ${limit.message}. Using Direct realtime (${_settings.realtimeModel}) until then.',
+      );
+    } else {
+      sel = createVoiceBackend(BackendContext(settings: _settings, credentials: credentials));
+      _selection = sel;
+    }
+    final notice = _selection!.notice;
     if (notice != null) {
       debugPrint(notice);
       scheduleMicrotask(() {
@@ -179,6 +202,21 @@ class AppController extends ChangeNotifier {
     }
     notifyListeners();
     return sel.backend;
+  }
+
+  // gpt-live's usage limit (HTTP 429), remembered so a reconnect does not
+  // hit it again before it resets.
+  UsageLimit? _liveLimit;
+  DateTime? _liveLimitSeen;
+
+  /// The voice session failed on the ChatGPT usage limit. Returns true when
+  /// one immediate retry makes sense (gpt-live with the Direct fallback on).
+  Future<bool> _onUsageLimit(UsageLimit limit) async {
+    if (_settings.backendMode != BackendMode.gptLive || activeBackendMode != BackendMode.gptLive) return false;
+    _liveLimit = limit;
+    _liveLimitSeen = DateTime.now();
+    debugPrint('gpt-live: ${limit.message}; fallback to Direct ${_settings.fallbackToDirectOnLimit ? 'on' : 'off'}');
+    return _settings.fallbackToDirectOnLimit;
   }
 
   late final SettingsStore _settingsStore = SettingsStore(platform.paths.settingsFile);
@@ -255,9 +293,7 @@ class AppController extends ChangeNotifier {
         ..registerAll(noteTools(notes, review: review, history: editHistory))
         ..registerAll(appTools(actions))
         ..registerAll(
-          mediaTools(
-            MediaToolsHost(setCamera: setCamera, cameraOn: () => cameraOn, inspectMedia: inspectMedia),
-          ),
+          mediaTools(MediaToolsHost(setCamera: setCamera, cameraOn: () => cameraOn, inspectMedia: inspectMedia)),
         );
 
       p = TurnPipeline(
@@ -281,7 +317,8 @@ class AppController extends ChangeNotifier {
       );
       p
         ..cameraImage = _cameraImage
-        ..beforeTypedTurn = _beforeTypedTurn;
+        ..beforeTypedTurn = _beforeTypedTurn
+        ..onUsageLimit = _onUsageLimit;
       pipeline = p;
       _ready = true;
       notifyListeners();
@@ -372,6 +409,7 @@ class AppController extends ChangeNotifier {
     micMode: _settings.micMode,
     thinkingEarcon: _settings.thinkingEarcon,
     cameraReplacesScreenshot: _settings.cameraReplacesScreenshot,
+    onsetMicWithManagedAudio: !platform.isMobile,
   );
 
   Future<SessionConfig> _sessionConfig(Conversation c) async {
@@ -386,9 +424,9 @@ class AppController extends ChangeNotifier {
       voice: _settings.activeVoice,
       instructions: [
         kAssistantInstructions,
-        if (_settings.backendMode == BackendMode.gptLive) kLiveInstructions,
+        if (activeBackendMode == BackendMode.gptLive) kLiveInstructions,
         kCameraMediaInstructions,
-        if (_settings.backendMode == BackendMode.gptLive) kLiveCameraMediaInstructions,
+        if (activeBackendMode == BackendMode.gptLive) kLiveCameraMediaInstructions,
         environmentNote(),
       ].join('\n'),
       tools: tools.specs,
@@ -431,8 +469,16 @@ class AppController extends ChangeNotifier {
     if (next.workspaceDir != prev.workspaceDir) _applyWorkspace();
     notifyListeners();
     await _settingsStore.save(next);
-    if (next.micMode != prev.micMode) await pipeline.setMicMode(next.micMode);
-    if (prev.sessionDiffers(next)) await pipeline.connect();
+    if (next.micMode != prev.micMode) {
+      await pipeline.setMicMode(next.micMode);
+      if (_inBackground) _scheduleBackgroundSuspend();
+    }
+    if (prev.sessionDiffers(next)) {
+      await pipeline.connect();
+    } else if (next.fallbackToDirectOnLimit && !prev.fallbackToDirectOnLimit && pipeline.usageLimit != null) {
+      // Turned on while gpt-live is at its limit: switch now.
+      await pipeline.connect();
+    }
     contextManager.onConversationChanged();
   }
 
@@ -611,10 +657,55 @@ class AppController extends ChangeNotifier {
     }();
   }
 
+  // ------------------------------------------------------------- lifecycle
+
+  bool _inBackground = false;
+  Timer? _backgroundTimer;
+
+  /// How long a phone app may sit in the background, muted or offline,
+  /// before the voice session is suspended (no WebRTC audio threads, no
+  /// sockets, no timers). Quick app switches keep the session.
+  Duration backgroundSuspendDelay = const Duration(seconds: 15);
+
+  /// App lifecycle (phones). Paused: the camera closes (Android denies it in
+  /// the background anyway) and a muted or offline session is suspended
+  /// after [backgroundSuspendDelay]. A hands-free session keeps listening
+  /// (the foreground service). Resumed: a suspended session reconnects.
+  void onLifecycle(AppLifecycleState state) {
+    if (!_ready || !platform.isMobile) return;
+    switch (state) {
+      case AppLifecycleState.paused:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.detached:
+        if (_inBackground) return;
+        _inBackground = true;
+        if (cameraOn) unawaited(setCamera(false));
+        _scheduleBackgroundSuspend();
+      case AppLifecycleState.resumed:
+        _inBackground = false;
+        _backgroundTimer?.cancel();
+        _backgroundTimer = null;
+        if (pipeline.suspended && !_needsLogin) unawaited(pipeline.resume());
+      case AppLifecycleState.inactive:
+        break;
+    }
+  }
+
+  void _scheduleBackgroundSuspend() {
+    _backgroundTimer?.cancel();
+    _backgroundTimer = Timer(backgroundSuspendDelay, () {
+      _backgroundTimer = null;
+      if (!_inBackground || !_ready) return;
+      final idle = _settings.micMode == MicMode.muted || pipeline.status != SessionStatus.connected;
+      if (idle) unawaited(pipeline.suspend());
+    });
+  }
+
   /// Manual compaction from the UI.
   void compactNow() => contextManager.maybeCompress(force: true);
 
   Future<void> shutdown() async {
+    _backgroundTimer?.cancel();
     await camera.close();
     await notes.flush();
     if (_ready) await pipeline.shutdown();

@@ -138,6 +138,9 @@ class _WoiAppState extends State<WoiApp> with WidgetsBindingObserver {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) => _controller.onLifecycle(state);
+
+  @override
   void didChangePlatformBrightness() {
     if (_theme == AppTheme.system) _syncTheme();
   }

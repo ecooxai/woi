@@ -390,6 +390,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
       columns: 1,
       onChanged: (v) => _apply(_s.copyWith(backendMode: v)),
     ),
+    if (_s.backendMode == BackendMode.gptLive)
+      _row(
+        wide,
+        'Use Direct realtime at the usage limit',
+        'When gpt-live reports the ChatGPT usage limit (HTTP 429), connect with Direct realtime until it resets.',
+        Align(
+          alignment: wide ? Alignment.centerRight : Alignment.centerLeft,
+          child: Switch(
+            value: _s.fallbackToDirectOnLimit,
+            onChanged: (v) => _apply(_s.copyWith(fallbackToDirectOnLimit: v)),
+          ),
+        ),
+        controlWidth: 120,
+      ),
     if (_s.authMode == AuthMode.codex)
       _row(
         wide,

@@ -877,6 +877,101 @@ void main() {
     });
   });
 
+  group('idle power and usage limit (iter8)', () {
+    const limit429 =
+        'gpt-live call failed: HTTP 429 {"error":{"type":"usage_limit_reached","resets_at":4102444800}}';
+
+    test('the mic only opens once connected; a failed connect releases the backend', () async {
+      final h = await Harness.create(backend: () => ScriptedBackend()..connectError = StateError('network down'));
+      expect(h.pipeline.status, SessionStatus.error);
+      expect(h.fp.audio.mic, isNull, reason: 'no capture without a session');
+      expect(h.scripted.closed, isTrue, reason: 'a half-built session must not keep its media alive');
+      expect(h.pipeline.phase, AssistantPhase.offline);
+      await h.dispose();
+    });
+
+    test('429: friendly status, no reconnect storm', () async {
+      var n = 0;
+      final h = await Harness.create(
+        backend: () {
+          n++;
+          return ScriptedBackend()..connectError = n >= 2 ? StateError(limit429) : null;
+        },
+      );
+      h.pipeline
+        ..reconnectBaseDelay = const Duration(milliseconds: 10)
+        ..maxAutoReconnects = 5;
+      h.scripted.emit(const BackendError('lost', code: 'connection_lost', fatal: true));
+      await waitFor(() => !h.pipeline.reconnecting, timeout: const Duration(seconds: 3));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(n, 2, reason: 'initial connect + one attempt that hit the limit');
+      expect(h.pipeline.status, SessionStatus.error);
+      expect(h.pipeline.usageLimit, isNotNull);
+      expect(h.pipeline.statusDetail, startsWith('ChatGPT usage limit reached, resets '));
+      expect(h.pipeline.statusDetail, isNot(contains('{')));
+      await h.dispose();
+    });
+
+    test('onUsageLimit returning true retries once (fallback backend); false does not', () async {
+      var n = 0;
+      var fallback = false;
+      final h = await Harness.create(
+        backend: () {
+          n++;
+          return ScriptedBackend()..connectError = fallback ? null : StateError(limit429);
+        },
+      );
+      expect(n, 1);
+      var calls = 0;
+      h.pipeline.onUsageLimit = (l) async {
+        calls++;
+        return false;
+      };
+      await h.pipeline.connect();
+      expect((n, calls, h.pipeline.status), (2, 1, SessionStatus.error));
+      h.pipeline.onUsageLimit = (l) async {
+        calls++;
+        fallback = true;
+        return true;
+      };
+      await h.pipeline.connect();
+      expect((n, calls, h.pipeline.status), (4, 2, SessionStatus.connected));
+      expect(h.pipeline.usageLimit, isNull);
+      expect(h.fp.audio.mic, isNotNull);
+      await h.dispose();
+    });
+
+    test('suspend frees the session and mic; resume reconnects', () async {
+      final h = await Harness.create();
+      final first = h.scripted;
+      expect(h.fp.audio.mic, isNotNull);
+      await h.pipeline.suspend();
+      expect(h.pipeline.suspended, isTrue);
+      expect(h.pipeline.status, SessionStatus.disconnected);
+      expect(first.closed, isTrue);
+      expect(h.mic.closed, isTrue);
+      await h.pipeline.resume();
+      expect(h.pipeline.suspended, isFalse);
+      expect(h.pipeline.status, SessionStatus.connected);
+      expect(identical(h.lastBackend, first), isFalse);
+      expect(h.mic.closed, isFalse);
+      await h.dispose();
+    });
+
+    test('a screenshot attached while offline is sent once connected, with the short label shown', () async {
+      final h = await Harness.create();
+      await h.pipeline.suspend();
+      final shot = await h.fp.screen.capture();
+      await h.pipeline.attachScreenshot(shot, note: 'Long note with visible text ...', label: 'Assist screenshot');
+      final msg = h.conv.messages.lastWhere((m) => m.image != null);
+      expect(msg.text, 'Assist screenshot');
+      await h.pipeline.resume();
+      expect(h.scripted.images, hasLength(1));
+      expect(h.scripted.images.single.$2, startsWith('Long note with visible text'));
+      await h.dispose();
+    });
+  });
+
   group('typed media questions', () {
     test('the hook runs before the text is sent and can extend it', () async {
       final h = await Harness.create();

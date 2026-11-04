@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 
 import '../models/message.dart';
+import '../util/usage_limit.dart';
 import 'compressor.dart';
 import 'image_tiers.dart';
 
@@ -170,6 +171,11 @@ class ContextManager extends ChangeNotifier {
   bool _compressing = false;
   DateTime? _lastCompaction;
   Object? lastError;
+
+  /// Set when compaction failed on the ChatGPT usage limit: automatic
+  /// compaction pauses until it resets (manual "compact now" still tries).
+  UsageLimit? usageLimit;
+  DateTime? _limitSeen;
   final _compactions = StreamController<ContextCompacted>.broadcast();
 
   Stream<ContextCompacted> get compactions => _compactions.stream;
@@ -423,6 +429,10 @@ class ContextManager extends ChangeNotifier {
     if (!force && last != null && DateTime.now().difference(last) < minInterval) {
       return null;
     }
+    // The ChatGPT usage limit (429): every attempt before it resets is a
+    // wasted request (and log noise every [minInterval]).
+    final limit = usageLimit;
+    if (!force && limit != null && limit.activeAt(DateTime.now(), seenAt: _limitSeen)) return null;
     final batch = _compactable();
     if (batch.isEmpty) return null;
     // Not worth a model call (and a session swap) if it barely helps.
@@ -460,6 +470,7 @@ class ContextManager extends ChangeNotifier {
         return;
       }
       lastError = null;
+      usageLimit = null;
       final substantial = before - after >= (before - _overhead - _pinned) * minGain / 2;
       if (!substantial) debugPrint('context: compaction only freed ${before - after} of $before tokens');
       _compactions.add(
@@ -473,8 +484,14 @@ class ContextManager extends ChangeNotifier {
         ),
       );
     } catch (e) {
-      // e.g. Responses API 429 usage_limit_reached: retried after minInterval.
+      // Responses API 429 usage_limit_reached: no automatic retry until it
+      // resets; other errors are retried after minInterval.
       lastError = e;
+      final limit = UsageLimit.parse(e);
+      if (limit != null) {
+        usageLimit = limit;
+        _limitSeen = DateTime.now();
+      }
       _lastCompaction = DateTime.now();
       debugPrint('context: compaction failed: $e');
     } finally {

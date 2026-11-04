@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
@@ -234,6 +235,7 @@ class ScreenshotThumb extends StatelessWidget {
     required this.viewer,
     this.marker,
     this.maxWidth = 300,
+    this.maxHeight = 220,
     this.tier = ImageTier.full,
     this.label = 'Screenshot',
   });
@@ -248,10 +250,32 @@ class ScreenshotThumb extends StatelessWidget {
   final Offset? marker;
   final double maxWidth;
 
+  /// Tall images (phone screenshots) are cropped to this height from the
+  /// top, where the app bar and title are: a full-height portrait tile was
+  /// 600 px tall, and after the chat auto-scrolled only its (often empty,
+  /// dark) bottom half was visible, which looked like a black thumbnail.
+  final double maxHeight;
+
   @override
   Widget build(BuildContext context) {
+    final known = image.width > 0 && image.height > 0;
+    final aspect = known ? image.width / image.height : 16 / 9;
+    return LayoutBuilder(
+      builder: (context, box) {
+        final w = math.min(maxWidth, box.maxWidth.isFinite ? box.maxWidth : maxWidth);
+        final h = math.min(w / aspect, maxHeight);
+        // BoxFit.cover with top-center alignment: where the marker lands.
+        final scale = known ? math.max(w / image.width, h / image.height) : 1.0;
+        final dx = known ? (w - image.width * scale) / 2 : 0.0;
+        final mk = marker;
+        final dpr = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1.0;
+        return _thumb(context, w, h, mk == null || !known ? null : Offset(mk.dx * scale + dx, mk.dy * scale), (w * dpr).ceil());
+      },
+    );
+  }
+
+  Widget _thumb(BuildContext context, double w, double h, Offset? markerAt, int decodeWidth) {
     final file = File(image.path);
-    final aspect = image.width > 0 && image.height > 0 ? image.width / image.height : 16 / 9;
     final mk = marker;
     return Semantics(
       button: true,
@@ -269,11 +293,10 @@ class ScreenshotThumb extends StatelessWidget {
             marker: mk == null || image.width <= 0 ? null : Offset(mk.dx / image.width, mk.dy / image.height),
             onOpenWindow: () => viewer.show(MediaItem(kind: MediaKind.image, path: image.path)),
           ),
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: maxWidth),
-            child: AspectRatio(
-              aspectRatio: aspect,
-              child: Container(
+          child: SizedBox(
+            width: w,
+            height: h,
+            child: Container(
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: WoiColors.strokeStrong),
@@ -286,7 +309,9 @@ class ScreenshotThumb extends StatelessWidget {
                       Image.file(
                         file,
                         fit: BoxFit.cover,
-                        cacheWidth: 640,
+                        alignment: Alignment.topCenter,
+                        // Decode at the tile's size, not the image's.
+                        cacheWidth: decodeWidth.clamp(64, 1280),
                         filterQuality: FilterQuality.medium,
                         errorBuilder: (context, e, s) => Container(
                           color: WoiColors.glass,
@@ -294,15 +319,7 @@ class ScreenshotThumb extends StatelessWidget {
                           child: const Icon(Icons.broken_image_outlined),
                         ),
                       ),
-                      if (mk != null && image.width > 0 && image.height > 0)
-                        LayoutBuilder(
-                          builder: (context, box) => ClickMarker(
-                            position: Offset(
-                              mk.dx / image.width * box.maxWidth,
-                              mk.dy / image.height * box.maxHeight,
-                            ),
-                          ),
-                        ),
+                      if (markerAt != null && markerAt.dy <= h) ClickMarker(position: markerAt),
                       if (tier != ImageTier.full)
                         Positioned(
                           left: 6,
@@ -334,7 +351,6 @@ class ScreenshotThumb extends StatelessWidget {
                   ),
                 ),
               ),
-            ),
           ),
         ),
       ),

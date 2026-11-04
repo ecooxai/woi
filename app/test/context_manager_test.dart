@@ -273,6 +273,27 @@ void main() {
     expect(cm.maybeCompress(force: true), isNotNull, reason: 'retries are not blocked');
   });
 
+  test('after a usage limit (429) automatic compaction waits for the reset; manual still tries', () async {
+    cm.dispose();
+    cm = ContextManager(compressor: _FailingCompressor(), threshold: 1000, keepRecentTurns: 2, minInterval: Duration.zero)
+      ..attach(conv);
+    for (var i = 0; i < 6; i++) {
+      _turn(conv);
+    }
+    final prev = debugPrint;
+    debugPrint = (String? m, {int? wrapWidth}) {};
+    try {
+      await cm.maybeCompress();
+      expect(cm.usageLimit, isNotNull);
+      expect(cm.maybeCompress(), isNull, reason: 'no request per minInterval until the limit resets');
+      final manual = cm.maybeCompress(force: true);
+      expect(manual, isNotNull);
+      await manual;
+    } finally {
+      debugPrint = prev;
+    }
+  });
+
   test('onConversationChanged triggers compaction automatically', () async {
     final events = <ContextCompacted>[];
     cm.compactions.listen(events.add);

@@ -12,6 +12,7 @@ import '../context/context_manager.dart';
 import '../context/image_tiers.dart';
 import '../media/media_context.dart';
 import '../models/message.dart';
+import '../util/usage_limit.dart';
 import '../settings/settings.dart';
 import '../storage/history_store.dart';
 import '../voice/context_images.dart';
@@ -46,7 +47,14 @@ class PipelineOptions {
     this.thinkingEarcon = false,
     this.localBargeIn = true,
     this.cameraReplacesScreenshot = false,
+    this.onsetMicWithManagedAudio = true,
   });
+
+  /// With a backend that captures the mic itself (WebRTC), also open the
+  /// platform mic for the local barge-in detector. Off on phones: a second
+  /// concurrent AudioRecord costs ~10% CPU while listening, and the WebRTC
+  /// echo canceller plus server VAD already handle interruptions there.
+  final bool onsetMicWithManagedAudio;
 
   /// While the camera is on, its frame replaces the turn's screenshot
   /// instead of being attached next to it.
@@ -278,18 +286,46 @@ class TurnPipeline extends ChangeNotifier {
   Future<void> start() async {
     _player ??= await audio.openPlayer();
     _levelsChanged.value++;
+    _micMode = options().micMode;
     await connect();
-    await setMicMode(options().micMode);
-    _phaseTicker ??= Timer.periodic(const Duration(milliseconds: 120), (_) {
-      _settleIfStale();
-      if (phase != _lastPhase) _changed();
-    });
   }
 
-  Future<void> connect() async {
+  /// The 120 ms phase poll (audible playback, stale "thinking") only runs
+  /// while a session is connected: an offline or suspended Woi has no timers.
+  void _syncPhaseTicker() {
+    final want = _status == SessionStatus.connected && !_disposed;
+    if (want && _phaseTicker == null) {
+      _phaseTicker = Timer.periodic(const Duration(milliseconds: 120), (_) {
+        _settleIfStale();
+        if (phase != _lastPhase) _changed();
+      });
+    } else if (!want && _phaseTicker != null) {
+      _phaseTicker!.cancel();
+      _phaseTicker = null;
+    }
+  }
+
+  /// The ChatGPT usage limit (HTTP 429) that made the last connect fail, or
+  /// null. While it is set nothing reconnects on its own.
+  UsageLimit? usageLimit;
+
+  /// Called once per [connect] when it failed on the usage limit. Returns
+  /// true when the app changed something worth one immediate retry (e.g. it
+  /// switched gpt-live to Direct realtime because the user allows that).
+  Future<bool> Function(UsageLimit limit)? onUsageLimit;
+
+  /// Disconnected on purpose (app in the background, muted or offline);
+  /// [resume] connects again.
+  bool get suspended => _suspended;
+  bool _suspended = false;
+
+  Future<void> connect() => _connect(allowFallback: true);
+
+  Future<void> _connect({required bool allowFallback}) async {
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
-    if (_micManaged) await _closeMic();
+    _suspended = false;
+    await _closeMic();
     await _disconnectBackend();
     _status = SessionStatus.connecting;
     statusDetail = null;
@@ -302,29 +338,43 @@ class TurnPipeline extends ChangeNotifier {
         _addSystem('Voice backend error: $e', meta: {'type': 'error'});
       },
     );
+    UsageLimit? limit;
     try {
       final cfg = await sessionConfig(_conv);
       context.configure(accounting: b.contextAccounting, overheadTokens: contextOverhead(cfg, b.contextAccounting));
       await b.connect(cfg);
       if (!identical(_backend, b)) return;
       _status = SessionStatus.connected;
+      usageLimit = null;
       _pushScreenMemory();
-      if (b is ManagedAudioBackend) {
-        // The backend owns the mic: swap the platform capture for its stream.
-        await _closeMic();
-        if (_micMode != MicMode.muted) await _openMic();
-        _levelsChanged.value++;
-      }
+      _flushPendingImages();
+      // The mic only runs while connected (offline it would capture for
+      // nothing): the platform capture, or the backend's own (WebRTC).
+      if (_micMode != MicMode.muted) await _openMic();
+      _levelsChanged.value++;
     } catch (e) {
+      if (!identical(_backend, b)) return;
+      limit = UsageLimit.parse(e);
+      usageLimit = limit;
+      // A failed session must not keep its media alive (a half-built WebRTC
+      // call keeps the audio device module recording).
+      await _releaseBackend();
       _status = SessionStatus.error;
-      statusDetail = '$e';
+      statusDetail = limit?.message ?? '$e';
       debugPrint('voice session failed: $e');
     }
+    _syncPhaseTicker();
     _changed();
+    final hook = onUsageLimit;
+    if (limit != null && allowFallback && hook != null && !_disposed) {
+      if (await hook(limit)) await _connect(allowFallback: false);
+    }
   }
 
-  Future<void> _disconnectBackend() async {
-    _resetTurnState();
+  /// Closes the backend without touching the status (a failed or fatally
+  /// broken session keeps showing its error).
+  Future<void> _releaseBackend() async {
+    await _closeMic();
     await _eventSub?.cancel();
     _eventSub = null;
     final b = _backend;
@@ -334,7 +384,34 @@ class TurnPipeline extends ChangeNotifier {
         await b.close();
       } catch (_) {}
     }
+  }
+
+  Future<void> _disconnectBackend() async {
+    _resetTurnState();
+    await _releaseBackend();
     _status = SessionStatus.disconnected;
+    _syncPhaseTicker();
+  }
+
+  /// Disconnects to save power (app in the background while muted or
+  /// offline): no session, no mic, no timers. [resume] reconnects.
+  Future<void> suspend() async {
+    if (_disposed || _suspended) return;
+    debugPrint('voice: suspending (status ${_status.name})');
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+    _reconnecting = false;
+    _reconnectAttempt = 0;
+    await _disconnectBackend();
+    _suspended = true;
+    _changed();
+  }
+
+  /// Reconnects after [suspend]. Does nothing unless suspended.
+  Future<void> resume() async {
+    if (_disposed || !_suspended) return;
+    debugPrint('voice: resuming');
+    await connect();
   }
 
   void _resetTurnState() {
@@ -364,6 +441,7 @@ class TurnPipeline extends ChangeNotifier {
   /// context (summary) fresh.
   Future<void> switchConversation(Conversation c) async {
     if (_conv.messages.isNotEmpty) await store.save(_conv);
+    _pendingImages.clear();
     _conv = c;
     context.attach(c);
     _changed();
@@ -378,7 +456,7 @@ class TurnPipeline extends ChangeNotifier {
     if (mode == MicMode.muted) {
       await _closeMic();
       if (_userSpeaking) _onSpeechStopped();
-    } else {
+    } else if (_status == SessionStatus.connected) {
       await _openMic();
       _managed?.setInputEnabled(_forwarding);
     }
@@ -395,7 +473,7 @@ class TurnPipeline extends ChangeNotifier {
       _mic = mic;
       _micSub = mic.chunks.listen(_onMicChunk);
       _levelsChanged.value++;
-      if (managed != null) unawaited(_openOnsetMic());
+      if (managed != null && options().onsetMicWithManagedAudio) unawaited(_openOnsetMic());
     } catch (e) {
       _addSystem('Microphone unavailable: $e', meta: {'type': 'error'});
     }
@@ -744,10 +822,12 @@ class TurnPipeline extends ChangeNotifier {
   }
 
   /// Saves [shot], attaches it to [to] (or a new system message) and sends
-  /// it to the model.
-  Future<void> attachScreenshot(Screenshot shot, {required String note, Message? to}) async {
+  /// it to the model with [note]. The chat shows [label] when given (the
+  /// note may carry long context such as the screen's visible text).
+  Future<void> attachScreenshot(Screenshot shot, {required String note, String? label, Message? to}) async {
     onScreenshotCaptured?.call(shot);
-    final target = to ?? _addMessage(Message(kind: MessageKind.system, text: note, meta: {'type': 'screenshot'}));
+    final target =
+        to ?? _addMessage(Message(kind: MessageKind.system, text: label ?? note, meta: {'type': 'screenshot'}));
     final path = await store.saveImage(target.id, shot.png);
     target.image = ImageAttachment(
       path: path,
@@ -756,19 +836,42 @@ class TurnPipeline extends ChangeNotifier {
       originalWidth: shot.originalWidth,
       originalHeight: shot.originalHeight,
     );
-    final itemId = _backend?.sendImage(
-      shot.png,
-      note:
-          '$note Image is ${shot.width}x${shot.height} of a '
-          '${shot.originalWidth}x${shot.originalHeight} screen; '
-          'click_screen uses image pixel coordinates.',
-    );
-    if (itemId != null) target.meta[ImageMeta.serverItem] = itemId;
+    _sendWhenConnected(() {
+      final itemId = _backend?.sendImage(
+        shot.png,
+        note:
+            '$note Image is ${shot.width}x${shot.height} of a '
+            '${shot.originalWidth}x${shot.originalHeight} screen; '
+            'click_screen uses image pixel coordinates.',
+      );
+      if (itemId != null) target.meta[ImageMeta.serverItem] = itemId;
+    });
     screenshotsSent++;
     context.onConversationChanged();
     _persistSoon();
     _changed();
     unawaited(compactImages());
+  }
+
+  // Images attached while no session is up (the assistant gesture resumes a
+  // suspended Woi, a reconnect is in flight): sent once connected.
+  final List<void Function()> _pendingImages = [];
+
+  void _sendWhenConnected(void Function() send) {
+    if (_status == SessionStatus.connected && _backend != null) {
+      send();
+      return;
+    }
+    _pendingImages.add(send);
+    if (_pendingImages.length > 3) _pendingImages.removeAt(0);
+  }
+
+  void _flushPendingImages() {
+    final pending = List.of(_pendingImages);
+    _pendingImages.clear();
+    for (final send in pending) {
+      send();
+    }
   }
 
   /// Number of camera/media images sent (diagnostics/tests).
@@ -789,13 +892,15 @@ class TurnPipeline extends ChangeNotifier {
           ),
         );
     target.meta[ContextImageMeta.kind] = img.kind;
-    final Object? b = _backend;
-    if (b is ContextImageSink) {
-      b.setContextImage(img.kind, DelegationImage(png: img.bytes, capturedAt: img.capturedAt, note: img.note));
-    } else {
-      final itemId = _backend?.sendImage(img.bytes, note: img.note);
-      if (itemId != null) target.meta[ImageMeta.serverItem] = itemId;
-    }
+    _sendWhenConnected(() {
+      final Object? b = _backend;
+      if (b is ContextImageSink) {
+        b.setContextImage(img.kind, DelegationImage(png: img.bytes, capturedAt: img.capturedAt, note: img.note));
+      } else {
+        final itemId = _backend?.sendImage(img.bytes, note: img.note);
+        if (itemId != null) target.meta[ImageMeta.serverItem] = itemId;
+      }
+    });
     contextImagesSent++;
     final conv = _conv;
     store
@@ -906,10 +1011,13 @@ class TurnPipeline extends ChangeNotifier {
       b.sendText(t);
     } else {
       pre
-          .then((sent) => sent ?? t, onError: (Object e) {
-            _addSystem('Media context failed: $e', meta: {'type': 'error'});
-            return t;
-          })
+          .then(
+            (sent) => sent ?? t,
+            onError: (Object e) {
+              _addSystem('Media context failed: $e', meta: {'type': 'error'});
+              return t;
+            },
+          )
           .then((sent) {
             if (!_disposed && identical(_backend, b)) b.sendText(sent);
           });
@@ -1012,11 +1120,16 @@ class TurnPipeline extends ChangeNotifier {
           _scheduleReconnect(message);
           return;
         }
-        _addSystem(message, meta: {'type': 'error'});
+        final limit = UsageLimit.parse(message);
+        _addSystem(limit?.message ?? message, meta: {'type': 'error'});
         if (fatal) {
           _status = SessionStatus.error;
-          statusDetail = message;
+          statusDetail = limit?.message ?? message;
+          if (limit != null) usageLimit = limit;
           debugPrint('voice session failed: $message');
+          // Nothing more comes from a fatally broken session: free its
+          // mic / WebRTC call now instead of when the user presses Retry.
+          unawaited(_releaseBackend().then((_) => _syncPhaseTicker()));
         }
         _awaitingResponse = false;
         _changed();
@@ -1215,7 +1328,10 @@ class TurnPipeline extends ChangeNotifier {
       debugPrint('voice reconnected (context restored)');
       _addSystem('Reconnected', meta: {'type': 'reconnect'});
       _changed();
-    } else if (_reconnectAttempt < maxAutoReconnects) {
+    } else if (_suspended) {
+      return;
+    } else if (_reconnectAttempt < maxAutoReconnects && usageLimit == null) {
+      // A usage limit (429) does not go away by retrying: no storm.
       _scheduleReconnect(statusDetail ?? 'connect failed');
     } else {
       _reconnecting = false;
@@ -1230,6 +1346,7 @@ class TurnPipeline extends ChangeNotifier {
     _reconnectTimer?.cancel();
     _reconnecting = false;
     _phaseTicker?.cancel();
+    _phaseTicker = null;
     _screenshotTimer?.cancel();
     await _compactionSub?.cancel();
     await _closeMic();

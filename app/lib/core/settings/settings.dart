@@ -40,6 +40,7 @@ const kVoiceModels = ['gpt-live-1.1', 'gpt-live-1', 'gpt-live-1-codex'];
 
 /// Models that work on wss://api.openai.com/v1/realtime (§2.1).
 const kRealtimeModels = ['gpt-realtime-2', 'gpt-realtime-1.5', 'gpt-realtime', 'gpt-realtime-mini'];
+
 /// Voices of the realtime WebSocket models (direct and API-key modes).
 const kVoices = ['marin', 'cedar', 'alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse'];
 
@@ -105,6 +106,7 @@ class AppSettings {
     this.theme = AppTheme.light,
     this.editApplyDelay = 5,
     this.cameraReplacesScreenshot = false,
+    this.fallbackToDirectOnLimit = false,
   });
 
   final BackendMode backendMode;
@@ -159,6 +161,10 @@ class AppSettings {
   /// (default: both are attached).
   final bool cameraReplacesScreenshot;
 
+  /// When gpt-live answers with the ChatGPT usage limit (HTTP 429), connect
+  /// with Direct realtime instead until the limit resets.
+  final bool fallbackToDirectOnLimit;
+
   /// The voice used by the current backend mode.
   String get activeVoice => backendMode == BackendMode.gptLive ? liveVoice : voice;
 
@@ -191,6 +197,7 @@ class AppSettings {
     AppTheme? theme,
     int? editApplyDelay,
     bool? cameraReplacesScreenshot,
+    bool? fallbackToDirectOnLimit,
   }) => AppSettings(
     backendMode: backendMode ?? this.backendMode,
     apiKey: apiKey ?? this.apiKey,
@@ -215,6 +222,7 @@ class AppSettings {
     theme: theme ?? this.theme,
     editApplyDelay: editApplyDelay ?? this.editApplyDelay,
     cameraReplacesScreenshot: cameraReplacesScreenshot ?? this.cameraReplacesScreenshot,
+    fallbackToDirectOnLimit: fallbackToDirectOnLimit ?? this.fallbackToDirectOnLimit,
   );
 
   /// Whether a change requires reconnecting the live session.
@@ -250,6 +258,7 @@ class AppSettings {
     'theme': theme.name,
     'editApplyDelay': editApplyDelay,
     'cameraReplacesScreenshot': cameraReplacesScreenshot,
+    'fallbackToDirectOnLimit': fallbackToDirectOnLimit,
   };
 
   factory AppSettings.fromJson(Map<String, Object?> j) {
@@ -290,6 +299,7 @@ class AppSettings {
           ? i('editApplyDelay', d.editApplyDelay)
           : d.editApplyDelay,
       cameraReplacesScreenshot: b('cameraReplacesScreenshot', d.cameraReplacesScreenshot),
+      fallbackToDirectOnLimit: b('fallbackToDirectOnLimit', d.fallbackToDirectOnLimit),
     );
   }
 }

@@ -122,6 +122,7 @@ class AndroidIntegration {
         note:
             'The user invoked Woi as the phone assistant (long-press home) while in $app; this is that screen. '
             '${clipped.isEmpty ? '' : 'Visible text: $clipped. '}',
+        label: e.app == null || e.app!.isEmpty ? 'Assist screenshot' : 'Assist screenshot from ${e.app}',
       );
       if (e.shownAtMs > 0) lastAssistLatencyMs = DateTime.now().millisecondsSinceEpoch - e.shownAtMs;
       debugPrint('assist screenshot attached ${w}x$h from $app, ${lastAssistLatencyMs ?? '?'} ms after the gesture');
@@ -140,9 +141,7 @@ class AndroidIntegration {
         controller.pipeline.notice('Could not open ${f.name ?? 'a shared item'}: ${f.error ?? 'unreadable'}');
         continue;
       }
-      await viewer.show(
-        MediaItem(kind: mediaKindFor(f.mime, path), path: path, customTitle: f.name),
-      );
+      await viewer.show(MediaItem(kind: mediaKindFor(f.mime, path), path: path, customTitle: f.name));
       shown++;
     }
     final text = (e.text ?? '').trim();
