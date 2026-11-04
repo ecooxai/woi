@@ -130,6 +130,28 @@ Uint8List pcm(int ms, {int amplitude = 0}) {
   return bd.buffer.asUint8List();
 }
 
+/// Voice-like test signal: a [f0] Hz harmonic series up to ~3.5 kHz with
+/// a 1/k roll-off (spans several of [EchoGuard]'s bands, unlike [pcm]'s
+/// Nyquist square wave). [phase0] continues a previous chunk.
+Uint8List voice(int ms, {int amplitude = 6000, double f0 = 220, int phase0 = 0}) {
+  final samples = kVoiceSampleRate * ms ~/ 1000;
+  final bd = ByteData(samples * 2);
+  final harmonics = (3500 / f0).floor();
+  var norm = 0.0;
+  for (var k = 1; k <= harmonics; k++) {
+    norm += 1 / k;
+  }
+  for (var i = 0; i < samples; i++) {
+    final t = (phase0 + i) / kVoiceSampleRate;
+    var v = 0.0;
+    for (var k = 1; k <= harmonics; k++) {
+      v += sin(2 * pi * f0 * k * t) / k;
+    }
+    bd.setInt16(i * 2, (amplitude * v / norm).round().clamp(-32768, 32767), Endian.little);
+  }
+  return bd.buffer.asUint8List();
+}
+
 // ----------------------------------------------------------------- screen
 
 /// Minimal PNG header (signature + IHDR) — enough for [pngSize].
@@ -334,7 +356,13 @@ class ScriptedBackend extends VoiceBackend {
   }
 
   @override
-  void sendAudio(Uint8List pcm16) => audioBytes += pcm16.length;
+  void sendAudio(Uint8List pcm16) {
+    audioBytes += pcm16.length;
+    audioSent.add(Int16List.sublistView(Uint8List.fromList(pcm16)));
+  }
+
+  /// Every chunk sent, as samples.
+  final audioSent = <Int16List>[];
   @override
   void sendText(String text) => texts.add(text);
   @override
@@ -369,6 +397,18 @@ class ScriptedBackend extends VoiceBackend {
     stopDrops++;
     cancels++;
   }
+
+  /// dropEchoTurn calls: (user item id, tool call ids).
+  final echoDrops = <(String?, List<String>)>[];
+  @override
+  void dropEchoTurn({String? itemId, List<String> callIds = const []}) {
+    echoDrops.add((itemId, callIds));
+    stopAndDrop();
+  }
+
+  int accepts = 0;
+  @override
+  void acceptTurn() => accepts++;
 
   @override
   void setReplyHold(bool hold) => holds.add(hold);

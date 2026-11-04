@@ -12,6 +12,7 @@ import 'package:woi/core/context/image_tiers.dart';
 import 'package:woi/core/delegate/delegate_backend.dart';
 import 'package:woi/core/media/media_context.dart';
 import 'package:woi/core/models/message.dart';
+import 'package:woi/core/pipeline/echo_guard.dart';
 import 'package:woi/core/pipeline/turn_pipeline.dart';
 import 'package:woi/core/settings/settings.dart';
 import 'package:woi/core/storage/history_store.dart';
@@ -55,6 +56,7 @@ class Harness {
     int threshold = 100000,
     ImageCompactor? Function(HistoryStore store)? images,
     void Function(TurnPipeline p)? setup,
+    EchoGuard? echoGuard,
   }) async {
     final fp = await FakePlatform.create();
     final store = HistoryStore(fp.services.paths);
@@ -88,6 +90,7 @@ class Harness {
       options: () => h.options,
       onScreenshotCaptured: (s) => env.lastScreenshot = s,
       imageCompactor: images?.call(store),
+      echoGuard: echoGuard,
     );
     setup?.call(h.pipeline);
     await h.pipeline.start();
@@ -98,9 +101,9 @@ class Harness {
   FakePcmPlayer get player => fp.audio.player;
 
   /// Feeds [ms] of audio in 20 ms chunks, yielding to timers in between.
-  Future<void> speak(int ms, {int amplitude = 6000, bool realtime = false}) async {
+  Future<void> speak(int ms, {int amplitude = 6000, bool realtime = false, bool voiced = false}) async {
     for (var t = 0; t < ms; t += 20) {
-      mic.push(pcm(20, amplitude: amplitude));
+      mic.push(voiced ? voice(20, amplitude: amplitude, phase0: t * 24) : pcm(20, amplitude: amplitude));
       if (realtime) await Future<void>.delayed(const Duration(milliseconds: 20));
     }
     await Future<void>.delayed(Duration.zero);
@@ -491,30 +494,71 @@ void main() {
       await h.dispose();
     });
 
-    test('local mic onset cuts playback before the server notices', () async {
-      final h = await Harness.create(options: const PipelineOptions(autoScreenshot: false));
+    test('local mic onset pauses playback; the server confirms the barge-in', () async {
+      // The guard's clock stands still: no real-time dependence.
+      final h = await Harness.create(
+        options: const PipelineOptions(autoScreenshot: false),
+        echoGuard: EchoGuard(nowUs: () => 0),
+      );
+      h.pipeline.echoGate = true; // off by default; covered here
       final b = h.scripted;
       final mic = h.fp.audio.mic!;
       b.emit(const AssistantTranscriptDelta('Once upon a time '));
-      // Assistant audio plays; the mic hears only faint echo for a while.
+      // Assistant audio plays; the mic hears only its faint echo.
+      b.emit(AssistantAudioDelta(voice(4000, amplitude: 8000, f0: 140)));
       for (var i = 0; i < 40; i++) {
-        b.emit(AssistantAudioDelta(pcm(20, amplitude: 8000)));
-        mic.push(pcm(20, amplitude: 300));
+        mic.push(voice(20, amplitude: 300, f0: 140, phase0: i * 480));
       }
       expect(h.pipeline.localOnsets, 0, reason: 'echo is not an onset');
+      expect(b.audioSent.every((c) => c.every((v) => v == 0)), isTrue, reason: 'the echo never reaches the server');
       final stops = h.player.stops;
+      final sent = b.audioSent.length;
       // The user talks over it.
       for (var i = 0; i < 10; i++) {
-        mic.push(pcm(20, amplitude: 9000));
+        mic.push(voice(20, amplitude: 9000, f0: 230, phase0: i * 480));
       }
       expect(h.pipeline.localOnsets, 1);
-      expect(h.player.stops, stops + 1);
+      expect(h.player.stops, stops + 1, reason: 'paused at once');
+      expect(b.cancels, 0, reason: 'not cut before the server confirms');
+      expect(b.audioSent.skip(sent).any((c) => c.any((v) => v != 0)), isTrue, reason: 'gate open: the user reaches the server');
+      // Server VAD confirms: that is the barge-in.
+      b.emit(const SpeechStarted(itemId: 'u1'));
+      expect(h.pipeline.bargeIns, 1);
       expect(b.cancels, 1);
       expect(b.holds, [true], reason: 'reply held until we know it is not "stop"');
       expect(ofKind(h.conv, MessageKind.assistant).single.interrupted, isTrue);
-      // Server VAD confirms later: no second barge-in.
-      b.emit(const SpeechStarted(itemId: 'u1'));
-      expect(h.pipeline.bargeIns, 1);
+      await h.dispose();
+    });
+
+    test('an onset the server does not confirm resumes playback where it paused', () async {
+      final h = await Harness.create(
+        options: const PipelineOptions(autoScreenshot: false),
+        echoGuard: EchoGuard(nowUs: () => 0),
+      );
+      final b = h.scripted;
+      final mic = h.fp.audio.mic!;
+      b.emit(const AssistantTranscriptDelta('Once upon a time '));
+      b.emit(AssistantAudioDelta(voice(4000, amplitude: 8000, f0: 140)));
+      for (var i = 0; i < 40; i++) {
+        mic.push(voice(20, amplitude: 300, f0: 140, phase0: i * 480));
+      }
+      for (var i = 0; i < 10; i++) {
+        mic.push(voice(20, amplitude: 9000, f0: 230, phase0: i * 480));
+      }
+      expect(h.pipeline.localOnsets, 1);
+      final written = h.player.written.length;
+      // More of the reply arrives while paused: kept, not played yet.
+      b.emit(AssistantAudioDelta(voice(200, amplitude: 8000, f0: 140)));
+      expect(h.player.written.length, written);
+      await Future<void>.delayed(const Duration(milliseconds: 1000));
+      expect(h.pipeline.onsetsResumed, 1);
+      expect(b.cancels, 0);
+      expect(h.pipeline.bargeIns, 0);
+      final resumed = h.player.written.length - written;
+      // Nothing was heard yet (the guard's clock stands still): the 4 s
+      // queued plus the 0.2 s that arrived while paused.
+      expect(resumed, kVoiceBytesPerSecond * 42 ~/ 10);
+      expect(ofKind(h.conv, MessageKind.assistant).single.interrupted, isFalse);
       await h.dispose();
     });
 
@@ -601,6 +645,180 @@ void main() {
       h.scripted.emit(const SpeechStarted());
       expect(h.scripted.cancels, 0);
       expect(h.pipeline.bargeIns, 0);
+      await h.dispose();
+    });
+  });
+
+  group('echo turns (transcript guard)', () {
+    /// Woi is replying (audible); the server hears its echo as a user turn
+    /// and replies to it with a tool call.
+    Future<Harness> echoTurn(String heard, {String said = 'Pointer moved. Now I will open the settings for you.'}) async {
+      final h = await Harness.create(
+        options: const PipelineOptions(autoScreenshot: false),
+        echoGuard: EchoGuard(nowUs: () => 0),
+      );
+      final b = h.scripted;
+      b.emit(AssistantTranscriptDelta(said));
+      b.emit(AssistantAudioDelta(voice(3000, amplitude: 8000, f0: 140)));
+      b.emit(const SpeechStarted(itemId: 'u1'));
+      expect(h.pipeline.bargeIns, 1);
+      b.emit(const SpeechStopped(itemId: 'u1'));
+      b.emit(const ResponseDone(cancelled: true)); // the cut reply
+      // The server's reply to the "user" turn: held.
+      b.emit(const AssistantTranscriptDelta('Typing it. '));
+      b.emit(AssistantAudioDelta(voice(400, amplitude: 8000, f0: 150)));
+      b.emit(const ToolCall('c1', 'type_text', '{"text":"hey"}'));
+      b.emit(const ResponseDone());
+      expect(ofKind(h.conv, MessageKind.tool), isEmpty, reason: 'no action before the transcript decides');
+      b.emit(UserTranscriptDone(heard, itemId: 'u1'));
+      return h;
+    }
+
+    test('Woi heard back ("Boiner moot." for "Pointer moved."): no reply, no tool, no bubble; the reply plays on', () async {
+      final h = await echoTurn('Boiner moot.');
+      final b = h.scripted;
+      expect(h.pipeline.echoTurnsDropped, 1);
+      expect(b.echoDrops.single.$1, 'u1');
+      expect(b.echoDrops.single.$2, ['c1']);
+      expect(ofKind(h.conv, MessageKind.user), isEmpty);
+      expect(ofKind(h.conv, MessageKind.tool), isEmpty);
+      expect(h.fp.input.log, isEmpty);
+      final replies = ofKind(h.conv, MessageKind.assistant);
+      expect(replies.map((m) => m.text), ['Pointer moved. Now I will open the settings for you.']);
+      expect(replies.single.interrupted, isFalse);
+      // The unheard rest of the cut reply (all 3 s: the guard clock stands
+      // still) is played again; the reply to the echo never is.
+      expect(h.player.written.length, kVoiceBytesPerSecond * 6);
+      await h.dispose();
+    });
+
+    test('the user talking over Woi: the held reply and its tool call go ahead', () async {
+      final h = await echoTurn('Open the browser please.');
+      expect(h.pipeline.echoTurnsDropped, 0);
+      expect(h.scripted.echoDrops, isEmpty);
+      expect(ofKind(h.conv, MessageKind.user).single.text, 'Open the browser please.');
+      await waitFor(() => h.scripted.toolResults.isNotEmpty);
+      expect(h.fp.input.log, ['type hey']);
+      expect(ofKind(h.conv, MessageKind.assistant).last.text, 'Typing it. ');
+      await h.dispose();
+    });
+
+    group('deferred server turns (the server did not cut Woi off)', () {
+      Future<Harness> deferredTurn() async {
+        final h = await Harness.create(
+          options: const PipelineOptions(autoScreenshot: false),
+          echoGuard: EchoGuard(nowUs: () => 0),
+        );
+        h.pipeline.deferWindow = const Duration(milliseconds: 200);
+        final b = h.scripted;
+        b.emit(const AssistantTranscriptDelta('Pointer moved. Now I will open the settings for you.'));
+        b.emit(AssistantAudioDelta(voice(3000, amplitude: 8000, f0: 140)));
+        b.emit(const SpeechStarted(itemId: 'u1', deferred: true));
+        return h;
+      }
+
+      test('echo transcript within the window: dropped, Woi never cut and talks on', () async {
+        final h = await deferredTurn();
+        final b = h.scripted;
+        expect(h.pipeline.bargeIns, 0);
+        final written = h.player.written.length;
+        b.emit(AssistantAudioDelta(voice(200, amplitude: 8000, f0: 140)));
+        expect(h.player.written.length, greaterThan(written), reason: 'the reply keeps playing');
+        b.emit(const SpeechStopped(itemId: 'u1'));
+        b.emit(const UserTranscriptDone('Boiner moot.', itemId: 'u1'));
+        expect(h.pipeline.deferredEchoDrops, 1);
+        expect(b.echoDrops.single.$1, 'u1');
+        expect(ofKind(h.conv, MessageKind.user), isEmpty);
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+        expect(h.pipeline.bargeIns, 0);
+        expect(b.accepts, 0);
+        await h.dispose();
+      });
+
+      test('no transcript in time: interrupts (cut + accept)', () async {
+        final h = await deferredTurn();
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+        expect(h.pipeline.bargeIns, 1);
+        expect(h.scripted.accepts, 1);
+        expect(h.scripted.cancels, greaterThan(0));
+        await h.dispose();
+      });
+    });
+
+    test('a quick answer right after Woi finished is not echo', () async {
+      final h = await Harness.create(
+        options: const PipelineOptions(autoScreenshot: false),
+        echoGuard: EchoGuard(nowUs: () => 0),
+      );
+      final b = h.scripted;
+      b.emit(const AssistantTranscriptDelta('Is that right?'));
+      b.emit(AssistantAudioDelta(voice(300, amplitude: 8000, f0: 140)));
+      b.emit(const ResponseDone());
+      h.player.playing = false;
+      b.emit(const SpeechStarted(itemId: 'u2'));
+      b.emit(const SpeechStopped(itemId: 'u2'));
+      b.emit(const AssistantTranscriptDelta('Great.'));
+      b.emit(const ResponseDone());
+      b.emit(const UserTranscriptDone('Yes.', itemId: 'u2'));
+      expect(h.pipeline.echoTurnsDropped, 0);
+      expect(ofKind(h.conv, MessageKind.user).single.text, 'Yes.');
+      expect(ofKind(h.conv, MessageKind.assistant).last.text, 'Great.');
+      await h.dispose();
+    });
+
+    test('three echo turns in a row pause hands-free listening with a notice', () async {
+      final h = await Harness.create(
+        options: const PipelineOptions(autoScreenshot: false),
+        echoGuard: EchoGuard(nowUs: () => 0),
+      );
+      var paused = 0;
+      h.pipeline.onSelfTalk = () => paused++;
+      final b = h.scripted;
+      for (final (i, said, heard) in [
+        (1, 'Tell me what you would like next.', 'Tell me.'),
+        (2, 'Jasne, już otwieram.', 'Jasne.'),
+        (3, 'Pointer moved.', 'Boiner moot.'),
+      ]) {
+        b.emit(AssistantTranscriptDelta(said));
+        b.emit(AssistantAudioDelta(voice(300, amplitude: 8000, f0: 140)));
+        b.emit(const ResponseDone());
+        b.emit(SpeechStarted(itemId: 'u$i'));
+        b.emit(SpeechStopped(itemId: 'u$i'));
+        b.emit(const AssistantTranscriptDelta('Okay.'));
+        b.emit(const ResponseDone());
+        b.emit(UserTranscriptDone(heard, itemId: 'u$i'));
+        expect(h.pipeline.echoTurnsDropped, i);
+        expect(paused, i == 3 ? 1 : 0);
+      }
+      expect(h.pipeline.selfTalkBreaks, 1);
+      expect(ofKind(h.conv, MessageKind.system).last.meta['type'], 'self_talk');
+      expect(ofKind(h.conv, MessageKind.user), isEmpty);
+      await h.dispose();
+    });
+
+    test('a genuine turn resets the self-talk count', () async {
+      final h = await Harness.create(
+        options: const PipelineOptions(autoScreenshot: false),
+        echoGuard: EchoGuard(nowUs: () => 0),
+      );
+      final b = h.scripted;
+      for (final (i, said, heard) in [
+        (1, 'Tell me what you would like next.', 'Tell me.'),
+        (2, 'Jasne, już otwieram.', 'Jasne.'),
+        (3, 'Done.', 'Make it bigger.'),
+        (4, 'Pointer moved.', 'Boiner moot.'),
+      ]) {
+        b.emit(AssistantTranscriptDelta(said));
+        b.emit(AssistantAudioDelta(voice(300, amplitude: 8000, f0: 140)));
+        b.emit(const ResponseDone());
+        b.emit(SpeechStarted(itemId: 'u$i'));
+        b.emit(SpeechStopped(itemId: 'u$i'));
+        b.emit(const AssistantTranscriptDelta('Okay.'));
+        b.emit(const ResponseDone());
+        b.emit(UserTranscriptDone(heard, itemId: 'u$i'));
+      }
+      expect(h.pipeline.echoTurnsDropped, 3);
+      expect(h.pipeline.selfTalkBreaks, 0);
       await h.dispose();
     });
   });
@@ -712,7 +930,9 @@ void main() {
       expect(ofKind(h.conv, MessageKind.user).single.text, contains('s of speech'));
 
       // Interrupt while the reply is still streaming.
-      await h.speak(400, amplitude: 20000, realtime: true);
+      // (Voice-like: the echo gate only opens for something that is not
+      // Woi's own sound.)
+      await h.speak(600, amplitude: 20000, realtime: true, voiced: true);
       await waitFor(() => h.pipeline.bargeIns == 1);
       expect(mock.cancelCount, 1);
       expect(ofKind(h.conv, MessageKind.assistant).first.interrupted, isTrue);

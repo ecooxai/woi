@@ -41,8 +41,9 @@ Future<void> _pump() async {
 }
 
 class _Rig {
-  _Rig({int keepRecentTurns = 2, int maxReconnectAttempts = 3}) {
+  _Rig({int keepRecentTurns = 2, int maxReconnectAttempts = 3, bool defer = false}) {
     backend = RealtimeWsBackend(
+      deferInterrupts: defer,
       connector: server.connect,
       credentialsProvider: () async => _creds,
       playback: PlaybackTracker(outputLatency: Duration.zero, now: () => clock),
@@ -287,6 +288,32 @@ void main() {
       await r.dispose();
     });
 
+    test('dropEchoTurn: cancels the reply, closes its calls unrun, deletes the user item, no new response', () async {
+      final r = _Rig();
+      await r.connect();
+      r.userTurn('u1', 'Boiner moot.');
+      r.respond('r1');
+      r.done(
+        'r1',
+        output: [
+          {'type': 'function_call', 'call_id': 'c1', 'name': 'run_bash', 'arguments': '{}'},
+        ],
+      );
+      await _pump();
+      expect(r.of<ToolCall>().single.callId, 'c1');
+      r.backend.dropEchoTurn(itemId: 'u1', callIds: ['c1']);
+      final out = r.ws.ofType('conversation.item.create').last['item'] as Map;
+      expect(out['type'], 'function_call_output');
+      expect(out['call_id'], 'c1');
+      expect(out['output'] as String, contains('echo'));
+      expect(r.ws.ofType('conversation.item.delete').single['item_id'], 'u1');
+      expect(r.ws.ofType('response.create'), isEmpty);
+      // The next real turn is answered (the calls no longer block it).
+      r.backend.sendText('hello');
+      expect(r.ws.ofType('response.create'), hasLength(1));
+      await r.dispose();
+    });
+
     test('conversation_already_has_active_response defers and retries', () async {
       final r = _Rig();
       await r.connect();
@@ -305,6 +332,48 @@ void main() {
   });
 
   group('interruption', () {
+    test('defer mode: far_field; while Woi speaks the server neither cuts nor answers; the client decides', () async {
+      final r = _Rig(defer: true);
+      await r.connect();
+      final first = r.ws.ofType('session.update').first['session'] as Map;
+      final input = (first['audio'] as Map)['input'] as Map;
+      expect((input['noise_reduction'] as Map)['type'], 'far_field');
+      expect((input['turn_detection'] as Map)['interrupt_response'], isTrue);
+      r.respond('r1');
+      await _pump();
+      final upd = r.ws.ofType('session.update').last['session'] as Map;
+      final td = ((upd['audio'] as Map)['input'] as Map)['turn_detection'] as Map;
+      expect(td['interrupt_response'], isFalse);
+      expect(td['create_response'], isFalse);
+      r.ws.push({'type': 'session.updated', 'session': upd});
+      r.audioItem('r1', 'a1', 3000);
+      await _pump();
+      // Echo: deferred, not cut; dropped without cancelling the reply.
+      r.ws.push({'type': 'input_audio_buffer.speech_started', 'item_id': 'u1'});
+      await _pump();
+      expect(r.of<SpeechStarted>().single.deferred, isTrue);
+      expect(r.ws.ofType('response.cancel'), isEmpty);
+      r.userTurn('u1', 'Boiner moot.');
+      r.ws.push({'type': 'input_audio_buffer.speech_stopped', 'item_id': 'u1'});
+      await _pump();
+      r.backend.dropEchoTurn(itemId: 'u1');
+      expect(r.ws.ofType('response.cancel'), isEmpty);
+      expect(r.ws.ofType('conversation.item.delete').single['item_id'], 'u1');
+      // The user: accepted, Woi cut (cancelResponse), answered after it ends.
+      r.ws.push({'type': 'input_audio_buffer.speech_started', 'item_id': 'u2'});
+      await _pump();
+      expect(r.of<SpeechStarted>().last.deferred, isTrue);
+      r.backend.cancelResponse();
+      r.backend.acceptTurn();
+      expect(r.ws.ofType('response.cancel'), hasLength(1));
+      r.done('r1', status: 'cancelled');
+      r.userTurn('u2', 'Stop.');
+      r.ws.push({'type': 'input_audio_buffer.speech_stopped', 'item_id': 'u2'});
+      await _pump();
+      expect(r.ws.ofType('response.create'), hasLength(1));
+      await r.dispose();
+    });
+
     test('speech_started stops playback; truncate with played ms after the cancelled response.done', () async {
       final r = _Rig();
       await r.connect();

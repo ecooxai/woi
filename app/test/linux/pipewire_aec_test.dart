@@ -23,6 +23,19 @@ void main() {
     expect(aec.running, isFalse);
   });
 
+  test('pinned mic and speaker (QA on virtual devices)', () {
+    final conf = PipewireEchoCancel.config(
+      sourceName: 's',
+      captureName: 'c',
+      monitorName: 'm',
+      micTarget: 'qa_mic',
+      speakerTarget: 'qa_speaker',
+    );
+    expect(RegExp(r'node\.name = "c"[^}]*target\.object = "qa_mic"').hasMatch(conf), isTrue);
+    expect(RegExp(r'node\.name = "m"[^}]*target\.object = "qa_speaker"').hasMatch(conf), isTrue);
+    expect(PipewireEchoCancel.config(sourceName: 's', captureName: 'c', monitorName: 'm'), isNot(contains('target.object')));
+  });
+
   test('a disposed canceller never starts', () async {
     final aec = PipewireEchoCancel(instanceId: 't2');
     await aec.dispose();
