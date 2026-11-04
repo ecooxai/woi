@@ -249,6 +249,11 @@ class MeterBar extends StatefulWidget {
   State<MeterBar> createState() => _MeterBarState();
 }
 
+/// [fill] rounded to 1/80: a few tokens more (typing in the pinned note,
+/// a short turn) must not start a 700 ms tween (~40 full-window frames on
+/// software GL) for a sub-pixel change.
+double meterStep(double fill) => (fill.clamp(0.0, 1.0) * 80).round() / 80;
+
 class _MeterBarState extends State<MeterBar> {
   // 12 fps sweep (timer-driven, own repaint boundary): compaction can run for
   // a while and a 60 fps sweep is a full raster per frame on software GL.
@@ -272,7 +277,7 @@ class _MeterBarState extends State<MeterBar> {
           children: [
             ColoredBox(color: WoiColors.glassStrong),
             TweenAnimationBuilder<double>(
-              tween: Tween(end: widget.fill),
+              tween: Tween(end: meterStep(widget.fill)),
               duration: const Duration(milliseconds: 700),
               curve: WoiMotion.emphasized,
               builder: (context, v, _) => FractionallySizedBox(
@@ -333,7 +338,7 @@ class _RingState extends State<_Ring> {
   Widget build(BuildContext context) => SizedBox.square(
     dimension: 34,
     child: TweenAnimationBuilder<double>(
-      tween: Tween(end: widget.fill),
+      tween: Tween(end: meterStep(widget.fill)),
       duration: const Duration(milliseconds: 700),
       curve: WoiMotion.emphasized,
       builder: (context, v, _) => ValueListenableBuilder<double>(
