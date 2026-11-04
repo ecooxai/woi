@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:woi/core/audio/earcon.dart';
 import 'package:woi/core/context/compressor.dart';
@@ -455,6 +455,65 @@ void main() {
     await Future<void>.delayed(h.pipeline.transcriptNotifyInterval * 2);
     expect(notes, n, reason: 'no trailing notification after an immediate one');
     await h.dispose();
+  });
+
+  group('assistant audible', () {
+    Future<List<String>> captureLogs(Future<void> Function() body) async {
+      final logs = <String>[];
+      final prev = debugPrint;
+      debugPrint = (String? m, {int? wrapWidth}) => logs.add(m ?? '');
+      try {
+        await body();
+      } finally {
+        debugPrint = prev;
+      }
+      return logs;
+    }
+
+    test('a turn that cuts Woi off logs audible=y (snapshot before the cut)', () async {
+      final h = await Harness.create();
+      final b = h.scripted;
+      final logs = await captureLogs(() async {
+        b.emit(const AssistantTranscriptDelta('Hello there, '));
+        b.emit(AssistantAudioDelta(pcm(200, amplitude: 1000)));
+        expect(h.player.isPlaying, isTrue);
+        b.emit(const SpeechStarted(itemId: 'u1'));
+        expect(h.player.isPlaying, isFalse, reason: 'barge-in stopped the player');
+        b.emit(const SpeechStopped(itemId: 'u1'));
+        b.emit(const UserTranscriptDone('Wait a second.', itemId: 'u1'));
+        await Future<void>.delayed(Duration.zero);
+      });
+      final line = logs.firstWhere((l) => l.startsWith('user turn:'));
+      expect(line, contains('audible=y'));
+      await h.dispose();
+    });
+
+    test('just after playback is cut the echo tail still counts (audible=t), later not', () async {
+      final h = await Harness.create();
+      final b = h.scripted;
+      final logs = await captureLogs(() async {
+        b.emit(const AssistantTranscriptDelta('Hello there, '));
+        b.emit(AssistantAudioDelta(pcm(200, amplitude: 1000)));
+        b.emit(const SpeechStarted(itemId: 'u1'));
+        b.emit(const SpeechStopped(itemId: 'u1'));
+        // Inside the ~360 ms tail after the cut.
+        b.emit(const SpeechStarted(itemId: 'u2'));
+        b.emit(const SpeechStopped(itemId: 'u2'));
+        await Future<void>.delayed(const Duration(milliseconds: 450));
+        b.emit(const SpeechStarted(itemId: 'u3'));
+        b.emit(const SpeechStopped(itemId: 'u3'));
+        for (final id in ['u1', 'u2', 'u3']) {
+          b.emit(UserTranscriptDone('Turn $id here.', itemId: id));
+        }
+        await Future<void>.delayed(Duration.zero);
+      });
+      final turns = logs.where((l) => l.startsWith('user turn:')).toList();
+      expect(turns, hasLength(3));
+      expect(turns[0], contains('audible=y'));
+      expect(turns[1], contains('audible=t'));
+      expect(turns[2], contains('audible=n'));
+      await h.dispose();
+    });
   });
 
   group('barge-in', () {

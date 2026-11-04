@@ -149,7 +149,7 @@ sleep 10
 qa_stop_app
 
 python3 -I - "$QA_OUT" "$NAME" <<'EOF'
-import glob, json, math, struct, sys, wave
+import array, glob, json, math, struct, sys, wave
 out, name = sys.argv[1], sys.argv[2]
 import difflib, re
 said = ["Tell me three interesting facts about Mars.",
@@ -168,15 +168,26 @@ other = [m for m in users if m not in mine]
 asst = [m for m in msgs if m.get("kind") == "assistant"]
 log = open(f"{out}/app-{name}.log", errors="replace").read()
 barge = open(f"{out}/barge.txt").read().split("\n") if glob.glob(f"{out}/barge.txt") else []
-# pw-record may leave mic.wav empty or headerless (stream never linked):
-# skip the level part instead of crashing the summary.
+# pw-record is killed, so mic.wav's RIFF/data sizes are never finalized (0 or
+# missing): find the data chunk by its tag and take the samples from the file
+# length, not the header. Empty / no stream linked -> levels skipped.
 fr = []
 try:
-    with wave.open(f"{out}/mic.wav") as w:
-        b = w.readframes(w.getnframes())
-    x = struct.unpack(f"<{len(b)//2}h", b[:len(b) // 2 * 2])
+    raw = open(f"{out}/mic.wav", "rb").read()
+    if raw[:4] == b"RIFF":
+        i = raw.find(b"data", 12, 8192)
+        start = i + 8 if i >= 0 else 44
+    else:
+        start = 0
+    pcm = raw[start:]
+    if len(pcm) < 4800:
+        raise EOFError(f"only {len(pcm)} bytes of audio")
+    x = array.array("h")
+    x.frombytes(pcm[:len(pcm) // 2 * 2])
+    if sys.byteorder != "little":
+        x.byteswap()
     fr = [math.sqrt(sum(v * v for v in x[i:i+2400]) / 2400) for i in range(0, len(x) - 2400, 2400)]
-except (OSError, EOFError, wave.Error, struct.error) as e:
+except (OSError, EOFError) as e:
     print(f"mic.wav unusable ({e}); mic levels skipped", file=sys.stderr)
 act = sorted(v for v in fr if v > 30)
 lvl = lambda q: round(20 * math.log10(act[int(q * (len(act) - 1))] / 32768), 1) if act else None
