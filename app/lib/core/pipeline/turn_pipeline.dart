@@ -213,6 +213,9 @@ class TurnPipeline extends ChangeNotifier {
   /// Reconnecting on its own after a drop (the status line says so).
   bool get reconnecting => _reconnecting;
 
+  /// Reconnecting and waiting out the backoff (no attempt in flight).
+  bool get reconnectWaiting => _reconnecting && _reconnectTimer != null;
+
   /// Number of successful automatic reconnects (diagnostics/tests).
   int autoReconnects = 0;
 

@@ -194,7 +194,9 @@ class AppController extends ChangeNotifier {
       _selection = sel;
     }
     final notice = _selection!.notice;
-    if (notice != null) {
+    // Once per limit, not on every reconnect attempt.
+    if (notice != null && notice != _lastBackendNotice) {
+      _lastBackendNotice = notice;
       debugPrint(notice);
       scheduleMicrotask(() {
         if (_ready) pipeline.notice(notice);
@@ -203,6 +205,8 @@ class AppController extends ChangeNotifier {
     notifyListeners();
     return sel.backend;
   }
+
+  String? _lastBackendNotice;
 
   // gpt-live's usage limit (HTTP 429), remembered so a reconnect does not
   // hit it again before it resets.

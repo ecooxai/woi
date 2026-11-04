@@ -92,6 +92,25 @@ void main() {
     await t.pumpWidget(const SizedBox());
   });
 
+  testWidgets('reconnecting is still while it waits out the backoff', (t) async {
+    Future<void> show(bool? animate) => t.pumpWidget(
+      MaterialApp(
+        theme: theme,
+        home: Scaffold(body: VoiceStatusIndicator(mode: VoiceMode.reconnecting, animate: animate)),
+      ),
+    );
+    await show(false);
+    await t.pump();
+    await t.binding.delayed(const Duration(milliseconds: 300));
+    expect(find.text('Reconnecting…'), findsOneWidget);
+    expect(t.binding.hasScheduledFrame, isFalse);
+    await show(null);
+    await t.pump();
+    await t.binding.delayed(const Duration(milliseconds: 100));
+    expect(t.binding.hasScheduledFrame, isTrue, reason: 'an attempt in flight pulses');
+    await t.pumpWidget(const SizedBox());
+  });
+
   testWidgets('hearing shows a level waveform that follows the mic', (t) async {
     final mic = ValueNotifier<double>(0);
     await pump(t, VoiceMode.hearing, mic: mic);

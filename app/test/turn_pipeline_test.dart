@@ -160,6 +160,34 @@ void main() {
       expect(p.imagesSaved, greaterThan(5 * 400));
       await h.dispose();
     });
+
+    test('a usage limit (429) pauses descriptions until it resets; downscaling goes on', () async {
+      var asked = 0;
+      final h = await Harness.create(
+        images: (store) => ImageCompactor(
+          policy: const ImageTierPolicy(rawRecentTurns: 0, fullCount: 1, reducedCount: 1),
+          downscale: (png, w, h) async => Uint8List.fromList(png.take(16).toList()),
+          describe: (png, note) async {
+            asked++;
+            throw Exception('Responses API error 429: The usage limit has been reached');
+          },
+          save: store.saveImage,
+        ),
+      );
+      for (var i = 0; i < 5; i++) {
+        final shot = await h.fp.screen.capture();
+        await h.pipeline.attachScreenshot(shot, note: 'shot $i');
+      }
+      await h.pipeline.compactImages();
+      await h.pipeline.compactImages();
+      expect(asked, 1, reason: 'one refused request, then no more until the reset');
+      expect(h.pipeline.imageCompactor!.describeLimit, isNotNull);
+      final shots = h.conv.messages.where((m) => m.image != null).toList();
+      expect(shots.map(imageTierOf), isNot(contains(ImageTier.described)));
+      expect(shots.map(imageTierOf), contains(ImageTier.reduced));
+      expect(imageTierOf(shots.last), ImageTier.full);
+      await h.dispose();
+    });
   });
 
   group('screenshots on speech', () {

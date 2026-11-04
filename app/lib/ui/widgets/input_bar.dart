@@ -80,6 +80,8 @@ class _InputBarState extends State<InputBar> {
                 mode: mode,
                 micLevel: pipeline.micLevel,
                 outputLevel: pipeline.outputLevel,
+                // Between reconnect attempts: still (the label says it).
+                animate: mode == VoiceMode.reconnecting ? !pipeline.reconnectWaiting : null,
               ),
             ),
             _dot(),
