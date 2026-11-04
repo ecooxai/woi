@@ -53,6 +53,25 @@ void main() {
       expect(firedAt, inInclusiveRange(3, 7));
     });
 
+    test('phone floor: platform-AEC residual bursts are ignored, a voice still fires', () {
+      // Measured on Android (VOICE_COMMUNICATION + AEC): the echo is gone
+      // except bursts up to ~0.05 RMS; a voice near the phone is
+      // 0.06-0.3.
+      final d = BargeInDetector()..minThreshold = 0.05;
+      for (var i = 0; i < 100; i++) {
+        d.onPlayback(tone(0.3, phase: i * 480));
+        // Silence with a 100 ms burst at 0.06 peak (~0.042 RMS) every 400 ms.
+        final burst = i >= 20 && i % 20 < 5;
+        expect(d.process(tone(burst ? 0.06 : 0.0005, phase: i * 480), audible: true), isFalse, reason: 'frame $i');
+      }
+      var fired = false;
+      for (var i = 0; i < 10 && !fired; i++) {
+        d.onPlayback(tone(0.3, phase: i * 480));
+        fired = d.process(tone(0.2, hz: 140, phase: i * 480), audible: true);
+      }
+      expect(fired, isTrue);
+    });
+
     test('"stop" over playback with no echo fires within ~120 ms of the onset', () {
       final d = BargeInDetector();
       // 2 s of assistant speech; the mic is silent (no echo path).

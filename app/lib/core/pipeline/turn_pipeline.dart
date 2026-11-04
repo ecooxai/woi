@@ -48,7 +48,14 @@ class PipelineOptions {
     this.localBargeIn = true,
     this.cameraReplacesScreenshot = false,
     this.onsetMicWithManagedAudio = true,
+    this.bargeInFloor = 0.02,
   });
+
+  /// Minimum mic RMS for a local barge-in onset while Woi speaks. Android's
+  /// platform echo canceller removes the echo almost completely but leaves
+  /// 30-70 ms residual bursts up to ~0.05 (measured on a Xiaomi MI 8), above
+  /// the desktop floor; a voice near the phone is 0.06-0.3.
+  final double bargeInFloor;
 
   /// With a backend that captures the mic itself (WebRTC), also open the
   /// platform mic for the local barge-in detector. Off on phones: a second
@@ -632,6 +639,7 @@ class TurnPipeline extends ChangeNotifier {
 
   void _feedOnset(Uint8List chunk) {
     if (!options().localBargeIn) return;
+    _onset.minThreshold = options().bargeInFloor;
     if (_onset.process(chunk, audible: _assistantAudible && !_userSpeaking)) _localOnset();
   }
 

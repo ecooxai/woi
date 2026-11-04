@@ -25,7 +25,10 @@ class BargeInDetector {
   /// Voiced time needed to fire (gaps up to [maxGapMs] are bridged, so the
   /// closure of a stop consonant, the "t" in "stop", does not restart it).
   final int onsetMs;
-  final double minThreshold;
+
+  /// Lowest mic level that counts as the user (settable: a platform echo
+  /// canceller leaves short residual bursts, so phones use a higher floor).
+  double minThreshold;
   final double noiseMultiplier;
 
   /// Mic energy must exceed predicted echo by this factor.
