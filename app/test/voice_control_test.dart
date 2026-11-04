@@ -177,6 +177,11 @@ void main() {
       await settle();
     }
     expect(c.settings.backendMode, BackendMode.direct);
+    // Let the reconnect finish before teardown disposes the pipeline.
+    for (var i = 0; i < 100 && c.pipeline.status != SessionStatus.connected; i++) {
+      await settle();
+    }
+    await settle();
     expect(
       '${await tool('app_control', {'action': 'set_setting', 'key': 'thinking_chime', 'value': 'maybe'})}',
       contains('on or off'),
