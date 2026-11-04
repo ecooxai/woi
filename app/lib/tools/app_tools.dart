@@ -1,4 +1,5 @@
 import '../core/app_actions.dart';
+import '../core/notes/note_copy.dart';
 import '../core/models/message.dart';
 import '../core/voice/voice_backend.dart';
 import '../platform/media_viewer.dart';
@@ -33,13 +34,14 @@ ToolDefinition noteControlTool(AppActions actions) => ToolDefinition(
         'replace ("find" -> "text"), delete_text (remove "find"; a matching list item or line is removed whole), '
         'undo / redo (the editor\'s undo stack), new (empty note), list, switch ("name": title words, '
         '"previous", or a number), rename ("title"; "name" picks another note), delete ("name" or this note; '
-        'the user confirms).',
+        'the user confirms), copy (to the clipboard; "what": note [default], line, paragraph or section = the H1 '
+        'section, all at the editor cursor: "copy this paragraph").',
     parameters: {
       'type': 'object',
       'properties': {
         'action': {
           'type': 'string',
-          'enum': ['append', 'insert', 'replace', 'delete_text', 'undo', 'redo', 'new', 'list', 'switch', 'rename', 'delete'],
+          'enum': ['append', 'insert', 'replace', 'delete_text', 'undo', 'redo', 'new', 'list', 'switch', 'rename', 'delete', 'copy'],
         },
         'text': {'type': 'string', 'description': 'Markdown to add, or the replacement'},
         'find': {'type': 'string', 'description': 'Existing text to replace or delete'},
@@ -47,6 +49,11 @@ ToolDefinition noteControlTool(AppActions actions) => ToolDefinition(
         'before': {'type': 'string'},
         'name': {'type': 'string', 'description': 'Which note (title words, "previous", number)'},
         'title': {'type': 'string', 'description': 'New title for rename'},
+        'what': {
+          'type': 'string',
+          'enum': ['note', 'line', 'paragraph', 'section'],
+          'description': 'What copy copies (at the cursor)',
+        },
       },
       'required': ['action'],
     },
@@ -101,6 +108,11 @@ ToolDefinition noteControlTool(AppActions actions) => ToolDefinition(
         final deleted = await actions.deleteNote(which: args.strOrNull('name'));
         call.onStatus?.call(ToolStatus.running);
         return {'ok': true, 'deleted': deleted};
+      case 'copy':
+        final what = args.strOrNull('what');
+        final scope = NoteCopyScope.parse(what);
+        if (scope == null) throw ToolFailure('copy "what" must be note, line, paragraph or section');
+        return {'ok': true, 'done': await actions.copyNote(scope)};
       default:
         throw ToolFailure('unknown action "$action"');
     }

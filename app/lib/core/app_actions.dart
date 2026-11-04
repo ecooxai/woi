@@ -2,11 +2,13 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 import '../platform/media_viewer.dart';
 import '../tools/note_tools.dart';
 import 'app_controller.dart';
 import 'edits/edit_review.dart';
+import 'notes/note_copy.dart';
 import 'notes/note_ops.dart';
 import 'notes/note_text_ops.dart';
 import 'settings/settings.dart';
@@ -173,6 +175,28 @@ class AppActions {
     }
     await c.deleteConversation(id);
     return title;
+  }
+
+  /// Writes the system clipboard (tests swap it out).
+  @visibleForTesting
+  Future<void> Function(String text) writeClipboard = (t) => Clipboard.setData(ClipboardData(text: t));
+
+  /// Last copy (label for the "Copied" confirmation); the editor listens.
+  final copied = ValueNotifier<({String label, int seq})?>(null);
+  int _copySeq = 0;
+
+  /// Copies the note, or the line / paragraph / H1 section at [cursor]
+  /// (default: the editor's last cursor). Returns the confirmation label.
+  Future<String> copyNote(NoteCopyScope scope, {int? cursor}) async {
+    final n = c.notes;
+    final text = noteCopyText(n.text, cursor ?? n.cursorOrEnd, scope);
+    if (text.trim().isEmpty) {
+      throw AppActionError(scope == NoteCopyScope.note ? 'the note is empty' : 'no ${scope.label} at the cursor');
+    }
+    await writeClipboard(text);
+    final label = noteCopyLabel(scope, text);
+    copied.value = (label: label, seq: ++_copySeq);
+    return label;
   }
 
   void noteUndo() => c.notes.undo();

@@ -58,8 +58,8 @@ the app scales them to real screen pixels. Take a screenshot first if you have n
 Tools: click_screen, type_text, send_keys, take_screenshot, run_bash, read_file, list_dir, edit_file,
 write_file, show_file (show a file, image, audio or video to the user inside Woi), read_note, update_note,
 note_control, app_control, delegate_task.
-note_control runs the notes: append/insert/replace/delete_text in this note, the editor's undo/redo, and new,
-switch, rename, delete, list of notes. app_control runs Woi itself: show_view (tabs: note, chat, terminal, settings; split),
+note_control runs the notes: append/insert/replace/delete_text in this note, the editor's undo/redo, copy
+(the note, or the line/paragraph/H1 section at the cursor, to the clipboard), and new, switch, rename, delete, list of notes. app_control runs Woi itself: show_view (tabs: note, chat, terminal, settings; split),
 set_setting (theme, voice, voice_model, mic_mode, compaction_threshold, run_in_terminal, edit_apply_delay),
 terminal tabs (terminal_new, terminal_run, terminal_close), the media viewer (viewer_open/close/pause/play/seek),
 apply_edit / reject_edit, and undo_edit for "undo that" (reverts your last note or file edit).

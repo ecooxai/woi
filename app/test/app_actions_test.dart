@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:woi/core/app_actions.dart';
 import 'package:woi/core/app_controller.dart';
 import 'package:woi/core/auth/auth.dart';
+import 'package:woi/core/notes/note_copy.dart';
 import 'package:woi/core/settings/settings.dart';
 import 'package:woi/core/voice/delegation_executor.dart';
 
@@ -153,6 +154,32 @@ void main() {
     expect(f.readAsStringSync(), 'v1\n');
   });
 
+  test('copy: note, line, paragraph, H1 section at the cursor (note_control copy)', () async {
+    final clip = <String>[];
+    a.writeClipboard = (t) async => clip.add(t);
+    c.notes.setText('# A\npara one\nstill one\n\npara two\n# B\nlast');
+    c.notes.cursor = c.notes.text.indexOf('still');
+    expect(await a.copyNote(NoteCopyScope.line), 'Copied line');
+    expect(clip.last, 'still one');
+    expect(a.copied.value!.label, 'Copied line');
+    var r = await tool('note_control', {'action': 'copy', 'what': 'paragraph'});
+    expect(r['ok'], isTrue);
+    expect(clip.last, '# A\npara one\nstill one');
+    r = await tool('note_control', {'action': 'copy', 'what': 'section'});
+    expect(clip.last, '# A\npara one\nstill one\n\npara two');
+    r = await tool('note_control', {'action': 'copy'});
+    expect(clip.last, c.notes.text);
+    // Unknown cursor: the end of the note.
+    c.notes.cursor = -1;
+    await tool('note_control', {'action': 'copy', 'what': 'section'});
+    expect(clip.last, '# B\nlast');
+    final seq = a.copied.value!.seq;
+    c.notes.setText('');
+    r = await tool('note_control', {'action': 'copy'});
+    expect(r['ok'], isNot(true));
+    expect(a.copied.value!.seq, seq, reason: 'nothing copied, no confirmation');
+  });
+
   group('delegation fast paths', () {
     List<(String, Map<String, Object?>)>? fp(String s) => DelegationExecutor.appFastPath(s);
     test('app control phrases', () {
@@ -169,6 +196,10 @@ void main() {
       expect(fp('mute the mic')!.single.$2['value'], 'muted');
       expect(fp('new note')!.single.$1, 'note_control');
       expect(fp("add 'buy milk' to my note")!.single.$2, {'action': 'append', 'text': '- buy milk'});
+      expect(fp('copy this paragraph')!.single.$2, {'action': 'copy', 'what': 'paragraph'});
+      expect(fp('Please copy the current line.')!.single.$2['what'], 'line');
+      expect(fp('copy the whole note')!.single.$2['what'], 'note');
+      expect(fp('copy this heading section to the clipboard')!.single.$2['what'], 'section');
     });
     test('leaves real requests to the model', () {
       expect(fp('add that to my note'), isNull);

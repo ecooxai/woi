@@ -418,6 +418,16 @@ class DelegationExecutor {
       final on = t.startsWith('un');
       return [('app_control', {'action': 'set_setting', 'key': 'mic_mode', 'value': on ? 'hands_free' : 'muted'})];
     }
+    // "copy this paragraph", "copy the current line", "copy the whole note".
+    final copy = RegExp(
+      r'^copy\s+(?:(?:this|the|my|that|current|whole|entire|full)\s+)*'
+      r'(note|line|paragraph|section|heading section|h1 section)(?:\s+(?:to|into)\s+(?:the\s+)?clipboard)?$',
+    ).firstMatch(t);
+    if (copy != null) {
+      final w = copy.group(1)!;
+      final what = w.contains('section') ? 'section' : w;
+      return [('note_control', {'action': 'copy', 'what': what})];
+    }
     if (RegExp(r'^(?:start|create|make|open)\s+(?:a\s+)?new\s+note$|^new note$').hasMatch(t)) {
       return [('note_control', {'action': 'new'})];
     }

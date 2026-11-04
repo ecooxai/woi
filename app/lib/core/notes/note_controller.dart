@@ -63,6 +63,14 @@ class NoteController extends ChangeNotifier {
   /// Increments on every text change (cheap change detection for listeners).
   int revision = 0;
 
+  /// Cursor offset in [text] as last seen by the editor (-1: never focused,
+  /// read as the end). Set without notifying: only "copy this paragraph"
+  /// style actions read it.
+  int cursor = -1;
+
+  /// [cursor] clamped to the text; the end when unknown.
+  int get cursorOrEnd => cursor < 0 || cursor > text.length ? text.length : cursor;
+
   String get conversationId => _note.conversationId;
   String get text => _note.markdown;
   bool get isEmpty => _note.isEmpty;
