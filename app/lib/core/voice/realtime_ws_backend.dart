@@ -147,6 +147,9 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
 
   bool get isReady => _ready;
   bool get responseActive => _activeResponseId != null || _responseRequested;
+
+  @override
+  bool get busy => responseActive || _reconnecting;
   String? get appliedSummary => _summary;
   List<String> get serverItemIds => [for (final i in _items) i.id];
 

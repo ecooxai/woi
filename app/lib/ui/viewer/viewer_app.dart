@@ -344,7 +344,16 @@ class AudioViewerBody extends StatefulWidget {
   State<AudioViewerBody> createState() => _AudioViewerBodyState();
 }
 
-class _AudioViewerBodyState extends State<AudioViewerBody> with SingleTickerProviderStateMixin {
+class _AudioViewerBodyState extends State<AudioViewerBody>
+    with SingleTickerProviderStateMixin
+    implements PlaybackProbe {
+  @override
+  Duration get position => _elapsed;
+  @override
+  Duration? get duration => _duration;
+  @override
+  bool get playing => _clip != null;
+
   ClipPlayback? _clip;
   String? _error;
   List<double>? _peaks;
@@ -358,6 +367,7 @@ class _AudioViewerBodyState extends State<AudioViewerBody> with SingleTickerProv
   @override
   void initState() {
     super.initState();
+    activePlayback = this;
     _analyze();
   }
 
@@ -405,6 +415,7 @@ class _AudioViewerBodyState extends State<AudioViewerBody> with SingleTickerProv
 
   @override
   void dispose() {
+    if (identical(activePlayback, this)) activePlayback = null;
     _clip?.stop();
     _ticker.dispose();
     super.dispose();

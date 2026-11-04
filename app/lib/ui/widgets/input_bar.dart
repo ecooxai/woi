@@ -4,6 +4,7 @@ import '../../core/app_controller.dart';
 import '../../core/pipeline/turn_pipeline.dart';
 import '../../core/settings/settings.dart';
 import '../theme.dart';
+import 'camera_preview.dart';
 import 'context_meter.dart';
 import 'controls.dart';
 import 'status_chip.dart';
@@ -34,7 +35,7 @@ class _InputBarState extends State<InputBar> {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: Listenable.merge([c, pipeline]),
+      listenable: Listenable.merge([c, pipeline, c.camera.active]),
       builder: (context, _) {
         final status = pipeline.status;
         if (status == SessionStatus.connected) _wasConnected = true;
@@ -43,7 +44,12 @@ class _InputBarState extends State<InputBar> {
         final canStop = ph == AssistantPhase.speaking || ph == AssistantPhase.thinking || ph == AssistantPhase.toolRunning;
         final s = c.settings;
         final phone = widget.phone;
-        final mode = voiceModeFor(ph, status: status, compacting: c.contextManager.compressing);
+        final mode = voiceModeFor(
+          ph,
+          status: status,
+          compacting: c.contextManager.compressing,
+          reconnecting: pipeline.reconnecting,
+        );
 
         final composer = Composer(
           focusNode: widget.focusNode,
@@ -76,7 +82,7 @@ class _InputBarState extends State<InputBar> {
             _dot(),
             Flexible(
               child: ConnectionStatusChip(
-                state: linkStateFor(status, wasConnected: _wasConnected),
+                state: linkStateFor(status, wasConnected: _wasConnected, reconnecting: pipeline.reconnecting),
                 model: c.activeVoiceModel,
                 backend: c.activeBackendMode,
                 voice: s.activeVoice,
@@ -86,6 +92,8 @@ class _InputBarState extends State<InputBar> {
               ),
             ),
             const Spacer(),
+            CameraToggle(on: c.cameraOn, busy: c.cameraBusy, onPressed: c.toggleCamera, size: phone ? kTouchTarget : 28),
+            SizedBox(width: phone ? 0 : 8),
             phone
                 ? MicModeMenu(mode: s.micMode, onChanged: c.actions.setMicMode)
                 : MicModeSelector(mode: s.micMode, onChanged: c.actions.setMicMode, compact: true, itemSize: 28),
@@ -108,6 +116,14 @@ class _InputBarState extends State<InputBar> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              if (c.cameraOn)
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(0, 2, 4, 6),
+                    child: CameraPreviewTile(camera: c.camera, onClose: c.toggleCamera),
+                  ),
+                ),
               composer,
               Padding(
                 padding: EdgeInsets.fromLTRB(phone ? 6 : 8, phone ? 0 : 4, 2, 0),

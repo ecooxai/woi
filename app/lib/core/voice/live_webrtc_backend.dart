@@ -10,10 +10,12 @@ import '../audio/playback_clock.dart';
 import '../audio/wav.dart';
 import '../auth/auth.dart';
 import '../context/context_manager.dart';
+import '../media/media_context.dart' show isMediaQuestion, cameraCommand;
 import '../net/realtime_socket.dart';
 import '../notes/pinned_note.dart';
 import '../pipeline/vad.dart';
 import '../settings/settings.dart' show kLiveVoices, kLiveDefaultVoice;
+import 'context_images.dart';
 import 'context_sync.dart';
 import 'delegation_executor.dart';
 import 'live_rtc_transport.dart';
@@ -91,7 +93,8 @@ class LiveConnectTimings {
 ///   [ToolCall], answered with [sendToolResult]) so confirmations and the
 ///   transcript UI work as usual; the result goes back with
 ///   `delegation.context.append` and the voice model speaks it.
-class LiveWebRtcBackend extends VoiceBackend implements ManagedAudioBackend, LiveContextSync, PinnedNoteSync {
+class LiveWebRtcBackend extends VoiceBackend
+    implements ManagedAudioBackend, LiveContextSync, PinnedNoteSync, ContextImageSink {
   LiveWebRtcBackend({
     required this.transportFactory,
     RealtimeConnector? sideband,
@@ -195,6 +198,13 @@ class LiveWebRtcBackend extends VoiceBackend implements ManagedAudioBackend, Liv
 
   // ---- images (for delegation) and pending tool calls
   DelegationImage? _latestImage;
+
+  /// Camera frame / media image per slot, for delegations.
+  final Map<String, DelegationImage> _contextImages = {};
+
+  @override
+  void setContextImage(String slot, DelegationImage? image) =>
+      image == null ? _contextImages.remove(slot) : _contextImages[slot] = image;
   final Map<String, Completer<String>> _pendingTools = {};
   int _toolSeq = 0;
 
@@ -224,6 +234,35 @@ class LiveWebRtcBackend extends VoiceBackend implements ManagedAudioBackend, Liv
 
   @override
   ContextAccounting get contextAccounting => ContextAccounting.textEstimate;
+
+  /// An assistant turn is open, a tool or delegation (or typed action) runs,
+  /// or the model was just handed a result it has not voiced yet.
+  @override
+  bool get busy => _assistantOpen || _pendingTools.isNotEmpty || _runningActions > 0 || _settleTimers > 0;
+
+  /// Delegations / typed actions still executing (not yet appended).
+  int _runningActions = 0;
+
+  /// Results handed to the model whose spoken answer has not started yet.
+  int _settleTimers = 0;
+  int _assistantTurns = 0;
+
+  /// How long after a delegation / typed-action result was appended the
+  /// model may stay silent before the turn counts as finished
+  /// ([ResponseDone]), so the status line does not stay on "Thinking…" when
+  /// the model voices nothing (e.g. after a fast-path action).
+  Duration settleAfterResult = const Duration(seconds: 5);
+
+  void _settleLater() {
+    final turns = _assistantTurns;
+    _settleTimers++;
+    Timer(settleAfterResult, () {
+      _settleTimers--;
+      if (_closed || _assistantOpen || _assistantTurns != turns) return;
+      debugPrint('gpt-live: result not voiced within ${settleAfterResult.inSeconds}s; turn settled');
+      _emit(const ResponseDone());
+    });
+  }
 
   String get transportDescription => _rtc?.description ?? '-';
 
@@ -270,6 +309,7 @@ class LiveWebRtcBackend extends VoiceBackend implements ManagedAudioBackend, Liv
       tools: config.tools,
       runTool: toolRunner ?? _runToolViaPipeline,
       latestScreenshot: () => _latestImage,
+      contextImages: () => _contextImages.values.toList(),
       contextNote: _delegationNote,
       environment: () => config.environment,
       pinnedNote: () => _pinnedNote,
@@ -376,7 +416,7 @@ class LiveWebRtcBackend extends VoiceBackend implements ManagedAudioBackend, Liv
             s.started.completeError(LiveCallException('sideband closed before session.started (${ws.closeCode})'));
           }
           if (!_closed && identical(_session, s)) {
-            _emit(BackendError('gpt-live session ended (${ws.closeCode ?? '-'} ${ws.closeReason ?? ''})', fatal: true));
+            _onConnectionLost(ws.closeCode, ws.closeReason);
           }
         },
         onError: (Object e) {
@@ -394,6 +434,30 @@ class LiveWebRtcBackend extends VoiceBackend implements ManagedAudioBackend, Liv
     } finally {
       if (identical(_preparing, s)) _preparing = null;
     }
+  }
+
+  /// The sideband of the live call closed on its own (e.g. 1006 = the TCP
+  /// connection dropped without a close frame). Unblock everything that was
+  /// in flight and report a reconnectable loss; the pipeline reconnects with
+  /// backoff and restores the context (summary + recent turns).
+  void _onConnectionLost(int? code, String? reason) {
+    debugPrint('gpt-live sideband closed (${code ?? '-'} ${reason ?? ''})');
+    if (_userSpeaking) _userStopped();
+    if (_assistantOpen) {
+      _interrupted = true;
+      _finishAssistant();
+    }
+    for (final c in _pendingTools.values) {
+      if (!c.isCompleted) c.complete('{"ok":false,"error":"voice connection lost"}');
+    }
+    _pendingTools.clear();
+    _emit(
+      BackendError(
+        'gpt-live connection lost (${code ?? '-'}${reason == null || reason.isEmpty ? '' : ' $reason'})',
+        code: 'connection_lost',
+        fatal: true,
+      ),
+    );
   }
 
   // ------------------------------------------------- compaction (§3.2)
@@ -605,6 +669,7 @@ class LiveWebRtcBackend extends VoiceBackend implements ManagedAudioBackend, Liv
     if (_assistantOpen) return;
     _noteActivity();
     _assistantOpen = true;
+    _assistantTurns++;
     _assistantCloseAtMs = null;
     _assistantStartMs = startMs;
     _emittedUntilMs = startMs;
@@ -748,12 +813,19 @@ class LiveWebRtcBackend extends VoiceBackend implements ManagedAudioBackend, Liv
           {'type': 'input_text', 'text': 'Not done: the user said stop / cancel. Do nothing and say nothing.'},
         ],
       });
+      _settleLater();
       return;
     }
     final sw = Stopwatch()..start();
     _pendingDelegations++;
+    _runningActions++;
     unawaited(() async {
-      final report = await ex.execute(text, id: id);
+      final DelegationReport report;
+      try {
+        report = await ex.execute(text, id: id);
+      } finally {
+        _runningActions--;
+      }
       if (_closed) return;
       _send({
         'type': 'delegation.context.append',
@@ -763,6 +835,7 @@ class LiveWebRtcBackend extends VoiceBackend implements ManagedAudioBackend, Liv
         ],
       });
       debugPrint('live delegation "$text": ${report.timingSummary()}');
+      _settleLater();
       _awaitingSpeech[id] = (report, sw);
       // Report even if the model never speaks.
       Timer(const Duration(seconds: 12), () => _reportDelegation(id));
@@ -827,14 +900,22 @@ class LiveWebRtcBackend extends VoiceBackend implements ManagedAudioBackend, Liv
     final ex = _executor;
     // Typed text never starts a delegation on gpt-live, so action requests
     // are carried out here and the model only voices the real outcome.
-    if (ex != null && looksLikeAction(t)) {
+    if (ex != null && (looksLikeAction(t) || _asksAboutContextImages(t))) {
       _runTypedAction(t, ex);
       return;
     }
     // No user-text item on this transport. Context without a channel makes
     // the model answer (the 'developer' channel is read silently; §3.2).
     _appendContext('The user typed (instead of speaking): $t');
+    _settleLater();
   }
+
+  /// "what do you see?" with the camera on, "what's in this image" with
+  /// media open: only the delegation model can look, so it answers.
+  bool _asksAboutContextImages(String t) =>
+      isMediaQuestion(t) ||
+      cameraCommand(t) != null ||
+      (_contextImages.containsKey('camera') && DelegationExecutor.needsScreen(t));
 
   void _appendContext(String text) => _send({
     'type': 'session.context.append',
@@ -845,12 +926,14 @@ class LiveWebRtcBackend extends VoiceBackend implements ManagedAudioBackend, Liv
 
   void _runTypedAction(String text, DelegationExecutor ex) {
     _pendingDelegations++;
+    _runningActions++;
     unawaited(() async {
       final DelegationReport report;
       try {
         report = await ex.execute(text, id: 'typed_${++_toolSeq}');
       } finally {
         _pendingDelegations--;
+        _runningActions--;
       }
       if (_closed) return;
       debugPrint('live typed action "$text": ${report.timingSummary()}');
@@ -859,6 +942,7 @@ class LiveWebRtcBackend extends VoiceBackend implements ManagedAudioBackend, Liv
         'Tell the user the outcome in one short sentence, exactly as reported; if it failed or was not done, '
         'say so plainly. Do not start another action for this request.',
       );
+      _settleLater();
       if (!_delegations.isClosed) _delegations.add(report);
     }());
   }

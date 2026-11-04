@@ -3,9 +3,11 @@ import 'dart:io';
 import '../core/auth/pkce_login.dart';
 import 'app_paths.dart';
 import 'audio_io.dart';
+import 'camera.dart';
 import 'files.dart';
 import 'input_control.dart';
 import 'linux/linux_platform.dart';
+import 'media_grab.dart';
 import 'media_viewer.dart';
 import 'screen_capture.dart';
 import 'shell.dart';
@@ -28,7 +30,9 @@ class PlatformServices {
     this.autoScreenshot = _always,
     this.deviceNote = '',
     this.isMobile = false,
-  });
+    CameraService? camera,
+    this.mediaGrab = const NoMediaGrabber(),
+  }) : _camera = camera; // ignore: prefer_initializing_formals
 
   final AppPaths paths;
   final AudioIO audio;
@@ -53,6 +57,14 @@ class PlatformServices {
 
   /// Phone/tablet: no sub-windows, touch targets, single-pane layout.
   final bool isMobile;
+
+  /// Camera ("open camera"); a no-camera stub where none is wired.
+  CameraService get camera => _camera ?? (_noCamera ??= NoCameraService());
+  final CameraService? _camera;
+  static NoCameraService? _noCamera;
+
+  /// Video frame / audio clip extraction for media context.
+  final MediaGrabber mediaGrab;
 
   /// Desktop platforms. Android needs async setup:
   /// `createAndroidPlatform()` (platform/android/android_platform.dart).

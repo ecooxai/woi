@@ -159,6 +159,11 @@ abstract class VoiceBackend {
   /// How [ContextManager] measures this backend's context.
   ContextAccounting get contextAccounting => ContextAccounting.usage;
 
+  /// Work in flight that will still produce events (a response being
+  /// generated, a delegation or tool running). While true the pipeline keeps
+  /// showing "Thinking…" however long it takes.
+  bool get busy => false;
+
   Future<void> connect(SessionConfig config);
 
   /// Continuous microphone audio, PCM16 24 kHz mono.

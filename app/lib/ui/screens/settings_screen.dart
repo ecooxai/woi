@@ -561,6 +561,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
       controlWidth: 340,
     ),
+    _choices<bool>(
+      wide,
+      id: 'camera-screenshot',
+      title: 'Camera and screenshots',
+      desc: 'While the camera is on, a camera frame goes with every turn.',
+      options: const [false, true],
+      value: _s.cameraReplacesScreenshot,
+      label: (v) => v ? 'Camera replaces the screenshot' : 'Camera adds to the screenshot',
+      hint: (v) => v ? 'Only the camera frame is sent' : 'Both the screen and the camera frame are sent',
+      onChanged: (v) => _apply(_s.copyWith(cameraReplacesScreenshot: v)),
+    ),
     _row(
       wide,
       'Thinking chime',

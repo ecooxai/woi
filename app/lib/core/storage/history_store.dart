@@ -122,8 +122,8 @@ class HistoryStore {
     return AudioClip(path: path, durationMs: pcmDurationMs(pcm16.length));
   }
 
-  Future<String> saveImage(String messageId, Uint8List png) async {
-    final path = p.join(paths.imagesDir, '$messageId.png');
+  Future<String> saveImage(String messageId, Uint8List png, {String ext = 'png'}) async {
+    final path = p.join(paths.imagesDir, '$messageId.$ext');
     await File(path).parent.create(recursive: true);
     await File(path).writeAsBytes(png, flush: true);
     return path;

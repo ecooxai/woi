@@ -10,6 +10,10 @@ void main() {
     expect(voiceModeFor(AssistantPhase.idle, status: SessionStatus.connecting), VoiceMode.connecting);
     expect(voiceModeFor(AssistantPhase.listening, status: SessionStatus.error), VoiceMode.offline);
     expect(voiceModeFor(AssistantPhase.listening), VoiceMode.listening);
+    expect(voiceModeFor(AssistantPhase.offline, status: SessionStatus.connecting, reconnecting: true), VoiceMode.reconnecting);
+    expect(voiceModeFor(AssistantPhase.offline, status: SessionStatus.error, reconnecting: true), VoiceMode.reconnecting);
+    expect(voiceModeFor(AssistantPhase.listening, reconnecting: true), VoiceMode.listening);
+    expect(voiceModeLabel(VoiceMode.reconnecting), 'Reconnecting…');
     expect(voiceModeFor(AssistantPhase.userSpeaking), VoiceMode.hearing);
     expect(voiceModeFor(AssistantPhase.toolRunning), VoiceMode.tool);
     expect(voiceModeFor(AssistantPhase.idle, compacting: true), VoiceMode.compacting);
@@ -21,7 +25,7 @@ void main() {
 
   test('only busy modes animate; idle and offline are still', () {
     for (final m in VoiceMode.values) {
-      final busy = {VoiceMode.connecting, VoiceMode.thinking, VoiceMode.tool, VoiceMode.compacting}.contains(m);
+      final busy = {VoiceMode.connecting, VoiceMode.reconnecting, VoiceMode.thinking, VoiceMode.tool, VoiceMode.compacting}.contains(m);
       expect(voiceModeAnimates(m), busy, reason: '$m');
     }
     expect(voiceModeShowsLevel(VoiceMode.hearing), isTrue);

@@ -9,11 +9,18 @@ import '../theme.dart';
 
 /// What the voice side of Woi is doing. A superset of [AssistantPhase]: it
 /// also covers the connection lifecycle and background context compaction.
-enum VoiceMode { offline, connecting, idle, listening, hearing, thinking, speaking, tool, compacting }
+enum VoiceMode { offline, connecting, reconnecting, idle, listening, hearing, thinking, speaking, tool, compacting }
 
 /// Maps pipeline state to a voice mode. Compaction is shown only while idle
 /// or listening, so it never hides speech, thinking or tool feedback.
-VoiceMode voiceModeFor(AssistantPhase phase, {SessionStatus status = SessionStatus.connected, bool compacting = false}) {
+VoiceMode voiceModeFor(
+  AssistantPhase phase, {
+  SessionStatus status = SessionStatus.connected,
+  bool compacting = false,
+  bool reconnecting = false,
+}) {
+  // Automatic reconnect after a drop: shown between attempts too.
+  if (reconnecting && status != SessionStatus.connected) return VoiceMode.reconnecting;
   if (status == SessionStatus.connecting) return VoiceMode.connecting;
   if (status != SessionStatus.connected) return VoiceMode.offline;
   if (compacting && (phase == AssistantPhase.idle || phase == AssistantPhase.listening)) {
@@ -33,6 +40,7 @@ VoiceMode voiceModeFor(AssistantPhase phase, {SessionStatus status = SessionStat
 String voiceModeLabel(VoiceMode m) => switch (m) {
   VoiceMode.offline => 'Offline',
   VoiceMode.connecting => 'Connecting…',
+  VoiceMode.reconnecting => 'Reconnecting…',
   VoiceMode.idle => 'Mic muted',
   VoiceMode.listening => 'Listening',
   VoiceMode.hearing => 'Hearing you…',
@@ -45,6 +53,7 @@ String voiceModeLabel(VoiceMode m) => switch (m) {
 Color voiceModeColor(VoiceMode m) => switch (m) {
   VoiceMode.offline => WoiColors.textFaint,
   VoiceMode.connecting => WoiColors.textDim,
+  VoiceMode.reconnecting => WoiColors.amber,
   VoiceMode.idle => WoiColors.textFaint,
   VoiceMode.listening || VoiceMode.hearing => WoiColors.cyan,
   VoiceMode.thinking => WoiColors.violet,
@@ -61,6 +70,7 @@ Color phaseColor(AssistantPhase p) => voiceModeColor(voiceModeFor(p));
 /// idle window renders no frames at all.
 bool voiceModeAnimates(VoiceMode m) =>
     m == VoiceMode.connecting ||
+    m == VoiceMode.reconnecting ||
     m == VoiceMode.thinking ||
     m == VoiceMode.tool ||
     m == VoiceMode.compacting;

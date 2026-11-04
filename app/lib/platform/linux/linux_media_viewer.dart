@@ -22,6 +22,29 @@ class LinuxMediaViewer extends MediaViewer {
   /// Window method that forwards a [ViewerCommand] to the viewer engine.
   static const controlMethod = 'control';
 
+  /// Window method returning the viewer's [ViewerState] JSON (null when hidden).
+  static const stateMethod = 'state';
+
+  /// Item shown in the in-app overlay (no window).
+  MediaItem? _overlayItem;
+
+  @override
+  Future<ViewerState?> state() async {
+    final w = _window;
+    if (w != null) {
+      try {
+        return ViewerState.fromJson(await w.invokeMethod<Object?>(stateMethod));
+      } catch (e) {
+        debugPrint('viewer state unavailable: $e');
+        return null;
+      }
+    }
+    final item = _overlayItem;
+    if (item == null) return null;
+    final p = activePlayback;
+    return ViewerState(item: item, position: p?.position, duration: p?.duration, playing: p?.playing ?? false);
+  }
+
   /// The viewer window. Closing it only hides it (see ui/viewer/viewer_window.dart),
   /// so later files reuse it.
   WindowController? _window;
@@ -72,6 +95,7 @@ class LinuxMediaViewer extends MediaViewer {
     if (overlay == null) {
       throw StateError('No viewer surface available');
     }
+    _overlayItem = item;
     await overlay(item);
     return ViewerSurface.overlay;
   }

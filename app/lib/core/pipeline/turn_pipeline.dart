@@ -10,9 +10,11 @@ import '../audio/earcon.dart';
 import '../audio/wav.dart';
 import '../context/context_manager.dart';
 import '../context/image_tiers.dart';
+import '../media/media_context.dart';
 import '../models/message.dart';
 import '../settings/settings.dart';
 import '../storage/history_store.dart';
+import '../voice/context_images.dart';
 import '../voice/context_sync.dart';
 import '../voice/delegation_executor.dart';
 import '../voice/voice_backend.dart';
@@ -43,7 +45,12 @@ class PipelineOptions {
     this.micMode = MicMode.handsFree,
     this.thinkingEarcon = false,
     this.localBargeIn = true,
+    this.cameraReplacesScreenshot = false,
   });
+
+  /// While the camera is on, its frame replaces the turn's screenshot
+  /// instead of being attached next to it.
+  final bool cameraReplacesScreenshot;
   final bool autoScreenshot;
   final Duration screenshotDelay;
   final int maxScreenshotWidth;
@@ -104,6 +111,14 @@ class TurnPipeline extends ChangeNotifier {
   /// Screenshot tiers (newest full, then ⅕ size, then described).
   final ImageCompactor? imageCompactor;
 
+  /// The camera frame to attach to a user turn; null while the camera is off.
+  ContextImage? Function()? cameraImage;
+
+  /// Runs before a typed turn is sent (media context for "what's in this
+  /// image"). Returns null synchronously when there is nothing to do;
+  /// otherwise the future's text (if any) is what the model receives.
+  Future<String?>? Function(String text)? beforeTypedTurn;
+
   Conversation _conv;
   VoiceBackend? _backend;
   StreamSubscription<BackendEvent>? _eventSub;
@@ -158,6 +173,36 @@ class TurnPipeline extends ChangeNotifier {
   final Set<String> _stopHandled = {};
   Timer? _phaseTicker;
   AssistantPhase _lastPhase = AssistantPhase.offline;
+  // Last sign of life of the turn (backend event, typed text, end of speech,
+  // tool result): "thinking" with nothing in flight settles after a while.
+  DateTime _lastTurnActivity = DateTime.now();
+
+  /// How long "Thinking…" may last with nothing in flight (no tool, no reply,
+  /// backend not busy) before the phase settles back to listening/idle. A
+  /// local fast-path turn whose outcome the model chose not to voice would
+  /// otherwise keep it forever.
+  Duration settleAfter = const Duration(seconds: 10);
+
+  // ---- automatic reconnect (the live connection dropped, e.g. WS 1006)
+  bool _reconnecting = false;
+  int _reconnectAttempt = 0;
+  Timer? _reconnectTimer;
+
+  /// Reconnect attempts after a dropped connection, with exponential backoff
+  /// from [reconnectBaseDelay] (capped at 30 s). Context is restored by
+  /// [connect] (summary + recent turns in the new session config).
+  int maxAutoReconnects = 6;
+  Duration reconnectBaseDelay = const Duration(seconds: 1);
+
+  /// Error codes of a [BackendError] that mean "the connection dropped" (as
+  /// opposed to a configuration or auth problem), so a reconnect may help.
+  static const reconnectableCodes = {'connection_lost', 'reconnect_failed'};
+
+  /// Reconnecting on its own after a drop (the status line says so).
+  bool get reconnecting => _reconnecting;
+
+  /// Number of successful automatic reconnects (diagnostics/tests).
+  int autoReconnects = 0;
 
   /// Counters for diagnostics/tests.
   int bargeIns = 0;
@@ -204,6 +249,24 @@ class TurnPipeline extends ChangeNotifier {
 
   bool _disposed = false;
 
+  void _touchTurn() => _lastTurnActivity = DateTime.now();
+
+  /// Ends a "Thinking…" that nothing will end: no tool running, no reply
+  /// streaming or audible, the user not talking, no reply held back and the
+  /// backend has nothing in flight, for [settleAfter].
+  void _settleIfStale() {
+    if (!_awaitingResponse || _status != SessionStatus.connected) return;
+    if (_toolsRunning > 0 || _userSpeaking || _assistantMsg != null || _assistantAudible || _holding) return;
+    if (_backend?.busy ?? false) {
+      _touchTurn();
+      return;
+    }
+    if (DateTime.now().difference(_lastTurnActivity) < settleAfter) return;
+    debugPrint('phase: no reply after ${settleAfter.inSeconds}s with nothing in flight; settling');
+    _awaitingResponse = false;
+    _changed();
+  }
+
   void _changed() {
     if (_disposed) return;
     _lastPhase = phase;
@@ -218,11 +281,14 @@ class TurnPipeline extends ChangeNotifier {
     await connect();
     await setMicMode(options().micMode);
     _phaseTicker ??= Timer.periodic(const Duration(milliseconds: 120), (_) {
+      _settleIfStale();
       if (phase != _lastPhase) _changed();
     });
   }
 
   Future<void> connect() async {
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
     if (_micManaged) await _closeMic();
     await _disconnectBackend();
     _status = SessionStatus.connecting;
@@ -537,6 +603,13 @@ class TurnPipeline extends ChangeNotifier {
 
   void _onSpeechStarted({String? itemId}) {
     if (_userSpeaking) return;
+    if (_micMode == MicMode.muted) {
+      // The mic is off, so this is not the user (gpt-live opens a server
+      // "user turn" for typed context, noise or echo): no barge-in, no phase
+      // change, no empty bubble.
+      debugPrint('speech start ignored: mic muted');
+      return;
+    }
     _earconTimer?.cancel();
     _earconTimer = null;
     final interrupted = _bargeIn();
@@ -567,7 +640,9 @@ class TurnPipeline extends ChangeNotifier {
     final opts = options();
     _screenshotTimer?.cancel();
     _screenshotTimer = null;
-    if (opts.autoScreenshot && msg.image == null && !_screenshotStarted.contains(msg.id)) {
+    if ((opts.autoScreenshot || cameraImage?.call() != null) &&
+        msg.image == null &&
+        !_screenshotStarted.contains(msg.id)) {
       _screenshotTimer = Timer(opts.screenshotDelay, () {
         _screenshotTimer = null;
         _captureFor(msg);
@@ -604,6 +679,7 @@ class TurnPipeline extends ChangeNotifier {
     debugPrint('user speech stop t=${DateTime.now().millisecondsSinceEpoch}');
     // The orb switches to "thinking" right here, before any server event.
     _awaitingResponse = true;
+    _touchTurn();
     _scheduleThinkingEarcon();
     final msg = _currentUtterance;
     _currentUtterance = null;
@@ -653,6 +729,11 @@ class TurnPipeline extends ChangeNotifier {
 
   Future<void> _captureFor(Message msg) async {
     _screenshotStarted.add(msg.id);
+    final opts = options();
+    final cam = cameraImage?.call();
+    final replace = cam != null && opts.cameraReplacesScreenshot;
+    if (cam != null) attachContextImage(cam, to: replace ? msg : null);
+    if (replace || !opts.autoScreenshot) return;
     try {
       final shot = await screen.capture(maxWidth: options().maxScreenshotWidth);
       await attachScreenshot(shot, note: 'Screen when the user spoke.', to: msg);
@@ -687,6 +768,60 @@ class TurnPipeline extends ChangeNotifier {
     _persistSoon();
     _changed();
     unawaited(compactImages());
+  }
+
+  /// Number of camera/media images sent (diagnostics/tests).
+  int contextImagesSent = 0;
+
+  /// Sends a camera frame or media image to the model (at once, so a turn
+  /// sent right after carries it) and attaches it to [to] or a new system
+  /// message. gpt-live keeps it for delegations ([ContextImageSink]).
+  /// Compaction tiers apply like for screenshots.
+  Message attachContextImage(ContextImage img, {Message? to}) {
+    final target =
+        to ??
+        _addMessage(
+          Message(
+            kind: MessageKind.system,
+            text: img.kind == ContextImageKind.camera ? 'Camera frame' : 'Image from the viewer',
+            meta: {'type': img.kind},
+          ),
+        );
+    target.meta[ContextImageMeta.kind] = img.kind;
+    final Object? b = _backend;
+    if (b is ContextImageSink) {
+      b.setContextImage(img.kind, DelegationImage(png: img.bytes, capturedAt: img.capturedAt, note: img.note));
+    } else {
+      final itemId = _backend?.sendImage(img.bytes, note: img.note);
+      if (itemId != null) target.meta[ImageMeta.serverItem] = itemId;
+    }
+    contextImagesSent++;
+    final conv = _conv;
+    store
+        .saveImage(target.id, img.bytes, ext: img.isJpeg ? 'jpg' : 'png')
+        .then((path) {
+          target.image = ImageAttachment(
+            path: path,
+            width: img.width,
+            height: img.height,
+            originalWidth: img.width,
+            originalHeight: img.height,
+          );
+          if (!identical(conv, _conv) || _disposed) return;
+          context.onConversationChanged();
+          _persistSoon();
+          _changed();
+          unawaited(compactImages());
+        })
+        .catchError((Object e) => debugPrint('saving ${img.kind} image failed: $e'));
+    _changed();
+    return target;
+  }
+
+  /// Forgets the camera frame kept for delegations (camera closed).
+  void clearContextImage(String kind) {
+    final Object? b = _backend;
+    if (b is ContextImageSink) b.setContextImage(kind, null);
   }
 
   /// Lowers screenshot tiers (in the live context where the backend can
@@ -762,7 +897,22 @@ class TurnPipeline extends ChangeNotifier {
       return;
     }
     _awaitingResponse = true;
-    b.sendText(t);
+    _touchTurn();
+    final cam = cameraImage?.call();
+    if (cam != null) attachContextImage(cam);
+    final pre = beforeTypedTurn?.call(t);
+    if (pre == null) {
+      b.sendText(t);
+    } else {
+      pre
+          .then((sent) => sent ?? t, onError: (Object e) {
+            _addSystem('Media context failed: $e', meta: {'type': 'error'});
+            return t;
+          })
+          .then((sent) {
+            if (!_disposed && identical(_backend, b)) b.sendText(sent);
+          });
+    }
     _persistSoon();
     _changed();
   }
@@ -785,6 +935,7 @@ class TurnPipeline extends ChangeNotifier {
   }
 
   void _handle(BackendEvent e) {
+    _touchTurn();
     final assistantSide =
         e is AssistantTranscriptDelta || e is AssistantTranscriptDone || e is AssistantAudioDelta || e is ResponseDone;
     if (assistantSide && !_discardUntilDone) {
@@ -854,7 +1005,12 @@ class TurnPipeline extends ChangeNotifier {
         _runTool(callId, name, argsJson);
       case Usage(:final totalContextTokens):
         context.onUsage(totalContextTokens);
-      case BackendError(:final message, :final fatal):
+      case BackendError(:final message, :final fatal, :final code):
+        if (fatal && reconnectableCodes.contains(code) && maxAutoReconnects > 0) {
+          _addSystem('$message; reconnecting…', meta: {'type': 'reconnect'});
+          _scheduleReconnect(message);
+          return;
+        }
         _addSystem(message, meta: {'type': 'error'});
         if (fatal) {
           _status = SessionStatus.error;
@@ -947,6 +1103,7 @@ class TurnPipeline extends ChangeNotifier {
     info.resultJson = outcome.json;
     info.finishedAt = DateTime.now();
     _toolsRunning--;
+    _touchTurn();
     if (_disposed) return;
     if (identical(b, _backend)) b?.sendToolResult(callId, outcome.json);
     context.onConversationChanged();
@@ -1022,7 +1179,54 @@ class TurnPipeline extends ChangeNotifier {
       store.save(_conv).catchError((Object e) => debugPrint('saving conversation failed: $e'));
 
   /// Stops audio, closes the session and flushes history.
+  // ------------------------------------------------------------ reconnect
+
+  /// The connection dropped: tear the dead session down now (whatever was in
+  /// flight is gone) and connect again after a backoff, without the user
+  /// pressing Retry.
+  void _scheduleReconnect(String why) {
+    if (_disposed) return;
+    _reconnecting = true;
+    _resetTurnState();
+    _status = SessionStatus.connecting;
+    statusDetail = why;
+    final ms = reconnectBaseDelay.inMilliseconds * (1 << _reconnectAttempt.clamp(0, 10));
+    final delay = Duration(milliseconds: ms.clamp(0, 30000));
+    debugPrint('voice connection lost ($why); reconnect #${_reconnectAttempt + 1} in ${delay.inMilliseconds}ms');
+    _reconnectTimer?.cancel();
+    _reconnectTimer = Timer(delay, () => unawaited(_autoReconnect()));
+    _changed();
+  }
+
+  Future<void> _autoReconnect() async {
+    _reconnectTimer = null;
+    if (_disposed || !_reconnecting) return;
+    _reconnectAttempt++;
+    final micMode = _micMode;
+    await connect();
+    if (_disposed) return;
+    if (_status == SessionStatus.connected) {
+      _reconnecting = false;
+      _reconnectAttempt = 0;
+      autoReconnects++;
+      if (micMode != MicMode.muted && _mic == null) await setMicMode(micMode);
+      debugPrint('voice reconnected (context restored)');
+      _addSystem('Reconnected', meta: {'type': 'reconnect'});
+      _changed();
+    } else if (_reconnectAttempt < maxAutoReconnects) {
+      _scheduleReconnect(statusDetail ?? 'connect failed');
+    } else {
+      _reconnecting = false;
+      _reconnectAttempt = 0;
+      _status = SessionStatus.error;
+      _addSystem('Could not reconnect: ${statusDetail ?? 'unknown error'}', meta: {'type': 'error'});
+      _changed();
+    }
+  }
+
   Future<void> shutdown() async {
+    _reconnectTimer?.cancel();
+    _reconnecting = false;
     _phaseTicker?.cancel();
     _screenshotTimer?.cancel();
     await _compactionSub?.cancel();
