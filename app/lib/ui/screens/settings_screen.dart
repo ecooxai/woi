@@ -13,6 +13,7 @@ import '../theme.dart';
 import '../widgets/context_meter.dart';
 import '../widgets/empty_state.dart' show KeyCap;
 import '../widgets/glass.dart';
+import '../widgets/usage_meter.dart';
 
 /// Choices for the background models (a custom model id is also accepted).
 const kCompressionModels = ['gpt-6-luna', 'gpt-6.1-sol'];
@@ -471,6 +472,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   ];
 
   List<Widget> _context(bool wide) => [
+    _row(
+      wide,
+      'ChatGPT usage',
+      'Your plan\'s 5-hour and weekly limits. Below ${_s.usageGuardPercent}% left in either, delegation and '
+          'compaction use gpt-6-luna.',
+      CodexUsageMeter(controller: widget.controller),
+      controlWidth: 340,
+    ),
     _row(
       wide,
       'Compaction threshold',

@@ -108,6 +108,7 @@ class AppSettings {
     this.cameraReplacesScreenshot = false,
     this.fallbackToDirectOnLimit = false,
     this.echoCancellation = true,
+    this.usageGuardPercent = 20,
   });
 
   final BackendMode backendMode;
@@ -170,6 +171,10 @@ class AppSettings {
   /// microphone: PipeWire WebRTC echo canceller on Linux, the platform
   /// AEC/NS/AGC on Android, libwebrtc's AEC for gpt-live.
   final bool echoCancellation;
+  /// When either Codex usage window (5 h, week) has less than this many
+  /// percent remaining, delegation and compaction use gpt-6-luna even if a
+  /// more expensive model is selected. 0 = off.
+  final int usageGuardPercent;
 
   /// The voice used by the current backend mode.
   String get activeVoice => backendMode == BackendMode.gptLive ? liveVoice : voice;
@@ -205,6 +210,7 @@ class AppSettings {
     bool? cameraReplacesScreenshot,
     bool? echoCancellation,
     bool? fallbackToDirectOnLimit,
+    int? usageGuardPercent,
   }) => AppSettings(
     backendMode: backendMode ?? this.backendMode,
     apiKey: apiKey ?? this.apiKey,
@@ -231,6 +237,7 @@ class AppSettings {
     cameraReplacesScreenshot: cameraReplacesScreenshot ?? this.cameraReplacesScreenshot,
     fallbackToDirectOnLimit: fallbackToDirectOnLimit ?? this.fallbackToDirectOnLimit,
     echoCancellation: echoCancellation ?? this.echoCancellation,
+    usageGuardPercent: usageGuardPercent ?? this.usageGuardPercent,
   );
 
   /// Whether a change requires reconnecting the live session.
@@ -268,6 +275,7 @@ class AppSettings {
     'cameraReplacesScreenshot': cameraReplacesScreenshot,
     'fallbackToDirectOnLimit': fallbackToDirectOnLimit,
     'echoCancellation': echoCancellation,
+    'usageGuardPercent': usageGuardPercent,
   };
 
   factory AppSettings.fromJson(Map<String, Object?> j) {
@@ -310,6 +318,7 @@ class AppSettings {
       cameraReplacesScreenshot: b('cameraReplacesScreenshot', d.cameraReplacesScreenshot),
       fallbackToDirectOnLimit: b('fallbackToDirectOnLimit', d.fallbackToDirectOnLimit),
       echoCancellation: b('echoCancellation', d.echoCancellation),
+      usageGuardPercent: i('usageGuardPercent', d.usageGuardPercent).clamp(0, 100),
     );
   }
 }

@@ -38,6 +38,8 @@ import 'responses/responses_client.dart';
 import 'settings/settings.dart';
 import 'storage/history_store.dart';
 import 'terminal/terminal_hub.dart';
+import 'usage/codex_usage.dart';
+import 'usage/model_guard.dart';
 import 'util/usage_limit.dart';
 import 'voice/backend_factory.dart';
 import 'voice/pinned_context.dart';
@@ -114,7 +116,9 @@ class AppController extends ChangeNotifier {
     Compressor? compressor,
     DelegateBackend? delegate,
     CodexAuthManager? authManager,
-  }) : _backendOverride = backendFactory,
+    CodexUsage? usage,
+  }) : _usageOverride = usage,
+       _backendOverride = backendFactory,
        _compressorOverride = compressor,
        _delegateOverride = delegate,
        authManager = authManager ?? CodexAuthManager(path: platform.authPath);
@@ -124,6 +128,7 @@ class AppController extends ChangeNotifier {
   final VoiceBackend Function()? _backendOverride;
   final Compressor? _compressorOverride;
   final DelegateBackend? _delegateOverride;
+  final CodexUsage? _usageOverride;
 
   /// Codex login (~/.codex/auth.json) with refresh-near-expiry.
   final CodexAuthManager authManager;
@@ -131,14 +136,80 @@ class AppController extends ChangeNotifier {
   /// Responses API (compression + delegation) with the current credentials.
   late final ResponsesClient responses = ResponsesClient(credentials: credentials);
   late final Compressor compressor = _compressorOverride ?? ResponsesCompressor(responses);
-  late final DelegateBackend delegate =
-      _delegateOverride ??
-      ResponsesDelegate(
-        responses,
-        tools: () => tools,
-        latestScreenshot: () => toolEnv.lastScreenshot?.png,
-        environment: environmentNote,
-      );
+  late final DelegateBackend delegate = GuardedDelegate(
+    _delegateOverride ??
+        ResponsesDelegate(
+          responses,
+          tools: () => tools,
+          latestScreenshot: () => toolEnv.lastScreenshot?.png,
+          environment: environmentNote,
+        ),
+    _guard,
+    onChoice: (c) {
+      if (c.downgraded) debugPrint('delegation: ${c.reason}');
+    },
+  );
+
+  /// ChatGPT/Codex rate-limit windows (5 h + week), from response headers
+  /// and the usage endpoint (at launch, then every 10 min while active).
+  late final CodexUsage usage = _usageOverride ?? CodexUsage(credentials: credentials);
+
+  ModelChoice _guard(String selected) =>
+      guardModel(selected, usage.snapshot, thresholdPercent: _settings.usageGuardPercent);
+
+  /// The model compaction (and screenshot descriptions) actually use, with
+  /// the reason when the usage guard overrides the selected one.
+  ModelChoice get compactionChoice => _guard(_settings.compressionModel);
+
+  /// The model `delegate_task` actually uses (see [compactionChoice]).
+  ModelChoice get delegationChoice => _guard(_settings.delegateModel);
+
+  /// The usage window that is below the guard threshold, if any.
+  (String, UsageWindow)? get lowUsage => usage.snapshot?.lowWindow(_settings.usageGuardPercent);
+
+  bool _usageLowNoticed = false;
+
+  void _onUsageChanged() {
+    if (!_ready) return;
+    contextManager.compressionModel = compactionChoice.model;
+    final low = lowUsage;
+    if (low == null) {
+      _usageLowNoticed = false;
+    } else if (!_usageLowNoticed) {
+      // Once per low period (again after the window resets and drops again).
+      _usageLowNoticed = true;
+      final n = usageLowNotice(low.$1, low.$2);
+      debugPrint(n);
+      pipeline.notice(n);
+    }
+    notifyListeners();
+  }
+
+  /// "ChatGPT usage low: 5h window 12% left (resets Thu 5 Nov 14:31). ..."
+  String usageLowNotice(String label, UsageWindow w) {
+    final r = w.resetsAt;
+    final models = [
+      if (compactionChoice.downgraded || delegationChoice.downgraded) 'delegation and compaction now use $kCheapModel',
+      if (activeBackendMode == BackendMode.gptLive) 'gpt-live voice uses the same quota',
+    ];
+    return 'ChatGPT usage low: $label window ${w.remainingPercent.round()}% left'
+        '${r == null ? '' : ' (resets ${UsageLimit.formatReset(r)})'}'
+        '${models.isEmpty ? '.' : '. ${_cap(models.join('; '))}.'}';
+  }
+
+  static String _cap(String s) => s.isEmpty ? s : '${s[0].toUpperCase()}${s.substring(1)}';
+
+  /// Polls the usage endpoint only while it can answer and the app is in use.
+  void _syncUsagePolling() {
+    usage.setActive(
+      _ready &&
+          !_inBackground &&
+          !_windowHidden &&
+          !_needsLogin &&
+          _settings.authMode == AuthMode.codex &&
+          (codexAuth?.isAvailable ?? false),
+    );
+  }
 
   /// Real user name, \$HOME and workspace dir for model prompts.
   String environmentNote() {
@@ -220,6 +291,7 @@ class AppController extends ChangeNotifier {
     if (_settings.backendMode != BackendMode.gptLive || activeBackendMode != BackendMode.gptLive) return false;
     _liveLimit = limit;
     _liveLimitSeen = DateTime.now();
+    usage.onUsageLimit(limit);
     debugPrint('gpt-live: ${limit.message}; fallback to Direct ${_settings.fallbackToDirectOnLimit ? 'on' : 'off'}');
     return _settings.fallbackToDirectOnLimit;
   }
@@ -281,7 +353,7 @@ class AppController extends ChangeNotifier {
       contextManager = ContextManager(
         compressor: compressor,
         threshold: _settings.compressionThreshold,
-        compressionModel: _settings.compressionModel,
+        compressionModel: compactionChoice.model,
         imageTokenCost: _settings.imageTokenCost,
       );
       contextManager.pinnedTokens = pinnedNoteTokens(notes.text);
@@ -323,7 +395,7 @@ class AppController extends ChangeNotifier {
         localCommand: _localCommand,
         imageCompactor: ImageCompactor(
           downscale: uiDownscale,
-          describe: responsesDescriber(responses, model: () => _settings.compressionModel),
+          describe: responsesDescriber(responses, model: () => compactionChoice.model),
           save: history.saveImage,
         ),
       );
@@ -333,6 +405,9 @@ class AppController extends ChangeNotifier {
         ..onUsageLimit = _onUsageLimit;
       pipeline = p;
       _ready = true;
+      ResponsesClient.onQuotaHeaders = usage.updateFromHeaders;
+      usage.addListener(_onUsageChanged);
+      _syncUsagePolling();
       notifyListeners();
       // Without credentials the voice session cannot connect: wait for the
       // login screen.
@@ -385,6 +460,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> _afterLogin(AppSettings next) async {
+    _syncUsagePolling();
     notifyListeners();
     if (!_pipelineStarted) {
       _settings = next;
@@ -477,9 +553,11 @@ class AppController extends ChangeNotifier {
     _settings = next;
     contextManager
       ..threshold = next.compressionThreshold
-      ..compressionModel = next.compressionModel
+      ..compressionModel = compactionChoice.model
       ..imageTokenCost = next.imageTokenCost;
     if (next.workspaceDir != prev.workspaceDir) _applyWorkspace();
+    _syncUsagePolling();
+    if (next.usageGuardPercent != prev.usageGuardPercent) _usageLowNoticed = false;
     notifyListeners();
     await _settingsStore.save(next);
     if (next.echoCancellation != prev.echoCancellation) await _applyEchoCancellation(prev);
@@ -513,6 +591,7 @@ class AppController extends ChangeNotifier {
 
   Future<void> refreshCodexAuth() async {
     codexAuth = await CodexAuthInfo.load(path: authManager.path);
+    _syncUsagePolling();
     notifyListeners();
   }
 
@@ -687,6 +766,9 @@ class AppController extends ChangeNotifier {
   // ------------------------------------------------------------- lifecycle
 
   bool _inBackground = false;
+
+  /// Desktop window hidden/minimized (only pauses the usage polling).
+  bool _windowHidden = false;
   Timer? _backgroundTimer;
 
   /// How long a phone app may sit in the background, muted or offline,
@@ -699,17 +781,25 @@ class AppController extends ChangeNotifier {
   /// after [backgroundSuspendDelay]. A hands-free session keeps listening
   /// (the foreground service). Resumed: a suspended session reconnects.
   void onLifecycle(AppLifecycleState state) {
-    if (!_ready || !platform.isMobile) return;
+    if (!_ready) return;
+    if (!platform.isMobile) {
+      // Desktop: only the usage polling pauses while the window is hidden.
+      _windowHidden = state == AppLifecycleState.hidden || state == AppLifecycleState.paused;
+      _syncUsagePolling();
+      return;
+    }
     switch (state) {
       case AppLifecycleState.paused:
       case AppLifecycleState.hidden:
       case AppLifecycleState.detached:
         if (_inBackground) return;
         _inBackground = true;
+        _syncUsagePolling();
         if (cameraOn) unawaited(setCamera(false));
         _scheduleBackgroundSuspend();
       case AppLifecycleState.resumed:
         _inBackground = false;
+        _syncUsagePolling();
         _backgroundTimer?.cancel();
         _backgroundTimer = null;
         if (pipeline.suspended && !_needsLogin) unawaited(pipeline.resume());
@@ -753,6 +843,8 @@ class AppController extends ChangeNotifier {
   Future<void> shutdown() async {
     _backgroundTimer?.cancel();
     _assistantTimer?.cancel();
+    usage.setActive(false);
+    if (ResponsesClient.onQuotaHeaders == usage.updateFromHeaders) ResponsesClient.onQuotaHeaders = null;
     await camera.close();
     await notes.flush();
     if (_ready) await pipeline.shutdown();
