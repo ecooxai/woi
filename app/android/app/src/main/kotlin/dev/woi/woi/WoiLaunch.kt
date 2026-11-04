@@ -43,7 +43,7 @@ object WoiLaunch {
         }
     }
 
-    /** Full width, the bottom [HEIGHT] of the display. */
+    /** Full width, the top [HEIGHT] of the display, anchored at (0, 0). */
     fun bounds(ctx: Context): Rect {
         val wm = ctx.getSystemService(WindowManager::class.java)
         val full = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -54,8 +54,7 @@ object WoiLaunch {
             wm.defaultDisplay.getRealSize(p)
             Rect(0, 0, p.x, p.y)
         }
-        val top = full.bottom - (full.height() * HEIGHT).toInt()
-        return Rect(full.left, top, full.right, full.bottom)
+        return Rect(full.left, full.top, full.right, full.top + (full.height() * HEIGHT).toInt())
     }
 
     /** Options for a freeform start, or null where freeform isn't available. */
