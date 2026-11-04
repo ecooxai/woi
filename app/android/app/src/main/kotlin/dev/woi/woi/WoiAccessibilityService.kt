@@ -58,13 +58,14 @@ class WoiAccessibilityService : AccessibilityService() {
     }
 
     /** Sends Woi to the back (if in front) and waits for the app below. */
-    private fun leaveWoi(then: () -> Unit) {
+    private fun leaveWoi(settleMs: Long = 150, then: () -> Unit) {
         if (!woiInFront()) return then()
         WoiBridge.activity?.moveTaskToBack(true)
         val start = System.currentTimeMillis()
         fun poll() {
             if (!woiInFront() || System.currentTimeMillis() - start > 1200) {
-                WoiBridge.main.postDelayed(then, 150)
+                android.util.Log.i(WoiBridge.TAG, "left Woi in ${System.currentTimeMillis() - start} ms; front=${rootInActiveWindow?.packageName}")
+                WoiBridge.main.postDelayed(then, settleMs)
             } else {
                 WoiBridge.main.postDelayed(::poll, 50)
             }
@@ -150,7 +151,9 @@ class WoiAccessibilityService : AccessibilityService() {
             "quick_settings" -> GLOBAL_ACTION_QUICK_SETTINGS
             else -> throw IllegalArgumentException("unknown global action $name")
         }
-        return performGlobalAction(action)
+        val ok = performGlobalAction(action)
+        android.util.Log.i(WoiBridge.TAG, "global $name -> $ok (front=${rootInActiveWindow?.packageName})")
+        return ok
     }
 
     private fun screenshot(maxWidth: Int, result: MethodChannel.Result) {
@@ -185,7 +188,7 @@ class WoiAccessibilityService : AccessibilityService() {
                 "click", "doubleClick" -> {
                     val x = (call.argument<Number>("x") ?: 0).toFloat()
                     val y = (call.argument<Number>("y") ?: 0).toFloat()
-                    s.leaveWoi { s.tap(x, y, if (call.method == "doubleClick") 2 else 1, result) }
+                    s.leaveWoi(350) { s.tap(x, y, if (call.method == "doubleClick") 2 else 1, result) }
                 }
                 "typeText" -> s.leaveWoi {
                     try { result.success(s.typeText(call.argument<String>("text") ?: "")) } catch (e: Exception) {
@@ -194,7 +197,9 @@ class WoiAccessibilityService : AccessibilityService() {
                 }
                 "global" -> {
                     val name = call.argument<String>("name") ?: ""
-                    s.leaveWoi { result.success(s.global(name)) }
+                    // Global keys sent while the task-switch animation still
+                    // runs can be dropped: let it finish first.
+                    s.leaveWoi(450) { result.success(s.global(name)) }
                 }
                 "node" -> s.leaveWoi {
                     try { result.success(s.nodeAction(call.argument<String>("name") ?: "")) } catch (e: Exception) {
@@ -204,7 +209,12 @@ class WoiAccessibilityService : AccessibilityService() {
                 "focusTarget" -> s.leaveWoi {
                     result.success(mapOf("package" to (s.rootInActiveWindow?.packageName?.toString() ?: s.targetPackage)))
                 }
-                "a11yScreenshot" -> s.screenshot(call.argument<Int>("maxWidth") ?: 1280, result)
+                // The screen of the app the user is working in, not Woi's.
+                "a11yScreenshot" -> if (call.argument<Boolean>("stepAside") != false) {
+                    s.leaveWoi(350) { s.screenshot(call.argument<Int>("maxWidth") ?: 1280, result) }
+                } else {
+                    s.screenshot(call.argument<Int>("maxWidth") ?: 1280, result)
+                }
                 else -> result.notImplemented()
             }
         }
