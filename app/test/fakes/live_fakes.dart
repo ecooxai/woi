@@ -14,10 +14,17 @@ class FakeLiveTransport implements LiveRtcTransport {
   bool speakerEnabled = true;
   bool closed = false;
   final micToggles = <bool>[];
+
+  /// Mic state when the track is created (createOffer): the real transport
+  /// creates the track in the state set by earlier setMicEnabled() calls.
+  bool? micAtOffer;
   final _states = StreamController<String>.broadcast();
 
   @override
-  Future<String> createOffer() async => 'v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n';
+  Future<String> createOffer() async {
+    micAtOffer = micEnabled;
+    return 'v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n';
+  }
   @override
   Future<void> setAnswer(String sdp) async => answer = sdp;
   @override

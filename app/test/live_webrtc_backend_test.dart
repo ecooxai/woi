@@ -433,6 +433,19 @@ void main() {
       await r.dispose();
     });
 
+    test('muted input: no call ever creates its mic track enabled (connect and prepared call)', () async {
+      final r = _Rig();
+      r.backend.setInputEnabled(false);
+      await r.connect();
+      expect(r.rtc.micAtOffer, isFalse, reason: 'Muted mode sends no mic audio while connecting');
+      final res = r.backend.applySummary('Facts: x.', recentTurns: 'User: hi');
+      await res.timeout(const Duration(seconds: 2));
+      expect(r.rtcs, hasLength(2));
+      expect(r.rtc.micAtOffer, isFalse, reason: 'a prepared call must not hear the user');
+      expect(r.rtc.micEnabled, isFalse, reason: 'still muted after the swap');
+      await r.dispose();
+    });
+
     test('a turn during preparation discards the prepared call and retries', () async {
       final r = _Rig();
       await r.connect();

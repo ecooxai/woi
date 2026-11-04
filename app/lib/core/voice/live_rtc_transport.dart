@@ -14,11 +14,13 @@ abstract class LiveRtcTransport {
   /// Applies the SDP answer returned by call creation.
   Future<void> setAnswer(String sdp);
 
-  /// Mutes / unmutes the outgoing mic track (push-to-talk, mute).
+  /// Mutes / unmutes the outgoing mic track (push-to-talk, mute). May be
+  /// called before [createOffer]: the track is then created in that state.
   void setMicEnabled(bool enabled);
 
   /// Mutes / unmutes playback of the assistant's remote audio track
-  /// (local barge-in flush and the stop button).
+  /// (local barge-in flush and the stop button). May be called before
+  /// [createOffer], like [setMicEnabled].
   void setSpeakerEnabled(bool enabled);
 
   /// Peer connection state names (`connected`, `failed`, `closed`, ...).

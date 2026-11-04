@@ -21,6 +21,7 @@ class FlutterLiveRtcTransport implements LiveRtcTransport {
   RTCDataChannel? _dc;
   final List<MediaStreamTrack> _remoteAudio = [];
   bool _speakerEnabled = true;
+  bool _micEnabled = true;
   final _states = StreamController<String>.broadcast();
   String _description = 'flutter_webrtc';
   String? _outputId;
@@ -98,6 +99,9 @@ class FlutterLiveRtcTransport implements LiveRtcTransport {
     });
     _mic = mic;
     for (final t in mic.getAudioTracks()) {
+      // setMicEnabled() may have run before the track existed (a call that is
+      // prepared muted, or Muted mode): the track must never start enabled.
+      t.enabled = _micEnabled;
       await pc.addTrack(t, mic);
     }
     _description =
@@ -133,6 +137,7 @@ class FlutterLiveRtcTransport implements LiveRtcTransport {
 
   @override
   void setMicEnabled(bool enabled) {
+    _micEnabled = enabled;
     for (final t in _mic?.getAudioTracks() ?? const <MediaStreamTrack>[]) {
       t.enabled = enabled;
     }

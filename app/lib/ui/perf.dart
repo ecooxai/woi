@@ -35,6 +35,25 @@ void configureImageCache({int maxBytes = kMainImageCacheBytes, int maxCount = kM
   return (w, h);
 }
 
+/// libmdk video decoders for this session, or null for fvp's default
+/// (hardware first: VAAPI, CUDA, VDPAU, then FFmpeg).
+///
+/// Hardware frames reach the screen through GL interop (VA-API surface ->
+/// EGL image), which needs a direct-rendering X server. Without DRI3
+/// (Xephyr / Xvfb / VNC, software GL) the VAAPI decoder still opens through
+/// the DRM render node but every frame fails to map ("invalid VADisplay",
+/// "map native buffer ... error"), so the video stays black. The runner sets
+/// `WOI_SOFTWARE_GL=1` when the display has no DRI3; then decoding stays on
+/// the CPU (FFmpeg, frames uploaded as plain textures).
+/// `WOI_VIDEO_DECODERS=FFmpeg,dav1d` overrides either way.
+List<String>? videoDecoders([Map<String, String>? env]) {
+  final e = env ?? Platform.environment;
+  final custom = e['WOI_VIDEO_DECODERS']?.split(',').map((d) => d.trim()).where((d) => d.isNotEmpty).toList();
+  if (custom != null && custom.isNotEmpty) return custom;
+  if (e['WOI_SOFTWARE_GL'] == '1' || e['LIBGL_ALWAYS_SOFTWARE'] == '1') return const ['FFmpeg', 'dav1d'];
+  return null;
+}
+
 /// `WOI_FRAME_STATS=1`: logs frame count and build/raster time every 10 s
 /// (perf work in release builds, where DevTools is not available).
 void maybeLogFrameStats(String tag) {
