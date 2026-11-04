@@ -678,6 +678,48 @@ void main() {
       await h.dispose();
     });
 
+    group('deferred server turns (the server did not cut Woi off)', () {
+      Future<Harness> deferredTurn() async {
+        final h = await Harness.create(
+          options: const PipelineOptions(autoScreenshot: false),
+          echoGuard: EchoGuard(nowUs: () => 0),
+        );
+        h.pipeline.deferWindow = const Duration(milliseconds: 200);
+        final b = h.scripted;
+        b.emit(const AssistantTranscriptDelta('Pointer moved. Now I will open the settings for you.'));
+        b.emit(AssistantAudioDelta(voice(3000, amplitude: 8000, f0: 140)));
+        b.emit(const SpeechStarted(itemId: 'u1', deferred: true));
+        return h;
+      }
+
+      test('echo transcript within the window: dropped, Woi never cut and talks on', () async {
+        final h = await deferredTurn();
+        final b = h.scripted;
+        expect(h.pipeline.bargeIns, 0);
+        final written = h.player.written.length;
+        b.emit(AssistantAudioDelta(voice(200, amplitude: 8000, f0: 140)));
+        expect(h.player.written.length, greaterThan(written), reason: 'the reply keeps playing');
+        b.emit(const SpeechStopped(itemId: 'u1'));
+        b.emit(const UserTranscriptDone('Boiner moot.', itemId: 'u1'));
+        expect(h.pipeline.deferredEchoDrops, 1);
+        expect(b.echoDrops.single.$1, 'u1');
+        expect(ofKind(h.conv, MessageKind.user), isEmpty);
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+        expect(h.pipeline.bargeIns, 0);
+        expect(b.accepts, 0);
+        await h.dispose();
+      });
+
+      test('no transcript in time: interrupts (cut + accept)', () async {
+        final h = await deferredTurn();
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+        expect(h.pipeline.bargeIns, 1);
+        expect(h.scripted.accepts, 1);
+        expect(h.scripted.cancels, greaterThan(0));
+        await h.dispose();
+      });
+    });
+
     test('a quick answer right after Woi finished is not echo', () async {
       final h = await Harness.create(
         options: const PipelineOptions(autoScreenshot: false),

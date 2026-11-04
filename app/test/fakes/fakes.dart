@@ -406,6 +406,10 @@ class ScriptedBackend extends VoiceBackend {
     stopAndDrop();
   }
 
+  int accepts = 0;
+  @override
+  void acceptTurn() => accepts++;
+
   @override
   void setReplyHold(bool hold) => holds.add(hold);
   @override

@@ -229,7 +229,15 @@ class TurnPipeline extends ChangeNotifier {
   void _checkDeferred(Message m, {required bool done}) {
     if (!_deferPending || !identical(m, _deferMsg)) return;
     final text = m.text.trim();
-    final said = _echoSuspects[m.id];
+    // The reply Woi is still speaking is not in [_spoken] yet: its words
+    // heard so far are the likeliest echo.
+    final a = _assistantMsg;
+    final cur = a == null || a.text.trim().isEmpty
+        ? null
+        : (_Spoken(a, DateTime.now(), _stretchBytes <= 0 ? 1.0 : (1 - _unheard().length / _stretchBytes).clamp(0.0, 1.0)))
+              .window();
+    final prior = _echoSuspects[m.id];
+    final said = cur == null ? prior : [...?prior, cur];
     if (text.isEmpty) {
       if (done) _dropDeferred(m);
       return;
