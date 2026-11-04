@@ -38,12 +38,27 @@ class HistoryStore {
 
   String _file(String id) => p.join(paths.conversationsDir, '$id.json');
 
-  Future<void> save(Conversation c) async {
+  /// Last write per conversation: saves run one after another (they share
+  /// the tmp file, so overlapping ones failed with "Cannot rename").
+  final Map<String, Future<void>> _writes = {};
+
+  Future<void> save(Conversation c) {
     _pendingSaves.remove(c.id)?.cancel();
-    final f = File(_file(c.id));
+    final json = jsonEncode(c.toJson());
+    final prev = _writes[c.id] ?? Future<void>.value();
+    late final Future<void> next;
+    next = prev.catchError((Object _) {}).then((_) => _write(c.id, json)).whenComplete(() {
+      if (identical(_writes[c.id], next)) _writes.remove(c.id);
+    });
+    _writes[c.id] = next;
+    return next;
+  }
+
+  Future<void> _write(String id, String json) async {
+    final f = File(_file(id));
     await f.parent.create(recursive: true);
     final tmp = File('${f.path}.tmp');
-    await tmp.writeAsString(jsonEncode(c.toJson()), flush: true);
+    await tmp.writeAsString(json, flush: true);
     await tmp.rename(f.path);
   }
 

@@ -206,6 +206,7 @@ class DelegationExecutor {
     this.maxSteps = 4,
     this.freshScreenshotAfter = const Duration(seconds: 20),
     this.maxResultChars = 2400,
+    this.speculativeCapture = true,
     DateTime Function()? now,
   }) : _now = now ?? DateTime.now;
 
@@ -236,6 +237,11 @@ class DelegationExecutor {
   final int maxSteps;
   final Duration freshScreenshotAfter;
   final int maxResultChars;
+
+  /// Capture a screenshot for non-visual requests too (in parallel, so a
+  /// following click maps against it). Off on a phone, where capturing
+  /// sends Woi to the back.
+  final bool speculativeCapture;
   final DateTime Function() _now;
 
   static const instructions =
@@ -596,7 +602,9 @@ class DelegationExecutor {
 
     var shot = latestScreenshot?.call();
     Future<void>? capture;
-    if (hasScreenshotTool && (shot == null || _now().difference(shot.capturedAt) > freshScreenshotAfter)) {
+    // Questions about the open media / camera never need the screen.
+    final mayCapture = !aboutContext && (visual || speculativeCapture);
+    if (mayCapture && hasScreenshotTool && (shot == null || _now().difference(shot.capturedAt) > freshScreenshotAfter)) {
       // No usable screenshot: capture through the app so it is attached to
       // the conversation and click_screen maps coordinates against it. Only
       // visual requests wait for it; the others start the model right away.

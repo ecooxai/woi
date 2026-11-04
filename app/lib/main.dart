@@ -5,13 +5,14 @@ import 'package:flutter/material.dart';
 import 'package:logging/logging.dart';
 
 import 'core/voice/live_register.dart';
+import 'platform/android/android_platform.dart';
 import 'platform/linux/linux_media_viewer.dart';
 import 'platform/media_viewer.dart';
 import 'ui/app.dart';
 import 'ui/perf.dart';
 import 'ui/viewer/viewer_window.dart';
 
-void main(List<String> args) {
+Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
   // In-app video (show_file) through libmdk; registered in every engine,
   // the viewer sub-window included (its plugins are registered by the runner).
@@ -34,5 +35,9 @@ void main(List<String> args) {
   configureImageCache();
   maybeLogFrameStats('main');
   registerGptLive();
+  if (Platform.isAndroid) {
+    runApp(WoiApp(platform: await createAndroidPlatform()));
+    return;
+  }
   runApp(const WoiApp());
 }

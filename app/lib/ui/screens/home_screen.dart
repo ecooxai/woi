@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -21,6 +22,7 @@ import '../widgets/empty_state.dart';
 import '../widgets/glass.dart';
 import '../widgets/message_tile.dart';
 import '../widgets/input_bar.dart';
+import '../widgets/screen_share_button.dart';
 import 'history_drawer.dart';
 import 'settings_screen.dart';
 
@@ -528,6 +530,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ],
           const Spacer(),
+          if (Platform.isAndroid) ScreenShareButton(size: t),
           GlassIconButton(
             key: const ValueKey('open-settings'),
             icon: Icons.settings_outlined,

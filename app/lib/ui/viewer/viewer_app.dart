@@ -15,6 +15,7 @@ import '../widgets/glass.dart';
 import '../notes/markdown_view.dart';
 import '../widgets/image_viewer.dart';
 import 'video_viewer.dart';
+import 'viewer_commands.dart';
 
 /// App shown in a secondary desktop window (desktop_multi_window).
 class ViewerApp extends StatelessWidget {
@@ -585,4 +586,85 @@ Future<void> showMediaOverlay(BuildContext context, MediaItem item, AudioIO audi
       },
     ),
   ).whenComplete(() => viewerFullscreen.value = false);
+}
+
+/// Name of the phone viewer route (to find and pop it).
+const kMediaRouteName = '/viewer';
+
+/// Phones: the viewer as a full-screen route (no sub-windows on Android).
+/// Opening another file replaces the open viewer route.
+Future<void> showMediaRoute(NavigatorState nav, MediaItem item, AudioIO audio, {Widget? footer}) {
+  final route = MaterialPageRoute<void>(
+    settings: const RouteSettings(name: kMediaRouteName),
+    fullscreenDialog: true,
+    builder: (ctx) => MediaRoutePage(item: item, audio: audio, footer: footer),
+  );
+  closeMediaRoute(nav);
+  return nav.push(route).whenComplete(() => viewerFullscreen.value = false);
+}
+
+/// Pops the viewer route if it is on top. Returns whether it was open.
+bool closeMediaRoute(NavigatorState? nav) {
+  if (nav == null) return false;
+  var open = false;
+  nav.popUntil((r) {
+    if (r.settings.name == kMediaRouteName) {
+      open = true;
+      return false;
+    }
+    return true;
+  });
+  if (open) nav.pop();
+  return open;
+}
+
+/// Forwards play/pause/seek from voice to the open video player.
+bool sendViewerCommand(ViewerCommand command, double seconds) {
+  if (!viewerCommands.hasListener) return false;
+  viewerCommands.add((command, seconds));
+  return true;
+}
+
+class MediaRoutePage extends StatelessWidget {
+  const MediaRoutePage({super.key, required this.item, required this.audio, this.footer});
+  final MediaItem item;
+  final AudioIO audio;
+
+  /// Shown under the media (phones: the input bar, so the user can type a
+  /// question about what is open).
+  final Widget? footer;
+
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<bool>(
+    valueListenable: viewerFullscreen,
+    builder: (context, full, body) => Scaffold(
+      backgroundColor: full ? Colors.black : WoiColors.bg1,
+      body: SafeArea(
+        top: !full,
+        bottom: !full,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (!full)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 4, 4),
+                child: ViewerTitle(
+                  item: item,
+                  trailing: IconButton(
+                    tooltip: 'Close',
+                    iconSize: 26,
+                    constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                    onPressed: () => Navigator.maybePop(context),
+                    icon: const Icon(Icons.close),
+                  ),
+                ),
+              ),
+            Expanded(child: body!),
+            if (!full && footer != null) Padding(padding: const EdgeInsets.fromLTRB(8, 4, 8, 8), child: footer),
+          ],
+        ),
+      ),
+    ),
+    child: MediaBody(item: item, audio: audio),
+  );
 }

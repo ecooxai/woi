@@ -38,6 +38,7 @@ class SessionConfig {
     this.recentContext,
     this.environment,
     this.pinnedNote,
+    this.phone = false,
   });
 
   final String model;
@@ -62,6 +63,10 @@ class SessionConfig {
   /// The conversation note, pinned in the context every turn (never
   /// compacted). See [PinnedNoteSync] for how backends keep it current.
   final String? pinnedNote;
+
+  /// Woi runs on a phone: a screenshot there steps Woi aside, so tools must
+  /// not capture the screen speculatively.
+  final bool phone;
 }
 
 /// Events emitted by a [VoiceBackend].

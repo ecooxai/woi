@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 
 import '../core/app_controller.dart';
 import '../core/settings/settings.dart';
+import '../platform/android/android_integration.dart';
+import '../platform/android/android_media_viewer.dart';
 import '../platform/media_viewer.dart';
 import '../platform/platform_services.dart';
 import '../platform/window_attention.dart';
@@ -15,6 +17,7 @@ import 'screens/home_screen.dart';
 import 'theme.dart';
 import 'viewer/viewer_app.dart';
 import 'widgets/glass.dart';
+import 'widgets/input_bar.dart';
 
 /// Root widget of the main window.
 class WoiApp extends StatefulWidget {
@@ -32,19 +35,38 @@ class _WoiAppState extends State<WoiApp> with WidgetsBindingObserver {
   late final PlatformServices _platform = widget.platform ?? PlatformServices.forCurrentPlatform();
   late final AppController _controller = AppController(
     platform: _platform,
-    confirmations: UiConfirmationService(_navigatorKey, onShow: WindowAttention(audio: _platform.audio).request),
+    confirmations: UiConfirmationService(
+      _navigatorKey,
+      onShow: Platform.isAndroid ? null : WindowAttention(audio: _platform.audio).request,
+    ),
   );
+  AndroidIntegration? _android;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _platform.viewer.overlayPresenter = (item) async {
-      final ctx = _navigatorKey.currentContext;
-      if (ctx != null && ctx.mounted) await showMediaOverlay(ctx, item, _platform.audio);
-    };
+    final viewer = _platform.viewer;
+    if (viewer is AndroidMediaViewer) {
+      // Phones: the viewer is a full-screen route.
+      viewer
+        ..overlayPresenter = (item) async {
+          final nav = _navigatorKey.currentState;
+          if (nav != null) {
+            await showMediaRoute(nav, item, _platform.audio, footer: InputBar(controller: _controller, phone: true));
+          }
+        }
+        ..closer = (() => closeMediaRoute(_navigatorKey.currentState))
+        ..commander = sendViewerCommand;
+    } else {
+      viewer.overlayPresenter = (item) async {
+        final ctx = _navigatorKey.currentContext;
+        if (ctx != null && ctx.mounted) await showMediaOverlay(ctx, item, _platform.audio);
+      };
+    }
     _controller.addListener(_syncTheme);
     _controller.init();
+    if (Platform.isAndroid) _android = AndroidIntegration(_controller)..start();
     _debugShowFromEnv();
     _debugCameraFromEnv();
     _frameLogFromEnv();
@@ -129,6 +151,7 @@ class _WoiAppState extends State<WoiApp> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _android?.dispose();
     _controller.removeListener(_syncTheme);
     _controller.shutdown();
     super.dispose();
