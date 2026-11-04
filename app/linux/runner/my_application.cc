@@ -61,6 +61,22 @@ static int woi_x_error(Display* display, XErrorEvent* event) {
                                         : 0;
 }
 
+// Tells the Dart side (WOI_SOFTWARE_GL=1) that this X server has no DRI3,
+// i.e. GL is software-rendered (Xephyr, Xvfb, VNC). libmdk's hardware video
+// decoders cannot hand their frames to GL there (VA-API interop fails and the
+// video stays black), so the app decodes on the CPU instead
+// (videoDecoders() in lib/ui/perf.dart). An explicit value is kept.
+static void detect_software_gl() {
+  if (g_getenv("WOI_SOFTWARE_GL") != nullptr) return;
+  GdkDisplay* display = gdk_display_get_default();
+  if (display == nullptr || !GDK_IS_X11_DISPLAY(display)) return;
+  int opcode = 0, event_base = 0, error_base = 0;
+  if (!XQueryExtension(gdk_x11_display_get_xdisplay(display), "DRI3", &opcode,
+                       &event_base, &error_base)) {
+    g_setenv("WOI_SOFTWARE_GL", "1", TRUE);
+  }
+}
+
 static void install_x_error_handler() {
   GdkDisplay* display = gdk_display_get_default();
   if (display == nullptr || !GDK_IS_X11_DISPLAY(display)) return;
@@ -264,6 +280,9 @@ static void my_application_activate(GApplication* application) {
   hints.min_height = 560;
   gtk_window_set_geometry_hints(window, nullptr, &hints, GDK_HINT_MIN_SIZE);
 
+#ifdef GDK_WINDOWING_X11
+  detect_software_gl();
+#endif
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   fl_dart_project_set_dart_entrypoint_arguments(
       project, self->dart_entrypoint_arguments);
@@ -271,9 +290,9 @@ static void my_application_activate(GApplication* application) {
   // Measured on Mesa llvmpipe (qa/perf_scenarios.sh, 30 s): idle 18% -> 4%
   // CPU, scroll 431% -> 222%; Impeller has no raster cache and its SDF
   // text/shadow shaders are expensive in software GL. The media viewer
-  // windows (created by desktop_multi_window) stay on Impeller: video in a
-  // Skia viewer could not be checked on the llvmpipe test display, where fvp
-  // output is black with either renderer.
+  // windows are created by desktop_multi_window with a default project
+  // (Impeller); video renders there once decoding stays on the CPU without
+  // DRI3 (detect_software_gl).
   if (g_strcmp0(g_getenv("WOI_RENDERER"), "impeller") != 0) {
     fl_dart_project_set_enable_impeller(project, FALSE);
   }
