@@ -35,7 +35,9 @@ class _InputBarState extends State<InputBar> {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: Listenable.merge([c, pipeline, c.camera.active]),
+      // The context manager too: "Compacting memory…" (an animation) must
+      // end when the compaction does, not at the next pipeline change.
+      listenable: Listenable.merge([c, pipeline, c.camera.active, c.contextManager]),
       builder: (context, _) {
         final status = pipeline.status;
         if (status == SessionStatus.connected) _wasConnected = true;

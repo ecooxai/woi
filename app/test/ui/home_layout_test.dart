@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:woi/core/app_controller.dart';
 import 'package:woi/core/auth/auth.dart';
+import 'package:woi/core/context/compressor.dart';
 import 'package:woi/core/models/message.dart';
 import 'package:woi/core/pipeline/turn_pipeline.dart';
 import 'package:woi/core/settings/settings.dart';
@@ -15,10 +18,18 @@ import 'package:woi/ui/theme.dart';
 
 import '../fakes/fakes.dart';
 
+class _GateCompressor implements Compressor {
+  final gate = Completer<CompressionResult>();
+  @override
+  Future<CompressionResult> compress(List<Message> messages, {required String model, String? previousSummary}) =>
+      gate.future;
+}
+
 class _Env {
   late FakePlatform fp;
   late AppController c;
   ScriptedBackend? backend;
+  Compressor? compressor;
 
   Future<void> start(WidgetTester t) async {
     await t.runAsync(() async {
@@ -28,6 +39,7 @@ class _Env {
         confirmations: FakeConfirmations(),
         backendFactory: () => backend = ScriptedBackend(),
         authManager: CodexAuthManager(path: '${fp.root.path}/no-auth.json'),
+        compressor: compressor,
       );
       await c.init();
     });
@@ -165,6 +177,27 @@ void main() {
       await t.sendKeyEvent(LogicalKeyboardKey.escape);
       await t.pump(const Duration(milliseconds: 500));
 
+      await env.stop(t);
+    });
+
+    testWidgets('"Compacting memory…" ends with the compaction (no endless animation)', (t) async {
+      final gated = _GateCompressor();
+      final env = _Env()..compressor = gated;
+      await env.start(t);
+      await _pumpHome(t, env.c, const Size(1400, 900));
+      final conv = env.c.pipeline.conversation;
+      for (var i = 0; i < 6; i++) {
+        conv.add(Message(kind: MessageKind.user, text: 'q' * 800));
+        conv.add(Message(kind: MessageKind.assistant, text: 'a' * 800));
+      }
+      env.c.compactNow();
+      await t.pump(const Duration(milliseconds: 100));
+      expect(env.c.contextManager.compressing, isTrue);
+      expect(find.text('Compacting memory…'), findsOneWidget);
+      gated.gate.completeError(Exception('Responses API error 429: The usage limit has been reached'));
+      await _settle(t);
+      expect(env.c.contextManager.compressing, isFalse);
+      expect(find.text('Compacting memory…'), findsNothing);
       await env.stop(t);
     });
 
