@@ -287,6 +287,32 @@ void main() {
       await r.dispose();
     });
 
+    test('dropEchoTurn: cancels the reply, closes its calls unrun, deletes the user item, no new response', () async {
+      final r = _Rig();
+      await r.connect();
+      r.userTurn('u1', 'Boiner moot.');
+      r.respond('r1');
+      r.done(
+        'r1',
+        output: [
+          {'type': 'function_call', 'call_id': 'c1', 'name': 'run_bash', 'arguments': '{}'},
+        ],
+      );
+      await _pump();
+      expect(r.of<ToolCall>().single.callId, 'c1');
+      r.backend.dropEchoTurn(itemId: 'u1', callIds: ['c1']);
+      final out = r.ws.ofType('conversation.item.create').last['item'] as Map;
+      expect(out['type'], 'function_call_output');
+      expect(out['call_id'], 'c1');
+      expect(out['output'] as String, contains('echo'));
+      expect(r.ws.ofType('conversation.item.delete').single['item_id'], 'u1');
+      expect(r.ws.ofType('response.create'), isEmpty);
+      // The next real turn is answered (the calls no longer block it).
+      r.backend.sendText('hello');
+      expect(r.ws.ofType('response.create'), hasLength(1));
+      await r.dispose();
+    });
+
     test('conversation_already_has_active_response defers and retries', () async {
       final r = _Rig();
       await r.connect();

@@ -398,6 +398,14 @@ class ScriptedBackend extends VoiceBackend {
     cancels++;
   }
 
+  /// dropEchoTurn calls: (user item id, tool call ids).
+  final echoDrops = <(String?, List<String>)>[];
+  @override
+  void dropEchoTurn({String? itemId, List<String> callIds = const []}) {
+    echoDrops.add((itemId, callIds));
+    stopAndDrop();
+  }
+
   @override
   void setReplyHold(bool hold) => holds.add(hold);
   @override

@@ -547,6 +547,33 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
 
   DateTime? _dropResponsesUntil;
 
+  @override
+  void dropEchoTurn({String? itemId, List<String> callIds = const []}) {
+    // The reply to the echo is normally under way (or done) by the time its
+    // transcript is final: cancel it; only a reply not created yet is caught
+    // by the short drop window.
+    final pending = _activeResponseId != null || _responseRequested;
+    cancelResponse();
+    _dropResponsesUntil = pending ? null : DateTime.now().add(const Duration(milliseconds: 1500));
+    if (!_ready) return;
+    for (final c in callIds) {
+      if (!_pendingCalls.remove(c)) continue;
+      _send({
+        'type': 'conversation.item.create',
+        'item': {
+          'type': 'function_call_output',
+          'call_id': c,
+          'output': '{"skipped":"not run: the user turn was Woi\'s own voice heard back (echo)"}',
+        },
+      });
+    }
+    if (itemId != null && _itemById(itemId) != null) _send({'type': 'conversation.item.delete', 'item_id': itemId});
+    echoTurnsDropped++;
+  }
+
+  /// User turns deleted as echo (diagnostics).
+  int echoTurnsDropped = 0;
+
   void _requestResponse() {
     _dropResponsesUntil = null;
     _wantResponse = true;

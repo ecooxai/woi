@@ -23,6 +23,7 @@ import '../voice/delegation_executor.dart';
 import '../voice/voice_backend.dart';
 import 'barge_in.dart';
 import 'echo_guard.dart';
+import 'echo_transcript.dart';
 import 'vad.dart';
 
 enum SessionStatus { disconnected, connecting, connected, error }
@@ -102,6 +103,7 @@ class TurnPipeline extends ChangeNotifier {
     this.imageCompactor,
     this.onTurnStart,
     this.localCommand,
+    this.onSelfTalk,
     @visibleForTesting EchoGuard? echoGuard,
   }) : _conv = conversation,
        _guard = echoGuard ?? EchoGuard() {
@@ -127,6 +129,11 @@ class TurnPipeline extends ChangeNotifier {
   /// an edit preview is pending, typed "undo that"). Returns true when
   /// handled; a spoken one then also drops the model's reply to it.
   bool Function(String text, {required bool typed})? localCommand;
+
+  /// Woi kept hearing itself ([selfTalkLimit] echo turns in a row): pause
+  /// hands-free listening (the app switches the mic setting; without a
+  /// callback the pipeline mutes itself). A notice is added either way.
+  void Function()? onSelfTalk;
 
   /// Screenshot tiers (newest full, then ⅕ size, then described).
   final ImageCompactor? imageCompactor;
@@ -245,6 +252,31 @@ class TurnPipeline extends ChangeNotifier {
   int autoReconnects = 0;
 
   int onsetsResumed = 0;
+
+  /// User turns dropped because the transcript was Woi's own reply heard back.
+  int echoTurnsDropped = 0;
+
+  /// Times hands-free listening was paused for self-talk.
+  int selfTalkBreaks = 0;
+
+  /// Echo turns in a row (within [_selfTalkSpan]) that pause hands-free.
+  static const selfTalkLimit = 3;
+  static const _selfTalkSpan = Duration(seconds: 90);
+  int _echoStreak = 0;
+  DateTime? _lastEchoTurn;
+
+  // Transcript guard: a user turn that starts while Woi is audible (or up to
+  // 2 s after) is held until its transcript shows it is not Woi's own
+  // speech. Message id -> Woi's replies it may be an echo of.
+  final Map<String, List<String>> _echoSuspects = {};
+  final List<_Spoken> _spoken = [];
+  DateTime _echoWindowUntil = DateTime.fromMillisecondsSinceEpoch(0);
+  // What a barge-in cut off (unheard audio), replayed when it was echo.
+  Uint8List? _cutTail;
+  Message? _cutMsg;
+  double _cutHeard = 1;
+  DateTime? _lastOnsetAt;
+  DateTime? _cutAt;
   int bargeIns = 0;
   int localOnsets = 0;
   int stopsHandled = 0;
@@ -534,11 +566,23 @@ class TurnPipeline extends ChangeNotifier {
       _stretchBytes -= _stretch.removeAt(0).length;
     }
     _guard.onPlayback(pcm16);
+    // Echo tail (the guard's window) plus the server VAD's reaction time.
+    _echoWindowUntil = DateTime.now().add(Duration(milliseconds: _guard.queuedMs + 1300));
     _out?.write(pcm16);
   }
 
   /// Local onset: silence Woi now, keep the unheard rest for [_resume].
   void _pause() {
+    final b = _unheard();
+    _stopOut();
+    _paused = b;
+    _pauseTimer = Timer(_onsetConfirmWindow, _resume);
+  }
+
+  /// The written audio the speaker has not played yet.
+  BytesBuilder _unheard() {
+    final paused = _paused;
+    if (paused != null) return BytesBuilder(copy: false)..add(paused.toBytes());
     final unheard = min(_guard.queuedMs * kVoiceBytesPerSecond ~/ 1000, _stretchBytes) & ~1;
     final b = BytesBuilder(copy: false);
     var skip = _stretchBytes - unheard;
@@ -550,9 +594,7 @@ class TurnPipeline extends ChangeNotifier {
       b.add(skip > 0 ? Uint8List.sublistView(c, skip) : c);
       skip = 0;
     }
-    _stopOut();
-    _paused = b;
-    _pauseTimer = Timer(_onsetConfirmWindow, _resume);
+    return b;
   }
 
   /// The onset was not confirmed by the server: play on from where it paused.
@@ -741,6 +783,16 @@ class TurnPipeline extends ChangeNotifier {
     final speaking = _assistantAudible || _assistantMsg != null || _paused != null;
     if (!speaking) return false;
     bargeIns++;
+    final tail = _unheard().takeBytes();
+    _cutTail = tail.isEmpty ? null : tail;
+    _cutMsg = _assistantMsg ?? _spoken.lastOrNull?.message;
+    _cutAt = DateTime.now();
+    // How much of the reply was heard (its text runs ahead of its audio):
+    // where in the text an echo of the cut-off point would be.
+    final heard = _stretchBytes <= 0 ? 1.0 : (1 - tail.length / _stretchBytes).clamp(0.0, 1.0);
+    final last = _spoken.lastOrNull;
+    if (_assistantMsg == null && last != null && identical(last.message, _cutMsg)) last.heard = heard;
+    _cutHeard = heard;
     _stopOut();
     // Also when the response already finished but its audio is still
     // playing: the backend truncates / mutes what was not heard.
@@ -762,6 +814,7 @@ class TurnPipeline extends ChangeNotifier {
   void _localOnset() {
     if (_userSpeaking || !_assistantAudible) return;
     localOnsets++;
+    _lastOnsetAt = DateTime.now();
     _pause();
     debugPrint(
       'barge-in: local onset (lag ${_guard.lagMs} ms, excess rms ${_guard.lastExcessRms.toStringAsFixed(3)}) '
@@ -795,6 +848,7 @@ class TurnPipeline extends ChangeNotifier {
   /// Not "stop" after all: play what was held back.
   void _releaseHold() {
     if (!_holding) return;
+    _cutTail = null;
     _endHold();
     final events = List.of(_held);
     _held.clear();
@@ -818,7 +872,81 @@ class TurnPipeline extends ChangeNotifier {
       if (done || (replyStarted && _micManaged)) _onStopPhrase(m);
       return;
     }
+    final suspect = _echoSuspects[m.id];
+    if (suspect != null) {
+      final said = suspect;
+      if (done) {
+        _echoSuspects.remove(m.id);
+        if (isEchoOf(text, said)) {
+          _onEchoTurn(m);
+          return;
+        }
+      } else if (RegExp(r'\S+').allMatches(text).length < 4 || echoScore(text, said) >= echoThreshold - 0.3) {
+        return; // could still be echo: wait for the final transcript
+      }
+    }
     if (done || !couldBecomeStopPhrase(text)) _releaseHold();
+  }
+
+  /// The "user" turn was Woi's own reply heard back (residual echo the
+  /// server took for speech): no reply, no tool action, no bubble; what the
+  /// echo cut off plays on. Repeated echo pauses hands-free listening.
+  void _onEchoTurn(Message m) {
+    echoTurnsDropped++;
+    final now = DateTime.now();
+    final last = _lastEchoTurn;
+    _echoStreak = last != null && now.difference(last) < _selfTalkSpan ? _echoStreak + 1 : 1;
+    _lastEchoTurn = now;
+    debugPrint('echo turn dropped ("${m.text.trim()}", $_echoStreak in a row)');
+    final calls = [
+      for (final e in _held)
+        if (e is ToolCall) e.callId,
+    ];
+    // Its reply already ended (held): nothing more of it to drop.
+    final replyDone = _held.any((e) => e is ResponseDone);
+    _held.clear();
+    String? itemId;
+    _userByItem.forEach((k, v) {
+      if (identical(v, m)) itemId = k;
+    });
+    _backend?.dropEchoTurn(itemId: itemId, callIds: calls);
+    _endHold();
+    _conv.messages.remove(m);
+    _userByItem.removeWhere((_, v) => identical(v, m));
+    _awaitingTranscript.remove(m);
+    _echoSuspects.remove(m.id);
+    _discardUntilDone = false;
+    _dropUntil = replyDone ? null : now.add(const Duration(seconds: 4));
+    _awaitingResponse = false;
+    final tail = _cutTail, cut = _cutMsg, at = _cutAt;
+    _cutTail = null;
+    if (tail != null && at != null && now.difference(at) < const Duration(seconds: 10) && !_userSpeaking) {
+      if (cut != null) cut.interrupted = false;
+      debugPrint('echo turn: resuming the cut-off reply (${tail.length * 1000 ~/ kVoiceBytesPerSecond} ms)');
+      _play(tail);
+    }
+    if (_echoStreak >= selfTalkLimit) _selfTalkBreak();
+    context.onConversationChanged();
+    _persistSoon();
+    _changed();
+  }
+
+  void _selfTalkBreak() {
+    selfTalkBreaks++;
+    _echoStreak = 0;
+    _lastEchoTurn = null;
+    debugPrint('self-talk: pausing hands-free listening');
+    _addSystem(
+      'Woi kept hearing its own voice, so hands-free listening is paused. '
+      'Turn the mic back on to continue (headphones or push-to-talk avoid this).',
+      meta: {'type': 'self_talk'},
+    );
+    final cb = onSelfTalk;
+    if (cb != null) {
+      cb();
+    } else {
+      unawaited(setMicMode(MicMode.muted));
+    }
   }
 
   /// The user said "stop" / "cancel" / "never mind": handled here, never sent
@@ -827,6 +955,7 @@ class TurnPipeline extends ChangeNotifier {
   void _onStopPhrase(Message m) {
     if (!_stopHandled.add(m.id)) return;
     stopsHandled++;
+    _cutTail = null;
     debugPrint('stop phrase "${m.text.trim()}": stopping locally');
     _held.clear();
     // Drop first: releasing the hold before it un-muted gpt-live for a moment.
@@ -868,6 +997,19 @@ class TurnPipeline extends ChangeNotifier {
     }
     _earconTimer?.cancel();
     _earconTimer = null;
+    final now = DateTime.now();
+    // A turn that may be Woi's echo: it starts while Woi is (about to be)
+    // heard, or just after. With the mic gated, the server only got zeros
+    // while echo was expected, so just after a reply that ended normally
+    // echo can only have leaked through an onset that opened the gate.
+    final onset = _lastOnsetAt;
+    final leaked = _micManaged || (onset != null && now.difference(onset) < const Duration(seconds: 5));
+    final echoLikely =
+        _micMode == MicMode.handsFree &&
+        (_paused != null ||
+            _assistantAudible ||
+            _guard.echoExpected ||
+            (now.isBefore(_echoWindowUntil) && leaked));
     final interrupted = _bargeIn();
     _dropUntil = null;
     _userSpeaking = true;
@@ -892,7 +1034,14 @@ class TurnPipeline extends ChangeNotifier {
     }
     _utterancePcm.add(_preRoll.drain());
     _currentUtterance = msg;
-    if (interrupted || (_holding && _holdMsg == null)) _beginHold(msg);
+    if (echoLikely) {
+      _echoSuspects[msg.id] = [
+        for (final r in _spoken)
+          if (now.difference(r.at) < const Duration(seconds: 20)) r.window(),
+      ];
+      if (_echoSuspects[msg.id]!.isEmpty) _echoSuspects.remove(msg.id);
+    }
+    if (interrupted || _echoSuspects.containsKey(msg.id) || (_holding && _holdMsg == null)) _beginHold(msg);
     final opts = options();
     _screenshotTimer?.cancel();
     _screenshotTimer = null;
@@ -1268,6 +1417,8 @@ class TurnPipeline extends ChangeNotifier {
         } else if (isStopPhrase(m.text) && !_stopHandled.contains(m.id) && _isLatestUser(m)) {
           _onStopPhrase(m);
         }
+        _echoSuspects.remove(m.id);
+        if (_conv.messages.contains(m) && m.text.trim().isNotEmpty) _echoStreak = 0;
         _persistSoon();
         _changed();
       case AssistantTranscriptDelta(:final text):
@@ -1287,6 +1438,10 @@ class TurnPipeline extends ChangeNotifier {
         _play(pcm16);
         _assistantPcm.add(pcm16);
       case ToolCall(:final callId, :final name, :final argsJson):
+        if (_holding && _echoSuspects.containsKey(_holdMsg?.id)) {
+          _held.add(e); // no action before we know the turn was not echo
+          return;
+        }
         _runTool(callId, name, argsJson);
       case Usage(:final totalContextTokens):
         context.onUsage(totalContextTokens);
@@ -1356,6 +1511,10 @@ class TurnPipeline extends ChangeNotifier {
     if (m == null) return;
     m.streaming = false;
     m.interrupted = interrupted;
+    if (m.text.trim().isNotEmpty) {
+      _spoken.add(_Spoken(m, DateTime.now(), interrupted && identical(m, _cutMsg) ? _cutHeard : 1));
+      if (_spoken.length > 4) _spoken.removeAt(0);
+    }
     if (m.text.isEmpty && pcm.isEmpty) {
       _conv.messages.remove(m);
     } else if (pcm.isNotEmpty) {
@@ -1542,5 +1701,21 @@ class TurnPipeline extends ChangeNotifier {
     _levelsChanged.dispose();
     _disposed = true;
     dispose();
+  }
+}
+
+/// A reply Woi spoke, and how much of it was heard before a barge-in.
+class _Spoken {
+  _Spoken(this.message, this.at, this.heard);
+  final Message message;
+  final DateTime at;
+  double heard;
+
+  /// The words an echo of it could be: the last ~15 heard (by text share)
+  /// and a few beyond the estimate.
+  String window() {
+    final words = message.text.trim().split(RegExp(r'\s+'));
+    final end = (words.length * heard).round();
+    return words.sublist(max(0, end - 15), min(words.length, end + 4)).join(' ');
   }
 }

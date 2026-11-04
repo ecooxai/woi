@@ -623,6 +623,138 @@ void main() {
     });
   });
 
+  group('echo turns (transcript guard)', () {
+    /// Woi is replying (audible); the server hears its echo as a user turn
+    /// and replies to it with a tool call.
+    Future<Harness> echoTurn(String heard, {String said = 'Pointer moved. Now I will open the settings for you.'}) async {
+      final h = await Harness.create(
+        options: const PipelineOptions(autoScreenshot: false),
+        echoGuard: EchoGuard(nowUs: () => 0),
+      );
+      final b = h.scripted;
+      b.emit(AssistantTranscriptDelta(said));
+      b.emit(AssistantAudioDelta(voice(3000, amplitude: 8000, f0: 140)));
+      b.emit(const SpeechStarted(itemId: 'u1'));
+      expect(h.pipeline.bargeIns, 1);
+      b.emit(const SpeechStopped(itemId: 'u1'));
+      b.emit(const ResponseDone(cancelled: true)); // the cut reply
+      // The server's reply to the "user" turn: held.
+      b.emit(const AssistantTranscriptDelta('Typing it. '));
+      b.emit(AssistantAudioDelta(voice(400, amplitude: 8000, f0: 150)));
+      b.emit(const ToolCall('c1', 'type_text', '{"text":"hey"}'));
+      b.emit(const ResponseDone());
+      expect(ofKind(h.conv, MessageKind.tool), isEmpty, reason: 'no action before the transcript decides');
+      b.emit(UserTranscriptDone(heard, itemId: 'u1'));
+      return h;
+    }
+
+    test('Woi heard back ("Boiner moot." for "Pointer moved."): no reply, no tool, no bubble; the reply plays on', () async {
+      final h = await echoTurn('Boiner moot.');
+      final b = h.scripted;
+      expect(h.pipeline.echoTurnsDropped, 1);
+      expect(b.echoDrops.single.$1, 'u1');
+      expect(b.echoDrops.single.$2, ['c1']);
+      expect(ofKind(h.conv, MessageKind.user), isEmpty);
+      expect(ofKind(h.conv, MessageKind.tool), isEmpty);
+      expect(h.fp.input.log, isEmpty);
+      final replies = ofKind(h.conv, MessageKind.assistant);
+      expect(replies.map((m) => m.text), ['Pointer moved. Now I will open the settings for you.']);
+      expect(replies.single.interrupted, isFalse);
+      // The unheard rest of the cut reply (all 3 s: the guard clock stands
+      // still) is played again; the reply to the echo never is.
+      expect(h.player.written.length, kVoiceBytesPerSecond * 6);
+      await h.dispose();
+    });
+
+    test('the user talking over Woi: the held reply and its tool call go ahead', () async {
+      final h = await echoTurn('Open the browser please.');
+      expect(h.pipeline.echoTurnsDropped, 0);
+      expect(h.scripted.echoDrops, isEmpty);
+      expect(ofKind(h.conv, MessageKind.user).single.text, 'Open the browser please.');
+      await waitFor(() => h.scripted.toolResults.isNotEmpty);
+      expect(h.fp.input.log, ['type hey']);
+      expect(ofKind(h.conv, MessageKind.assistant).last.text, 'Typing it. ');
+      await h.dispose();
+    });
+
+    test('a quick answer right after Woi finished is not echo', () async {
+      final h = await Harness.create(
+        options: const PipelineOptions(autoScreenshot: false),
+        echoGuard: EchoGuard(nowUs: () => 0),
+      );
+      final b = h.scripted;
+      b.emit(const AssistantTranscriptDelta('Is that right?'));
+      b.emit(AssistantAudioDelta(voice(300, amplitude: 8000, f0: 140)));
+      b.emit(const ResponseDone());
+      h.player.playing = false;
+      b.emit(const SpeechStarted(itemId: 'u2'));
+      b.emit(const SpeechStopped(itemId: 'u2'));
+      b.emit(const AssistantTranscriptDelta('Great.'));
+      b.emit(const ResponseDone());
+      b.emit(const UserTranscriptDone('Yes.', itemId: 'u2'));
+      expect(h.pipeline.echoTurnsDropped, 0);
+      expect(ofKind(h.conv, MessageKind.user).single.text, 'Yes.');
+      expect(ofKind(h.conv, MessageKind.assistant).last.text, 'Great.');
+      await h.dispose();
+    });
+
+    test('three echo turns in a row pause hands-free listening with a notice', () async {
+      final h = await Harness.create(
+        options: const PipelineOptions(autoScreenshot: false),
+        echoGuard: EchoGuard(nowUs: () => 0),
+      );
+      var paused = 0;
+      h.pipeline.onSelfTalk = () => paused++;
+      final b = h.scripted;
+      for (final (i, said, heard) in [
+        (1, 'Tell me what you would like next.', 'Tell me.'),
+        (2, 'Jasne, już otwieram.', 'Jasne.'),
+        (3, 'Pointer moved.', 'Boiner moot.'),
+      ]) {
+        b.emit(AssistantTranscriptDelta(said));
+        b.emit(AssistantAudioDelta(voice(300, amplitude: 8000, f0: 140)));
+        b.emit(const ResponseDone());
+        b.emit(SpeechStarted(itemId: 'u$i'));
+        b.emit(SpeechStopped(itemId: 'u$i'));
+        b.emit(const AssistantTranscriptDelta('Okay.'));
+        b.emit(const ResponseDone());
+        b.emit(UserTranscriptDone(heard, itemId: 'u$i'));
+        expect(h.pipeline.echoTurnsDropped, i);
+        expect(paused, i == 3 ? 1 : 0);
+      }
+      expect(h.pipeline.selfTalkBreaks, 1);
+      expect(ofKind(h.conv, MessageKind.system).last.meta['type'], 'self_talk');
+      expect(ofKind(h.conv, MessageKind.user), isEmpty);
+      await h.dispose();
+    });
+
+    test('a genuine turn resets the self-talk count', () async {
+      final h = await Harness.create(
+        options: const PipelineOptions(autoScreenshot: false),
+        echoGuard: EchoGuard(nowUs: () => 0),
+      );
+      final b = h.scripted;
+      for (final (i, said, heard) in [
+        (1, 'Tell me what you would like next.', 'Tell me.'),
+        (2, 'Jasne, już otwieram.', 'Jasne.'),
+        (3, 'Done.', 'Make it bigger.'),
+        (4, 'Pointer moved.', 'Boiner moot.'),
+      ]) {
+        b.emit(AssistantTranscriptDelta(said));
+        b.emit(AssistantAudioDelta(voice(300, amplitude: 8000, f0: 140)));
+        b.emit(const ResponseDone());
+        b.emit(SpeechStarted(itemId: 'u$i'));
+        b.emit(SpeechStopped(itemId: 'u$i'));
+        b.emit(const AssistantTranscriptDelta('Okay.'));
+        b.emit(const ResponseDone());
+        b.emit(UserTranscriptDone(heard, itemId: 'u$i'));
+      }
+      expect(h.pipeline.echoTurnsDropped, 3);
+      expect(h.pipeline.selfTalkBreaks, 0);
+      await h.dispose();
+    });
+  });
+
   group('tools', () {
     test('tool call round trip: dispatch, card status, result sent back', () async {
       final h = await Harness.create();

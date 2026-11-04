@@ -198,6 +198,12 @@ abstract class VoiceBackend {
   /// acknowledgement, no delegated action).
   void stopAndDrop() => cancelResponse();
 
+  /// A user turn was Woi's own voice heard back (echo): drop the reply to it
+  /// like [stopAndDrop], forget the turn ([itemId], the server's user item)
+  /// and close the tool calls its reply made ([callIds]) without running
+  /// them or asking for another reply.
+  void dropEchoTurn({String? itemId, List<String> callIds = const []}) => stopAndDrop();
+
   /// While held, the next reply must not become audible (the pipeline is
   /// still deciding whether the user's interruption was just "stop").
   /// Backends that play audio themselves implement this; for PCM backends the
