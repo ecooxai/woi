@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:woi/core/app_controller.dart';
@@ -16,6 +17,7 @@ import 'package:woi/ui/screens/home_screen.dart';
 import 'package:woi/ui/screens/settings_screen.dart';
 import 'package:woi/ui/theme.dart';
 import 'package:woi/ui/widgets/tab_strip.dart';
+import 'package:woi/ui/widgets/voice_status.dart';
 
 import '../fakes/fakes.dart';
 
@@ -287,6 +289,23 @@ void main() {
         final strip = find.byType(HomeTabs);
         expect(t.getTopLeft(strip).dx, lessThan(8));
         expect(t.getTopRight(strip).dx, lessThanOrEqualTo(size.width - kTouchTarget));
+        // The status row is readable: the voice state is not ellipsized
+        // (it was "Mi…"), and the longest phone label fits too; the
+        // connection is a dot with the model in its tooltip.
+        final label = find.byKey(const ValueKey('voice-label'));
+        expect(t.renderObject<RenderParagraph>(label).didExceedMaxLines, isFalse);
+        // Room for the indicator and an 11-character label in the 12 px
+        // body font (~100 px; the test font's square glyphs are wider).
+        final left = find.ancestor(of: label, matching: find.byType(Expanded)).first;
+        final chip = find.byKey(const ValueKey('connection-status'));
+        expect(t.getSize(left).width - t.getSize(chip).width, greaterThanOrEqualTo(120), reason: '${size.width} px');
+        for (final m in VoiceMode.values) {
+          expect(voiceModeShortLabel(m).length, lessThanOrEqualTo(11), reason: m.name);
+        }
+        expect(find.textContaining('realtime'), findsNothing);
+        expect(find.textContaining('gpt-live'), findsNothing);
+        final tip = find.ancestor(of: find.byKey(const ValueKey('connection-status')), matching: find.byType(Tooltip));
+        expect(t.widget<Tooltip>(tip.first).message, contains('Model: '));
         // Only the selected tab shows its label.
         expect(find.descendant(of: strip, matching: find.text('Note')), findsOneWidget);
         expect(find.descendant(of: strip, matching: find.text('Chat')), findsNothing);

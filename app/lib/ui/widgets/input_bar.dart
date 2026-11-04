@@ -104,35 +104,41 @@ class _InputBarState extends State<InputBar> {
           ),
         );
 
+        final voiceState = ListenableBuilder(
+          listenable: pipeline.levelSourcesChanged,
+          builder: (context, _) => VoiceStatusIndicator(
+            mode: mode,
+            micLevel: pipeline.micLevel,
+            outputLevel: pipeline.outputLevel,
+            // Between reconnect attempts: still (the label says it).
+            animate: mode == VoiceMode.reconnecting ? !pipeline.reconnectWaiting : null,
+            compact: phone,
+          ),
+        );
+        final link = ConnectionStatusChip(
+          state: linkStateFor(status, wasConnected: _wasConnected, reconnecting: pipeline.reconnecting),
+          model: c.activeVoiceModel,
+          backend: c.activeBackendMode,
+          voice: s.activeVoice,
+          detail: pipeline.statusDetail,
+          onRetry: pipeline.connect,
+          compact: phone,
+        );
         final status_ = Row(
           children: [
-            // Flexible: on 360 px phones the label ellipsizes instead of
-            // overflowing the row.
-            Flexible(
-              child: ListenableBuilder(
-                listenable: pipeline.levelSourcesChanged,
-                builder: (context, _) => VoiceStatusIndicator(
-                  mode: mode,
-                  micLevel: pipeline.micLevel,
-                  outputLevel: pipeline.outputLevel,
-                  // Between reconnect attempts: still (the label says it).
-                  animate: mode == VoiceMode.reconnecting ? !pipeline.reconnectWaiting : null,
-                ),
+            // The voice state and the connection get all the room the
+            // buttons on the right leave (a Spacer here took a third of it:
+            // at 360 px the labels were cut to "Mi…" and "real…"). Phones
+            // show short labels and a dot-only connection chip (details in
+            // its tooltip), so every voice state fits; elsewhere the labels
+            // ellipsize rather than overflow.
+            Expanded(
+              child: Row(
+                children: phone
+                    ? [Flexible(child: voiceState), const SizedBox(width: 2), link]
+                    : [Flexible(child: voiceState), _dot(), Flexible(child: link)],
               ),
             ),
-            _dot(),
-            Flexible(
-              child: ConnectionStatusChip(
-                state: linkStateFor(status, wasConnected: _wasConnected, reconnecting: pipeline.reconnecting),
-                model: c.activeVoiceModel,
-                backend: c.activeBackendMode,
-                voice: s.activeVoice,
-                detail: pipeline.statusDetail,
-                onRetry: pipeline.connect,
-                compact: phone,
-              ),
-            ),
-            const Spacer(),
             CameraToggle(
               on: c.cameraOn,
               busy: c.cameraBusy,
