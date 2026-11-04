@@ -257,6 +257,12 @@ class AppController extends ChangeNotifier {
   Future<void> init() async {
     try {
       _settings = await _settingsStore.load();
+      // Woi listens from launch: a mic muted in the last session comes back
+      // on (push-to-talk stays push-to-talk).
+      if (_settings.micMode == MicMode.muted) {
+        _settings = _settings.copyWith(micMode: MicMode.handsFree);
+        unawaited(_settingsStore.save(_settings));
+      }
       _defaultWorkspace = platform.files.workspaceDir;
       _applyWorkspace();
       await history.init();

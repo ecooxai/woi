@@ -196,10 +196,14 @@ class TurnPipeline extends ChangeNotifier {
   int _reconnectAttempt = 0;
   Timer? _reconnectTimer;
 
-  /// Reconnect attempts after a dropped connection, with exponential backoff
-  /// from [reconnectBaseDelay] (capped at 30 s). Context is restored by
+  /// Reconnect attempts after a dropped or failed connection, with
+  /// exponential backoff from [reconnectBaseDelay] (capped at 30 s). Woi keeps
+  /// trying by default (practically unlimited); context is restored by
   /// [connect] (summary + recent turns in the new session config).
-  int maxAutoReconnects = 6;
+  int maxAutoReconnects = 1 << 30;
+
+  /// A usage limit (429) without a reset time is retried this often.
+  Duration usageLimitRetry = const Duration(minutes: 30);
   Duration reconnectBaseDelay = const Duration(seconds: 1);
 
   /// Error codes of a [BackendError] that mean "the connection dropped" (as
@@ -288,6 +292,36 @@ class TurnPipeline extends ChangeNotifier {
     _levelsChanged.value++;
     _micMode = options().micMode;
     await connect();
+    _retryIfFailed();
+  }
+
+  /// After a failed connect (launch, resume, fatal error): try again on its
+  /// own: with backoff, or once the usage limit resets.
+  void _retryIfFailed() {
+    if (_disposed || _suspended || _status != SessionStatus.error) return;
+    if (usageLimit != null) {
+      _scheduleLimitRetry();
+    } else if (maxAutoReconnects > 0) {
+      _reconnecting = true;
+      _scheduleReconnect(statusDetail ?? 'connect failed', keepStatus: true);
+    }
+  }
+
+  /// One retry when the ChatGPT usage limit resets (no storm meanwhile).
+  void _scheduleLimitRetry() {
+    final at = usageLimit?.resetsAt;
+    var delay = at == null ? usageLimitRetry : at.difference(DateTime.now()) + const Duration(seconds: 5);
+    if (delay < const Duration(minutes: 1)) delay = const Duration(minutes: 1);
+    debugPrint('voice: usage limit; retrying in ${delay.inMinutes} min');
+    _reconnectTimer?.cancel();
+    _reconnecting = false;
+    _reconnectAttempt = 0;
+    _reconnectTimer = Timer(delay, () {
+      _reconnectTimer = null;
+      if (_disposed || _suspended || _status == SessionStatus.connected) return;
+      _reconnecting = true;
+      unawaited(_autoReconnect());
+    });
   }
 
   /// The 120 ms phase poll (audible playback, stale "thinking") only runs
@@ -412,6 +446,7 @@ class TurnPipeline extends ChangeNotifier {
     if (_disposed || !_suspended) return;
     debugPrint('voice: resuming');
     await connect();
+    _retryIfFailed();
   }
 
   void _resetTurnState() {
@@ -1299,12 +1334,16 @@ class TurnPipeline extends ChangeNotifier {
   /// The connection dropped: tear the dead session down now (whatever was in
   /// flight is gone) and connect again after a backoff, without the user
   /// pressing Retry.
-  void _scheduleReconnect(String why) {
+  void _scheduleReconnect(String why, {bool keepStatus = false}) {
     if (_disposed) return;
     _reconnecting = true;
     _resetTurnState();
-    _status = SessionStatus.connecting;
-    statusDetail = why;
+    // A failed connect keeps showing its error (and Retry) until the next
+    // attempt starts.
+    if (!keepStatus) {
+      _status = SessionStatus.connecting;
+      statusDetail = why;
+    }
     final ms = reconnectBaseDelay.inMilliseconds * (1 << _reconnectAttempt.clamp(0, 10));
     final delay = Duration(milliseconds: ms.clamp(0, 30000));
     debugPrint('voice connection lost ($why); reconnect #${_reconnectAttempt + 1} in ${delay.inMilliseconds}ms');
@@ -1330,8 +1369,12 @@ class TurnPipeline extends ChangeNotifier {
       _changed();
     } else if (_suspended) {
       return;
-    } else if (_reconnectAttempt < maxAutoReconnects && usageLimit == null) {
-      // A usage limit (429) does not go away by retrying: no storm.
+    } else if (usageLimit != null) {
+      // A usage limit (429) does not go away by retrying: one retry at reset.
+      _status = SessionStatus.error;
+      _scheduleLimitRetry();
+      _changed();
+    } else if (_reconnectAttempt < maxAutoReconnects) {
       _scheduleReconnect(statusDetail ?? 'connect failed');
     } else {
       _reconnecting = false;

@@ -54,6 +54,7 @@ class Harness {
     Compressor? compressor,
     int threshold = 100000,
     ImageCompactor? Function(HistoryStore store)? images,
+    void Function(TurnPipeline p)? setup,
   }) async {
     final fp = await FakePlatform.create();
     final store = HistoryStore(fp.services.paths);
@@ -88,6 +89,7 @@ class Harness {
       onScreenshotCaptured: (s) => env.lastScreenshot = s,
       imageCompactor: images?.call(store),
     );
+    setup?.call(h.pipeline);
     await h.pipeline.start();
     return h;
   }
@@ -873,6 +875,41 @@ void main() {
       h.scripted.emit(const BackendError('invalid model', code: 'invalid_request', fatal: true));
       expect(h.pipeline.reconnecting, isFalse);
       expect(h.pipeline.status, SessionStatus.error);
+      await h.dispose();
+    });
+  });
+
+  group('auto connect (launch)', () {
+    test('a failed connect at launch keeps retrying until connected; the mic opens', () async {
+      var n = 0;
+      final h = await Harness.create(
+        backend: () {
+          n++;
+          return ScriptedBackend()..connectError = n <= 3 ? StateError('network down') : null;
+        },
+        setup: (p) => p.reconnectBaseDelay = const Duration(milliseconds: 10),
+      );
+      expect(h.pipeline.status, SessionStatus.error, reason: 'the failure stays visible until the next attempt');
+      await waitFor(() => h.pipeline.status == SessionStatus.connected, timeout: const Duration(seconds: 3));
+      expect(n, 4);
+      expect(h.fp.audio.mic, isNotNull, reason: 'hands-free listening after the reconnect');
+      await h.dispose();
+    });
+
+    test('a usage limit at launch does not retry right away', () async {
+      var n = 0;
+      final h = await Harness.create(
+        backend: () {
+          n++;
+          return ScriptedBackend()
+            ..connectError = StateError('HTTP 429 {"error":{"type":"usage_limit_reached","resets_in_seconds":3600}}');
+        },
+        setup: (p) => p.reconnectBaseDelay = const Duration(milliseconds: 5),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      expect(n, 1);
+      expect(h.pipeline.reconnecting, isFalse);
+      expect(h.pipeline.usageLimit, isNotNull);
       await h.dispose();
     });
   });
