@@ -41,9 +41,9 @@ object WoiBridge {
         }
     }
 
-    fun attach(act: MainActivity, engine: FlutterEngine) {
-        activity = act
-        appContext = act.applicationContext
+    /** Once per engine (WoiEngine.obtain), before Dart runs. */
+    fun attachEngine(ctx: Context, engine: FlutterEngine) {
+        appContext = ctx.applicationContext
         val messenger = engine.dartExecutor.binaryMessenger
         EventChannel(messenger, "woi/android/events").setStreamHandler(object : EventChannel.StreamHandler {
             override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
@@ -172,6 +172,23 @@ object WoiBridge {
             }
             "moveToBack" -> {
                 result.success(activity?.moveTaskToBack(true) ?: false)
+            }
+            // --- assistant overlay (WoiOverlay) ---
+            "overlayReady" -> {
+                WoiOverlay.ready()
+                result.success(true)
+            }
+            "overlayDismiss" -> {
+                WoiOverlay.dismiss()
+                result.success(true)
+            }
+            "overlayOpenApp" -> {
+                WoiOverlay.openApp(ctx)
+                result.success(true)
+            }
+            "overlaySaveFraction" -> {
+                WoiOverlay.saveFraction(ctx, call.argument<Number>("fraction")?.toDouble() ?: WoiOverlay.DEFAULT_FRACTION)
+                result.success(true)
             }
             else -> result.notImplemented()
         }

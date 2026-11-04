@@ -691,6 +691,25 @@ class AppController extends ChangeNotifier {
     }
   }
 
+  /// How long a dismissed assistant panel keeps the voice session.
+  Duration assistantIdleDelay = const Duration(seconds: 3);
+  Timer? _assistantTimer;
+
+  /// The floating assistant panel (Android) was dismissed: stop talking now
+  /// and drop the voice session shortly after (no mic, no network: idle CPU
+  /// back to ~0) unless the panel or the app comes back first. The mic mode
+  /// setting is unchanged; the next invocation reconnects.
+  void assistantDismissed() {
+    if (!_ready) return;
+    final ph = pipeline.phase;
+    if (ph == AssistantPhase.speaking || ph == AssistantPhase.thinking) pipeline.interrupt();
+    _assistantTimer?.cancel();
+    _assistantTimer = Timer(assistantIdleDelay, () {
+      _assistantTimer = null;
+      if (_inBackground && _ready) unawaited(pipeline.suspend());
+    });
+  }
+
   void _scheduleBackgroundSuspend() {
     _backgroundTimer?.cancel();
     _backgroundTimer = Timer(backgroundSuspendDelay, () {
@@ -706,6 +725,7 @@ class AppController extends ChangeNotifier {
 
   Future<void> shutdown() async {
     _backgroundTimer?.cancel();
+    _assistantTimer?.cancel();
     await camera.close();
     await notes.flush();
     if (_ready) await pipeline.shutdown();

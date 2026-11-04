@@ -6,11 +6,13 @@ import 'package:flutter/material.dart';
 
 import '../core/app_controller.dart';
 import '../core/settings/settings.dart';
+import '../platform/android/android_bridge.dart';
 import '../platform/android/android_integration.dart';
 import '../platform/android/android_media_viewer.dart';
 import '../platform/media_viewer.dart';
 import '../platform/platform_services.dart';
 import '../platform/window_attention.dart';
+import 'assist/assist_panel.dart';
 import 'confirmations.dart';
 import 'login/login_screen.dart';
 import 'screens/home_screen.dart';
@@ -41,6 +43,7 @@ class _WoiAppState extends State<WoiApp> with WidgetsBindingObserver {
     ),
   );
   AndroidIntegration? _android;
+  AssistPanelPresenter? _assistPanel;
 
   @override
   void initState() {
@@ -66,10 +69,38 @@ class _WoiAppState extends State<WoiApp> with WidgetsBindingObserver {
     }
     _controller.addListener(_syncTheme);
     _controller.init();
-    if (Platform.isAndroid) _android = AndroidIntegration(_controller)..start();
+    if (Platform.isAndroid) {
+      _android = AndroidIntegration(_controller)..start();
+      _startAssistPanel(AndroidBridge.instance);
+    }
     _debugShowFromEnv();
     _debugCameraFromEnv();
     _frameLogFromEnv();
+  }
+
+  /// The assistant gesture floats Woi as a bottom panel over the current app
+  /// (WoiOverlay.kt renders this engine in the assistant session's window).
+  void _startAssistPanel(AndroidBridge bridge) {
+    void call(String method, [Map<String, Object?>? args]) =>
+        unawaited(bridge.call<bool>(method, args).catchError((Object e) => false));
+    _assistPanel = AssistPanelPresenter(
+      navigatorKey: _navigatorKey,
+      visible: bridge.overlayVisible,
+      onShown: () => call('overlayReady'),
+      builder: (context) => ListenableBuilder(
+        listenable: _controller,
+        builder: (context, _) => AssistPanel(
+          controller: _controller,
+          initialFraction: bridge.overlayFraction,
+          onFractionChanged: (f) {
+            bridge.overlayFraction = f;
+            call('overlaySaveFraction', {'fraction': f});
+          },
+          onDismiss: () => call('overlayDismiss'),
+          onOpenApp: () => call('overlayOpenApp'),
+        ),
+      ),
+    )..start();
   }
 
   /// Perf hook: `WOI_FRAME_LOG=1` prints the frame count every 5 s (only when
@@ -154,6 +185,7 @@ class _WoiAppState extends State<WoiApp> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _assistPanel?.dispose();
     _android?.dispose();
     _controller.removeListener(_syncTheme);
     _controller.shutdown();

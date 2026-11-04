@@ -41,6 +41,9 @@ class AndroidIntegration {
 
   void start() {
     _sub = bridge.events.listen(_onEvent);
+    for (final e in bridge.claimEarly()) {
+      unawaited(_onEvent(e));
+    }
     controller.addListener(_onController);
     unawaited(_permissions());
     _onController();
@@ -80,6 +83,10 @@ class AndroidIntegration {
   }
 
   Future<void> _onEvent(AndroidEvent e) async {
+    if (e is OverlayEvent) {
+      if (!e.on) controller.assistantDismissed();
+      return;
+    }
     if (!controller.ready || controller.needsLogin) {
       if (e is AssistEvent || e is OpenEvent) _early.add(e);
       return;
@@ -119,8 +126,11 @@ class AndroidIntegration {
       final clipped = text.length > 1500 ? '${text.substring(0, 1500)}…' : text;
       await controller.pipeline.attachScreenshot(
         shot,
-        note:
-            'The user invoked Woi as the phone assistant (long-press home) while in $app; this is that screen. '
+        note: e.overlay
+            ? 'The user invoked Woi as the phone assistant (long-press home) while in $app; this is that screen. '
+                  'Woi floats as a bottom panel over that app, which is still open: click_screen, type_text and '
+                  'send_keys act on it (the panel steps aside). '
+            : 'The user invoked Woi as the phone assistant (long-press home) while in $app; this is that screen. '
             '${clipped.isEmpty ? '' : 'Visible text: $clipped. '}',
         label: e.app == null || e.app!.isEmpty ? 'Assist screenshot' : 'Assist screenshot from ${e.app}',
       );

@@ -21,7 +21,7 @@ import io.flutter.plugin.common.MethodChannel
  * actions on the focused field (copy, paste, cut, select all, IME enter).
  *
  * When Woi itself is in front, it is sent to the back first so the action
- * reaches the app below.
+ * reaches the app below; the floating assistant panel steps aside instead.
  */
 class WoiAccessibilityService : AccessibilityService() {
     /** Last foreground package that is not Woi (the send_keys target). */
@@ -71,6 +71,30 @@ class WoiAccessibilityService : AccessibilityService() {
             }
         }
         WoiBridge.main.postDelayed(::poll, 50)
+    }
+
+    /**
+     * Runs [block] where the action reaches the app the user is in: with the
+     * assistant panel up it steps aside (touches and focus pass through,
+     * [visual] also hides it) until the action's result is sent; otherwise
+     * Woi's task goes to the back as before.
+     */
+    private fun aside(settleMs: Long, result: MethodChannel.Result, visual: Boolean = false, block: (MethodChannel.Result) -> Unit) {
+        if (!WoiOverlay.showing) return leaveWoi(settleMs) { block(result) }
+        WoiOverlay.stepAside(visual)
+        val r = WoiOverlay.releasing(result)
+        val start = System.currentTimeMillis()
+        fun poll() {
+            // Focus (the active window) moves back to the app once the panel
+            // is not focusable; typing and node actions need that.
+            if (!woiInFront() || System.currentTimeMillis() - start > 800) {
+                android.util.Log.i(WoiBridge.TAG, "panel aside in ${System.currentTimeMillis() - start} ms; front=${rootInActiveWindow?.packageName}")
+                WoiBridge.main.postDelayed({ block(r) }, if (visual) 120L else 60L)
+            } else {
+                WoiBridge.main.postDelayed(::poll, 40)
+            }
+        }
+        WoiBridge.main.postDelayed(::poll, 40)
     }
 
     private fun tap(x: Float, y: Float, count: Int, result: MethodChannel.Result) {
@@ -188,30 +212,30 @@ class WoiAccessibilityService : AccessibilityService() {
                 "click", "doubleClick" -> {
                     val x = (call.argument<Number>("x") ?: 0).toFloat()
                     val y = (call.argument<Number>("y") ?: 0).toFloat()
-                    s.leaveWoi(350) { s.tap(x, y, if (call.method == "doubleClick") 2 else 1, result) }
+                    s.aside(350, result) { r -> s.tap(x, y, if (call.method == "doubleClick") 2 else 1, r) }
                 }
-                "typeText" -> s.leaveWoi {
-                    try { result.success(s.typeText(call.argument<String>("text") ?: "")) } catch (e: Exception) {
-                        result.error("failed", e.message, null)
+                "typeText" -> s.aside(150, result) { r ->
+                    try { r.success(s.typeText(call.argument<String>("text") ?: "")) } catch (e: Exception) {
+                        r.error("failed", e.message, null)
                     }
                 }
                 "global" -> {
                     val name = call.argument<String>("name") ?: ""
                     // Global keys sent while the task-switch animation still
                     // runs can be dropped: let it finish first.
-                    s.leaveWoi(450) { result.success(s.global(name)) }
+                    s.aside(450, result) { r -> r.success(s.global(name)) }
                 }
-                "node" -> s.leaveWoi {
-                    try { result.success(s.nodeAction(call.argument<String>("name") ?: "")) } catch (e: Exception) {
-                        result.error("failed", e.message, null)
+                "node" -> s.aside(150, result) { r ->
+                    try { r.success(s.nodeAction(call.argument<String>("name") ?: "")) } catch (e: Exception) {
+                        r.error("failed", e.message, null)
                     }
                 }
-                "focusTarget" -> s.leaveWoi {
-                    result.success(mapOf("package" to (s.rootInActiveWindow?.packageName?.toString() ?: s.targetPackage)))
+                "focusTarget" -> s.aside(150, result) { r ->
+                    r.success(mapOf("package" to (s.rootInActiveWindow?.packageName?.toString() ?: s.targetPackage)))
                 }
                 // The screen of the app the user is working in, not Woi's.
                 "a11yScreenshot" -> if (call.argument<Boolean>("stepAside") != false) {
-                    s.leaveWoi(350) { s.screenshot(call.argument<Int>("maxWidth") ?: 1280, result) }
+                    s.aside(350, result, visual = true) { r -> s.screenshot(call.argument<Int>("maxWidth") ?: 1280, r) }
                 } else {
                     s.screenshot(call.argument<Int>("maxWidth") ?: 1280, result)
                 }
