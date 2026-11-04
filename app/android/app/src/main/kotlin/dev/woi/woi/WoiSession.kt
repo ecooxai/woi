@@ -13,7 +13,6 @@ import android.speech.RecognitionService
 import android.speech.SpeechRecognizer
 import android.util.Log
 import java.io.File
-import java.io.FileOutputStream
 
 /** Lets the user pick Woi as the "Digital assistant app". */
 class WoiVoiceInteractionService : VoiceInteractionService() {
@@ -119,17 +118,14 @@ class WoiSession(ctx: Context) : VoiceInteractionSession(ctx) {
             var sw = w
             var sh = h
             try {
-                val maxW = 720
-                val scaled = if (w > maxW) Bitmap.createScaledBitmap(screenshot, maxW, (h.toLong() * maxW / w).toInt(), true) else screenshot
-                sw = scaled.width
-                sh = scaled.height
                 val dir = File(context.cacheDir, "assist").apply { mkdirs() }
                 dir.listFiles()?.forEach { it.delete() }
                 val f = File(dir, "assist-${System.currentTimeMillis()}.png")
-                FileOutputStream(f).use { scaled.compress(Bitmap.CompressFormat.PNG, 100, it) }
-                if (scaled !== screenshot) scaled.recycle()
+                val r = ScreenshotPng.write(screenshot, 720, f)
+                sw = r.width
+                sh = r.height
                 path = f.absolutePath
-                Log.i(WoiBridge.TAG, "assist screenshot ${w}x$h -> ${sw}x$sh in ${SystemClock.elapsedRealtime() - t0} ms")
+                Log.i(WoiBridge.TAG, "assist screenshot ${w}x$h (${r.source}) -> ${sw}x$sh in ${SystemClock.elapsedRealtime() - t0} ms")
             } catch (e: Exception) {
                 Log.w(WoiBridge.TAG, "assist screenshot failed", e)
             }
