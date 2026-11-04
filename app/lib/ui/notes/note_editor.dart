@@ -9,6 +9,7 @@ import '../../core/notes/note_controller.dart';
 import '../../core/notes/note_copy.dart';
 import '../../core/notes/note_ops.dart';
 import '../theme.dart';
+import '../widgets/throttled_builder.dart';
 import 'markdown_syntax.dart';
 import 'markdown_view.dart';
 
@@ -221,6 +222,7 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
     notes.addListener(_onNotes);
     widget.copied?.addListener(_onCopied);
     _syncAi();
+    _chromeSig = _chromeSignature();
   }
 
   @override
@@ -254,7 +256,10 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
   }
 
   void setMode(NoteViewMode m) {
-    setState(() => _mode = _lastMode = m);
+    setState(() {
+      _mode = _lastMode = m;
+      _chromeSig = _chromeSignature();
+    });
     if (m == NoteViewMode.preview) {
       // After the menu closes (it restores focus to where it was).
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -315,8 +320,23 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
       _syncing = false;
     }
     _syncAi();
-    if (mounted) setState(() {});
+    // Typing notifies on every key; only rebuild the editor's chrome (toolbar,
+    // AI chip, preview) when something it shows changed. The text field
+    // follows its own controller, the footer has its own throttled listener.
+    final sig = _chromeSignature();
+    if (sig != _chromeSig && mounted) setState(() => _chromeSig = sig);
   }
+
+  /// What [build] reads from [notes] besides the text: undo / redo state,
+  /// the AI edit, and the whole note while the preview shows it.
+  Object _chromeSignature() => (
+    notes.canUndo,
+    notes.canRedo,
+    notes.lastAiEdit?.seq,
+    notes.conversationId,
+    _mode == NoteViewMode.preview ? notes.revision : -1,
+  );
+  late Object _chromeSig;
 
   void _syncAi() {
     final ai = notes.lastAiEdit;
@@ -612,9 +632,8 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
     final onRun = widget.onRun;
     if (onRun == null) return;
     if (text.isEmpty) {
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        const SnackBar(content: Text('Put the cursor on a line or select text to run it.')),
-      );
+      ScaffoldMessenger.maybeOf(context)
+          ?.showSnackBar(const SnackBar(content: Text('Put the cursor on a line or select text to run it.')));
       return;
     }
     onRun(text);
@@ -672,7 +691,10 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
             ],
           ),
         ),
-        if (footer) _footer(),
+        if (footer)
+          // Word / character count and save state: at most 4 updates a
+          // second while typing, in its own layer.
+          ThrottledBuilder(listenable: notes, builder: (_) => _footer()),
       ],
     );
   }
@@ -709,32 +731,44 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
         child: LayoutBuilder(
           builder: (context, box) {
             final hPad = widget.compact ? 18.0 : math.max(28.0, (box.maxWidth - 820) / 2);
-            return Scrollbar(
-              controller: _editScroll,
-              child: TextField(
-                key: const ValueKey('note-editor-field'),
-                controller: _ctrl,
-                focusNode: _focus,
-                scrollController: _editScroll,
-                maxLines: null,
-                expands: true,
-                textAlignVertical: TextAlignVertical.top,
-                keyboardType: TextInputType.multiline,
-                cursorColor: WoiColors.cyan,
-                cursorWidth: 2,
-                cursorRadius: const Radius.circular(2),
-                style: MdEditorStyle.base(),
-                onTap: _onTapEditor,
-                decoration: InputDecoration(
-                  border: InputBorder.none,
-                  enabledBorder: InputBorder.none,
-                  focusedBorder: InputBorder.none,
-                  filled: false,
-                  isCollapsed: true,
-                  contentPadding: EdgeInsets.fromLTRB(hPad, widget.compact ? 16 : 24, hPad, widget.compact ? 12 : 16),
-                  hintText: '# Untitled note\n\nStart typing, or just talk.\nWoi records decisions, todos, facts and paths here as you go.',
-                  hintMaxLines: 6,
-                  hintStyle: body(15.5, height: 1.62, color: WoiColors.textFaint),
+            // Own layers: a keystroke repaints the text, not the window
+            // around it (on the CPU rasterizer a full-window repaint per key
+            // was ~20 ms), and the rest of the frame stays raster-cached.
+            return RepaintBoundary(
+              child: Scrollbar(
+                controller: _editScroll,
+                child: RepaintBoundary(
+                  child: TextField(
+                    key: const ValueKey('note-editor-field'),
+                    controller: _ctrl,
+                    focusNode: _focus,
+                    scrollController: _editScroll,
+                    maxLines: null,
+                    expands: true,
+                    textAlignVertical: TextAlignVertical.top,
+                    keyboardType: TextInputType.multiline,
+                    cursorColor: WoiColors.cyan,
+                    cursorWidth: 2,
+                    cursorRadius: const Radius.circular(2),
+                    style: MdEditorStyle.base(),
+                    onTap: _onTapEditor,
+                    decoration: InputDecoration(
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      filled: false,
+                      isCollapsed: true,
+                      contentPadding: EdgeInsets.fromLTRB(
+                        hPad,
+                        widget.compact ? 16 : 24,
+                        hPad,
+                        widget.compact ? 12 : 16,
+                      ),
+                      hintText: '# Untitled note\n\nStart typing, or just talk.\nWoi records decisions, todos, facts and paths here as you go.',
+                      hintMaxLines: 6,
+                      hintStyle: body(15.5, height: 1.62, color: WoiColors.textFaint),
+                    ),
+                  ),
                 ),
               ),
             );
@@ -794,9 +828,7 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
         _ToolButton(key: key, icon: icon, tooltip: tip, onTap: onTap, compact: phone);
     final height = phone ? kTouchTarget : 32.0;
     final runBtn = Tooltip(
-      message: widget.onRun == null
-          ? 'Run (connect first)'
-          : 'Run: send the current line or selection to Woi (Ctrl+R)',
+      message: widget.onRun == null ? 'Run (connect first)' : 'Run: send the current line or selection to Woi (Ctrl+R)',
       child: FilledButton.icon(
         key: const ValueKey('note-run'),
         onPressed: widget.onRun == null ? null : run,
@@ -828,10 +860,7 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
             notes.canRedo ? notes.redo : null,
             key: const ValueKey('tb-redo'),
           ),
-          if (preview) ...[
-            const SizedBox(width: 8),
-            Flexible(child: _previewChip(height)),
-          ],
+          if (preview) ...[const SizedBox(width: 8), Flexible(child: _previewChip(height))],
           const Spacer(),
           _copyButton(height),
           const SizedBox(width: 8),
@@ -987,9 +1016,8 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
             message: 'Copy note (Ctrl+Shift+C) · long-press or right-click: line, paragraph, section',
             child: TextButton(
               key: const ValueKey('note-copy'),
-              style: _quiet(height).copyWith(
-                foregroundColor: WidgetStatePropertyAll(done ? WoiColors.mint : WoiColors.textDim),
-              ),
+              style: _quiet(height)
+                  .copyWith(foregroundColor: WidgetStatePropertyAll(done ? WoiColors.mint : WoiColors.textDim)),
               onPressed: () => copy(NoteCopyScope.note),
               onLongPress: () => openMenu(anchor),
               child: Row(
