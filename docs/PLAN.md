@@ -322,3 +322,21 @@ E2E (`e2e_echo.sh after-defer`, gate off, deferred turns, far_field) vs the gate
 | false local onsets (pause + resume) | 7 | 8 |
 One deferred turn occurred (timeout → cut). Next: pin the transcription `language` to the UI language so echo is
 transcribed in English and the guard can match it; a headset → `near_field` switch.
+
+Short foreign / filler echo (echo21, 2026-11-04): the transcriber turns fragments of English echo into short
+Korean ("아", "하고"), which [isEchoOf] cannot match. New rule (`shortEchoReason` in `echo_transcript.dart`), applied
+where the transcript guard decides (held echo-suspect turns, deferred turns): a turn that began while Woi was
+audible or in its echo tail, with no local onset (paused or onset within 1.5 s), whose final transcript is short
+(≤ 2 words, ≤ 4 Han/kana chars) and either a pure filler ("uh", "아", "嗯", "あ", "э") or in a script that neither
+Woi's reply nor any of the user's last 5 turns use, is echo: item dropped, Woi plays on, logged as "taken as echo".
+Stop requests are never dropped: `isStopPhrase` plus a multilingual list (停 / 等一下 / 别说了 / 그만 / 잠깐 / 待って /
+стоп / Stopp …). A Chinese user is not affected (their turns are Han, so Han passes); a first-ever short turn in a
+new language over Woi without a local onset can be lost (Woi keeps talking; the user repeats). The transcription
+`language` hint was not added: it would force-mistranscribe a multilingual user and the rule above needs no
+session change. `e2e_echo.sh` now skips the mic levels instead of crashing when `mic.wav` is empty.
+E2E `after-lang` (one run, not comparable): "Stop" 3.3 s (vs 0.54 s), question barge-in 0.47 s, 5 non-fixture
+user turns (3 empty, "다음에 또 봐요." = 4 words so not short, "어?" not dropped), 1 echo turn dropped by the
+transcript guard ("What?"), 0 by the new rule, 20 false local onsets (vs 8), 5 deferred timeouts. The run was
+degraded: the echo guard never locked a lag (`lag null` on every onset), `mic.wav` came out empty, and the full test
+suite ran concurrently. Needs a clean re-run; log the final user transcript + echo-suspect state per turn to see
+why "어?" passed (likely not an echo suspect: started outside Woi's audible window / 20 s `_spoken` horizon).
