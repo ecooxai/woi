@@ -281,9 +281,10 @@ qa_play() { paplay -d qa_fixture_sink "$1"; }
 qa_fake_camera() {
   local dir=$QA_OUT/fakecam
   mkdir -p "$dir"
-  convert -size 640x480 xc:'#f4f1e8' -fill '#d62828' -draw 'circle 170,260 170,170' \
-    -fill '#1d4ed8' -draw 'rectangle 360,170 540,350' -fill black -pointsize 44 \
-    -annotate +140+80 'WOI QA CAMERA' "$dir/card.jpg" 2>/dev/null || return 1
+  # 1280x720, the size the app requests (LinuxCameraService defaults)
+  convert -size 1280x720 xc:'#f4f1e8' -fill '#d62828' -draw 'circle 340,420 340,240' \
+    -fill '#1d4ed8' -draw 'rectangle 760,250 1100,590' -fill black -pointsize 88 \
+    -annotate +290+150 'WOI QA CAMERA' -quality 85 "$dir/card.jpg" 2>/dev/null || return 1
   ln -sf "$QA_LIB/fake_camera_ffmpeg.sh" "$dir/ffmpeg"
   : >"$dir/device"
   echo "PATH=$dir:$PATH" "WOI_CAMERA=$dir/device" "WOI_DEBUG_CAMERA=1" "QA_CAMERA_CARD=$dir/card.jpg" \

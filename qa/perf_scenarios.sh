@@ -120,8 +120,15 @@ for s in $SCENARIOS; do
       monitor "$SECS" video
       ;;
     camera)
-      # Camera on (preview tile + frames kept for turns); needs /dev/video0.
-      launch camera muted WOI_DEBUG_CAMERA=1 || continue
+      # Camera on (preview tile + frames kept for turns). Default: the QA
+      # synthetic camera (same ffmpeg MJPEG-copy path at 1280x720, 30 -> 8 fps,
+      # no image of the room); PERF_REAL_CAMERA=1 uses /dev/video0.
+      if [ "${PERF_REAL_CAMERA:-0}" = 1 ]; then
+        launch camera muted WOI_DEBUG_CAMERA=1 || continue
+      else
+        # shellcheck disable=SC2046
+        launch camera muted $(QA_OUT=$OUT QA_DISPLAY=$QA_DISPLAY bash -c '. "$1/lib/common.sh" && qa_fake_camera' _ "$QA_DIR") || continue
+      fi
       sleep 6
       monitor "$SECS" camera   # ffmpeg (the camera reader) is a child: included
       ;;
