@@ -128,18 +128,20 @@ class CodexAuthInfo {
     if (!isAvailable) return 'No Codex login found at $path';
     final acct = accountId == null || accountId!.length < 6
         ? ''
-        : ' · account …${accountId!.substring(accountId!.length - 6)}';
-    final when = lastRefresh == null ? '' : ' · refreshed ${lastRefresh!.toLocal().toString().split('.').first}';
+        : ' · account\u00a0…\u2060${accountId!.substring(accountId!.length - 6)}';
+    // No-break spaces keep "account …abc123", the date-time and "valid 7 d" whole when the chip wraps.
+    final stamp = lastRefresh?.toLocal().toString().split('.').first.replaceFirst(' ', '\u00a0');
+    final when = stamp == null ? '' : ' · refreshed $stamp';
     final exp = expiresAt;
     var valid = '';
     if (exp != null) {
       final left = exp.difference(DateTime.now().toUtc());
-      valid = left.isNegative ? ' · token expired (will refresh)' : ' · valid ${_fmtLeft(left)}';
+      valid = left.isNegative ? ' · token expired (will refresh)' : ' · valid\u00a0${_fmtLeft(left)}';
     }
     return 'Codex login found$acct$when$valid';
   }
 
-  static String _fmtLeft(Duration d) => d.inHours >= 48 ? '${d.inDays} d' : '${d.inHours} h';
+  static String _fmtLeft(Duration d) => d.inHours >= 48 ? '${d.inDays}\u00a0d' : '${d.inHours}\u00a0h';
 
   static String defaultPath() {
     final home = Platform.environment['HOME'] ?? '';

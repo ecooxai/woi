@@ -1067,7 +1067,8 @@ class _SystemNote extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
                     decoration: BoxDecoration(
                       color: color.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(99),
+                      // A pill on one line; a rounded box (not an oval) when it wraps on a phone.
+                      borderRadius: BorderRadius.circular(16),
                       border: Border.all(color: color.withValues(alpha: 0.28)),
                     ),
                     child: Row(
