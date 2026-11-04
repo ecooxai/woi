@@ -165,6 +165,17 @@ void main() {
     expect(isSpeechPlaceholder('hello [2 s of speech]'), isFalse);
   });
 
+  testWidgets('listening dots go still when no transcript comes', (tester) async {
+    final m = Message(kind: MessageKind.user, streaming: true, createdAt: DateTime(2020));
+    await tester.pumpWidget(_app(MessageTile(message: m, audio: FakeAudioIO(), viewer: FakeViewer())));
+    expect(find.text('listening'), findsOneWidget);
+    for (var i = 0; i < 110; i++) {
+      await tester.pump(const Duration(milliseconds: 200));
+    }
+    expect(tester.binding.hasScheduledFrame, isFalse, reason: 'still after 20 s');
+    expect(find.text('listening'), findsOneWidget);
+  });
+
   test('compact labels', () {
     expect(shortModelName('gpt-live-1.1'), 'live-1.1');
     expect(shortModelName('gpt-realtime'), 'realtime');

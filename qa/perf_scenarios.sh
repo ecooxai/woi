@@ -102,6 +102,8 @@ stop_app() { kill "$APP_PID" 2>/dev/null; wait "$APP_PID" 2>/dev/null; APP_PID="
 
 monitor() { "$QA_DIR/perf_monitor.sh" -d "$1" -l "$2" -c "${3:-^$PNAME\$}" -o "$OUT/$2.csv" >/dev/null; }
 
+# Keys go through XTEST to the focused window (Flutter ignores the synthetic
+# events `xdotool key --window` sends), so the window is activated first.
 center() {
   local w h
   read -r w h <<<"$SIZE"
@@ -117,7 +119,7 @@ for s in $SCENARIOS; do
     listen) launch listen handsFree && monitor "$SECS" listen ;;
     typing)
       launch typing muted || continue
-      xdotool windowactivate --sync "$WID" 2>/dev/null; xdotool key --window "$WID" ctrl+1; sleep 1
+      xdotool windowactivate --sync "$WID" 2>/dev/null; xdotool key ctrl+1; sleep 1
       center 60 55; xdotool click 1; sleep 0.5; xdotool key ctrl+End
       monitor "$SECS" typing &
       mon=$!
@@ -130,7 +132,7 @@ for s in $SCENARIOS; do
       ;;
     scroll)
       launch scroll muted || continue
-      xdotool windowactivate --sync "$WID" 2>/dev/null; xdotool windowraise "$WID"; xdotool key --window "$WID" ctrl+2; sleep 1
+      xdotool windowactivate --sync "$WID" 2>/dev/null; xdotool windowraise "$WID"; xdotool key ctrl+2; sleep 1
       center 60 50
       monitor "$SECS" scroll &
       mon=$!
@@ -163,13 +165,14 @@ for s in $SCENARIOS; do
     tab-note | tab-chat | tab-terminal | tab-settings)
       launch "$s" muted || continue
       n=$(case $s in tab-note) echo 1 ;; tab-chat) echo 2 ;; tab-terminal) echo 3 ;; *) echo 4 ;; esac)
-      xdotool windowactivate --sync "$WID" 2>/dev/null; xdotool key --window "$WID" "ctrl+$n"; sleep 3
+      xdotool windowactivate --sync "$WID" 2>/dev/null; xdotool key "ctrl+$n"; sleep 3
       center 50 50 # pointer parked inside the window (hover effects)
       monitor "$SECS" "$s"
       ;;
     reply)
       launch reply muted || continue
-      xdotool windowactivate --sync "$WID" 2>/dev/null; xdotool key --window "$WID" ctrl+k; sleep 1
+      xdotool windowactivate --sync "$WID" 2>/dev/null; xdotool key ctrl+2; sleep 1
+      center 40 93; xdotool click 1; sleep 0.5 # the composer
       xdotool type --delay 20 "${REPLY_PROMPT:-Tell me a calm story about a lighthouse keeper, about one minute long.}"
       xdotool key Return
       monitor "$SECS" reply
