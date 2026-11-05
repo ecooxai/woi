@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import '../auth/auth.dart';
+import '../util/image_mime.dart';
 import '../util/usage_limit.dart';
 
 /// ChatGPT-login endpoint (research/REALTIME_API.md §4).
@@ -113,10 +114,9 @@ class SseParser extends StreamTransformerBase<List<int>, SseEvent> {
   }
 }
 
-/// Builds the image input part for a PNG/JPEG.
+/// Builds the image input part for encoded image [bytes] (JPEG/PNG/WebP).
 Map<String, Object?> inputImage(Uint8List bytes) {
-  final mime = bytes.length > 2 && bytes[0] == 0xFF && bytes[1] == 0xD8 ? 'image/jpeg' : 'image/png';
-  return {'type': 'input_image', 'image_url': 'data:$mime;base64,${base64Encode(bytes)}'};
+  return {'type': 'input_image', 'image_url': 'data:${imageMimeOf(bytes)};base64,${base64Encode(bytes)}'};
 }
 
 Map<String, Object?> userMessage(List<Map<String, Object?>> content) => {

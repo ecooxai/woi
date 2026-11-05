@@ -10,6 +10,7 @@ import '../context/context_manager.dart';
 import '../context/image_tiers.dart' show kAssistNotePrefix, kRawRecentTurns;
 import '../net/realtime_socket.dart';
 import '../notes/pinned_note.dart';
+import '../util/image_mime.dart';
 import 'context_sync.dart';
 import 'pinned_context.dart';
 import 'voice_backend.dart';
@@ -608,7 +609,7 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
     'type': 'message',
     'role': 'user',
     'content': [
-      {'type': 'input_image', 'image_url': 'data:${_mime(png)};base64,${base64Encode(png)}'},
+      {'type': 'input_image', 'image_url': 'data:${imageMimeOf(png)};base64,${base64Encode(png)}'},
       if (note != null && note.isNotEmpty) {'type': 'input_text', 'text': note},
     ],
   };
@@ -675,12 +676,6 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
     await deleted;
     imagesReplaced++;
     return newId;
-  }
-
-  static String _mime(Uint8List b) {
-    if (b.length > 3 && b[0] == 0xFF && b[1] == 0xD8) return 'image/jpeg';
-    if (b.length > 12 && b[8] == 0x57 && b[9] == 0x45 && b[10] == 0x42 && b[11] == 0x50) return 'image/webp';
-    return 'image/png';
   }
 
   @override

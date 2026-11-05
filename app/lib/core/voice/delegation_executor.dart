@@ -7,6 +7,7 @@ import '../auth/auth.dart';
 import '../media/media_context.dart' show isMediaQuestion, cameraCommand;
 import '../notes/pinned_note.dart';
 import '../responses/responses_client.dart';
+import '../util/image_mime.dart';
 import 'voice_backend.dart';
 
 // ---------------------------------------------------------------- model API
@@ -733,7 +734,7 @@ class DelegationExecutor {
   }
 
   static String _dataUrl(Uint8List b) =>
-      'data:${b.length > 2 && b[0] == 0xFF && b[1] == 0xD8 ? 'image/jpeg' : 'image/png'};base64,${base64Encode(b)}';
+      'data:${imageMimeOf(b)};base64,${base64Encode(b)}';
 
   Map<String, Object?> _userMessage(String text, DelegationImage? shot, {List<DelegationImage> extras = const []}) {
     final note = contextNote?.call()?.trim();

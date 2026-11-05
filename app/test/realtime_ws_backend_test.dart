@@ -755,7 +755,9 @@ void main() {
       await _pump();
       expect(r.backend.serverItemIds, ['u1', id, 'u2']);
       r.respond('r1');
-      final small = r.backend.replaceImage(id, png: Uint8List.fromList(List.filled(8, 2)), text: '1/5 size');
+      // Reduced copies are JPEG: the data URL must say so.
+      final jpeg = Uint8List.fromList([0xFF, 0xD8, 0xFF, 0xE0, ...List.filled(8, 2)]);
+      final small = r.backend.replaceImage(id, png: jpeg, text: '1/2 size');
       await _pump();
       expect(r.ws.ofType('conversation.item.delete'), isEmpty, reason: 'waits for the response to finish');
       r.done('r1');
@@ -764,6 +766,7 @@ void main() {
       final create = r.ws.ofType('conversation.item.create').last;
       expect(create['previous_item_id'], id);
       expect(jsonEncode(create), contains('input_image'));
+      expect(jsonEncode(create), contains('"data:image/jpeg;base64,'));
       expect(r.ws.ofType('conversation.item.delete').single['item_id'], id);
       expect(r.backend.serverItemIds, ['u1', newId, 'u2']);
       // Then to a description: a system note, so it is not taken for a user turn.

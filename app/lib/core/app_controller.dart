@@ -432,7 +432,7 @@ class AppController extends ChangeNotifier {
         // control shows it); the pipeline posts the notice.
         onSelfTalk: () => unawaited(setMicMode(MicMode.muted)),
         imageCompactor: ImageCompactor(
-          downscale: uiDownscale,
+          downscale: jpegDownscale(quality: () => _settings.screenshotJpegQuality),
           describe: responsesDescriber(responses, model: () => compactionChoice.model),
           save: history.saveImage,
         ),

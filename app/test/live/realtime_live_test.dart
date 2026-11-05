@@ -532,7 +532,7 @@ void main() {
         images: (store) => ImageCompactor(
           downscale: (png, w, h) async {
             await gate.future;
-            return uiDownscaleOr(png, w, h, dir.path);
+            return jpegDownscale()(png, w, h);
           },
           describe: (png, note) async {
             final sw = Stopwatch()..start();
@@ -793,17 +793,4 @@ void main() {
       expect(r.output.split(RegExp(r'\s+')).length, lessThan(120));
     }, timeout: const Timeout(Duration(minutes: 5)));
   });
-}
-
-/// Engine downscale, or ImageMagick when the test runner has no codec.
-Future<Uint8List> uiDownscaleOr(Uint8List png, int w, int h, String tmp) async {
-  try {
-    return await uiDownscale(png, w, h).timeout(const Duration(seconds: 5));
-  } catch (_) {
-    final src = '$tmp/in_${png.hashCode}.png', dst = '$tmp/out_${png.hashCode}.png';
-    File(src).writeAsBytesSync(png);
-    final r = await Process.run('magick', [src, '-resize', '${w}x$h!', dst]);
-    if (r.exitCode != 0) throw StateError('${r.stderr}');
-    return File(dst).readAsBytesSync();
-  }
 }

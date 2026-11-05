@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 
+import '../../platform/screen_capture.dart' show kDefaultScreenshotJpegQuality;
+import '../../platform/screenshot_encode.dart';
 import '../models/message.dart';
 import '../responses/responses_client.dart';
+import '../util/image_mime.dart';
 import '../util/usage_limit.dart';
 
 /// How a screenshot is currently represented in the model's context.
@@ -133,12 +135,17 @@ class ImageTierPolicy {
   }
 }
 
-typedef Downscale = Future<Uint8List> Function(Uint8List png, int width, int height);
-typedef Describe = Future<String> Function(Uint8List png, String? note);
-typedef SaveVariant = Future<String> Function(String messageId, Uint8List png);
+/// Returns [image] (encoded, usually JPEG) resized to [width]x[height],
+/// encoded as JPEG or PNG; the compactor sniffs which.
+typedef Downscale = Future<Uint8List> Function(Uint8List image, int width, int height);
+typedef Describe = Future<String> Function(Uint8List image, String? note);
+
+/// Stores a tier variant; [ext] matches the bytes ('jpg', 'png').
+typedef SaveVariant = Future<String> Function(String messageId, Uint8List image, {String ext});
 
 /// Swaps a screenshot in the live model context. [png] for a downscaled
-/// copy, [text] for a description. Returns false if the backend cannot (the
+/// copy (any encoding, JPEG normally; the backend sniffs the MIME type),
+/// [text] for a description. Returns false if the backend cannot (the
 /// local tier still changes: delegation and reconnect contexts use it).
 typedef ApplyImage = Future<bool> Function(Message m, {Uint8List? png, String? text});
 
@@ -199,7 +206,7 @@ class ImageCompactor {
           final w = (img.width / policy.reduceFactor).round().clamp(1, 1 << 15);
           final h = (img.height / policy.reduceFactor).round().clamp(1, 1 << 15);
           final small = await downscale(original, w, h);
-          final path = await save('${m.id}_r${policy.reduceFactor}', small);
+          final path = await save('${m.id}_r${policy.reduceFactor}', small, ext: imageExtOf(small));
           if (await apply(m, png: small, text: '$note Downscaled to ${w}x$h; do not click by its coordinates.')) {
             applied++;
           }
@@ -240,17 +247,11 @@ class ImageCompactor {
       '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}:${t.second.toString().padLeft(2, '0')}';
 }
 
-/// PNG downscale with the engine's codec (bilinear-ish, good enough for a
-/// thumbnail the model only needs for gist).
-Future<Uint8List> uiDownscale(Uint8List png, int width, int height) async {
-  final codec = await ui.instantiateImageCodec(png, targetWidth: width, targetHeight: height);
-  final frame = await codec.getNextFrame();
-  final data = await frame.image.toByteData(format: ui.ImageByteFormat.png);
-  frame.image.dispose();
-  codec.dispose();
-  if (data == null) throw StateError('png encode failed');
-  return data.buffer.asUint8List();
-}
+/// Reduced-tier downscale: JPEG at the screenshot quality setting
+/// ([quality], read on each call), off the UI thread. A PNG re-encode of a
+/// JPEG screenshot was often bigger than the full-size original.
+Downscale jpegDownscale({int Function()? quality}) =>
+    (image, width, height) => reencodeJpeg(image, width, height, quality?.call() ?? kDefaultScreenshotJpegQuality);
 
 const kDescribeInstructions = '''
 Describe this screenshot for a voice assistant's memory in at most 40 words: the app or page, the document or
