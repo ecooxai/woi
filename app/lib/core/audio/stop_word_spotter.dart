@@ -182,7 +182,8 @@ class SherpaStopWordSpotter implements StopWordSpotter {
     rx.listen((m) {
       if (m is SendPort) {
         ready.complete(m);
-      } else if (m == 'exit') {
+      } else if (m == null) {
+        // onExit (no message): the worker quit or died.
         _iso = null;
         _tx = null;
         if (!ready.isCompleted) ready.completeError(StateError('kws isolate exited'));
