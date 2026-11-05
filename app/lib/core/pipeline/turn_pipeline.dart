@@ -201,6 +201,7 @@ class TurnPipeline extends ChangeNotifier {
   // (launch, assistant activation, auto-reconnect); its chunks wait here and
   // go out in order once the session is ready.
   final PreConnectBuffer _pending = PreConnectBuffer();
+  static const bool _kDumpPreConnect = bool.fromEnvironment('WOI_DUMP_PRECONNECT');
   // Screen grabbed when the buffered audio first turned voiced; attached to
   // the turn the server opens for it after the flush.
   Future<Screenshot?>? _preShot;
@@ -1402,6 +1403,7 @@ class TurnPipeline extends ChangeNotifier {
       _pending.clear();
       return;
     }
+    debugPrint('pre-connect: buffer ${_pending.describe()}');
     final frames = _pending.take();
     final clip = BytesBuilder(copy: false);
     for (final f in frames) {
@@ -1419,6 +1421,16 @@ class TurnPipeline extends ChangeNotifier {
     }
     preConnectFlushedBytes += clip.length;
     debugPrint('pre-connect: flushed ${clip.length * 1000 ~/ kVoiceBytesPerSecond} ms in ${frames.length} frames');
+    if (_kDumpPreConnect && Platform.isAndroid) {
+      // Diagnostics (--dart-define=WOI_DUMP_PRECONNECT=true): the exact PCM
+      // flushed to the API, pulled with `run-as dev.woi.woi cat files/...`.
+      final pcm = Uint8List.fromList(clip.toBytes());
+      unawaited(
+        writeWav('/data/user/0/dev.woi.woi/files/preconnect_flush.wav', pcm).catchError((Object e) {
+          debugPrint('pre-connect dump failed: $e');
+        }),
+      );
+    }
     if (_userSpeaking) {
       _utterancePcm.add(clip.takeBytes());
     } else {

@@ -37,16 +37,53 @@ void main() {
       expect(cat(buf.take()), cat([for (var i = 3; i < 8; i++) tagged(i)]));
     });
 
-    test('a long leading silence is trimmed to ~300 ms before the voice', () {
+    test('a long leading digital silence is trimmed to ~300 ms before the signal', () {
       final buf = PreConnectBuffer();
       for (var t = 0; t < 2000; t += 20) {
-        buf.add(pcm(20, amplitude: 20));
+        buf.add(Uint8List(kVoiceBytesPerSecond ~/ 50));
       }
       final speech = [for (var i = 0; i < 10; i++) tagged(i)];
       speech.forEach(buf.add);
       final out = cat(buf.take());
       expect(out.length, kVoiceBytesPerSecond * 3 ~/ 10 + cat(speech).length);
       expect(Uint8List.sublistView(out, out.length - cat(speech).length), cat(speech));
+    });
+
+    test('quiet audio (room noise, soft call-mode speech) is never trimmed', () {
+      final buf = PreConnectBuffer();
+      final quiet = [for (var t = 0; t < 3000; t += 20) pcm(20, amplitude: 20)];
+      quiet.forEach(buf.add);
+      final speech = [for (var i = 0; i < 10; i++) tagged(i)];
+      speech.forEach(buf.add);
+      expect(cat(buf.take()), cat([...quiet, ...speech]));
+    });
+
+    test('audio with no voiced chunk at all is kept whole', () {
+      final buf = PreConnectBuffer();
+      // ~-60 dBFS: below the voice gate, but signal.
+      final soft = [for (var t = 0; t < 5000; t += 20) pcm(20, amplitude: 30)];
+      soft.forEach(buf.add);
+      expect(buf.hasVoice, isFalse);
+      expect(cat(buf.take()), cat(soft));
+    });
+
+    test('digital silence after the first signal is kept', () {
+      final buf = PreConnectBuffer();
+      final parts = [
+        tagged(1),
+        for (var t = 0; t < 2000; t += 20) Uint8List(kVoiceBytesPerSecond ~/ 50),
+        tagged(2),
+      ];
+      parts.forEach(buf.add);
+      expect(cat(buf.take()), cat(parts));
+    });
+
+    test('the default cap holds a slow cold start (15 s held + 10 s handshake)', () {
+      final buf = PreConnectBuffer();
+      for (var t = 0; t < 25000; t += 20) {
+        buf.add(tagged(t ~/ 20 % 100));
+      }
+      expect(buf.dropped, 0);
     });
 
     test('a short leading silence is kept; frames are bounded', () {

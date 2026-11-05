@@ -7,9 +7,11 @@ import '../voice/voice_backend.dart';
 /// assistant activation, auto-reconnect). Flushed in order once the session
 /// is ready, so the user's first words are not lost to the handshake.
 ///
-/// Bounded ([capBytes], oldest dropped). [take] trims a long leading silence
-/// (beyond [maxLeadSilenceBytes]) down to [keepBeforeVoiceBytes] before the
-/// first voiced chunk, judged by a simple level gate against the noise floor.
+/// Bounded ([capBytes], oldest dropped). [take] trims only a long run of
+/// leading *digital* silence (exact zeros, e.g. a recorder still starting;
+/// beyond [maxLeadSilenceBytes]) down to [keepBeforeVoiceBytes]. Anything
+/// with signal is kept: a level gate mislabelled quiet call-mode speech as
+/// silence and cut it (on a MI 8 every flush came out as 300 ms).
 class PreConnectBuffer {
   PreConnectBuffer({
     this.capBytes = kPreConnectCapBytes,
@@ -17,8 +19,10 @@ class PreConnectBuffer {
     this.keepBeforeVoiceBytes = kVoiceBytesPerSecond * 3 ~/ 10,
   });
 
-  /// ~15 s of PCM16 24 kHz mono.
-  static const int kPreConnectCapBytes = kVoiceBytesPerSecond * 15;
+  /// ~40 s of PCM16 24 kHz mono: a cold assist start holds up to 15 s
+  /// natively and the handshake itself took ~10 s on a phone; a 15 s cap
+  /// dropped the first words.
+  static const int kPreConnectCapBytes = kVoiceBytesPerSecond * 40;
 
   /// A chunk is voiced at >= floor + 10 dB and at least -50 dBFS.
   static const double minVoiceRms = 0.003;
@@ -29,6 +33,7 @@ class PreConnectBuffer {
 
   final List<Uint8List> _chunks = [];
   final List<bool> _voiced = [];
+  final List<bool> _zero = [];
   int _bytes = 0;
   double _floor = 0;
 
@@ -47,27 +52,51 @@ class PreConnectBuffer {
     final r = rms(chunk);
     final voiced = r >= max(minVoiceRms, _floor * 3.16);
     if (!voiced) _floor = _floor == 0 || r < _floor ? r : _floor * 0.98 + r * 0.02;
+    if (r > _maxRms) _maxRms = r;
     _chunks.add(chunk);
     _voiced.add(voiced);
+    _zero.add(isDigitalSilence(chunk));
     _bytes += chunk.length;
     while (_bytes > capBytes && _chunks.length > 1) {
       _bytes -= _chunks.removeAt(0).length;
       _voiced.removeAt(0);
+      _zero.removeAt(0);
       dropped++;
     }
     return voiced;
   }
 
+  double _maxRms = 0;
+
   void clear() {
     _chunks.clear();
     _voiced.clear();
+    _zero.clear();
     _bytes = 0;
+    _maxRms = 0;
   }
 
-  /// The buffered audio (leading silence trimmed), in order, as frames of at
-  /// most [frameBytes]; empties the buffer.
+  /// One line about the buffered audio (diagnostics; call before [take]).
+  String describe() {
+    final first = _voiced.indexOf(true);
+    var firstMs = -1;
+    if (first >= 0) {
+      var b = 0;
+      for (var i = 0; i < first; i++) {
+        b += _chunks[i].length;
+      }
+      firstMs = b * 1000 ~/ kVoiceBytesPerSecond;
+    }
+    return '${_bytes * 1000 ~/ kVoiceBytesPerSecond} ms in ${_chunks.length} chunks, '
+        'voiced ${_voiced.where((v) => v).length}, first voiced at $firstMs ms, '
+        'zero ${_zero.where((z) => z).length}, max rms ${_maxRms.toStringAsFixed(4)}, '
+        'floor ${_floor.toStringAsFixed(4)}, dropped $dropped';
+  }
+
+  /// The buffered audio (leading digital silence trimmed), in order, as
+  /// frames of at most [frameBytes]; empties the buffer.
   List<Uint8List> take({int frameBytes = kVoiceBytesPerSecond * 2 ~/ 10}) {
-    var first = _voiced.indexOf(true);
+    var first = _zero.indexOf(false);
     if (first < 0) first = _chunks.length;
     var lead = 0;
     for (var i = 0; i < first; i++) {
@@ -88,6 +117,16 @@ class PreConnectBuffer {
       out.add(Uint8List.fromList(Uint8List.sublistView(bytes, o, min(o + frameBytes, bytes.length))));
     }
     return out;
+  }
+
+  /// Every sample within ±1 LSB of zero: no microphone signal at all.
+  static bool isDigitalSilence(Uint8List pcm16) {
+    final bd = ByteData.sublistView(pcm16);
+    for (var i = 0; i + 1 < pcm16.length; i += 2) {
+      final v = bd.getInt16(i, Endian.little);
+      if (v > 1 || v < -1) return false;
+    }
+    return true;
   }
 
   static double rms(Uint8List pcm16) {

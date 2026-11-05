@@ -764,6 +764,7 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
         _deferredTurn = true;
         _emit(SpeechStarted(itemId: ev['item_id'] as String?, deferred: true));
       case 'input_audio_buffer.speech_started':
+        _log('speech_started at ${ev['audio_start_ms']} ms of the input stream');
         // Stop local playback first (the pipeline does it on SpeechStarted);
         // the played position is frozen right now.
         _interruptPlayback();
@@ -771,6 +772,7 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
         _userSpeaking = true;
         _emit(SpeechStarted(itemId: ev['item_id'] as String?));
       case 'input_audio_buffer.speech_stopped':
+        _log('speech_stopped at ${ev['audio_end_ms']} ms of the input stream');
         _userSpeaking = false;
         // Server VAD creates the response, which includes any tool output.
         if (_pendingCalls.isEmpty) _wantResponse = false;
