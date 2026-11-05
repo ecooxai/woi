@@ -131,6 +131,7 @@ object WoiAudio {
     fun startEarly(ctx: Context) {
         try {
             if (micSink != null || early != null || record != null) return
+            WoiBridge.ensureContext(ctx)
             if (!WoiBridge.hasPermission(ctx, android.Manifest.permission.RECORD_AUDIO)) return
             if (othersRecording(am().activeRecordingConfigurations)) return
             val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

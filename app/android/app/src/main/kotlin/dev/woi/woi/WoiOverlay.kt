@@ -89,6 +89,9 @@ object WoiOverlay {
         // Dart keeps it in sync with the mic mode afterwards (voiceActive).
         if (WoiBridge.hasPermission(ctx, android.Manifest.permission.RECORD_AUDIO)) {
             WoiForegroundService.startVoice(ctx)
+            // Record from the gesture on, before the engine (cold start: ~1 s
+            // here, then Dart init); Dart's mic open takes this audio over.
+            WoiAudio.startEarly(ctx)
         }
         val engine = WoiEngine.obtain(ctx)
         WoiBridge.activity?.releaseFlutterView()

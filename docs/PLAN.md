@@ -694,3 +694,8 @@ in 10 s or panel hidden first: dropped. `AppController.assistantShown` (overlay 
 session and unmutes a muted mic directly, without waiting for the lifecycle event or the screenshot.
 Logs: `early mic: recording from activation`, `early mic: adopted after N ms, flushing K chunks (M ms)`,
 `pre-connect: flushed M ms`.
+Measured on the MI 8 (debug build, 2026-11-05): warm (suspended) gesture → mic recording 387 ms (was ~4.4 s, after
+connect), connect end +2.5 s; cold (force-stopped) gesture → mic recording 367 ms (before the engine: engine +1.6 s,
+Dart mic open +4.5 s adopts 5.7 s of buffered audio, connect end +9.2 s; before this change the mic opened only after
+connect). The ~370 ms is native (setMode IN_COMMUNICATION + AudioRecord). Open: with another app's media playing,
+entering call mode re-routes that playback to the earpiece and the HAL took 4.8 s (main thread, also delays the panel).
