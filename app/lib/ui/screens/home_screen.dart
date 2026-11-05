@@ -17,6 +17,7 @@ import '../notes/note_tabs.dart';
 import '../terminal/terminal_panel.dart';
 import '../theme.dart';
 import '../widgets/banner.dart';
+import '../widgets/chat_transcript.dart';
 import '../widgets/context_meter.dart';
 import '../widgets/edit_review_card.dart';
 import '../widgets/empty_state.dart';
@@ -798,24 +799,22 @@ class WoiTabsState extends State<WoiTabs> {
       if (img != null) last = img;
     }
     // One SelectionArea for the transcript: message text is plain Text.
+    // Only the newest messages are rendered (older ones load on scrolling
+    // up, then live in History); the conversation itself is untouched.
     return SelectionArea(
-      child: ListView.builder(
-        reverse: true,
+      child: ChatTranscript(
+        conversationId: pipeline.conversation.id,
+        messages: msgs,
         padding: EdgeInsets.fromLTRB(wide ? 22 : 10, 16, wide ? 22 : 10, 8),
-        itemCount: msgs.length,
-        itemBuilder: (context, i) {
-          final idx = msgs.length - 1 - i;
-          final m = msgs[idx];
-          return LiveMessageTile(
-            key: ValueKey(m.id),
-            listenable: pipeline,
-            message: m,
-            audio: c.platform.audio,
-            viewer: c.platform.viewer,
-            maxBubbleWidth: maxBubble,
-            screenshot: m.kind == MessageKind.tool ? shots[idx] : null,
-          );
-        },
+        onOpenHistory: _openHistory,
+        tileBuilder: (context, m, idx) => LiveMessageTile(
+          listenable: pipeline,
+          message: m,
+          audio: c.platform.audio,
+          viewer: c.platform.viewer,
+          maxBubbleWidth: maxBubble,
+          screenshot: m.kind == MessageKind.tool ? shots[idx] : null,
+        ),
       ),
     );
   }
