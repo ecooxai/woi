@@ -364,6 +364,14 @@ void main() {
       expect(a.view.value, HomeView.note);
       await ctrl(LogicalKeyboardKey.comma);
       expect(a.view.value, HomeView.settings);
+      // Ctrl+N from Settings starts a note and shows it (QA P3).
+      await ctrl(LogicalKeyboardKey.keyN);
+      await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
+      await _settle(t, 150);
+      expect(a.view.value, HomeView.note);
+      expect(find.byKey(const ValueKey('settings-view')), findsNothing);
+      await ctrl(LogicalKeyboardKey.comma);
+      expect(a.view.value, HomeView.settings);
 
       // Voice: "show chat" / "open settings" select the tabs.
       final r1 = await t.runAsync(() => env.c.tools.dispatch('app_control', '{"action":"show_view","view":"chat"}'));

@@ -335,6 +335,8 @@ class WoiTabsState extends State<WoiTabs> {
       return true;
     }
     if (ctrl && key == LogicalKeyboardKey.keyN && !inTerminal) {
+      // The new note is shown: Ctrl+N from Settings leaves it.
+      if (_view == HomeView.settings) setView(HomeView.note);
       c.actions.newNote();
       return true;
     }
