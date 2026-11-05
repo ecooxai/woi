@@ -76,6 +76,8 @@ class _WoiAppState extends State<WoiApp> with WidgetsBindingObserver {
     if (Platform.isAndroid) {
       _android = AndroidIntegration(_controller)..start();
       _startAssistPanel(AndroidBridge.instance);
+    } else if (Platform.environment['WOI_DEBUG_ASSIST_PANEL'] == '1') {
+      _startDebugAssistPanel();
     }
     _debugShowFromEnv();
     _debugCameraFromEnv();
@@ -104,6 +106,30 @@ class _WoiAppState extends State<WoiApp> with WidgetsBindingObserver {
           },
           onDismiss: () => call('overlayDismiss'),
           onOpenApp: () => call('overlayOpenApp'),
+        ),
+      ),
+    )..start();
+  }
+
+  /// Debug hook: `WOI_DEBUG_ASSIST_PANEL=1` shows the Android assist panel
+  /// over a plain background on desktop (layout checks at a phone-sized
+  /// window); close / open app / dismiss take it down.
+  void _startDebugAssistPanel() {
+    final visible = ValueNotifier(true);
+    _assistPanel = AssistPanelPresenter(
+      navigatorKey: _navigatorKey,
+      visible: visible,
+      builder: (context) => ColoredBox(
+        color: const Color(0xFF5C6B7A),
+        child: ListenableBuilder(
+          listenable: _controller,
+          builder: (context, _) => AssistPanel(
+            controller: _controller,
+            initialView: _assistTab,
+            onViewChanged: (v) => _assistTab = v,
+            onDismiss: () => visible.value = false,
+            onOpenApp: () => visible.value = false,
+          ),
         ),
       ),
     )..start();
