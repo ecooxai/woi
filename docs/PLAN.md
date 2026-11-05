@@ -318,6 +318,15 @@ turn), send key events to the current app (esc/back, ctrl+c copy, paste, select 
   key lays out and re-rasters one block and unchanged blocks stay raster-cached. That is the block-editor rewrite
   (custom selection across blocks, IME composing, undo, scroll-to-caret); not done here.
 
+### Android smoke test (v0.10.0+10 arm64 release, MI 8, 2026-11-04)
+- Installed over versionCode 1 → 2010 with `install -r` (no signature issue); freeform task bounds (0,0)-(1080,1512) = top-left,
+  full width, 70%; backend Direct realtime gpt-realtime-2.1; Stop word detection toggle on (Audio → Advanced).
+- `kws: armed ▁ST O P @STOP (mic 0.40, ref 0.10)`; 30.6 s story containing "stopped" played to the end, 0 kws hits/cuts.
+- CPU while speaking 33–41% of a core (162% spike at model init), RES ~310 MB.
+- Caveat: mic delivered exact zeros (125/125 chunks) the whole time, incl. during Woi's speech (phone-route AEC/NS gating a
+  quiet room), so the 0 false cuts is weak evidence. Android has no raw pre-AEC mic, so KWS sees the AEC'd stream (on Linux
+  the AEC removed the "s" of "stop"). Needs a human "stop" on the phone while Woi talks, in both phone and media routes.
+
 ## Real-room echo (echo15)
 P0: on built-in speakers + mic the PipeWire WebRTC canceller removes only ~15–30 dB in a real room; server VAD
 heard the residual as the user and Woi answered its own words ("Pointer moved…" → user turn "Boiner moot").
