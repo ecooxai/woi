@@ -647,6 +647,7 @@ void main() {
         options: const PipelineOptions(autoScreenshot: false),
         echoGuard: EchoGuard(nowUs: () => 0),
       );
+      h.pipeline.onsetHoldMinRms = double.infinity; // a weak onset: no local hold
       final b = h.scripted;
       final mic = h.fp.audio.mic!;
       b.emit(const AssistantTranscriptDelta('Once upon a time '));
@@ -672,6 +673,99 @@ void main() {
       expect(resumed, kVoiceBytesPerSecond * 42 ~/ 10);
       expect(ofKind(h.conv, MessageKind.assistant).single.interrupted, isFalse);
       await h.dispose();
+    });
+
+    group('local hold', () {
+      Future<Harness> strongOnset() async {
+        final h = await Harness.create(
+          options: const PipelineOptions(autoScreenshot: false),
+          echoGuard: EchoGuard(nowUs: () => 0),
+        );
+        h.pipeline.onsetHoldExtra = const Duration(milliseconds: 600);
+        final b = h.scripted;
+        final mic = h.fp.audio.mic!;
+        b.emit(const AssistantTranscriptDelta('Once upon a time there was a lighthouse keeper. '));
+        b.emit(AssistantAudioDelta(voice(4000, amplitude: 8000, f0: 140)));
+        for (var i = 0; i < 40; i++) {
+          mic.push(voice(20, amplitude: 300, f0: 140, phase0: i * 480));
+        }
+        for (var i = 0; i < 10; i++) {
+          mic.push(voice(20, amplitude: 9000, f0: 230, phase0: i * 480));
+        }
+        expect(h.pipeline.localOnsets, 1);
+        return h;
+      }
+
+      test('a strong onset stays paused past the confirm window; a late speech start cuts', () async {
+        final h = await strongOnset();
+        final b = h.scripted;
+        final written = h.player.written.length;
+        await Future<void>.delayed(const Duration(milliseconds: 1100));
+        expect(h.pipeline.onsetsHeld, 1);
+        expect(h.pipeline.onsetsResumed, 0, reason: 'held, not resumed');
+        expect(h.player.written.length, written, reason: 'still silent');
+        // The server's (deferred) speech start arrives late: still a barge-in.
+        b.emit(const SpeechStarted(itemId: 'u1', deferred: true));
+        expect(h.pipeline.bargeIns, 1);
+        expect(b.cancels, 1);
+        expect(ofKind(h.conv, MessageKind.assistant).single.interrupted, isTrue);
+        await Future<void>.delayed(const Duration(milliseconds: 600));
+        expect(h.pipeline.onsetsResumed, 0);
+        await h.dispose();
+      });
+
+      test('a held onset with no speech start resumes after the hold', () async {
+        final h = await strongOnset();
+        final b = h.scripted;
+        final written = h.player.written.length;
+        await Future<void>.delayed(const Duration(milliseconds: 1100));
+        expect(h.pipeline.onsetsResumed, 0);
+        await Future<void>.delayed(const Duration(milliseconds: 600));
+        expect(h.pipeline.onsetsHeld, 1);
+        expect(h.pipeline.onsetsResumed, 1);
+        expect(b.cancels, 0);
+        expect(h.player.written.length - written, kVoiceBytesPerSecond * 4, reason: 'resumes where it paused');
+        expect(ofKind(h.conv, MessageKind.assistant).single.interrupted, isFalse);
+        await h.dispose();
+      });
+
+      test('a held onset whose late turn is an echo transcript resumes the reply', () async {
+        final h = await strongOnset();
+        final b = h.scripted;
+        await Future<void>.delayed(const Duration(milliseconds: 1100));
+        b.emit(const SpeechStarted(itemId: 'u1', deferred: true));
+        expect(h.pipeline.bargeIns, 1);
+        final written = h.player.written.length;
+        b.emit(const SpeechStopped(itemId: 'u1'));
+        b.emit(const UserTranscriptDone('啊', itemId: 'u1'));
+        expect(h.pipeline.echoTurnsDropped, 1);
+        expect(ofKind(h.conv, MessageKind.user), isEmpty);
+        expect(h.player.written.length, greaterThan(written), reason: 'the cut-off reply resumes');
+        expect(ofKind(h.conv, MessageKind.assistant).single.interrupted, isFalse);
+        await h.dispose();
+      });
+
+      test('a weak onset is not held', () async {
+        final h = await Harness.create(
+          options: const PipelineOptions(autoScreenshot: false),
+          echoGuard: EchoGuard(nowUs: () => 0),
+        );
+        h.pipeline.onsetHoldMinRms = 1.0;
+        final mic = h.fp.audio.mic!;
+        h.scripted.emit(const AssistantTranscriptDelta('Once upon a time '));
+        h.scripted.emit(AssistantAudioDelta(voice(4000, amplitude: 8000, f0: 140)));
+        for (var i = 0; i < 40; i++) {
+          mic.push(voice(20, amplitude: 300, f0: 140, phase0: i * 480));
+        }
+        for (var i = 0; i < 10; i++) {
+          mic.push(voice(20, amplitude: 9000, f0: 230, phase0: i * 480));
+        }
+        expect(h.pipeline.localOnsets, 1);
+        await Future<void>.delayed(const Duration(milliseconds: 1000));
+        expect(h.pipeline.onsetsHeld, 0);
+        expect(h.pipeline.onsetsResumed, 1);
+        await h.dispose();
+      });
     });
 
     test('half-duplex (Android media route): echo goes out as silence, an onset reopens the mic', () async {

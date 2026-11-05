@@ -155,6 +155,11 @@ class EchoGuard {
   int onsets = 0;
   int framesGated = 0;
   double lastExcessRms = 0;
+
+  /// Peak near-end excess RMS over the voiced run that raised the last
+  /// onset (how strongly the user stands out from the echo).
+  double onsetPeakRms = 0;
+  double _runPeakRms = 0;
   int? get lagMs => _lagFrames == null ? null : _lagFrames! * 10;
   double get lagCorrelation => _lagCorr;
   List<double> get couplingDb => [for (final c in _coupling) 10 * log(max(c, 1e-12)) / ln10];
@@ -375,6 +380,8 @@ class EchoGuard {
       _gapMs = 0;
     }
     if (user) {
+      if (_voicedMs == 0) _runPeakRms = 0;
+      if (excessRms > _runPeakRms) _runPeakRms = excessRms;
       _voicedMs += 10 + _gapMs;
       _gapMs = 0;
     } else if (_voicedMs > 0) {
@@ -385,6 +392,7 @@ class EchoGuard {
       }
     }
     if (_voicedMs >= onsetMs) {
+      onsetPeakRms = _runPeakRms;
       _fired = true;
       _gateOpen = true;
       _voicedMs = 0;

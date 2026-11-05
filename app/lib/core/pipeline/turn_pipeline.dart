@@ -301,6 +301,16 @@ class TurnPipeline extends ChangeNotifier {
   BytesBuilder? _paused;
   Timer? _pauseTimer;
   static const _onsetConfirmWindow = Duration(milliseconds: 900);
+
+  /// Local hold: a strong, voice-like onset (peak excess RMS over the echo
+  /// at least [onsetHoldMinRms]) is not resumed after [_onsetConfirmWindow];
+  /// it stays paused up to [onsetHoldExtra] more for the server's speech
+  /// start (the server VAD can lag ~2.5 s or miss a short "stop" over the
+  /// echo). An echo / empty transcript then resumes from where it paused.
+  double onsetHoldMinRms = 0.012;
+  Duration onsetHoldExtra = const Duration(milliseconds: 1500);
+  bool _onsetHeld = false;
+  int onsetsHeld = 0;
   // Raw platform mic used only for onset detection when the backend owns the
   // real mic (its stream is a delayed server echo, too late for barge-in).
   MicStream? _onsetMic;
@@ -719,7 +729,26 @@ class TurnPipeline extends ChangeNotifier {
     final b = _unheard();
     _stopOut();
     _paused = b;
-    _pauseTimer = Timer(_onsetConfirmWindow, _resume);
+    _onsetHeld = false;
+    _pauseTimer = Timer(_onsetConfirmWindow, _onsetUnconfirmed);
+  }
+
+  /// No server speech start within [_onsetConfirmWindow]: resume, unless
+  /// the onset was strong enough to hold the pause a little longer.
+  void _onsetUnconfirmed() {
+    _pauseTimer = null;
+    if (_paused == null) return;
+    if (!_onsetHeld && _guard.onsetPeakRms >= onsetHoldMinRms) {
+      _onsetHeld = true;
+      onsetsHeld++;
+      debugPrint(
+        'barge-in: strong onset (peak excess rms ${_guard.onsetPeakRms.toStringAsFixed(3)}): '
+        'holding ${onsetHoldExtra.inMilliseconds} ms more',
+      );
+      _pauseTimer = Timer(onsetHoldExtra, _resume);
+      return;
+    }
+    _resume();
   }
 
   /// The written audio the speaker has not played yet.

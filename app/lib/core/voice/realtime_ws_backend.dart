@@ -55,6 +55,9 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
     this.vadThreshold = 0.5,
     this.vadPrefixPaddingMs = 300,
     this.vadSilenceMs = 500,
+    this.speakingVadThreshold = 0.3,
+    this.speakingVadPrefixPaddingMs = 300,
+    this.speakingVadSilenceMs = 400,
     this.noiseReduction = 'far_field',
     this.deferInterrupts = true,
     this.maxReconnectAttempts = 5,
@@ -80,6 +83,13 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
   final double vadThreshold;
   final int vadPrefixPaddingMs;
   final int vadSilenceMs;
+
+  /// Server VAD while Woi is audible: more sensitive, so a short "stop" over
+  /// the residual echo still raises speech_started. Extra echo starts are
+  /// harmless: they are deferred and dropped by the pipeline.
+  final double speakingVadThreshold;
+  final int speakingVadPrefixPaddingMs;
+  final int speakingVadSilenceMs;
 
   /// `far_field`: laptop speakers + built-in mic (no headset detection yet).
   final String noiseReduction;
@@ -232,9 +242,9 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
   /// response nor answers a turn by itself: residual echo would do both.
   Map<String, Object?> _turnDetection({required bool speaking}) => {
     'type': 'server_vad',
-    'threshold': vadThreshold,
-    'prefix_padding_ms': vadPrefixPaddingMs,
-    'silence_duration_ms': vadSilenceMs,
+    'threshold': speaking && deferInterrupts ? speakingVadThreshold : vadThreshold,
+    'prefix_padding_ms': speaking && deferInterrupts ? speakingVadPrefixPaddingMs : vadPrefixPaddingMs,
+    'silence_duration_ms': speaking && deferInterrupts ? speakingVadSilenceMs : vadSilenceMs,
     'create_response': !speaking,
     'interrupt_response': !speaking,
   };

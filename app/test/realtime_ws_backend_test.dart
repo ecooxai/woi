@@ -345,6 +345,9 @@ void main() {
       final td = ((upd['audio'] as Map)['input'] as Map)['turn_detection'] as Map;
       expect(td['interrupt_response'], isFalse);
       expect(td['create_response'], isFalse);
+      expect(td['threshold'], 0.3, reason: 'more sensitive while Woi speaks');
+      expect(td['silence_duration_ms'], 400);
+      expect(((input['turn_detection'] as Map)['threshold']), 0.5);
       r.ws.push({'type': 'session.updated', 'session': upd});
       r.audioItem('r1', 'a1', 3000);
       await _pump();
@@ -371,6 +374,38 @@ void main() {
       r.ws.push({'type': 'input_audio_buffer.speech_stopped', 'item_id': 'u2'});
       await _pump();
       expect(r.ws.ofType('response.create'), hasLength(1));
+      await r.dispose();
+    });
+
+    test('defer mode: one session.update per transition; the sensitive VAD is restored after playback', () async {
+      final r = _Rig(defer: true);
+      await r.connect();
+      List<Map> tds() => [
+        for (final u in r.ws.ofType('session.update'))
+          if ((((u['session'] as Map)['audio'] as Map?)?['input'] as Map?)?['turn_detection'] case final Map td) td,
+      ];
+      expect(tds(), hasLength(1));
+      r.respond('r1');
+      await _pump();
+      r.ws.push({'type': 'session.updated', 'session': r.ws.ofType('session.update').last['session']});
+      r.ws.push({'type': 'response.output_audio_transcript.delta', 'response_id': 'r1', 'item_id': 'a1', 'delta': 'Hi'});
+      await _pump();
+      expect(tds(), hasLength(2));
+      expect(tds().last['threshold'], 0.3);
+      r.done('r1');
+      await _pump();
+      expect(tds(), hasLength(2), reason: 'restored only after the echo tail');
+      await Future<void>.delayed(const Duration(milliseconds: 1450));
+      expect(tds(), hasLength(3));
+      expect(tds().last['threshold'], 0.5);
+      expect(tds().last['silence_duration_ms'], 500);
+      expect(tds().last['interrupt_response'], isTrue);
+      // A second response: one more switch, not a stream of updates.
+      r.respond('r2');
+      await _pump();
+      r.respond('r2');
+      await _pump();
+      expect(tds(), hasLength(4));
       await r.dispose();
     });
 
