@@ -582,3 +582,12 @@ background isolate with two spotters (mic after AEC at 16 kHz, reference stamped
 write time + queued ms), run only while Woi is audible or paused; a mic hit without a reference hit in
 [T − 2 s, T + 0.3 s] → pause + local cut logged `kws`; setting `stopWordDetection` (default on) + keyword list
 (default just "stop"); model in `app/assets/kws/` copied to the data dir on first use (Android assets are not files).
+Integrated (echo31 round 2): `sherpa_onnx` is a normal dependency; model (int8 + tokens + MODEL_README, Apache-2.0)
+in `app/assets/kws/`, copied to `<dataDir>/kws/` on first use. `SherpaStopWordSpotter`
+(`app/lib/core/audio/stop_word_spotter.dart`): background isolate, mic spotter 0.4 + reference spotter 0.1, mic hit
+held until the reference covers T + 0.3 s, veto [T − 2 s, T + 0.3 s] (`kwsReferenceVetoes`). Pipeline: fed only while
+Woi is playing / paused / in the echo tail (mic after the AEC; reference stamped now + queued ms); a hit while
+speaking or paused → `_pause()` + `_localCut('kws ...')` (`kwsCuts`), else ignored (`kwsIgnored`). Settings
+`stopWordDetection` (default on) + `stopWords` (default ["stop"], longest-match BPE mapping), Audio → Advanced and
+`set_setting stop_word_detection / stop_words`. Linux release bundle +37 MB (onnxruntime 27.0 + sherpa C API 4.9 +
+model 5.3). Not yet run live: E2E next.
