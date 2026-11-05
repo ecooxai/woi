@@ -58,15 +58,80 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
+  final _tabsKey = GlobalKey<WoiTabsState>();
+
+  @visibleForTesting
+  HomeView get view => _tabsKey.currentState!.view;
+
+  @visibleForTesting
+  bool get wide => _tabsKey.currentState!.wide;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      key: _scaffoldKey,
+      resizeToAvoidBottomInset: true,
+      endDrawer: HistoryDrawer(controller: widget.controller),
+      body: SafeArea(
+        child: WoiTabs(key: _tabsKey, controller: widget.controller),
+      ),
+    );
+  }
+}
+
+/// The main UI: the tab strip (Note, Chat, Terminal, Settings), the
+/// selected tab and the composer; from [kWideBreakpoint] the chat is docked
+/// on the right. Hosted by [HomeScreen] and, [embedded], by the Android
+/// assist panel (always the narrow layout there). The history button opens
+/// the end drawer of the enclosing [Scaffold].
+class WoiTabs extends StatefulWidget {
+  const WoiTabs({
+    super.key,
+    required this.controller,
+    this.embedded = false,
+    this.initialView,
+    this.onViewChanged,
+    this.headerTrailing = const [],
+    this.wrapHeader,
+  });
+
+  final AppController controller;
+
+  /// Hosted in the assist panel: narrow layout only, its own selected tab
+  /// (starting at [initialView]; voice still switches it), no screen-share
+  /// button, and the app-wide split state is left alone.
+  final bool embedded;
+
+  /// Embedded: the tab shown first (default Chat).
+  final HomeView? initialView;
+
+  /// Embedded: the selected tab changed (to remember it).
+  final ValueChanged<HomeView>? onViewChanged;
+
+  /// Extra actions at the right end of the tab strip row (narrow layout).
+  final List<Widget> headerTrailing;
+
+  /// Wraps the tab strip row (the assist panel makes it a drag handle).
+  final Widget Function(Widget header)? wrapHeader;
+
+  @override
+  State<WoiTabs> createState() => WoiTabsState();
+}
+
+class WoiTabsState extends State<WoiTabs> {
   final _composerFocus = FocusNode(debugLabel: 'composer');
   final _banners = BannerController();
   StreamSubscription<ContextCompacted>? _compactSub;
 
   SessionStatus? _lastStatus;
 
-  /// The selected tab: owned by [AppActions] (voice can switch it).
-  HomeView get _view => c.actions.view.value;
-  set _view(HomeView v) => c.actions.view.value = v;
+  /// The selected tab: owned by [AppActions] (voice can switch it); the
+  /// embedded panel keeps its own and follows voice changes.
+  late final ValueNotifier<HomeView> _viewN = widget.embedded
+      ? ValueNotifier(widget.initialView ?? HomeView.chat)
+      : c.actions.view;
+  HomeView get _view => _viewN.value;
+  set _view(HomeView v) => _viewN.value = v;
 
   double _width = 0;
 
@@ -94,7 +159,7 @@ class _HomeScreenState extends State<HomeScreen> {
   HomeView get view => _view;
 
   /// Wide window: chat docked on the right, always visible.
-  bool get _wide => _width >= kWideBreakpoint;
+  bool get _wide => !widget.embedded && _width >= kWideBreakpoint;
   bool get _chatVisible => _wide || _view == HomeView.chat;
   bool get _noteVisible => (_wide ? _leftView : _view) == HomeView.note;
 
@@ -107,9 +172,13 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    // A new (empty) conversation opens on its note.
-    _view = pipeline.conversation.messages.isEmpty ? HomeView.note : HomeView.chat;
-    c.actions.view.addListener(_onViewChanged);
+    if (widget.embedded) {
+      c.actions.view.addListener(_followActions);
+    } else {
+      // A new (empty) conversation opens on its note.
+      _view = pipeline.conversation.messages.isEmpty ? HomeView.note : HomeView.chat;
+    }
+    _viewN.addListener(_onViewChanged);
     _compactSub = pipeline.compactionEvents.listen(_onCompacted);
     pipeline.addListener(_onPipeline);
     _onPipeline();
@@ -122,7 +191,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
-    c.actions.view.removeListener(_onViewChanged);
+    _viewN.removeListener(_onViewChanged);
+    if (widget.embedded) {
+      c.actions.view.removeListener(_followActions);
+      _viewN.dispose();
+    }
     HardwareKeyboard.instance.removeHandler(_onKey);
     c.notes.removeListener(_onNotes);
     pipeline.removeListener(_onPipeline);
@@ -134,12 +207,16 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Selects a top-level tab (Ctrl+1..4). In the wide layout the chat is
   /// always shown, so "Chat" just focuses the composer.
-  void setView(HomeView v) => c.actions.showView(v);
+  void setView(HomeView v) => widget.embedded ? _view = v : c.actions.showView(v);
+
+  /// Embedded: voice (or the app) switched the tab.
+  void _followActions() => _view = c.actions.view.value;
 
   /// The view changed (buttons, shortcuts or voice): clear the badges of
   /// whatever is visible now.
   void _onViewChanged() {
     if (!mounted) return;
+    widget.onViewChanged?.call(_view);
     setState(() {
       if (_view != HomeView.chat) {
         _leftView = _view;
@@ -178,7 +255,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _convId = conv.id;
       _seenMessages = conv.messages.length;
       _noteBadge = false;
-      if (conv.messages.isEmpty && _view != HomeView.note) {
+      if (conv.messages.isEmpty && _view != HomeView.note && !widget.embedded) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) setState(() => _view = HomeView.note);
         });
@@ -263,7 +340,7 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
     if (key == LogicalKeyboardKey.escape && !_typing && _view == HomeView.settings) {
-      c.actions.closeSettings();
+      widget.embedded ? setView(HomeView.chat) : c.actions.closeSettings();
       return true;
     }
     if (key == LogicalKeyboardKey.escape && !_typing) {
@@ -313,7 +390,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _openHistory() => _scaffoldKey.currentState?.openEndDrawer();
+  void _openHistory() => Scaffold.maybeOf(context)?.openEndDrawer();
 
   bool get _phone => _width < kPhoneBreakpoint;
 
@@ -348,25 +425,18 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      key: _scaffoldKey,
-      resizeToAvoidBottomInset: true,
-      endDrawer: HistoryDrawer(controller: c),
-      // Only app-level changes (settings, conversation switch) rebuild the
-      // screen; the transcript, header and input bar listen to the pipeline
-      // themselves, the note editor to the note.
-      body: ListenableBuilder(
-        listenable: c,
-        builder: (context, _) => SafeArea(
-          child: LayoutBuilder(
-            builder: (context, box) {
-              _width = box.maxWidth;
-              // The chat is always beside the left pane: "split" is implied.
-              c.actions.splitAvailable = _wide;
-              return ColoredBox(color: WoiColors.bg1, child: _wide ? _wideLayout(box) : _narrowLayout(box));
-            },
-          ),
-        ),
+    // Only app-level changes (settings, conversation switch) rebuild the
+    // screen; the transcript, header and input bar listen to the pipeline
+    // themselves, the note editor to the note.
+    return ListenableBuilder(
+      listenable: c,
+      builder: (context, _) => LayoutBuilder(
+        builder: (context, box) {
+          _width = box.maxWidth;
+          // The chat is always beside the left pane: "split" is implied.
+          if (!widget.embedded) c.actions.splitAvailable = _wide;
+          return ColoredBox(color: WoiColors.bg1, child: _wide ? _wideLayout(box) : _narrowLayout(box));
+        },
       ),
     );
   }
@@ -381,7 +451,11 @@ class _HomeScreenState extends State<HomeScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         // Only the unread badge follows the pipeline.
-        SelectorBuilder<int>(listenable: pipeline, selector: () => _chatBadge, builder: (context, _) => _header()),
+        SelectorBuilder<int>(
+          listenable: pipeline,
+          selector: () => _chatBadge,
+          builder: (context, _) => widget.wrapHeader?.call(_header()) ?? _header(),
+        ),
         const Divider(height: 1),
         Expanded(
           child: switch (_view) {
@@ -599,8 +673,9 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ),
-          if (Platform.isAndroid) ScreenShareButton(size: t),
+          if (Platform.isAndroid && !widget.embedded) ScreenShareButton(size: t),
           if (!wide) _historyButton(t),
+          if (!wide) ...widget.headerTrailing,
           SizedBox(width: phone ? 0 : 4),
         ],
       ),

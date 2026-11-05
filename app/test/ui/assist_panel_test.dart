@@ -7,6 +7,7 @@ import 'package:woi/core/pipeline/turn_pipeline.dart';
 import 'package:woi/platform/android/android_bridge.dart';
 import 'package:woi/platform/platform_services.dart';
 import 'package:woi/ui/assist/assist_panel.dart';
+import 'package:woi/ui/screens/home_screen.dart';
 import 'package:woi/ui/theme.dart';
 import 'package:woi/ui/widgets/input_bar.dart';
 
@@ -60,7 +61,10 @@ class _Env {
     await t.pumpWidget(
       MaterialApp(
         theme: buildWoiTheme(),
-        home: Scaffold(backgroundColor: Colors.transparent, body: panel(fraction: fraction)),
+        home: Scaffold(
+          backgroundColor: Colors.transparent,
+          body: panel(fraction: fraction),
+        ),
       ),
     );
     await t.pump();
@@ -97,7 +101,117 @@ void main() {
     expect(rect.bottom, _screen.height);
     expect(find.byType(InputBar), findsOneWidget);
     expect(find.byKey(const ValueKey('assist-open-app')), findsOneWidget);
-    expect(find.text('Ask about this screen, or anything else.'), findsOneWidget);
+    // The main app's tab UI, on the Chat tab.
+    expect(find.byType(WoiTabs), findsOneWidget);
+    expect(find.byKey(const ValueKey('chat-panel')), findsOneWidget);
+    await env.stop(t);
+  });
+
+  testWidgets('hosts the four main tabs; Note and Terminal open in the panel, the app tab is untouched', (t) async {
+    final env = _Env();
+    await env.start(t);
+    final appView = env.c.actions.view.value;
+    final seen = <HomeView>[];
+    await t.binding.setSurfaceSize(_screen);
+    addTearDown(() => t.binding.setSurfaceSize(null));
+    await t.pumpWidget(
+      MaterialApp(
+        theme: buildWoiTheme(),
+        home: Scaffold(
+          backgroundColor: Colors.transparent,
+          body: AssistPanel(controller: env.c, onDismiss: () {}, onOpenApp: () {}, onViewChanged: seen.add),
+        ),
+      ),
+    );
+    await t.pump();
+    for (final label in ['Note', 'Chat', 'Terminal', 'Settings']) {
+      expect(find.byTooltip('$label (Ctrl+${HomeView.values.byName(label.toLowerCase()).index + 1})'), findsOneWidget);
+    }
+    final tabs = find.byKey(const ValueKey('assist-tabs'));
+    await t.tap(find.descendant(of: tabs, matching: find.byTooltip('Note (Ctrl+1)')));
+    await t.pump();
+    expect(find.byKey(const ValueKey('note-editor')), findsOneWidget);
+    expect(find.byKey(const ValueKey('chat-panel')), findsNothing);
+
+    await t.runAsync(() async {
+      await t.tap(find.descendant(of: tabs, matching: find.byTooltip('Terminal (Ctrl+3)')));
+      await t.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await t.pump();
+    expect(find.byKey(const ValueKey('terminal-view')), findsOneWidget);
+
+    final settingsTab = find.descendant(of: tabs, matching: find.byKey(const ValueKey('view-settings')));
+    await t.ensureVisible(settingsTab);
+    await t.pump();
+    await t.tap(settingsTab);
+    await t.pump();
+    expect(find.byKey(const ValueKey('settings-view')), findsOneWidget);
+    expect(seen, [HomeView.note, HomeView.terminal, HomeView.settings]);
+    // The full app's selected tab is kept apart.
+    expect(env.c.actions.view.value, appView);
+
+    // Voice still switches the panel's tab.
+    env.c.actions.showView(appView == HomeView.chat ? HomeView.note : HomeView.chat);
+    await t.pump();
+    expect(seen.last, env.c.actions.view.value);
+    await env.stop(t);
+  });
+
+  testWidgets('starts on the remembered tab; dragging the tab strip row resizes too', (t) async {
+    final env = _Env();
+    await env.start(t);
+    await t.binding.setSurfaceSize(_screen);
+    addTearDown(() => t.binding.setSurfaceSize(null));
+    await t.pumpWidget(
+      MaterialApp(
+        theme: buildWoiTheme(),
+        home: Scaffold(
+          backgroundColor: Colors.transparent,
+          body: AssistPanel(
+            controller: env.c,
+            initialView: HomeView.note,
+            onDismiss: () {},
+            onOpenApp: () {},
+            onFractionChanged: env.fractions.add,
+          ),
+        ),
+      ),
+    );
+    await t.pump();
+    expect(find.byKey(const ValueKey('note-editor')), findsOneWidget);
+    await t.drag(find.byKey(const ValueKey('assist-close')), const Offset(0, -600));
+    await t.pumpAndSettle();
+    expect(_panelHeight(t), closeTo(_screen.height * kAssistPanelMax, 0.5));
+    await env.stop(t);
+  });
+
+  testWidgets('soft keyboard: the panel moves up above it and keeps its UI', (t) async {
+    final env = _Env();
+    await env.start(t);
+    await t.binding.setSurfaceSize(_screen);
+    addTearDown(() => t.binding.setSurfaceSize(null));
+    await t.pumpWidget(
+      MaterialApp(
+        theme: buildWoiTheme(),
+        home: Builder(
+          builder: (context) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(viewInsets: const EdgeInsets.only(bottom: 300)),
+            child: Scaffold(
+              resizeToAvoidBottomInset: false,
+              backgroundColor: Colors.transparent,
+              body: AssistPanel(controller: env.c, initialView: HomeView.note, onDismiss: () {}, onOpenApp: () {}),
+            ),
+          ),
+        ),
+      ),
+    );
+    await t.pump();
+    final rect = t.getRect(find.byKey(const ValueKey('assist-panel')));
+    expect(rect.bottom, _screen.height - 300);
+    expect(find.byKey(const ValueKey('note-editor')), findsOneWidget);
+    expect(find.byType(InputBar), findsOneWidget);
+    expect(t.takeException(), isNull);
     await env.stop(t);
   });
 
@@ -196,7 +310,7 @@ void main() {
       ..add(Message(kind: MessageKind.assistant, text: 'The Settings app.'));
     await env.pump(t);
     expect(find.byKey(const ValueKey('assist-thumbnail')), findsOneWidget);
-    expect(find.byKey(const ValueKey('assist-transcript')), findsOneWidget);
+    expect(find.byKey(const ValueKey('chat-panel')), findsOneWidget);
     expect(find.text('The Settings app.'), findsWidgets);
     expect(latestScreenshot(env.c.pipeline.conversation.messages)?.path, '/nonexistent/assist.png');
     await env.stop(t);
@@ -255,9 +369,7 @@ void main() {
     expect(b.overlayVisible.value, isFalse);
   });
 
-  testWidgets('dismissing the assistant interrupts and suspends the voice session once in the background', (
-    t,
-  ) async {
+  testWidgets('dismissing the assistant interrupts and suspends the voice session once in the background', (t) async {
     final env = _Env();
     await env.start(t, mobile: true);
     env.c.assistantIdleDelay = const Duration(milliseconds: 50);

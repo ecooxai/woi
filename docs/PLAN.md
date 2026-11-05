@@ -173,6 +173,13 @@ turn), send key events to the current app (esc/back, ctrl+c copy, paste, select 
   launches itself. Needs freeform support on the device (Android 15: developer option
   `enable_freeform_support`, or the desktop windowing mode); when it's unavailable, fall back to full screen without errors.
 - The assistant floating panel (#4: 60% by default, resizable to 95%) stays as is.
+- 2026-11-05 (user): the assist panel shows the same UI as the main app. HomeScreen's body is now `WoiTabs`
+  (home_screen.dart); the panel embeds it (narrow layout, Note / Chat / Terminal / Settings + input bar, no duplicated
+  widgets) inside the unchanged sheet (scrim, 60% → 95% drag, fling/drag-down dismiss, moves up with the keyboard).
+  Thumbnail / open full app / close sit at the end of the tab row, which is also a drag handle. Same engine and
+  AppController (the panel is a route above HomeScreen). The panel starts on Chat and remembers its own last tab for
+  the run (separate from the app's tab; voice view changes still switch it). Desktop check:
+  `WOI_DEBUG_ASSIST_PANEL=1` shows the panel over a plain background.
 
 ## Spec 2026-11-03 #6 (user): testing on gpt-realtime-2.1, echo cancellation, unified tab UI
 - Testing defaults to Direct realtime with gpt-realtime-2.1 (free on the ChatGPT login; probed: 2.1 and 2.1-mini
