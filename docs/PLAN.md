@@ -530,3 +530,21 @@ excess at firing is now *inverted* (real stop 0.011 < echo 0.013), and peak over
 left unchanged. A short "stop" said over Woi is caught only by the server (or not at all, as in both runs here). It
 needs a different cue, e.g. the onset's spectral or pitch shape against the reference, or a longer post-tail window
 for the word's end.
+
+echo31 (2026-11-04): stop-word spotting prototype, offline only. `sherpa_onnx` 2.0.1 (pub, Apache-2.0, Linux/Android
+prebuilt; Linux x64 adds libonnxruntime 27 MB + libsherpa-onnx-c-api 4.9 MB) with the English zipformer KWS model
+`kws-zipformer-gigaspeech-3.3M-2024-01-01` (int8 encoder+decoder+joiner+tokens 5.3 MB; the zh wenetspeech model is
+a separate 36 MB download). Script `app/tool/kws_proto.dart`, fed the six E2E `mic.wav` (local-a/b, after-e28a/b,
+after-e29a/b). Note: these captures are the **raw mic before the AEC** (echo at full level), so false alarms are
+a worst case. Stop fixture alone: detected. Keyword "stop" only (BPE `▁ST O P`), on the mic: threshold 0.2 → 5/6 stops,
+5 false hits in 6 runs; 0.25–0.35 → 4/6, 5 false; 0.4 → 4/6, 3 false; 0.5 → 1/6. Every false hit is Woi's own
+"stopped" in the echo (clipping and room smear hide the "-ed"). Adding "wait"/"hold on"/"pause" adds false hits on
+"waited" and "stayed". **Reference check:** the same spotter run on what Woi plays (spk.raw), threshold 0.1, fires on
+4 of the 5 false hits (never on the user's stop, which is not in the reference). Mic 0.4 + reference veto → 4/6 hits,
+0 false; mic 0.2 + veto → 5/6, 1 false in 6 runs. Latency: hit within ~0.4 s of the word's end. CPU: 5–8 % of
+one core per stream (two streams while Woi is audible); Silero VAD ~1–2 % but it marks echo as speech (106–235 s
+of "speech" per run), so it does not separate echo from the user. Not integrated yet (time box). Plan: one
+background isolate with two spotters (mic after AEC at 16 kHz, reference stamped with its play time =
+write time + queued ms), run only while Woi is audible or paused; a mic hit without a reference hit in
+[T − 2 s, T + 0.3 s] → pause + local cut logged `kws`; setting `stopWordDetection` (default on) + keyword list
+(default just "stop"); model in `app/assets/kws/` copied to the data dir on first use (Android assets are not files).
