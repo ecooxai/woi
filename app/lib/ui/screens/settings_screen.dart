@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/app_controller.dart';
 import '../../platform/audio_io.dart';
+import '../../platform/android/android_accessibility.dart';
 import '../../core/auth/auth.dart';
 import '../../core/settings/settings.dart';
 import '../../core/voice/backend_factory.dart';
@@ -495,6 +496,12 @@ class _SettingsViewState extends State<SettingsView> {
     ]),
     if (c.platform.audio is AudioRouted)
       _Group('android', 'Android', [
+        _Item(
+          'Screen control',
+          'Accessibility service for clicking, typing and reading other apps.',
+          (w) => const AndroidAccessibilityPanel(),
+          keywords: 'accessibility battery background',
+        ),
         _Item(
           'Audio route',
           'Phone uses the call path with echo cancellation.',
