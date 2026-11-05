@@ -6,6 +6,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:woi/core/audio/earcon.dart';
+import 'package:woi/core/audio/stop_word_spotter.dart';
 import 'package:woi/core/context/compressor.dart';
 import 'package:woi/core/context/context_manager.dart';
 import 'package:woi/core/context/image_tiers.dart';
@@ -57,6 +58,7 @@ class Harness {
     ImageCompactor? Function(HistoryStore store)? images,
     void Function(TurnPipeline p)? setup,
     EchoGuard? echoGuard,
+    StopWordSpotter Function()? stopWordSpotter,
   }) async {
     final fp = await FakePlatform.create();
     final store = HistoryStore(fp.services.paths);
@@ -91,6 +93,7 @@ class Harness {
       onScreenshotCaptured: (s) => env.lastScreenshot = s,
       imageCompactor: images?.call(store),
       echoGuard: echoGuard,
+      stopWordSpotter: stopWordSpotter,
     );
     setup?.call(h.pipeline);
     await h.pipeline.start();
@@ -116,9 +119,107 @@ class Harness {
   }
 }
 
+/// Records what the pipeline feeds it; [hit] plays a spotter hit.
+class FakeStopWordSpotter implements StopWordSpotter {
+  final _hits = StreamController<KwsHit>.broadcast();
+  final starts = <List<String>>[];
+  int micChunks = 0;
+  final refPlayAt = <DateTime>[];
+  bool disposed = false;
+
+  void hit([String keyword = 'STOP']) =>
+      _hits.add(KwsHit(keyword: keyword, micTime: DateTime.now(), threshold: 0.4));
+
+  @override
+  Stream<KwsHit> get hits => _hits.stream;
+  @override
+  Future<void> start(List<String> keywords) async => starts.add(keywords);
+  @override
+  void addMic(Uint8List pcm16, DateTime at) => micChunks++;
+  @override
+  void addReference(Uint8List pcm16, DateTime playAt) => refPlayAt.add(playAt);
+  @override
+  Future<void> dispose() async {
+    disposed = true;
+    await _hits.close();
+  }
+}
+
 Iterable<Message> ofKind(Conversation c, MessageKind k) => c.messages.where((m) => m.kind == k);
 
 void main() {
+  group('stop word spotting (kws)', () {
+    Future<(Harness, FakeStopWordSpotter?, List<int>)> speaking({bool on = true, int audioMs = 4000}) async {
+      FakeStopWordSpotter? kws;
+      final created = <int>[0];
+      final h = await Harness.create(
+        options: PipelineOptions(autoScreenshot: false, stopWordDetection: on, stopWords: const ['stop']),
+        stopWordSpotter: () {
+          created[0]++;
+          return kws = FakeStopWordSpotter();
+        },
+      );
+      final b = h.scripted;
+      b.emit(const AssistantTranscriptDelta('Once upon a time there was a lighthouse keeper. '));
+      b.emit(AssistantAudioDelta(voice(audioMs, amplitude: 8000, f0: 140)));
+      for (var i = 0; i < 10; i++) {
+        h.mic.push(voice(20, amplitude: 300, f0: 140, phase0: i * 480));
+      }
+      await Future<void>.delayed(Duration.zero);
+      return (h, kws, created);
+    }
+
+    test('a hit while Woi speaks pauses and cuts locally; it stays stopped', () async {
+      final (h, kws, _) = await speaking();
+      expect(kws, isNotNull);
+      expect(kws!.starts, [
+        ['stop'],
+      ]);
+      expect(kws.refPlayAt, hasLength(1), reason: 'the reference is fed with its play time');
+      expect(kws.micChunks, 10, reason: 'the mic is fed while Woi is audible');
+      final written = h.player.written.length;
+      kws.hit();
+      await Future<void>.delayed(Duration.zero);
+      expect(h.pipeline.kwsCuts, 1);
+      expect(h.pipeline.localCuts, 1);
+      expect(h.pipeline.bargeIns, 1);
+      expect(h.scripted.cancels, 1);
+      expect(ofKind(h.conv, MessageKind.assistant).single.interrupted, isTrue);
+      expect(h.pipeline.phase, AssistantPhase.listening);
+      await Future<void>.delayed(const Duration(milliseconds: 1500));
+      expect(h.pipeline.onsetsResumed, 0);
+      expect(h.player.written.length, written, reason: 'Woi stays silent');
+      expect(h.scripted.texts, isEmpty, reason: 'no response created');
+      await h.dispose();
+      expect(kws.disposed, isTrue);
+    });
+
+    test('a hit while Woi is silent is ignored, and the mic is not fed', () async {
+      final (h, kws, _) = await speaking(audioMs: 200);
+      h.player.playing = false;
+      await Future<void>.delayed(const Duration(milliseconds: 700)); // played + the echo tail
+      final fed = kws!.micChunks;
+      for (var i = 0; i < 5; i++) {
+        h.mic.push(voice(20, amplitude: 300, f0: 140, phase0: i * 480));
+      }
+      expect(kws.micChunks, fed, reason: 'no CPU while Woi is silent');
+      kws.hit();
+      await Future<void>.delayed(Duration.zero);
+      expect(h.pipeline.kwsIgnored, 1);
+      expect(h.pipeline.kwsCuts, 0);
+      expect(h.pipeline.bargeIns, 0);
+      expect(h.scripted.cancels, 0);
+      await h.dispose();
+    });
+
+    test('setting off: the spotter is never created', () async {
+      final (h, kws, created) = await speaking(on: false);
+      expect(created[0], 0);
+      expect(kws, isNull);
+      await h.dispose();
+    });
+  });
+
   test('reopenMic re-opens the microphone with the current echo-cancellation setting', () async {
     final h = await Harness.create();
     expect(h.fp.audio.micOpens, [true]);

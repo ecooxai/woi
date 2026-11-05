@@ -628,6 +628,11 @@ void main() {
       expect(find.byKey(const ValueKey('choices-delegate-model')), findsOneWidget);
       expect(find.byKey(const ValueKey('choices-backend')), findsNothing);
       expect(find.byKey(const ValueKey('settings-group-audio')), findsNothing);
+      await t.enterText(find.byKey(const ValueKey('settings-search')), 'stop word');
+      await _settle(t);
+      expect(find.text('Stop word detection'), findsOneWidget);
+      expect(find.text('Stop words'), findsWidgets);
+      expect(find.byKey(const ValueKey('settings-group-audio')), findsOneWidget);
       await t.enterText(find.byKey(const ValueKey('settings-search')), 'zzzz');
       await _settle(t);
       expect(find.textContaining('No settings match'), findsOneWidget);
