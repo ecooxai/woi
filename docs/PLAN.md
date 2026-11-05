@@ -494,3 +494,21 @@ stayed stopped), question answered, 5 fixture turns, 0 self-talk, 2 false pauses
 fire in the E2E (they are unit-tested). **Open:** the firing-excess margin is thin (echo 0.010–0.013 vs speech ≥
 0.018). A false pause still costs about 2.4 s of silence (hold); a quiet pause with firing excess < 0.015 could
 resume at 900 ms.
+
+echo30 e30 (2026-11-04). Changes: (1) QA switch `WOI_QA_IGNORE_SERVER_SPEECH=1` (read once; no effect when unset):
+a server speech start that arrives while Woi speaks is held back with its turn's events until the local rules decide.
+They are replayed after a local cut and dropped after a resume. `e2e_echo.sh` now reports which local rule cut,
+quiet resumes, holds and wrong interrupts. (2) A quiet pause (0 ms voiced after the tail) with firing excess < 0.015
+now resumes right after the measurement (~700 ms) instead of holding ~2.4 s. A server start within 1.5 s of the
+onset still cuts. The hold is kept only for ambiguous pauses. E2E, two runs alone with the switch: `local-a`: **stop
+not honoured** (7131 ms). The onset fired with peak 0.084 but excess 0.011 at firing, so the short-word rule did not
+cut and the quiet pause resumed it. The server never sent a speech start for "stop". Question: local cut, **voice in
+the pause** (117 ms voiced, mic peak 0.151), answered. 0 false pauses, 0 false local cuts, 0 wrong interrupts.
+`local-b`: **stop not honoured** (7112 ms). No local onset at all and no server speech start. Question: local cut,
+voice in the pause (159 ms voiced), stop 200 ms, answered. 1 false pause (echo peak **0.155**, excess 0.013 at firing),
+quiet-resumed in 707 ms instead of ~2.4 s. 0 false local cuts, 0 wrong interrupts. **Findings:** the voice-in-the-pause
+rule works live (both questions, margin 117–159 ms against 80 ms). The short-word rule cannot be fixed by tuning:
+excess at firing is now *inverted* (real stop 0.011 < echo 0.013), and peak overlaps too (echo up to 0.155). Thresholds
+left unchanged. A short "stop" said over Woi is caught only by the server (or not at all, as in both runs here). It
+needs a different cue, e.g. the onset's spectral or pitch shape against the reference, or a longer post-tail window
+for the word's end.

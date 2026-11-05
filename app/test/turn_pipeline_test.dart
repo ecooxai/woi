@@ -942,6 +942,17 @@ void main() {
         await h.dispose();
       });
 
+      test('after a quiet resume, a late server speech start (< 1.5 s after the onset) still cuts', () async {
+        final h = await strongOnset(cut: true, fast: false);
+        h.pipeline.onsetShortCutFireRmsValue = 1.0;
+        await Future<void>.delayed(const Duration(milliseconds: 820));
+        expect(h.pipeline.onsetsQuietResumed, 1);
+        h.scripted.emit(const SpeechStarted(itemId: 'u1', deferred: true));
+        expect(h.pipeline.bargeIns, 1);
+        expect(ofKind(h.conv, MessageKind.assistant).single.interrupted, isTrue);
+        await h.dispose();
+      });
+
       test('an ambiguous pause (voiced, but below the cut rule) is still held for the server', () async {
         final h = await strongOnset(cut: true, fast: false);
         h.pipeline.onsetShortCutFireRmsValue = 1.0;
