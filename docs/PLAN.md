@@ -682,3 +682,15 @@ Now (`lib/core/pipeline/pre_connect_buffer.dart`, `turn_pipeline.dart`):
   launch connect closes it until the retry starts.
 - Gap: WebRTC (gpt-live) captures through its own media track, created inside `connect()` (getUserMedia before the
   offer), so it records from the start of the call setup, but audio before the RTP path is up is not buffered.
+
+### Assist activation: mic from the gesture (mic37, 2026-11-05)
+
+Before (phone log, release 0.11.0, Direct realtime over WS): assist shown → `voice: resuming` 12 ms (the overlay calls
+`appIsResumed`, so the lifecycle event does arrive) → `mic started` 4.4–5.3 s later, i.e. only after connect.
+Now: `WoiSession.onShow` (overlay) calls `WoiAudio.startEarly`, which starts AudioRecord at once (last route/AEC from
+prefs) and buffers chunks natively; Dart's mic open adopts that recorder and gets the buffered chunks first, then live
+(same ordered stream), and mic34's `PreConnectBuffer` holds them until connected and trims leading silence. Not adopted
+in 10 s or panel hidden first: dropped. `AppController.assistantShown` (overlay event) also resumes a suspended
+session and unmutes a muted mic directly, without waiting for the lifecycle event or the screenshot.
+Logs: `early mic: recording from activation`, `early mic: adopted after N ms, flushing K chunks (M ms)`,
+`pre-connect: flushed M ms`.
