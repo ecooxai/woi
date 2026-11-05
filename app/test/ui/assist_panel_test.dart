@@ -4,6 +4,7 @@ import 'package:woi/core/app_controller.dart';
 import 'package:woi/core/auth/auth.dart';
 import 'package:woi/core/models/message.dart';
 import 'package:woi/core/pipeline/turn_pipeline.dart';
+import 'package:woi/core/settings/settings.dart';
 import 'package:woi/platform/android/android_bridge.dart';
 import 'package:woi/platform/platform_services.dart';
 import 'package:woi/ui/assist/assist_panel.dart';
@@ -389,6 +390,33 @@ void main() {
     env.c.onLifecycle(AppLifecycleState.paused);
     env.c.assistantDismissed();
     env.c.onLifecycle(AppLifecycleState.resumed);
+    await t.pump(const Duration(milliseconds: 100));
+    await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 100)));
+    expect(env.c.pipeline.suspended, isFalse);
+    await env.stop(t);
+  });
+
+  testWidgets('showing the assistant reconnects a suspended session and unmutes, without a lifecycle event', (t) async {
+    final env = _Env();
+    await env.start(t, mobile: true);
+    await t.runAsync(() async {
+      await env.c.pipeline.connect();
+      await env.c.setMicMode(MicMode.muted);
+      await env.c.pipeline.suspend();
+    });
+    expect(env.c.pipeline.suspended, isTrue);
+    // The engine never left "resumed" (no lifecycle event): the panel's
+    // show signal alone reconnects, with the mic on.
+    await t.runAsync(() => env.c.assistantShown());
+    await _settle(t);
+    expect(env.c.pipeline.suspended, isFalse);
+    expect(env.c.settings.micMode, MicMode.handsFree);
+    expect(env.c.pipeline.status, isNot(SessionStatus.disconnected));
+    // A pending dismissal suspend is cancelled by showing again.
+    env.c.assistantIdleDelay = const Duration(milliseconds: 50);
+    env.c.onLifecycle(AppLifecycleState.paused);
+    env.c.assistantDismissed();
+    await t.runAsync(() => env.c.assistantShown());
     await t.pump(const Duration(milliseconds: 100));
     await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 100)));
     expect(env.c.pipeline.suspended, isFalse);

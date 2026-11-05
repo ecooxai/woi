@@ -649,10 +649,11 @@ class AppController extends ChangeNotifier {
   Future<void> _applyEchoCancellation(AppSettings prev) async {
     if (platform.audio case final EchoCancellable ec) ec.echoCancellation = _settings.echoCancellation;
     if (platform.audio case final AudioRouted r) r.audioRoute = _settings.androidAudioRoute.name;
-    if (prev.sessionDiffers(_settings)) return; // reconnecting anyway
     if (pipeline.backendManagesAudio) {
+      if (prev.sessionDiffers(_settings)) return; // reconnecting anyway
       await pipeline.connect();
     } else {
+      // The platform mic stays open across a reconnect: reopen it now.
       await pipeline.reopenMic();
     }
   }
@@ -661,7 +662,8 @@ class AppController extends ChangeNotifier {
   /// the new route. gpt-live's WebRTC audio is not affected.
   Future<void> _applyAudioRoute(AppSettings prev) async {
     if (platform.audio case final AudioRouted r) r.audioRoute = _settings.androidAudioRoute.name;
-    if (prev.sessionDiffers(_settings) || pipeline.backendManagesAudio) return;
+    if (pipeline.backendManagesAudio) return;
+    // The platform mic stays open across a reconnect: reopen it now.
     await pipeline.reopenMic();
   }
 
@@ -901,6 +903,22 @@ class AppController extends ChangeNotifier {
       _assistantTimer = null;
       if (_inBackground && _ready) unawaited(pipeline.suspend());
     });
+  }
+
+  /// The floating assistant panel (Android) opened: the user is about to
+  /// speak. Reconnects now (not on the lifecycle event, which an engine that
+  /// never paused doesn't get) with the mic on, so capture starts at once and
+  /// is buffered while connecting. A muted mic is turned on first, as the
+  /// assist event did (that one waits for the screenshot, up to 2 s).
+  Future<void> assistantShown() async {
+    if (!_ready || _needsLogin) return;
+    _assistantTimer?.cancel();
+    _assistantTimer = null;
+    if (_settings.micMode == MicMode.muted) await setMicMode(MicMode.handsFree);
+    if (pipeline.suspended) {
+      debugPrint('voice: resume on assist');
+      await pipeline.resume();
+    }
   }
 
   void _scheduleBackgroundSuspend() {

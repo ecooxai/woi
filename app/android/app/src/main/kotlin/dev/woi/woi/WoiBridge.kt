@@ -32,6 +32,11 @@ object WoiBridge {
     var activity: MainActivity? = null
     lateinit var appContext: Context
 
+    /** Sets [appContext] before the engine exists (assist cold start). */
+    fun ensureContext(ctx: Context) {
+        if (!::appContext.isInitialized) appContext = ctx.applicationContext
+    }
+
     /** Sends an event to Dart (queued until Dart listens). Any thread. */
     fun emit(event: Map<String, Any?>) {
         main.post {

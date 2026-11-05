@@ -660,3 +660,42 @@ Mechanisms (WoiA11yKeeper.kt):
 - `android:isAccessibilityTool="true"` (Android 12+, ignored before).
 - Settings → Android → Screen control: state, "Accessibility settings", and a one-time battery-optimization
   exemption prompt.
+
+## Pre-connect mic capture (mic34, 2026-11-05)
+
+User: on app start / Android assist activation, connect AND record at once; push the recorded audio when the session is
+up, then keep streaming. Before: `TurnPipeline._connect` opened the mic only after `backend.connect()` returned
+(WS handshake + `session.update` ack, ~1–3 s), and every reconnect closed it first, so the first words were lost.
+Now (`lib/core/pipeline/pre_connect_buffer.dart`, `turn_pipeline.dart`):
+- The platform mic opens right after the backend is created, before `connect()`; a platform mic stays open across
+  reconnects (connection drops, session expiry, settings that need a new session) and its post-AEC chunks go to a
+  `PreConnectBuffer` while status != connected (hands-free, or push-to-talk while held; the mic button is enabled while
+  connecting). Cap 15 s, oldest dropped.
+- Ready = `connect()` returned (WS: after `session.updated`). In the same synchronous step as the switch to connected
+  the buffer is flushed via `sendAudio` (`input_audio_buffer.append`) in ≤200 ms frames, so no live chunk can come in
+  between: no gap or duplicate at the seam. Leading silence > 1 s is trimmed to 300 ms before the first voiced chunk
+  (level gate: >= -50 dBFS and floor + 10 dB).
+- Speech in the buffer grabs the screenshot then; it is attached to the turn the server opens after the flush
+  (instead of the 1.2 s timer). The flushed audio also goes into that turn's clip.
+- Status shows "Listening… connecting" / "Listening… reconnecting" (cyan) while capturing.
+- The mic closes when an auto-reconnect gives up or hits the usage limit, on mute and on suspend. A failed first
+  launch connect closes it until the retry starts.
+- Gap: WebRTC (gpt-live) captures through its own media track, created inside `connect()` (getUserMedia before the
+  offer), so it records from the start of the call setup, but audio before the RTP path is up is not buffered.
+
+### Assist activation: mic from the gesture (mic37, 2026-11-05)
+
+Before (phone log, release 0.11.0, Direct realtime over WS): assist shown → `voice: resuming` 12 ms (the overlay calls
+`appIsResumed`, so the lifecycle event does arrive) → `mic started` 4.4–5.3 s later, i.e. only after connect.
+Now: `WoiSession.onShow` (overlay) calls `WoiAudio.startEarly`, which starts AudioRecord at once (last route/AEC from
+prefs) and buffers chunks natively; Dart's mic open adopts that recorder and gets the buffered chunks first, then live
+(same ordered stream), and mic34's `PreConnectBuffer` holds them until connected and trims leading silence. Not adopted
+in 10 s or panel hidden first: dropped. `AppController.assistantShown` (overlay event) also resumes a suspended
+session and unmutes a muted mic directly, without waiting for the lifecycle event or the screenshot.
+Logs: `early mic: recording from activation`, `early mic: adopted after N ms, flushing K chunks (M ms)`,
+`pre-connect: flushed M ms`.
+Measured on the MI 8 (debug build, 2026-11-05): warm (suspended) gesture → mic recording 387 ms (was ~4.4 s, after
+connect), connect end +2.5 s; cold (force-stopped) gesture → mic recording 367 ms (before the engine: engine +1.6 s,
+Dart mic open +4.5 s adopts 5.7 s of buffered audio, connect end +9.2 s; before this change the mic opened only after
+connect). The ~370 ms is native (setMode IN_COMMUNICATION + AudioRecord). Open: with another app's media playing,
+entering call mode re-routes that playback to the earpiece and the HAL took 4.8 s (main thread, also delays the panel).
