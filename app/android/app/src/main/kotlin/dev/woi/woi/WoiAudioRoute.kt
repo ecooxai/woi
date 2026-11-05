@@ -33,9 +33,11 @@ object WoiAudioRoute {
     @Volatile var route = PHONE
         private set
 
-    private var commActive = false
-    private var savedMode = AudioManager.MODE_NORMAL
-    private var savedSpeaker = false
+    // Main thread, or the audio thread during WoiAudio's early start (the
+    // main thread leaves the call mode alone meanwhile).
+    @Volatile private var commActive = false
+    @Volatile private var savedMode = AudioManager.MODE_NORMAL
+    @Volatile private var savedSpeaker = false
 
     private fun am(): AudioManager = WoiBridge.appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
@@ -55,7 +57,8 @@ object WoiAudioRoute {
         .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
         .build()
 
-    /** Enters the call path (phone route, mic open). Main thread. */
+    /** Enters the call path (phone route, mic open). Main thread (or the
+     *  audio thread for WoiAudio's early start). */
     fun enterCommunication() {
         if (!isPhone || commActive) return
         val am = am()
@@ -63,14 +66,23 @@ object WoiAudioRoute {
         savedMode = am.mode
         @Suppress("DEPRECATION")
         savedSpeaker = am.isSpeakerphoneOn
+        val t0 = android.os.SystemClock.elapsedRealtime()
         try {
             am.mode = AudioManager.MODE_IN_COMMUNICATION
         } catch (e: Exception) {
             Log.w(WoiBridge.TAG, "MODE_IN_COMMUNICATION refused", e)
         }
+        val t1 = android.os.SystemClock.elapsedRealtime()
         selectDevice(am)
-        ensureCallVolume(am)
-        Log.i(WoiBridge.TAG, "audio route: phone (mode=${am.mode}, device=${deviceName(am)})")
+        // The call volume on its own thread: reading/setting it took 4.5 s on
+        // a MI 8 while another app played media, and nothing waits for it
+        // (it only matters once Woi speaks).
+        volume.post { ensureCallVolume(am) }
+        Log.i(
+            WoiBridge.TAG,
+            "audio route: phone (mode=${am.mode}, device=${deviceName(am)}; setMode ${t1 - t0} ms, " +
+                "device ${android.os.SystemClock.elapsedRealtime() - t1} ms)"
+        )
     }
 
     /** Back to MODE_NORMAL (mic closed, paused for another app, media route). */
@@ -119,11 +131,16 @@ object WoiAudioRoute {
         if (Build.VERSION.SDK_INT >= 31) am.communicationDevice?.let { "type ${it.type}" } ?: "default"
         else @Suppress("DEPRECATION") if (am.isSpeakerphoneOn) "speaker" else "earpiece/headset"
 
+    private val volume: android.os.Handler by lazy {
+        android.os.Handler(android.os.HandlerThread("woi-volume").apply { start() }.looper)
+    }
+
     /**
      * The call stream has its own volume, often low after a call on the
      * earpiece. Raised to 70% when it is below half (never lowered).
      */
     private fun ensureCallVolume(am: AudioManager) {
+        val t0 = android.os.SystemClock.elapsedRealtime()
         val s = AudioManager.STREAM_VOICE_CALL
         val max = am.getStreamMaxVolume(s)
         val cur = am.getStreamVolume(s)
@@ -131,10 +148,12 @@ object WoiAudioRoute {
             val v = (max * 7 + 9) / 10
             try {
                 am.setStreamVolume(s, v, 0)
-                Log.i(WoiBridge.TAG, "call volume $cur -> $v of $max")
+                Log.i(WoiBridge.TAG, "call volume $cur -> $v of $max (${android.os.SystemClock.elapsedRealtime() - t0} ms)")
             } catch (e: Exception) {
                 Log.w(WoiBridge.TAG, "call volume not raised", e)
             }
+        } else {
+            Log.i(WoiBridge.TAG, "call volume $cur of $max kept (${android.os.SystemClock.elapsedRealtime() - t0} ms)")
         }
     }
 

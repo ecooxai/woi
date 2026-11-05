@@ -6,6 +6,8 @@ import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.AudioRecordingConfiguration
 import android.os.Build
+import android.os.Handler
+import android.os.HandlerThread
 import android.os.SystemClock
 import android.media.AudioFormat
 import android.media.AudioRecord
@@ -47,15 +49,15 @@ object WoiAudio {
     /** What the last mic open got, for the settings / diagnostics. */
     @Volatile var status = "not started"
         private set
-    private var micThread: Thread? = null
-    private var aec: AcousticEchoCanceler? = null
-    private var ns: NoiseSuppressor? = null
+    @Volatile private var micThread: Thread? = null
+    @Volatile private var aec: AcousticEchoCanceler? = null
+    @Volatile private var ns: NoiseSuppressor? = null
 
     // The Dart side's mic stream: open while [micSink] is set, even when the
     // recorder itself is released because another app is recording.
     private var micSink: EventChannel.EventSink? = null
     private var micAec = true
-    private var ourSession = 0
+    @Volatile private var ourSession = 0
     private var yielded = false
     // One self-heal restart per mic open (see the dead-mic check below).
     private var healed = false
@@ -65,6 +67,12 @@ object WoiAudio {
 
     val micHandler = object : EventChannel.StreamHandler {
         override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
+            // The early start (or its release) is still running on the audio
+            // thread: take over once it is done (the chunks wait in [early]).
+            if (whenIdle { listenQueued = false; onListen(arguments, events) }) {
+                listenQueued = true
+                return
+            }
             try {
                 val args = arguments as? Map<*, *>
                 val aecArg = args?.get("aec") as? Boolean ?: true
@@ -72,6 +80,8 @@ object WoiAudio {
                 WoiBridge.appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
                     .putBoolean(KEY_AEC, aecArg).putString(KEY_ROUTE, routeArg).apply()
                 if (adoptEarly(events, aecArg, routeArg)) return
+                // The early recorder did not match and is being released.
+                if (whenIdle { onListen(arguments, events) }) return
                 micAec = aecArg
                 if (WoiAudioRoute.setRoute(routeArg)) playerClose()
                 openMic(events)
@@ -80,7 +90,49 @@ object WoiAudio {
             }
         }
 
-        override fun onCancel(arguments: Any?) = closeMic()
+        override fun onCancel(arguments: Any?) {
+            if (whenIdle { closeMic() }) {
+                listenQueued = false
+                return
+            }
+            closeMic()
+        }
+    }
+
+    // ---------------- audio thread ----------------
+    //
+    // The early start runs here so the panel and the engine never wait on it
+    // (entering call mode took 4.9 s on a MI 8 while another app played
+    // media). Everything else of the mic stays on the main thread. While a
+    // job runs ([busy]) the main thread leaves the recorder and the call mode
+    // alone: Dart's mic open/close wait in [afterBusy] and run, in order,
+    // once it is done. So no recorder is touched from two threads at once.
+
+    private val audio: Handler by lazy { Handler(HandlerThread("woi-audio").apply { start() }.looper) }
+    private var busy = false
+    // Dart's mic open waits in [afterBusy]: it takes the early recorder over
+    // when the start is done, so the panel going meanwhile leaves it alone.
+    private var listenQueued = false
+    private val afterBusy = java.util.ArrayDeque<() -> Unit>()
+
+    /** Runs [work] on the audio thread, then [done] on the main thread. */
+    private fun offMain(work: () -> Unit, done: (Throwable?) -> Unit) {
+        busy = true
+        audio.post {
+            val err = try { work(); null } catch (e: Throwable) { e }
+            WoiBridge.main.post {
+                busy = false
+                try { done(err) } catch (e: Throwable) { Log.w(WoiBridge.TAG, "audio job", e) }
+                while (!busy && afterBusy.isNotEmpty()) afterBusy.removeFirst()()
+            }
+        }
+    }
+
+    /** Defers [f] while an audio-thread job runs; false: run it now. Main thread. */
+    private fun whenIdle(f: () -> Unit): Boolean {
+        if (!busy) return false
+        afterBusy.addLast(f)
+        return true
     }
 
     private fun am(): AudioManager = WoiBridge.appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -126,11 +178,17 @@ object WoiAudio {
         }
     }
 
-    /** Assist activation: starts the recorder now (main thread). No-op while
-     *  Dart's mic is open, already early, or without the permission. */
+    // The running early start: [cancelled] when the panel went (or the
+    // timeout hit) before it finished; its end then releases the recorder.
+    private class EarlyStart { @Volatile var cancelled = false }
+    private var starting: EarlyStart? = null
+
+    /** Assist activation: starts the recorder on the audio thread and returns
+     *  at once. No-op while Dart's mic is open, already early, an audio job
+     *  runs, or without the permission. Main thread. */
     fun startEarly(ctx: Context) {
         try {
-            if (micSink != null || early != null || record != null) return
+            if (busy || micSink != null || early != null || record != null) return
             WoiBridge.ensureContext(ctx)
             if (!WoiBridge.hasPermission(ctx, android.Manifest.permission.RECORD_AUDIO)) return
             if (othersRecording(am().activeRecordingConfigurations)) return
@@ -140,13 +198,44 @@ object WoiAudio {
             early = java.util.ArrayDeque()
             earlyBytes = 0
             earlyAt = SystemClock.elapsedRealtime()
-            startRecord()
             WoiBridge.main.postDelayed(earlyTimeout, EARLY_TIMEOUT_MS)
-            Log.i(WoiBridge.TAG, "early mic: recording from activation")
+            val s = EarlyStart()
+            starting = s
+            offMain({
+                // Hidden before the job began: nothing to start.
+                if (!s.cancelled) startRecord(onAudioThread = true)
+            }) { err ->
+                starting = null
+                val ms = SystemClock.elapsedRealtime() - earlyAt
+                when {
+                    s.cancelled -> {
+                        Log.i(WoiBridge.TAG, "early mic: start finished after $ms ms but cancelled, releasing")
+                        releaseOffMain()
+                    }
+                    err != null -> {
+                        Log.w(WoiBridge.TAG, "early mic failed after $ms ms", err)
+                        dropEarly()
+                    }
+                    else -> {
+                        syncPlayerRoute()
+                        Log.i(WoiBridge.TAG, "early mic: recording from activation (start took $ms ms, off the main thread)")
+                    }
+                }
+            }
+            Log.i(WoiBridge.TAG, "early mic: starting on the audio thread")
         } catch (e: Throwable) {
             Log.w(WoiBridge.TAG, "early mic failed", e)
             dropEarly()
         }
+    }
+
+    /** Stops the early recorder and leaves the call mode on the audio thread
+     *  (restoring the mode can be as slow as entering it). Main thread. */
+    private fun releaseOffMain() {
+        offMain({
+            stopRecord()
+            WoiAudioRoute.leaveCommunication()
+        }) { syncPlayerRoute() }
     }
 
     /** Dart opens its mic: takes over the early recorder when its settings
@@ -178,18 +267,25 @@ object WoiAudio {
     }
 
     /** The panel went before Dart took the early recorder. */
-    fun cancelEarly() = dropEarly()
+    fun cancelEarly() {
+        if (listenQueued) return
+        dropEarly()
+    }
 
     private fun dropEarly() {
         WoiBridge.main.removeCallbacks(earlyTimeout)
         if (early == null) return
         early = null
         earlyBytes = 0
-        if (micSink == null) {
-            stopRecord()
-            WoiAudioRoute.leaveCommunication()
-            syncPlayerRoute()
+        if (micSink != null) return
+        val s = starting
+        if (s != null) {
+            // Still starting on the audio thread: its end releases it.
+            s.cancelled = true
+            return
         }
+        if (busy) return
+        releaseOffMain()
     }
 
     private fun deliver(chunk: ByteArray) {
@@ -268,11 +364,18 @@ object WoiAudio {
         )
     }
 
+    /**
+     * Main thread, or the audio thread for the early start ([onAudioThread]:
+     * the main thread leaves the recorder alone meanwhile, and the player
+     * route is synced by the caller afterwards on the main thread).
+     */
     @SuppressLint("MissingPermission")
-    private fun startRecord(keepFocus: Boolean = false) {
+    private fun startRecord(keepFocus: Boolean = false, onAudioThread: Boolean = false) {
         stopRecord(keepFocus)
+        val t0 = SystemClock.elapsedRealtime()
         WoiAudioRoute.enterCommunication()
-        syncPlayerRoute()
+        val tMode = SystemClock.elapsedRealtime()
+        if (!onAudioThread) syncPlayerRoute()
         val min = AudioRecord.getMinBufferSize(RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         val phone = WoiAudioRoute.isPhone
         // Phone route: VOICE_COMMUNICATION in MODE_IN_COMMUNICATION runs the
@@ -309,7 +412,7 @@ object WoiAudio {
         }
         rec.startRecording()
         record = rec
-        syncPlayerRoute()
+        if (!onAudioThread) syncPlayerRoute()
         if (!phone) WoiAudioRoute.requestListenFocus()
         micThread = Thread({
             val buf = ByteArray(CHUNK_BYTES)
@@ -387,7 +490,11 @@ object WoiAudio {
             priority = Thread.MAX_PRIORITY
             start()
         }
-        Log.i(WoiBridge.TAG, "mic started: $status")
+        Log.i(
+            WoiBridge.TAG,
+            "mic started: $status (call mode ${tMode - t0} ms, recorder ${SystemClock.elapsedRealtime() - tMode} ms" +
+                "${if (onAudioThread) ", audio thread" else ""})"
+        )
         // The system silences capture (zeros, no error) for apps that are
         // neither in front nor running a microphone foreground service.
         WoiBridge.main.postDelayed({
