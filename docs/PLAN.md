@@ -324,6 +324,41 @@ E2E (`e2e_echo.sh after-defer`, gate off, deferred turns, far_field) vs the gate
 One deferred turn occurred (timeout → cut). Next: pin the transcription `language` to the UI language so echo is
 transcribed in English and the guard can match it; a headset → `near_field` switch.
 
+Why AEC3 cancels so little (aec25, 2026-11-04, offline rig, `render_echo.py` + `aec3_offline.cc` at 48 kHz mono,
+exactly PipeWire 1.6.7's config; the installed libspa-aec-webrtc only exposes high_pass_filter, noise_suppression,
+voice_detection, transient_suppression, mobile_mode, gain_control, so no AEC3 tuning knobs). The app's host is
+already mono at the graph rate (48 kHz), reference = default-sink monitor, so no channel/rate mismatch.
+- **Low ERLE = the delay jump, not the settings or the clipping.** Steady state AEC3 reaches 39-47 dB (far-only
+  5-20 s). The 12.7/17.9 dB figures are energy-weighted and dominated by the rig's +120 ms delay jump at 52 s
+  (ERLE 4 dB for 4 s, still 15 dB 10 s later) plus the first 1-5 s of convergence (15 dB). Without the jump: 22.4 /
+  26.0 dB (turns), 25.0 / 26.5 dB (stress). Jumps of 20/60 ms recover (24.6/23.4 dB at reply starts); +-10 ms
+  jitter costs ~1 dB. Speaker overdrive: drive 1.0 instead of 2.2 gives only +2/+5 dB; no drift +5/+9 dB.
+- **None of the exposed args change ERLE** (+-0.5 dB): HPF, voice_detection, NS, TS. mobile_mode (AECM) outputs
+  silence at 48 kHz: unusable.
+- **NS + transient suppression ate the user, not the echo**: double-talk near-end -26.6 dB with them, -3.9 dB
+  without (turns rig; stress -20.5 -> -7.4), ERLE and VAD false starts unchanged, near-only loss 0.9 dB both.
+  NS alone off: -18.5 dB, TS alone off: -14.5 dB (stress) — both have to go. That is the lost short "stop": it
+  was cut ~23 dB more than the echo. **Applied**: `aec.args` NS and TS off (`pipewire_aec.dart`).
+
+| rig / setting | ERLE start / body (dB) | residual start / body (dBFS) | near-only loss | double-talk near-end | VAD false starts |
+|---|---|---|---|---|---|
+| turns, Woi before (gain_control off) | 12.7 / 17.9 | -34.1 / -40.8 | 0.9 | -26.6 dB | 1 |
+| turns, NS + TS off (applied) | 12.7 / 17.9 | -34.1 / -40.8 | 0.9 | **-3.9 dB** | 1 |
+| turns, TS off only | 12.7 / 17.9 | -34.1 / -40.8 | 0.9 | -31.3 dB | 2 |
+| turns, no delay jump | 22.4 / 26.0 | -43.8 / -49.0 | 0.9 | -26.5 dB | 0 |
+| turns, no delay jump, NS + TS off | 22.2 / 25.8 | -43.6 / -48.7 | 0.9 | -3.6 dB | 0 |
+| stress, default | 13.0 / 15.6 | -34.2 / -38.8 | 1.1 | -20.2 dB | 3 |
+| stress, NS + TS off | 12.9 / 15.7 | -34.2 / -38.8 | 1.0 | -7.4 dB | 3 |
+| stress, no delay jump | 25.0 / 26.5 | -46.3 / -49.7 | 1.1 | -20.5 dB | 0 |
+| stress, drive 1.0 (less clipping) | 15.3 / 20.3 | -36.4 / -43.7 | 1.1 | -20.0 dB | - |
+| stress, no drift | 17.9 / 24.3 | -39.1 / -47.5 | 1.1 | -20.6 dB | - |
+| stress, linear + static (no clip/jump/drift) | 25.3 / 33.1 | -46.3 / -56.5 | 1.1 | -20.5 dB | - |
+| stress, jump 20 / 60 / -60 ms | 24.6 / 23.4 / 13.0 start | - | 1.1 | -20 dB | - |
+Next: in the real graph, delay jumps come from quantum changes (the sink's ALSA delay moves with the quantum while
+the monitor does not) and xruns. The host sets no `node.latency`, so other clients can move the quantum while
+Woi talks. Pinning it (480/48000 measured OK, 256 crashes) is the next thing to try; it needs a live check.
+Lowering Woi's playback gain buys little (drive 2.2 -> 1.0: +2-5 dB).
+
 Short foreign / filler echo (echo21, 2026-11-04): the transcriber turns fragments of English echo into short
 Korean ("아", "하고"), which [isEchoOf] cannot match. New rule (`shortEchoReason` in `echo_transcript.dart`), applied
 where the transcript guard decides (held echo-suspect turns, deferred turns): a turn that began while Woi was
