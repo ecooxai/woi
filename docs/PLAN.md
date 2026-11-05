@@ -450,3 +450,16 @@ onsets, the empty deferred turn dropped without a cut. `after-e26b`: **stop lost
 speech start at all), question 1252 ms, 5 fixture turns, 0 self-talk, 0 wrong interrupts, 4 resumed onsets.
 False cuts are fixed. Stop is still decided by whether the server VAD fires (361 / 2660 / 7200 ms over three runs).
 **Open:** a local "do not resume" decision on the paused span (option c above).
+
+echo27 e27 (2026-11-04). Changes: (1) while Woi is audible (defer mode), the server VAD runs with threshold 0.3,
+prefix 300 ms and silence 400 ms. It goes back to 0.5 / 300 / 500 after the echo tail, with one `session.update` per
+transition. (2) Local hold: an onset whose peak excess RMS over the voiced run (`EchoGuard.onsetPeakRms`) is
+≥ 0.012 is not resumed after 900 ms. It stays paused up to 1.5 s more, waiting for a server speech start (which
+cuts). If none arrives, it resumes where it paused. E2E, two runs alone: `after-e27a`: stop 441 ms, question 173 ms,
+5 fixture turns, 0 self-talk, 0 wrong interrupts, 2 resumed onsets (1 false: peak 0.018, held 2.4 s; the other was the
+stop). `after-e27b`: stop 501 ms, question 317 ms, 5 fixture turns, 0 self-talk, 0 wrong interrupts, 1 resumed onset
+(the stop). Two empty echo speech starts were dropped without a cut. **Caveat:** the script's stop figure only
+measures the pause. In both runs the server VAD **never** fired on "stop", even at 0.3, so after the hold Woi
+resumed (2.4 s gap) and the stop was not honoured. Peak excess RMS separates the cases cleanly: stop / question /
+fixture onsets were 0.067-0.141, the false onset 0.018. **Next:** treat an unconfirmed held onset with peak ≥ ~0.04 as
+a local stop (cut instead of resume), and make `e2e_echo.sh` check that Woi is still silent 3 s after the stop.
