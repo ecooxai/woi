@@ -26,6 +26,7 @@ import '../voice/voice_backend.dart';
 import 'barge_in.dart';
 import 'echo_guard.dart';
 import 'echo_transcript.dart';
+import 'pre_connect_buffer.dart';
 import 'vad.dart';
 
 enum SessionStatus { disconnected, connecting, connected, error }
@@ -195,6 +196,28 @@ class TurnPipeline extends ChangeNotifier {
   Message? _currentUtterance;
   final PcmBuffer _utterancePcm = PcmBuffer();
   final PcmRing _preRoll = PcmRing(kVoiceBytesPerSecond * 3 ~/ 10); // 300 ms
+
+  // ---- pre-connect capture: the platform mic opens together with connect
+  // (launch, assistant activation, auto-reconnect); its chunks wait here and
+  // go out in order once the session is ready.
+  final PreConnectBuffer _pending = PreConnectBuffer();
+  // Screen grabbed when the buffered audio first turned voiced; attached to
+  // the turn the server opens for it after the flush.
+  Future<Screenshot?>? _preShot;
+  // The flushed audio, for the turn's clip.
+  Uint8List? _flushedClip;
+  DateTime? _flushedAt;
+
+  /// Bytes of pre-connect audio flushed to the backend (tests/diagnostics).
+  int preConnectFlushedBytes = 0;
+
+  /// Pre-connect audio dropped by the ~15 s cap (tests/diagnostics).
+  int get preConnectDropped => _pending.dropped;
+
+  /// The mic records while the session is (re)connecting: what the user says
+  /// now is sent once it is ready ("Listening… connecting").
+  bool get capturingWhileConnecting =>
+      _mic != null && !_micManaged && _status != SessionStatus.connected && _forwarding && !_suspended;
   final List<Message> _awaitingTranscript = [];
   // User turn id (backend item id) → its message, so late transcripts and
   // resumed speech land in the right message.
@@ -668,8 +691,10 @@ class TurnPipeline extends ChangeNotifier {
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
     _suspended = false;
-    await _closeMic();
-    await _disconnectBackend();
+    // A platform mic stays open across the reconnect (its audio is buffered
+    // meanwhile); a backend-owned one (WebRTC) goes with its session.
+    if (_micManaged) await _closeMic();
+    await _disconnectBackend(keepMic: true);
     _status = SessionStatus.connecting;
     statusDetail = null;
     _changed();
@@ -681,6 +706,19 @@ class TurnPipeline extends ChangeNotifier {
         _addSystem('Voice backend error: $e', meta: {'type': 'error'});
       },
     );
+    // Open the platform mic now, not after the handshake (1-3 s): what the
+    // user says meanwhile is buffered and flushed once the session is ready.
+    // WebRTC captures through its own media track, created by connect; its
+    // mic opens as soon as the call is up (the handshake gap stays there).
+    if (b is ManagedAudioBackend) {
+      // Switching to WebRTC: the platform mic kept from before goes.
+      if (_mic != null) await _closeMic();
+      if (!identical(_backend, b)) return;
+    } else if (_micMode != MicMode.muted) {
+      await _openMic();
+      if (!identical(_backend, b)) return;
+      _changed();
+    }
     UsageLimit? limit;
     try {
       final cfg = await sessionConfig(_conv);
@@ -689,6 +727,9 @@ class TurnPipeline extends ChangeNotifier {
       if (!identical(_backend, b)) return;
       _status = SessionStatus.connected;
       usageLimit = null;
+      // Synchronously with the switch to connected: no live chunk can slip
+      // in between the buffered audio and the live stream.
+      _flushPreConnect(b);
       _pushScreenMemory();
       _flushPendingImages();
       // The mic only runs while connected (offline it would capture for
@@ -700,8 +741,9 @@ class TurnPipeline extends ChangeNotifier {
       limit = UsageLimit.parse(e);
       usageLimit = limit;
       // A failed session must not keep its media alive (a half-built WebRTC
-      // call keeps the audio device module recording).
-      await _releaseBackend();
+      // call keeps the audio device module recording). The platform mic
+      // keeps buffering only while an automatic reconnect follows.
+      await _releaseBackend(keepMic: _reconnecting && limit == null);
       _status = SessionStatus.error;
       statusDetail = limit?.message ?? '$e';
       debugPrint('voice session failed: $e');
@@ -716,8 +758,8 @@ class TurnPipeline extends ChangeNotifier {
 
   /// Closes the backend without touching the status (a failed or fatally
   /// broken session keeps showing its error).
-  Future<void> _releaseBackend() async {
-    await _closeMic();
+  Future<void> _releaseBackend({bool keepMic = false}) async {
+    if (!keepMic || _micManaged) await _closeMic();
     await _eventSub?.cancel();
     _eventSub = null;
     final b = _backend;
@@ -729,9 +771,9 @@ class TurnPipeline extends ChangeNotifier {
     }
   }
 
-  Future<void> _disconnectBackend() async {
+  Future<void> _disconnectBackend({bool keepMic = false}) async {
     _resetTurnState();
-    await _releaseBackend();
+    await _releaseBackend(keepMic: keepMic);
     _status = SessionStatus.disconnected;
     _syncPhaseTicker();
   }
@@ -1072,7 +1114,8 @@ class TurnPipeline extends ChangeNotifier {
     if (mode == MicMode.muted) {
       await _closeMic();
       if (_userSpeaking) _onSpeechStopped();
-    } else if (_status == SessionStatus.connected) {
+    } else if (_status == SessionStatus.connected ||
+        (_status == SessionStatus.connecting && _backend != null && _managed == null)) {
       await _openMic();
       _managed?.setInputEnabled(_forwarding);
     }
@@ -1091,8 +1134,11 @@ class TurnPipeline extends ChangeNotifier {
   /// cancellation) takes effect.
   Future<void> reopenMic() async {
     if (_mic == null) return;
+    final managedMic = _micManaged;
     await _closeMic();
-    if (_micMode != MicMode.muted && _status == SessionStatus.connected) {
+    // A platform mic also reopens while (re)connecting: it keeps buffering.
+    if (_micMode != MicMode.muted &&
+        (_status == SessionStatus.connected || (!managedMic && _status == SessionStatus.connecting))) {
       await _openMic();
       _managed?.setInputEnabled(_forwarding);
     }
@@ -1157,6 +1203,8 @@ class TurnPipeline extends ChangeNotifier {
   }
 
   Future<void> _closeMic() async {
+    _pending.clear();
+    _preShot = null;
     await _micSub?.cancel();
     _micSub = null;
     final m = _mic;
@@ -1226,8 +1274,12 @@ class TurnPipeline extends ChangeNotifier {
   int gatedChunks = 0;
 
   void _onMicChunk(Uint8List chunk) {
+    if (_status != SessionStatus.connected) {
+      if (!_micManaged && _forwarding && !_suspended) _bufferPreConnect(chunk);
+      return;
+    }
     final b = _backend;
-    if (b == null || _status != SessionStatus.connected || !_forwarding) return;
+    if (b == null || !_forwarding) return;
     if (!_micManaged && _kwsRawMic == null) _kwsMic(chunk);
     // Android media route: half-duplex. While Woi plays (+300 ms) the server
     // gets silence; a local onset opens it with ~160 ms of lead-in.
@@ -1281,6 +1333,51 @@ class TurnPipeline extends ChangeNotifier {
     }
   }
 
+  void _bufferPreConnect(Uint8List chunk) {
+    final voiced = _pending.add(chunk);
+    if (!voiced || _preShot != null) return;
+    if (!options().autoScreenshot) return;
+    // Speech in the pre-roll: grab the screen now, as a live turn would.
+    _preShot = screen.capture(maxWidth: options().maxScreenshotWidth).then<Screenshot?>((s) => s).catchError((
+      Object e,
+    ) {
+      debugPrint('pre-connect screenshot failed: $e');
+      return null;
+    });
+  }
+
+  /// Sends the audio captured while connecting (leading silence trimmed, in
+  /// ~200 ms frames, oldest first), then live streaming takes over.
+  void _flushPreConnect(VoiceBackend b) {
+    if (_pending.isEmpty || _micManaged) {
+      _pending.clear();
+      return;
+    }
+    final frames = _pending.take();
+    final clip = BytesBuilder(copy: false);
+    for (final f in frames) {
+      b.sendAudio(f);
+      clip.add(f);
+      if (!b.hasServerVad && _micMode == MicMode.handsFree) {
+        switch (_localVad.process(f)) {
+          case VadEvent.speechStarted:
+            _onSpeechStarted();
+          case VadEvent.speechStopped:
+            _onSpeechStopped();
+          case null:
+        }
+      }
+    }
+    preConnectFlushedBytes += clip.length;
+    debugPrint('pre-connect: flushed ${clip.length * 1000 ~/ kVoiceBytesPerSecond} ms in ${frames.length} frames');
+    if (_userSpeaking) {
+      _utterancePcm.add(clip.takeBytes());
+    } else {
+      _flushedClip = clip.takeBytes();
+      _flushedAt = DateTime.now();
+    }
+  }
+
   /// Push-to-talk pressed.
   void pttDown() {
     if (_micMode != MicMode.pushToTalk || _pttHeld) return;
@@ -1302,6 +1399,10 @@ class TurnPipeline extends ChangeNotifier {
       // Trailing silence lets server VAD close the turn promptly.
       b.sendAudio(Uint8List(kVoiceBytesPerSecond * 8 ~/ 10));
       if (!b.hasServerVad) _onSpeechStopped();
+    } else if (_mic != null && !_micManaged && !_pending.isEmpty) {
+      // Released while still connecting: the trailing silence goes out with
+      // the buffered press.
+      _pending.add(Uint8List(kVoiceBytesPerSecond * 8 ~/ 10));
     }
     _changed();
   }
@@ -1639,6 +1740,14 @@ class TurnPipeline extends ChangeNotifier {
       _awaitingTranscript.add(msg);
       _addMessage(msg);
     }
+    final flushedAt = _flushedAt;
+    final freshFlush = flushedAt != null && now.difference(flushedAt) < const Duration(seconds: 10);
+    final flushed = _flushedClip;
+    _flushedClip = null;
+    _flushedAt = null;
+    if (freshFlush && flushed != null) _utterancePcm.add(flushed);
+    final preShot = freshFlush ? _preShot : null;
+    _preShot = null;
     _utterancePcm.add(_preRoll.drain());
     _currentUtterance = msg;
     if (local) _localOnsetTurns.add(msg.id);
@@ -1664,7 +1773,10 @@ class TurnPipeline extends ChangeNotifier {
     final opts = options();
     _screenshotTimer?.cancel();
     _screenshotTimer = null;
-    if ((opts.autoScreenshot || cameraImage?.call() != null) &&
+    if (preShot != null && msg.image == null && !_screenshotStarted.contains(msg.id)) {
+      // The speech was in the pre-connect audio: its screen was grabbed then.
+      unawaited(_captureFor(msg, shot: preShot));
+    } else if ((opts.autoScreenshot || cameraImage?.call() != null) &&
         msg.image == null &&
         !_screenshotStarted.contains(msg.id)) {
       _screenshotTimer = Timer(opts.screenshotDelay, () {
@@ -1752,7 +1864,7 @@ class TurnPipeline extends ChangeNotifier {
     _changed();
   }
 
-  Future<void> _captureFor(Message msg) async {
+  Future<void> _captureFor(Message msg, {Future<Screenshot?>? shot}) async {
     _screenshotStarted.add(msg.id);
     final opts = options();
     final cam = cameraImage?.call();
@@ -1760,8 +1872,8 @@ class TurnPipeline extends ChangeNotifier {
     if (cam != null) attachContextImage(cam, to: replace ? msg : null);
     if (replace || !opts.autoScreenshot) return;
     try {
-      final shot = await screen.capture(maxWidth: options().maxScreenshotWidth);
-      await attachScreenshot(shot, note: 'Screen when the user spoke.', to: msg);
+      final s = await shot ?? await screen.capture(maxWidth: options().maxScreenshotWidth);
+      await attachScreenshot(s, note: 'Screen when the user spoke.', to: msg);
     } catch (e) {
       _addSystem('Screenshot failed: $e', meta: {'type': 'error'});
     }
@@ -2363,6 +2475,7 @@ class TurnPipeline extends ChangeNotifier {
       return;
     } else if (usageLimit != null) {
       // A usage limit (429) does not go away by retrying: one retry at reset.
+      await _closeMic();
       _status = SessionStatus.error;
       _scheduleLimitRetry();
       _changed();
@@ -2371,6 +2484,7 @@ class TurnPipeline extends ChangeNotifier {
     } else {
       _reconnecting = false;
       _reconnectAttempt = 0;
+      await _closeMic();
       _status = SessionStatus.error;
       _addSystem('Could not reconnect: ${statusDetail ?? 'unknown error'}', meta: {'type': 'error'});
       _changed();

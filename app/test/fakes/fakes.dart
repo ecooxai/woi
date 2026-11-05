@@ -351,10 +351,15 @@ class ScriptedBackend extends VoiceBackend {
   Stream<BackendEvent> get events => _events.stream;
   @override
   Future<void> connect(SessionConfig config) async {
+    final g = connectGate;
+    if (g != null) await g.future;
     final e = connectError;
     if (e != null) throw e;
     this.config = config;
   }
+
+  /// When set, [connect] waits for it (a slow handshake).
+  Completer<void>? connectGate;
 
   @override
   void sendAudio(Uint8List pcm16) {
