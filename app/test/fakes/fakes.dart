@@ -377,6 +377,7 @@ class ScriptedBackend extends VoiceBackend {
 
   @override
   void sendAudio(Uint8List pcm16) {
+    sendLog.add('audio');
     audioBytes += pcm16.length;
     sentAudio.add(pcm16);
     audioSent.add(Int16List.sublistView(Uint8List.fromList(pcm16)));
@@ -384,12 +385,16 @@ class ScriptedBackend extends VoiceBackend {
 
   final List<Uint8List> sentAudio = [];
 
+  /// Order of what went to the model: 'audio' per chunk, 'image' per image.
+  final sendLog = <String>[];
+
   /// Every chunk sent, as samples.
   final audioSent = <Int16List>[];
   @override
   void sendText(String text) => texts.add(text);
   @override
   String? sendImage(Uint8List png, {String? note}) {
+    sendLog.add('image');
     images.add((png, note));
     return 'img_${images.length}';
   }

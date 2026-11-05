@@ -725,7 +725,9 @@ class TurnPipeline extends ChangeNotifier {
     UsageLimit? limit;
     try {
       debugPrint('pre-connect: connect start');
+      final cfgWatch = Stopwatch()..start();
       final cfg = await sessionConfig(_conv);
+      debugPrint('[realtime] connect phase: sessionConfig ${cfgWatch.elapsedMilliseconds} ms');
       context.configure(accounting: b.contextAccounting, overheadTokens: contextOverhead(cfg, b.contextAccounting));
       await b.connect(cfg);
       debugPrint('pre-connect: connect end');
@@ -733,10 +735,15 @@ class TurnPipeline extends ChangeNotifier {
       _status = SessionStatus.connected;
       usageLimit = null;
       // Synchronously with the switch to connected: no live chunk can slip
-      // in between the buffered audio and the live stream.
-      _flushPreConnect(b);
-      _pushScreenMemory();
+      // in between the buffered audio and the live stream. Images attached
+      // while connecting (the assist screenshot) go first: server VAD may
+      // commit and answer a turn that is complete in the buffered audio
+      // before a later image item arrives, and the model would answer
+      // without seeing the screen. Order on the socket: images, buffered
+      // audio, live audio.
       _flushPendingImages();
+      _pushScreenMemory();
+      _flushPreConnect(b);
       // The mic only runs while connected (offline it would capture for
       // nothing): the backend's own (WebRTC), or the platform capture, whose
       // open (started with connect) is not awaited: a slow one must not hold

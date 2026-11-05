@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:woi/core/pipeline/pre_connect_buffer.dart';
 import 'package:woi/core/pipeline/turn_pipeline.dart';
 import 'package:woi/core/voice/voice_backend.dart';
+import 'package:woi/platform/screen_capture.dart';
 
 import 'fakes/fakes.dart';
 import 'turn_pipeline_test.dart' show Harness;
@@ -135,6 +136,37 @@ void main() {
       }
       expect(cat(backend.sentAudio), cat([for (var i = 0; i < 35; i++) tagged(i)]));
       expect(h.pipeline.preConnectFlushedBytes, tagged(0).length * 25);
+    });
+
+    test('an image attached while connecting goes before the buffered audio, then live audio', () async {
+      final mic = h.mic;
+      gate = Completer<void>();
+      unawaited(h.pipeline.connect());
+      await Future<void>.delayed(Duration.zero);
+      for (var i = 0; i < 10; i++) {
+        mic.push(tagged(i));
+      }
+      await h.pipeline.attachScreenshot(
+        Screenshot(png: tinyPng(72, 144), width: 72, height: 144, originalWidth: 720, originalHeight: 1440),
+        note: 'Assist screenshot.',
+        activation: true,
+      );
+      final backend = h.scripted;
+      expect(backend.sendLog, isEmpty, reason: 'nothing goes out before the session is ready');
+      gate!.complete();
+      await waitFor(() => h.pipeline.status == SessionStatus.connected);
+      for (var i = 10; i < 13; i++) {
+        mic.push(tagged(i));
+      }
+      final firstImage = backend.sendLog.indexOf('image');
+      expect(firstImage, 0, reason: 'the assist screenshot is the first thing sent: ${backend.sendLog}');
+      expect(backend.images.where((i) => i.$2!.startsWith('Assist screenshot.')), hasLength(1));
+      expect(backend.sendLog.lastIndexOf('image'), lessThan(backend.sendLog.indexOf('audio')));
+      expect(
+        cat(backend.sentAudio),
+        cat([for (var i = 0; i < 13; i++) tagged(i)]),
+        reason: 'buffered audio then live audio, in order',
+      );
     });
 
     test('a reconnect keeps capturing and flushes on ready', () async {

@@ -219,7 +219,12 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
     _closed = false;
     _pinnedNote = config.pinnedNote;
     _summary = config.priorContext?.trim().isEmpty ?? true ? null : config.priorContext!.trim();
-    await _open(initialContext: _summary == null ? null : _summaryText(_summary!));
+    // The credentials sessionConfig just resolved (one auth file read, not
+    // two); reconnects fetch fresh ones.
+    final c = config.credentials;
+    final exp = c?.expiresAt;
+    final fresh = c != null && (exp == null || exp.difference(DateTime.now()) > const Duration(minutes: 2));
+    await _open(initialContext: _summary == null ? null : _summaryText(_summary!), credentials: fresh ? c : null);
   }
 
   Map<String, Object?> sessionUpdate(SessionConfig c) => {
@@ -331,9 +336,18 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
     _deferOffLater();
   }
 
-  Future<void> _open({String? initialContext}) async {
+  Future<void> _open({String? initialContext, Credentials? credentials}) async {
     final cfg = _config!;
-    final creds = credentialsProvider != null ? await credentialsProvider!() : cfg.credentials;
+    final sw = Stopwatch()..start();
+    var mark = 0;
+    void phase(String name) {
+      final now = sw.elapsedMilliseconds;
+      _log('connect phase: $name ${now - mark} ms (total $now ms)');
+      mark = now;
+    }
+
+    final creds = credentials ?? (credentialsProvider != null ? await credentialsProvider!() : cfg.credentials);
+    phase('credentials');
     if (creds == null) {
       throw RealtimeException('Not signed in: no Codex login (~/.codex/auth.json) or API key configured');
     }
@@ -343,6 +357,7 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
     final RealtimeSocket ws;
     try {
       ws = await _connector(uri, creds.headers()).timeout(connectTimeout);
+      phase('socket');
     } catch (e) {
       throw RealtimeException('Cannot connect to ${uri.host}: ${redactSecrets('$e')}');
     }
@@ -359,10 +374,14 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
     );
     try {
       await created.future.timeout(connectTimeout);
-      final updated = _handshake = Completer<void>();
+      phase('session.created');
+      // Not awaited: the server applies client events in order, so audio and
+      // items sent after this already get the configured session. Waiting
+      // for session.updated cost 3-5 s on the phone (gpt-realtime-2.1).
       _pinnedDirty = false;
       _send(sessionUpdate(cfg));
-      await updated.future.timeout(connectTimeout);
+      _updateSentAt = sw.elapsedMilliseconds;
+      _updateWatch = sw;
     } catch (e) {
       _handshake = null;
       _generation++;
@@ -376,6 +395,7 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
     }
     _handshake = null;
     _ready = true;
+    phase('ready');
     if (initialContext != null && initialContext.isNotEmpty) {
       final id = _newItemId('ctx');
       _summaryItemId = id;
@@ -383,8 +403,17 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
     }
   }
 
+  /// input_audio_buffer.append messages sent on this socket (diagnostics:
+  /// where an image went relative to the audio).
+  int _audioAppends = 0;
+
+  /// Connect diagnostics: when the first session.update went out.
+  Stopwatch? _updateWatch;
+  int _updateSentAt = 0;
+
   void _resetSessionState() {
     _ready = false;
+    _audioAppends = 0;
     _activeResponseId = null;
     _responseRequested = false;
     _wantResponse = false;
@@ -507,6 +536,7 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
     // Built by hand (12-25 times a second): base64 needs no JSON escaping,
     // and jsonEncode would scan and copy the whole payload again.
     _ws?.send('{"type":"input_audio_buffer.append","audio":"${base64Encode(pcm16)}"}');
+    _audioAppends++;
   }
 
   @override
@@ -532,6 +562,7 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
     if (!_ready) return null;
     final id = _newItemId('img');
     _send({'type': 'conversation.item.create', 'item': _imageItem(id, png, note)});
+    _log('send order: conversation.item.create input_image $id (${png.length ~/ 1024} KB) after $_audioAppends audio appends this session');
     return id;
   }
 
@@ -787,6 +818,11 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
         if (td is Map && type == 'session.updated') _log('turn detection: prefix ${td['prefix_padding_ms']} ms, threshold ${td['threshold']}, silence ${td['silence_duration_ms']} ms');
         final hs = _handshake;
         if (hs != null && !hs.isCompleted) hs.complete();
+        final uw = _updateWatch;
+        if (type == 'session.updated' && uw != null) {
+          _updateWatch = null;
+          _log('connect phase: session.updated ack ${uw.elapsedMilliseconds - _updateSentAt} ms after session.update (not awaited)');
+        }
 
       case 'input_audio_buffer.speech_started' when _deferActive && !_deferredTurn && !_turnAccepted:
         // The server did not cut Woi off: the pipeline decides whether this

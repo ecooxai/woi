@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+
 /// Minimal text WebSocket used by the realtime backend; faked in tests.
 abstract class RealtimeSocket {
   /// Incoming text frames. Completes when the socket closes.
@@ -32,7 +34,9 @@ class IoRealtimeSocket implements RealtimeSocket {
     Map<String, String> headers, {
     Duration timeout = const Duration(seconds: 15),
   }) async {
+    final sw = Stopwatch()..start();
     final ws = await WebSocket.connect(uri.toString(), headers: headers).timeout(timeout);
+    debugPrint('[realtime] connect phase: dns+tcp+tls+ws upgrade ${sw.elapsedMilliseconds} ms');
     ws.pingInterval = const Duration(seconds: 20);
     return IoRealtimeSocket._(ws);
   }

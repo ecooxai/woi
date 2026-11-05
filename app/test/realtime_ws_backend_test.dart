@@ -10,6 +10,7 @@ import 'package:woi/core/voice/realtime_ws_backend.dart';
 import 'package:woi/core/voice/voice_backend.dart';
 
 import 'fakes/fake_realtime.dart';
+import 'fakes/fakes.dart' show tinyPng;
 
 const _creds = Credentials(mode: AuthMode.codex, bearerToken: 'tok_secret', accountId: 'acct_1');
 
@@ -139,6 +140,57 @@ void main() {
       // Logs never contain the token.
       expect(r.logs.join('\n'), isNot(contains('tok_secret')));
       await r.dispose();
+    });
+
+    test('ready without waiting for session.updated; session.update precedes context, image and audio', () async {
+      final r = _Rig();
+      r.server.autoHandshake = false; // the server never acks session.update
+      final done = r.backend.connect(
+        const SessionConfig(
+          model: 'gpt-realtime-2.1',
+          voice: 'marin',
+          instructions: 'Be brief.',
+          priorContext: 'Earlier: the user asked about Kotlin.',
+        ),
+      );
+      await _pump();
+      r.ws.push({
+        'type': 'session.created',
+        'session': {'id': 'sess_1'},
+      });
+      await done.timeout(const Duration(milliseconds: 500));
+      expect(r.backend.isReady, isTrue);
+      r.backend.sendImage(tinyPng(4, 4), note: 'Assist screenshot.');
+      r.backend.sendAudio(Uint8List(640));
+      expect(r.ws.types, [
+        'session.update',
+        'conversation.item.create',
+        'conversation.item.create',
+        'input_audio_buffer.append',
+      ]);
+      final items = r.ws.ofType('conversation.item.create');
+      expect(jsonEncode(items[0]), contains('Kotlin'), reason: 'history (summary) before the new turn');
+      expect(jsonEncode(items[1]), contains('input_image'));
+      expect(r.logs.any((l) => l.contains('input_image') && l.contains('after 0 audio appends')), isTrue);
+    });
+
+    test('the first open uses the session config credentials (no second auth read)', () async {
+      var provided = 0;
+      final server = FakeRealtimeServer();
+      final b = RealtimeWsBackend(
+        connector: server.connect,
+        credentialsProvider: () async {
+          provided++;
+          return _creds;
+        },
+        connectTimeout: const Duration(seconds: 2),
+        log: (_) {},
+      );
+      await b.connect(const SessionConfig(model: 'm', voice: 'marin', instructions: 'x', credentials: _creds));
+      expect(b.isReady, isTrue);
+      expect(provided, 0);
+      expect(server.last.headers['Authorization'], 'Bearer tok_secret');
+      await b.close();
     });
 
     test('injects priorContext as a system item', () async {
