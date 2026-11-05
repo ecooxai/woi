@@ -468,6 +468,22 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
     _ws?.send('{"type":"input_audio_buffer.append","audio":"${base64Encode(pcm16)}"}');
   }
 
+  // [probeSpan]: committed manually, transcribed, then deleted; never a turn.
+  bool _probeCommitting = false;
+  final Set<String> _probeItems = {};
+
+  @override
+  bool probeSpan(Uint8List pcm) {
+    if (!_ready || _ws == null || _userSpeaking || pcm.length < kVoiceBytesPerSecond ~/ 5) return false;
+    // The live buffer holds only Woi's echo (no speech start): replace it with
+    // the clip, commit that as an item and go on with a fresh buffer.
+    _probeCommitting = true;
+    _send({'type': 'input_audio_buffer.clear'});
+    _ws?.send('{"type":"input_audio_buffer.append","audio":"${base64Encode(pcm)}"}');
+    _send({'type': 'input_audio_buffer.commit'});
+    return true;
+  }
+
   @override
   void sendText(String text) {
     if (!_ready) return;
@@ -770,6 +786,15 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
           _turnAccepted = false;
         }
 
+      case 'input_audio_buffer.committed' when _probeCommitting:
+        // Events are ordered: the first commit after the probe's clear is its own.
+        _probeCommitting = false;
+        final id = ev['item_id'] as String?;
+        if (id != null) _probeItems.add(id);
+
+      case 'conversation.item.added' || 'conversation.item.created'
+          when _probeItems.contains((ev['item'] as Map?)?['id']):
+        break; // not part of the conversation we track
       case 'conversation.item.added' || 'conversation.item.created':
         _onItemAdded(ev);
       case 'conversation.item.done':
@@ -781,6 +806,15 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
         final it = _itemById(ev['item_id'] as String?);
         if (it != null) it.text = '${it.text} [interrupted]';
 
+      case 'conversation.item.input_audio_transcription.delta' when _probeItems.contains(ev['item_id']):
+        break;
+      case 'conversation.item.input_audio_transcription.completed' ||
+              'conversation.item.input_audio_transcription.failed'
+          when _probeItems.contains(ev['item_id']):
+        final id = ev['item_id'] as String;
+        _probeItems.remove(id);
+        _send({'type': 'conversation.item.delete', 'item_id': id});
+        _emit(ProbeTranscript((ev['transcript'] as String? ?? '').trim()));
       case 'conversation.item.input_audio_transcription.delta':
         // Transcription runs asynchronously and usually finishes after the
         // response (or its function call) has started; item_id ties it back
@@ -838,6 +872,12 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
         _onResponseDone((ev['response'] as Map?)?.cast<String, Object?>() ?? const {});
 
       case 'error':
+        final code = (ev['error'] as Map?)?['code'] as String? ?? '';
+        if (_probeCommitting && code.startsWith('input_audio_buffer')) {
+          _probeCommitting = false;
+          _emit(const ProbeTranscript(''));
+          return;
+        }
         _onError((ev['error'] as Map?)?.cast<String, Object?>() ?? const {});
     }
   }

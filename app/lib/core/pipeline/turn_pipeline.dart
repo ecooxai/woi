@@ -290,6 +290,12 @@ class TurnPipeline extends ChangeNotifier {
   BytesBuilder? _paused;
   Timer? _pauseTimer;
   static const _onsetConfirmWindow = Duration(milliseconds: 900);
+  // An unconfirmed onset stays armed: the mic around it (pre-roll included)
+  // is transcribed on its own ([VoiceBackend.probeSpan]); "stop" in it stops
+  // Woi even though the server VAD missed it under the echo.
+  final PcmRing _probeRing = PcmRing(kVoiceBytesPerSecond * 3 ~/ 2); // 1.5 s
+  DateTime? _probeUntil;
+  static const _probeWindow = Duration(seconds: 5);
   // Raw platform mic used only for onset detection when the backend owns the
   // real mic (its stream is a delayed server echo, too late for barge-in).
   MicStream? _onsetMic;
@@ -344,6 +350,9 @@ class TurnPipeline extends ChangeNotifier {
   int autoReconnects = 0;
 
   int onsetsResumed = 0;
+
+  /// Unconfirmed onsets whose probe transcript was a stop phrase.
+  int probeStops = 0;
 
   /// User turns dropped because the transcript was Woi's own reply heard back.
   int echoTurnsDropped = 0;
@@ -738,7 +747,12 @@ class TurnPipeline extends ChangeNotifier {
     if (p == null || _userSpeaking || _disposed) return;
     final pcm = p.takeBytes();
     onsetsResumed++;
-    debugPrint('barge-in: onset not confirmed, resuming (${pcm.length * 1000 ~/ kVoiceBytesPerSecond} ms left)');
+    final probing = _backend?.probeSpan(_probeRing.drain()) ?? false;
+    _probeUntil = probing ? DateTime.now().add(_probeWindow) : null;
+    debugPrint(
+      'barge-in: onset not confirmed, resuming (${pcm.length * 1000 ~/ kVoiceBytesPerSecond} ms left'
+      '${probing ? ', probing' : ''})',
+    );
     if (pcm.isNotEmpty) _play(pcm);
     _changed();
   }
@@ -993,6 +1007,7 @@ class TurnPipeline extends ChangeNotifier {
   }
 
   void _feedOnset(Uint8List chunk) {
+    _probeRing.add(chunk);
     // The floor is the old detector's mic RMS; the guard's is the excess over
     // the predicted echo.
     _guard.minRms = options().bargeInFloor / 3;
@@ -1209,6 +1224,25 @@ class TurnPipeline extends ChangeNotifier {
     _discardUntilDone = false;
     _dropUntil = DateTime.now().add(const Duration(seconds: 4));
     _awaitingResponse = false;
+    _changed();
+  }
+
+  /// The transcript of an unconfirmed onset's clip: a stop phrase stops Woi
+  /// (the server VAD missed a short "stop" under the echo); anything else
+  /// (usually Woi's own words) is ignored.
+  void _onProbeTranscript(String text) {
+    final until = _probeUntil;
+    _probeUntil = null;
+    final live = until != null && DateTime.now().isBefore(until);
+    final stop = isStopPhrase(text) || isStopRequest(text);
+    debugPrint('barge-in: probe "$text"${stop ? ' (stop)' : ''}${live ? '' : ' (expired)'}');
+    if (!live || !stop || _userSpeaking) return;
+    if (!_bargeIn()) return;
+    probeStops++;
+    stopsHandled++;
+    _endHold();
+    _held.clear();
+    debugPrint('barge-in: unconfirmed onset was "$text": stopped');
     _changed();
   }
 
@@ -1658,6 +1692,8 @@ class TurnPipeline extends ChangeNotifier {
         _checkDeferred(m, done: false);
         _persistSoon();
         _changedSoon();
+      case ProbeTranscript(:final text):
+        _onProbeTranscript(text);
       case UserTranscriptDone(:final text, :final itemId, :final noSpeech):
         final m = _userForTranscript(itemId);
         if (text.isNotEmpty) m.text = text;

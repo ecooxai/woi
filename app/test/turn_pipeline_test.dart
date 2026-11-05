@@ -621,6 +621,67 @@ void main() {
       await h.dispose();
     });
 
+    Future<Harness> unconfirmedOnset() async {
+      final h = await Harness.create(
+        options: const PipelineOptions(autoScreenshot: false),
+        echoGuard: EchoGuard(nowUs: () => 0),
+      );
+      final b = h.scripted;
+      final mic = h.fp.audio.mic!;
+      b.emit(const AssistantTranscriptDelta('Once upon a time '));
+      b.emit(AssistantAudioDelta(voice(8000, amplitude: 8000, f0: 140)));
+      for (var i = 0; i < 40; i++) {
+        mic.push(voice(20, amplitude: 300, f0: 140, phase0: i * 480));
+      }
+      for (var i = 0; i < 10; i++) {
+        mic.push(voice(20, amplitude: 9000, f0: 230, phase0: i * 480));
+      }
+      expect(h.pipeline.localOnsets, 1);
+      await Future<void>.delayed(const Duration(milliseconds: 1000));
+      expect(h.pipeline.onsetsResumed, 1, reason: 'no speech start from the server');
+      return h;
+    }
+
+    test('an unconfirmed onset is probed; "stop" in its transcript stops Woi', () async {
+      final h = await unconfirmedOnset();
+      final b = h.scripted;
+      expect(b.probes, hasLength(1));
+      // The clip covers the mic around the onset (pre-roll included).
+      expect(b.probes.single.length, greaterThanOrEqualTo(kVoiceBytesPerSecond ~/ 2));
+      expect(b.probes.single.length, lessThanOrEqualTo(kVoiceBytesPerSecond * 3 ~/ 2));
+      final stops = h.player.stops;
+      b.emit(const ProbeTranscript('Stop.'));
+      expect(h.pipeline.probeStops, 1);
+      expect(h.pipeline.bargeIns, 1);
+      expect(b.cancels, 1);
+      expect(h.player.stops, stops + 1, reason: 'playback cut');
+      expect(ofKind(h.conv, MessageKind.assistant).single.interrupted, isTrue);
+      await h.dispose();
+    });
+
+    test('an unconfirmed onset whose probe is Woi\'s echo keeps playing', () async {
+      final h = await unconfirmedOnset();
+      final b = h.scripted;
+      final stops = h.player.stops;
+      b.emit(const ProbeTranscript('Once upon a time'));
+      b.emit(const ProbeTranscript(''));
+      expect(h.pipeline.probeStops, 0);
+      expect(b.cancels, 0);
+      expect(h.player.stops, stops);
+      expect(ofKind(h.conv, MessageKind.assistant).single.interrupted, isFalse);
+      await h.dispose();
+    });
+
+    test('a late probe transcript (window over) no longer stops', () async {
+      final h = await unconfirmedOnset();
+      final b = h.scripted;
+      b.emit(const ProbeTranscript('Once upon')); // consumes the armed window
+      b.emit(const ProbeTranscript('stop'));
+      expect(h.pipeline.probeStops, 0);
+      expect(b.cancels, 0);
+      await h.dispose();
+    });
+
     test('half-duplex (Android media route): echo goes out as silence, an onset reopens the mic', () async {
       final h = await Harness.create(
         options: const PipelineOptions(autoScreenshot: false, halfDuplexWhileSpeaking: true),

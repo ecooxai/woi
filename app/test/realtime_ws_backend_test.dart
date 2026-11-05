@@ -209,6 +209,50 @@ void main() {
       await r.dispose();
     });
 
+    test('probeSpan transcribes a clip on its own: not a turn, deleted after', () async {
+      final r = _Rig(defer: true);
+      await r.connect();
+      expect(r.backend.probeSpan(Uint8List(48 * 1200)), isTrue);
+      final sent = r.ws.sent.map((e) => e['type']).toList();
+      final i = sent.indexOf('input_audio_buffer.clear');
+      expect(i, greaterThanOrEqualTo(0));
+      expect(sent.sublist(i), ['input_audio_buffer.clear', 'input_audio_buffer.append', 'input_audio_buffer.commit']);
+      expect(base64Decode(r.ws.ofType('input_audio_buffer.append').last['audio'] as String), hasLength(48 * 1200));
+      r.ws.push({'type': 'input_audio_buffer.committed', 'item_id': 'p1'});
+      r.ws.addItem({
+        'id': 'p1',
+        'type': 'message',
+        'role': 'user',
+        'content': [
+          {'type': 'input_audio', 'transcript': null},
+        ],
+      });
+      r.ws.push({'type': 'conversation.item.input_audio_transcription.delta', 'item_id': 'p1', 'delta': 'St'});
+      r.ws.push({'type': 'conversation.item.input_audio_transcription.completed', 'item_id': 'p1', 'transcript': ' Stop. '});
+      await _pump();
+      expect(r.of<ProbeTranscript>().single.text, 'Stop.');
+      expect(r.of<UserTranscriptDelta>(), isEmpty);
+      expect(r.of<UserTranscriptDone>(), isEmpty);
+      expect(r.of<SpeechStarted>(), isEmpty);
+      expect(r.ws.ofType('conversation.item.delete').single['item_id'], 'p1');
+      await r.dispose();
+    });
+
+    test('probeSpan: an empty-buffer error ends the probe quietly', () async {
+      final r = _Rig();
+      await r.connect();
+      expect(r.backend.probeSpan(Uint8List(48 * 50)), isFalse, reason: 'too short to transcribe');
+      expect(r.backend.probeSpan(Uint8List(48 * 600)), isTrue);
+      r.ws.push({
+        'type': 'error',
+        'error': {'type': 'invalid_request_error', 'code': 'input_audio_buffer_commit_empty', 'message': 'empty'},
+      });
+      await _pump();
+      expect(r.of<ProbeTranscript>().single.text, '');
+      expect(r.of<BackendError>(), isEmpty);
+      await r.dispose();
+    });
+
     test('sendImage adds input_image without creating a response', () async {
       final r = _Rig();
       await r.connect();
