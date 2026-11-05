@@ -326,6 +326,7 @@ class TurnPipeline extends ChangeNotifier {
   double onsetCutRms = onsetCutMinRms;
   double onsetFastCutRmsValue = onsetFastCutRms;
   int localCuts = 0;
+  DateTime? _strongOnsetAt;
   // Raw platform mic used only for onset detection when the backend owns the
   // real mic (its stream is a delayed server echo, too late for barge-in).
   MicStream? _onsetMic;
@@ -1095,9 +1096,11 @@ class TurnPipeline extends ChangeNotifier {
     if (_userSpeaking || !_playing) return;
     localOnsets++;
     _lastOnsetAt = DateTime.now();
+    if (_guard.onsetPeakRms >= onsetCutRms) _strongOnsetAt = _lastOnsetAt;
     _pause();
     debugPrint(
-      'barge-in: local onset (lag ${_guard.lagMs} ms, excess rms ${_guard.lastExcessRms.toStringAsFixed(3)}) '
+      'barge-in: local onset (lag ${_guard.lagMs} ms, excess rms ${_guard.lastExcessRms.toStringAsFixed(3)}, '
+      'peak ${_guard.onsetPeakRms.toStringAsFixed(3)}) '
       't=${DateTime.now().millisecondsSinceEpoch}',
     );
     _changed();
@@ -1247,7 +1250,13 @@ class TurnPipeline extends ChangeNotifier {
     _awaitingResponse = false;
     final tail = _cutTail, cut = _cutMsg, at = _cutAt;
     _cutTail = null;
-    if (tail != null && at != null && now.difference(at) < const Duration(seconds: 10) && !_userSpeaking) {
+    // The cut followed a strong local onset (peak >= [onsetCutRms]: the
+    // user, not echo): an empty / filler / garbled transcript (a short
+    // "stop" often comes back as "어") must not bring the reply back.
+    final strong = _strongOnsetAt;
+    if (tail != null && at != null && strong != null && at.difference(strong).abs() < const Duration(seconds: 3)) {
+      debugPrint('echo turn after a strong local onset: the cut reply stays stopped');
+    } else if (tail != null && at != null && now.difference(at) < const Duration(seconds: 10) && !_userSpeaking) {
       if (cut != null) cut.interrupted = false;
       debugPrint('echo turn: resuming the cut-off reply (${tail.length * 1000 ~/ kVoiceBytesPerSecond} ms)');
       _play(tail);

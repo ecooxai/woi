@@ -589,11 +589,14 @@ void main() {
       await h.dispose();
     });
 
-    test('a filler transcript after a local onset while Woi is audible is echo: Woi resumes', () async {
+    test('a filler transcript after a (weak) local onset while Woi is audible is echo: Woi resumes', () async {
       final h = await Harness.create(
         options: const PipelineOptions(autoScreenshot: false),
         echoGuard: EchoGuard(nowUs: () => 0),
       );
+      // Echo-level onset peak (below the local-cut level); a strong one
+      // stays stopped (see 'local hold').
+      h.pipeline.onsetCutRms = double.infinity;
       final b = h.scripted;
       final mic = h.fp.audio.mic!;
       b.emit(const AssistantTranscriptDelta('Once upon a time there was a lighthouse keeper. '));
@@ -800,6 +803,21 @@ void main() {
         expect(h.player.written.length, written, reason: 'no reply and the cut reply is not resumed');
         expect(ofKind(h.conv, MessageKind.assistant).single.interrupted, isTrue);
         expect(h.pipeline.onsetsResumed, 0);
+        await h.dispose();
+      });
+
+      test('a strong onset confirmed by the server whose transcript is filler stays stopped', () async {
+        final h = await strongOnset(cut: true);
+        final b = h.scripted;
+        b.emit(const SpeechStarted(itemId: 'u1', deferred: true));
+        expect(h.pipeline.bargeIns, 1);
+        final written = h.player.written.length;
+        b.emit(const SpeechStopped(itemId: 'u1'));
+        b.emit(const UserTranscriptDone('어', itemId: 'u1'));
+        expect(h.pipeline.echoTurnsDropped, 1);
+        expect(ofKind(h.conv, MessageKind.user), isEmpty);
+        expect(h.player.written.length, written, reason: 'the cut reply is not resumed');
+        expect(ofKind(h.conv, MessageKind.assistant).single.interrupted, isTrue);
         await h.dispose();
       });
 
