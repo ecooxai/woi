@@ -217,7 +217,7 @@ class _SettingsViewState extends State<SettingsView> {
       _Item(
         _s.backendMode == BackendMode.gptLive ? 'Realtime model (fallback)' : 'Realtime model',
         'Used by the WebSocket realtime backends.',
-        advanced: _s.backendMode == BackendMode.gptLive,
+        advanced: true,
         (w) => _choices<String>(
           w,
           id: 'realtime-model',
