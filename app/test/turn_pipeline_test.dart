@@ -639,6 +639,8 @@ void main() {
       expect(h.pipeline.localOnsets, 1);
       await Future<void>.delayed(const Duration(milliseconds: 1000));
       expect(h.pipeline.onsetsResumed, 1, reason: 'no speech start from the server');
+      expect(h.scripted.probes, isEmpty, reason: 'not before the server could still confirm it');
+      await Future<void>.delayed(const Duration(milliseconds: 800));
       return h;
     }
 
@@ -648,7 +650,7 @@ void main() {
       expect(b.probes, hasLength(1));
       // The clip covers the mic around the onset (pre-roll included).
       expect(b.probes.single.length, greaterThanOrEqualTo(kVoiceBytesPerSecond ~/ 2));
-      expect(b.probes.single.length, lessThanOrEqualTo(kVoiceBytesPerSecond * 3 ~/ 2));
+      expect(b.probes.single.length, lessThanOrEqualTo(kVoiceBytesPerSecond * 22 ~/ 10));
       final stops = h.player.stops;
       b.emit(const ProbeTranscript('Stop.'));
       expect(h.pipeline.probeStops, 1);
@@ -669,6 +671,29 @@ void main() {
       expect(b.cancels, 0);
       expect(h.player.stops, stops);
       expect(ofKind(h.conv, MessageKind.assistant).single.interrupted, isFalse);
+      await h.dispose();
+    });
+
+    test('a speech start right after resuming cancels the probe (it would clear the turn)', () async {
+      final h = await Harness.create(
+        options: const PipelineOptions(autoScreenshot: false),
+        echoGuard: EchoGuard(nowUs: () => 0),
+      );
+      final b = h.scripted;
+      final mic = h.fp.audio.mic!;
+      b.emit(const AssistantTranscriptDelta('Once upon a time '));
+      b.emit(AssistantAudioDelta(voice(8000, amplitude: 8000, f0: 140)));
+      for (var i = 0; i < 40; i++) {
+        mic.push(voice(20, amplitude: 300, f0: 140, phase0: i * 480));
+      }
+      for (var i = 0; i < 10; i++) {
+        mic.push(voice(20, amplitude: 9000, f0: 230, phase0: i * 480));
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 1000));
+      expect(h.pipeline.onsetsResumed, 1);
+      b.emit(const SpeechStarted(itemId: 'u1'));
+      await Future<void>.delayed(const Duration(milliseconds: 800));
+      expect(b.probes, isEmpty);
       await h.dispose();
     });
 

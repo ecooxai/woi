@@ -813,6 +813,7 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
           when _probeItems.contains(ev['item_id']):
         final id = ev['item_id'] as String;
         _probeItems.remove(id);
+        if (type.endsWith('failed')) _log('[realtime] probe $id: transcription failed: ${redactSecrets('${ev['error']}')}');
         _send({'type': 'conversation.item.delete', 'item_id': id});
         _emit(ProbeTranscript((ev['transcript'] as String? ?? '').trim()));
       case 'conversation.item.input_audio_transcription.delta':
@@ -875,6 +876,7 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
         final code = (ev['error'] as Map?)?['code'] as String? ?? '';
         if (_probeCommitting && code.startsWith('input_audio_buffer')) {
           _probeCommitting = false;
+          _log('[realtime] probe not committed ($code)');
           _emit(const ProbeTranscript(''));
           return;
         }

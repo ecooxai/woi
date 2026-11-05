@@ -369,3 +369,20 @@ unchanged. Expected E2E effect: none on decisions (suspects were already flagged
 truthful logs. `e2e_echo.sh` now reads mic.wav's samples from the file length (pw-record is killed, so the header
 sizes are never finalized); re-parsed `after-lang2`: mic p50 −25.0 / p90 −19.9 dBFS. **Open:** `e2e_echo.sh
 after-audible` was not run (time limit); run it to confirm no regression and get per-turn `audible=` tags.
+
+Lost "stop" (echo22, 2026-11-04, `after-audible` P0: stop 7170 ms, server never sent speech_started). Why: in the
+E2E room the 0.3 s "Stop" lands at about the echo's level (mic around it −20…−22 dBFS, echo p50 −25 / p90 −20), so
+excess over the predicted echo is tiny (0.017; 0.008 in `after-armed`) and the local onset fires ~0.4 s late, near the
+word's end. While Woi speaks the session runs server_vad threshold 0.5 / prefix 300 / silence 500 with
+`create_response`/`interrupt_response` false (only those two flip; threshold unchanged). The server VAD never fires on
+the steady echo and a short word at ~0 dB SNR does not move it; a 1.5 s "Hello, how are you?" is confirmed after ~1 s.
+Tried (a+c): an unconfirmed onset stays armed. 0.7 s after resuming (1.6 s after the onset, unless a speech start
+came) the mic around it (2.2 s ring) is committed as its own item (`input_audio_buffer.clear` / `append` / `commit`),
+transcribed, deleted, never answered (`VoiceBackend.probeSpan` → `ProbeTranscript`); a stop phrase within 5 s cuts the
+reply (`probeStops`). Unit-tested. E2E `after-armed` (probe at resume, no delay yet): **stop still lost, 6522 ms**, the
+stop clip transcribed as "" (so did all 6 echo-only clips; gpt-4o-mini-transcribe gives nothing at that SNR), question
+0.24 s, 1 extra turn ("iu"), 7 resumed onsets. The undelayed probe cleared the buffer 166 ms before the server
+confirmed the question, which split it ("iu" + probe "How are you?"): hence the 0.7 s delay and the cancel on
+speech start (not yet E2E-verified). **Open:** server-side transcription cannot rescue a word buried in the echo; next
+is a local decision (option c: the guard's voice bands / excess on the paused span decide "do not resume" and cut,
+or a semantic_vad / lower-threshold session while speaking, b), then rerun `e2e_echo.sh`.
