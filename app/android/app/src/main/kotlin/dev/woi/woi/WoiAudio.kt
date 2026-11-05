@@ -490,9 +490,12 @@ object WoiAudio {
             priority = Thread.MAX_PRIORITY
             start()
         }
+        val tRec = SystemClock.elapsedRealtime()
+        WoiAudioRoute.selectCommunicationDevice()
         Log.i(
             WoiBridge.TAG,
-            "mic started: $status (call mode ${tMode - t0} ms, recorder ${SystemClock.elapsedRealtime() - tMode} ms" +
+            "mic started: $status (call mode ${tMode - t0} ms, recorder ${tRec - tMode} ms, " +
+                "device ${SystemClock.elapsedRealtime() - tRec} ms" +
                 "${if (onAudioThread) ", audio thread" else ""})"
         )
         // The system silences capture (zeros, no error) for apps that are

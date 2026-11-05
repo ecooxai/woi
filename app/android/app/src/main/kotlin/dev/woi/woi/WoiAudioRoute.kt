@@ -72,17 +72,26 @@ object WoiAudioRoute {
         } catch (e: Exception) {
             Log.w(WoiBridge.TAG, "MODE_IN_COMMUNICATION refused", e)
         }
-        val t1 = android.os.SystemClock.elapsedRealtime()
-        selectDevice(am)
         // The call volume on its own thread: reading/setting it took 4.5 s on
         // a MI 8 while another app played media, and nothing waits for it
         // (it only matters once Woi speaks).
         volume.post { ensureCallVolume(am) }
-        Log.i(
-            WoiBridge.TAG,
-            "audio route: phone (mode=${am.mode}, device=${deviceName(am)}; setMode ${t1 - t0} ms, " +
-                "device ${android.os.SystemClock.elapsedRealtime() - t1} ms)"
-        )
+        Log.i(WoiBridge.TAG, "audio route: phone (mode=${am.mode}; setMode ${android.os.SystemClock.elapsedRealtime() - t0} ms)")
+    }
+
+    /**
+     * Picks the call device (headset, else the loudspeaker). Called by
+     * WoiAudio right after the recorder started: with another app's media
+     * playing this took ~4.8 s on a MI 8, and the capture need not wait for
+     * it (the input follows the device once it is set). Same thread as
+     * [enterCommunication].
+     */
+    fun selectCommunicationDevice() {
+        if (!commActive) return
+        val am = am()
+        val t0 = android.os.SystemClock.elapsedRealtime()
+        selectDevice(am)
+        Log.i(WoiBridge.TAG, "audio route: device=${deviceName(am)} (${android.os.SystemClock.elapsedRealtime() - t0} ms)")
     }
 
     /** Back to MODE_NORMAL (mic closed, paused for another app, media route). */
