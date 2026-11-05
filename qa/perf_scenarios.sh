@@ -121,7 +121,8 @@ for s in $SCENARIOS; do
     typing)
       launch typing muted || continue
       xdotool windowactivate --sync "$WID" 2>/dev/null; xdotool key ctrl+1; sleep 1
-      center 60 55; xdotool click 1; sleep 0.5; xdotool key ctrl+End
+      # The note editor is the left pane of the split view (60% hit the chat).
+      center 30 55; xdotool click 1; sleep 0.5; xdotool key ctrl+End
       monitor "$SECS" typing &
       mon=$!
       end=$((SECONDS + SECS))

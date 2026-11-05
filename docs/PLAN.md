@@ -250,6 +250,20 @@ turn), send key events to the current app (esc/back, ctrl+c copy, paste, select 
   bridge is the lead). Reduced, not fixed.
 - Video viewer on llvmpipe (~290%) not touched in this branch.
 
+### Perf (perf24)
+- `qa/perf_scenarios.sh` typing clicked at 60% width, which in the split view is the chat pane, so keys went
+  nowhere (earlier "typing" numbers from this script, incl. ~47%, were not note typing); now clicks at 30%.
+- Hypothesis "Woi's own AT-SPI bridge + per-frame semantics tree cause typing CPU / RSS growth" was tested and
+  REJECTED (release, :11, 1600x900 checked by screenshot, 10 keys/s into the note, interleaved 3x3):
+  | arm | CPU mean (samples) | RSS growth 30 s | 60 s |
+  |---|---|---|---|
+  | bridge+semantics on | 31.5% (26/34/33) | +44/+30/+46 MB | +47 MB |
+  | bridge+semantics off | 28.2% (27/31/27) | +40/+40/+40 MB | +47 MB |
+  | idle | ~1-3% | flat | |
+  Difference is within load noise and RSS growth plateaus (~+47 MB, caches warming, not a leak), so the
+  change was NOT merged (it would remove screen-reader support for no gain). Next: count frames per key and
+  profile the editor (layout of the whole note per keystroke?) with `--profile` + DevTools timeline.
+
 ## Real-room echo (echo15)
 P0: on built-in speakers + mic the PipeWire WebRTC canceller removes only ~15–30 dB in a real room; server VAD
 heard the residual as the user and Woi answered its own words ("Pointer moved…" → user turn "Boiner moot").
