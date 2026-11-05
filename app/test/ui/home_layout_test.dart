@@ -15,6 +15,7 @@ import 'package:woi/ui/notes/note_editor.dart';
 import 'package:woi/ui/notes/note_tabs.dart';
 import 'package:woi/ui/screens/home_screen.dart';
 import 'package:woi/ui/screens/settings_screen.dart';
+import 'package:woi/ui/widgets/glass.dart';
 import 'package:woi/ui/theme.dart';
 import 'package:woi/ui/widgets/tab_strip.dart';
 import 'package:woi/ui/widgets/voice_status.dart';
@@ -515,6 +516,15 @@ void main() {
       );
       await _settle(t);
 
+      // Rare settings sit behind each group's "Advanced" expander.
+      expect(find.byKey(const ValueKey('choices-compression-model')), findsNothing);
+      for (final g in ['voice', 'context']) {
+        final f = find.byKey(ValueKey('advanced-$g'));
+        await _tapInSettings(t, f);
+      }
+      t.state<ScrollableState>(_settingsList).position.jumpTo(0);
+      await t.pump();
+
       for (final id in [
         'backend',
         'voice-model',
@@ -525,7 +535,7 @@ void main() {
         'theme',
       ]) {
         final group = find.byKey(ValueKey('choices-$id'));
-        await t.scrollUntilVisible(group, 200, scrollable: find.byType(Scrollable).first);
+        await t.scrollUntilVisible(group, 200, scrollable: _settingsList);
         expect(group, findsOneWidget, reason: id);
         expect(find.descendant(of: group, matching: find.byType(DropdownButtonFormField<String>)), findsNothing);
       }
@@ -533,11 +543,11 @@ void main() {
       await t.scrollUntilVisible(
         find.byKey(const ValueKey('choices-backend')),
         -200,
-        scrollable: find.byType(Scrollable).first,
+        scrollable: _settingsList,
       );
       expect(find.byType(Radio<BackendMode>), findsNWidgets(BackendMode.values.length));
 
-      final list = find.byType(Scrollable).first;
+      final list = _settingsList;
       Future<void> pick(String key, {double delta = 150}) async {
         final f = find.byKey(ValueKey(key));
         await t.scrollUntilVisible(f, delta, scrollable: list);
@@ -566,10 +576,95 @@ void main() {
       await pick('radio-backend-direct', delta: -150);
       expect(env.c.settings.backendMode, BackendMode.direct);
       expect(find.byKey(const ValueKey('choices-voice-model')), findsNothing);
-      await pick('radio-voice-cedar');
+      await pick('radio-voice-cedar', delta: -150);
       expect(env.c.settings.voice, 'cedar');
 
       await env.stop(t);
     });
+
+    Future<void> pumpSettings(WidgetTester t, _Env env, Size size) async {
+      await t.binding.setSurfaceSize(size);
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      await t.pumpWidget(
+        MaterialApp(
+          theme: buildWoiTheme(),
+          home: Scaffold(body: SettingsView(controller: env.c)),
+        ),
+      );
+      await _settle(t);
+    }
+
+    testWidgets('groups with headers, no cards; Advanced expands and collapses', (t) async {
+      final env = _Env();
+      await env.start(t);
+      await pumpSettings(t, env, const Size(1000, 900));
+      final list = _settingsList;
+      for (final g in ['voice', 'audio', 'screen', 'context', 'editing', 'appearance', 'account', 'about']) {
+        final f = find.byKey(ValueKey('settings-group-$g'));
+        await t.scrollUntilVisible(f, 200, scrollable: list);
+        expect(f, findsOneWidget, reason: g);
+      }
+      expect(find.byType(GlassPanel), findsNothing);
+      // Android-only settings stay hidden on desktop.
+      expect(find.byKey(const ValueKey('settings-group-android')), findsNothing);
+
+      final adv = find.byKey(const ValueKey('advanced-editing'));
+      t.state<ScrollableState>(list).position.jumpTo(0);
+      await t.pump();
+      expect(find.text('Workspace folder'), findsNothing);
+      await _tapInSettings(t, adv);
+      expect(find.text('Workspace folder'), findsWidgets);
+      await _tapInSettings(t, adv);
+      expect(find.text('Workspace folder'), findsNothing);
+      await env.stop(t);
+    });
+
+    testWidgets('search filters rows and shows advanced matches', (t) async {
+      final env = _Env();
+      await env.start(t);
+      await pumpSettings(t, env, const Size(1000, 900));
+      await t.enterText(find.byKey(const ValueKey('settings-search')), 'delegate');
+      await _settle(t);
+      expect(find.byKey(const ValueKey('choices-delegate-model')), findsOneWidget);
+      expect(find.byKey(const ValueKey('choices-backend')), findsNothing);
+      expect(find.byKey(const ValueKey('settings-group-audio')), findsNothing);
+      await t.enterText(find.byKey(const ValueKey('settings-search')), 'zzzz');
+      await _settle(t);
+      expect(find.textContaining('No settings match'), findsOneWidget);
+      await env.stop(t);
+    });
+
+    testWidgets('phone width: rows stack, everything expanded, no overflow', (t) async {
+      final env = _Env();
+      await env.start(t);
+      await pumpSettings(t, env, const Size(360, 800));
+      final list = _settingsList;
+      for (final g in ['voice', 'screen', 'context', 'editing', 'account', 'about']) {
+        await _tapInSettings(t, find.byKey(ValueKey('advanced-$g')));
+        expect(t.takeException(), isNull, reason: g);
+      }
+      // A switch row keeps its switch on the label's line.
+      final sw = find.byKey(const ValueKey('run-in-terminal-switch'));
+      t.state<ScrollableState>(list).position.jumpTo(0);
+      await t.pump();
+      await t.scrollUntilVisible(sw, 200, scrollable: list);
+      expect(t.getTopRight(sw).dx, lessThanOrEqualTo(360));
+      expect(t.takeException(), isNull);
+      await env.stop(t);
+    });
   });
+}
+
+/// The settings list (the search field above it has a Scrollable too).
+final _settingsList = find.descendant(
+  of: find.byKey(const ValueKey('settings-list')),
+  matching: find.byType(Scrollable),
+).first;
+
+Future<void> _tapInSettings(WidgetTester t, Finder f) async {
+  await t.scrollUntilVisible(f, 200, scrollable: _settingsList);
+  await Scrollable.ensureVisible(t.element(f), alignment: 0.5);
+  await t.pump();
+  await t.tap(f);
+  await _settle(t);
 }

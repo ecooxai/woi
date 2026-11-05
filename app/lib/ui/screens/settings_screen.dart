@@ -12,7 +12,6 @@ import '../../core/voice/backend_factory.dart';
 import '../theme.dart';
 import '../widgets/context_meter.dart';
 import '../widgets/empty_state.dart' show KeyCap;
-import '../widgets/glass.dart';
 import '../widgets/usage_meter.dart';
 
 /// Choices for the background models (a custom model id is also accepted).
@@ -62,8 +61,11 @@ class _SettingsViewState extends State<SettingsView> {
   Timer? _debounce;
   _TestState _test = _TestState.idle;
   String? _testMessage;
-  int _active = 0;
-  late final List<GlobalKey> _keys = List.generate(7, (_) => GlobalKey());
+  final _search = TextEditingController();
+  String _query = '';
+
+  /// Groups whose "Advanced" rows are shown.
+  final _open = <String>{};
 
   AppController get c => widget.controller;
 
@@ -87,6 +89,7 @@ class _SettingsViewState extends State<SettingsView> {
     _compressionModel.dispose();
     _delegateModel.dispose();
     _workspace.dispose();
+    _search.dispose();
     _scroll.dispose();
     super.dispose();
   }
@@ -156,60 +159,418 @@ class _SettingsViewState extends State<SettingsView> {
 
   // ------------------------------------------------------------------ build
 
-  static const _sections = [
-    (Icons.cloud_outlined, 'Connection', 'How Woi reaches the voice model, and with which credentials.'),
-    (Icons.graphic_eq_rounded, 'Voice', 'The speech model and the voice Woi answers with.'),
-    (
-      Icons.memory_rounded,
-      'Context & models',
-      'When long conversations get summarized, and which models do background work.',
-    ),
-    (Icons.shield_outlined, 'Screen & safety', 'Screenshots sent with your turns and what needs your approval.'),
-    (Icons.contrast_rounded, 'Appearance', 'How Woi looks.'),
-    (Icons.keyboard_alt_outlined, 'Shortcuts', 'Keyboard controls on desktop.'),
-    (Icons.info_outline_rounded, 'About', 'Runtime details for troubleshooting.'),
+  /// Rows narrower than this stack the control under the label (phones).
+  static const _sideBySide = 600.0;
+
+  /// The groups, most used first. Rare settings sit behind each group's
+  /// "Advanced" expander; a search shows every match, expanded.
+  List<_Group> _groups() => [
+    _Group('voice', 'Voice & connection', [
+      _Item(
+        'Voice',
+        'How Woi sounds. The current session reconnects.',
+        (w) => _choices<String>(
+          w,
+          id: 'voice',
+          title: 'Voice',
+          desc: 'How Woi sounds. The current session reconnects.',
+          options: {..._s.voiceChoices, _s.activeVoice}.toList(),
+          value: _s.activeVoice,
+          label: _cap,
+          columns: w ? 4 : 2,
+          onChanged: (v) =>
+              _apply(_s.backendMode == BackendMode.gptLive ? _s.copyWith(liveVoice: v) : _s.copyWith(voice: v)),
+        ),
+      ),
+      if (_s.backendMode == BackendMode.gptLive)
+        _Item(
+          'Voice model',
+          'Speech-to-speech model used over WebRTC.',
+          (w) => _choices<String>(
+            w,
+            id: 'voice-model',
+            title: 'Voice model',
+            desc: 'Speech-to-speech model used over WebRTC.',
+            options: {...kVoiceModels, _s.voiceModel}.toList(),
+            value: _s.voiceModel,
+            hint: (v) => kModelHints[v],
+            monoText: true,
+            onChanged: (v) => _apply(_s.copyWith(voiceModel: v)),
+          ),
+        ),
+      _Item(
+        'Backend',
+        'Where the voice session runs. Switching reconnects.',
+        (w) => _choices<BackendMode>(
+          w,
+          id: 'backend',
+          title: 'Backend',
+          desc: 'Where the voice session runs. Switching reconnects.',
+          options: BackendMode.values,
+          value: _s.backendMode,
+          label: (m) => m.label,
+          hint: _backendHint,
+          columns: 1,
+          onChanged: (v) => _apply(_s.copyWith(backendMode: v)),
+        ),
+      ),
+      _Item(
+        _s.backendMode == BackendMode.gptLive ? 'Realtime model (fallback)' : 'Realtime model',
+        'Used by the WebSocket realtime backends.',
+        advanced: true,
+        (w) => _choices<String>(
+          w,
+          id: 'realtime-model',
+          title: _s.backendMode == BackendMode.gptLive ? 'Realtime model (fallback)' : 'Realtime model',
+          desc: 'Used by the WebSocket realtime backends.',
+          options: {...kRealtimeModels, _s.realtimeModel}.toList(),
+          value: _s.realtimeModel,
+          hint: (v) => kModelHints[v],
+          monoText: true,
+          onChanged: (v) => _apply(_s.copyWith(realtimeModel: v)),
+        ),
+      ),
+      if (_s.backendMode == BackendMode.gptLive)
+        _Item(
+          'Direct realtime at the usage limit',
+          'Switch to Direct realtime while gpt-live is rate limited.',
+          detail:
+              'When gpt-live reports the ChatGPT usage limit (HTTP 429), connect with Direct realtime until it resets.',
+          advanced: true,
+          (w) => _switch(w, _s.fallbackToDirectOnLimit, (v) => _apply(_s.copyWith(fallbackToDirectOnLimit: v))),
+        ),
+    ]),
+    _Group('audio', 'Audio', [
+      _Item(
+        'Echo cancellation',
+        'Keep speaker audio from being heard as you.',
+        detail: 'Remove what the speakers play (Woi, music, videos) from the microphone so it is not heard as you.',
+        (w) => _switch(w, _s.echoCancellation, (v) => _apply(_s.copyWith(echoCancellation: v))),
+      ),
+      _Item(
+        'Thinking chime',
+        'A soft chime while Woi works on the reply.',
+        (w) => _switch(w, _s.thinkingEarcon, (v) => _apply(_s.copyWith(thinkingEarcon: v))),
+      ),
+    ]),
+    _Group('screen', 'Screen & camera', [
+      _Item(
+        'Auto-screenshot when I speak',
+        'Sends a screenshot with each spoken turn.',
+        detail: 'Captures the screen shortly after speech starts and sends it with your turn.',
+        (w) => _switch(w, _s.autoScreenshot, (v) => _apply(_s.copyWith(autoScreenshot: v))),
+      ),
+      _Item(
+        'Screenshot delay',
+        'Lets menus you just opened render first.',
+        detail: 'Wait after you start speaking, so menus or pages you just opened have rendered.',
+        (w) => _slider(
+          value: _s.screenshotDelayMs.clamp(0, 4000).toDouble(),
+          min: 0,
+          max: 4000,
+          divisions: 40,
+          label: '${(_s.screenshotDelayMs / 1000).toStringAsFixed(1)} s',
+          semantic: 'Screenshot delay',
+          onChanged: _s.autoScreenshot ? (v) => setState(() => _s = _s.copyWith(screenshotDelayMs: v.round())) : null,
+          onChangeEnd: (v) => _apply(_s.copyWith(screenshotDelayMs: v.round())),
+        ),
+      ),
+      _Item(
+        'Camera and screenshots',
+        'While the camera is on, a frame goes with every turn.',
+        (w) => _choices<bool>(
+          w,
+          id: 'camera-screenshot',
+          title: 'Camera and screenshots',
+          desc: 'While the camera is on, a frame goes with every turn.',
+          options: const [false, true],
+          value: _s.cameraReplacesScreenshot,
+          label: (v) => v ? 'Camera replaces the screenshot' : 'Camera adds to the screenshot',
+          hint: (v) => v ? 'Only the camera frame is sent' : 'Both the screen and the camera frame are sent',
+          columns: 1,
+          onChanged: (v) => _apply(_s.copyWith(cameraReplacesScreenshot: v)),
+        ),
+      ),
+      _Item(
+        'Screenshot tiers',
+        'Full ${_s.imageFullCount}, scaled ${_s.imageScaledCount} at 1/${_s.imageScaleDivisor}, older described.',
+        detail:
+            'Newest ${_s.imageFullCount} sent in full, next ${_s.imageScaledCount} at 1/${_s.imageScaleDivisor} '
+            'size, older ones replaced by a short description.',
+        advanced: true,
+        (w) => Row(
+          children: [
+            for (final (label, value, options, set) in [
+              ('Full', _s.imageFullCount, const [1, 2, 3, 4, 5, 8], (int v) => _s.copyWith(imageFullCount: v)),
+              ('Scaled', _s.imageScaledCount, const [0, 3, 5, 8, 10], (int v) => _s.copyWith(imageScaledCount: v)),
+              (
+                'Scale 1/',
+                _s.imageScaleDivisor,
+                const [2, 3, 4, 5, 8],
+                (int v) => _s.copyWith(imageScaleDivisor: v),
+              ),
+            ])
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: _dropdown(label, '$value', [
+                    for (final o in {...options, value}) '$o',
+                  ], (v) => _apply(set(int.parse(v)))),
+                ),
+              ),
+          ],
+        ),
+      ),
+    ]),
+    _Group('context', 'Context & models', [
+      _Item(
+        'Compaction threshold',
+        'Older turns are summarized past this many tokens.',
+        detail: 'When the estimated context passes this many tokens, older turns are summarized into a short memory.',
+        (w) => _slider(
+          value: _s.compressionThreshold.clamp(2000, 100000).toDouble(),
+          min: 2000,
+          max: 100000,
+          divisions: 49,
+          label: '${formatTokens(_s.compressionThreshold)} tok',
+          semantic: 'Compaction threshold',
+          onChanged: (v) => setState(() => _s = _s.copyWith(compressionThreshold: v.round())),
+          onChangeEnd: (v) => _apply(_s.copyWith(compressionThreshold: v.round())),
+        ),
+      ),
+      _Item(
+        'Compression model',
+        'Writes the summary when the context is compacted.',
+        advanced: true,
+        (w) => _modelChoices(
+          w,
+          id: 'compression-model',
+          title: 'Compression model',
+          desc: 'Writes the summary when the context is compacted.',
+          options: kCompressionModels,
+          value: _s.compressionModel,
+          ctl: _compressionModel,
+          fallback: 'gpt-6-luna',
+          set: (v, {debounce = false}) => _apply(_s.copyWith(compressionModel: v), debounce: debounce),
+        ),
+      ),
+      _Item(
+        'Delegate model',
+        'Runs longer tasks Woi hands off in the background.',
+        advanced: true,
+        (w) => _modelChoices(
+          w,
+          id: 'delegate-model',
+          title: 'Delegate model',
+          desc: 'Runs longer tasks Woi hands off in the background.',
+          options: kDelegateModels,
+          value: _s.delegateModel,
+          ctl: _delegateModel,
+          fallback: 'gpt-6-luna',
+          set: (v, {debounce = false}) => _apply(_s.copyWith(delegateModel: v), debounce: debounce),
+        ),
+      ),
+    ]),
+    _Group('editing', 'Editing & safety', [
+      _Item(
+        'AI edits',
+        'Edits show a diff first, then apply after the countdown.',
+        (w) => _choices<int>(
+          w,
+          id: 'edit-delay',
+          title: 'AI edits',
+          desc: 'Edits show a diff first, then apply after the countdown.',
+          detail:
+              'Note and file edits show an inline diff first. They apply after the countdown unless you reject them '
+              '(Esc, "reject"); "undo that" reverts the last one.',
+          options: kEditApplyDelays,
+          value: _s.editApplyDelay,
+          onChanged: (v) => _apply(_s.copyWith(editApplyDelay: v)),
+          label: (v) => v == kRequireApproval ? 'Require approval' : (v == 0 ? 'Apply at once' : 'After $v s'),
+          columns: w ? 3 : 2,
+        ),
+      ),
+      _Item(
+        'Confirm shell commands',
+        'Ask before running any bash command.',
+        detail: 'Ask before running any bash command (and commands typed into terminal tabs by voice).',
+        (w) => _switch(w, _s.confirmBeforeBash, (v) => _apply(_s.copyWith(confirmBeforeBash: v))),
+      ),
+      _Item(
+        'Run in terminal',
+        'Show the AI\'s shell commands in the Terminal tab.',
+        detail:
+            'Show the AI\'s shell commands in the Terminal tab (Ctrl+3, "AI" sub-tab). The output is still '
+            'returned to the AI.',
+        (w) => _switch(
+          w,
+          _s.runBashInTerminal,
+          (v) => _apply(_s.copyWith(runBashInTerminal: v)),
+          key: const ValueKey('run-in-terminal-switch'),
+        ),
+      ),
+      _Item(
+        'Workspace folder',
+        'Relative paths and shell commands start here.',
+        detail:
+            'Empty: the folder Woi was started from (or home when started from home or /). '
+            'Now: ${c.platform.files.workspaceDir}',
+        advanced: true,
+        (w) => TextField(
+          controller: _workspace,
+          style: mono(13.5),
+          decoration: InputDecoration(labelText: 'Workspace folder', hintText: c.defaultWorkspace, isDense: true),
+          onChanged: (v) => _apply(_s.copyWith(workspaceDir: v.trim()), debounce: true),
+        ),
+      ),
+    ]),
+    _Group('appearance', 'Appearance', [
+      _Item(
+        'Theme',
+        'Light is the default; System follows the desktop.',
+        (w) => _choices<AppTheme>(
+          w,
+          id: 'theme',
+          title: 'Theme',
+          desc: 'Light is the default; System follows the desktop.',
+          options: AppTheme.values,
+          value: _s.theme,
+          label: (t) => t.label,
+          columns: 3,
+          onChanged: (v) => _apply(_s.copyWith(theme: v)),
+        ),
+      ),
+    ]),
+    _Group('account', 'Account', [
+      if (_s.authMode == AuthMode.codex)
+        _Item(
+          'Codex login',
+          'From ~/.codex/auth.json, refreshed automatically.',
+          (w) => _codexStatus(),
+        )
+      else
+        _Item(
+          'API key',
+          'Stored locally. Empty: uses \$OPENAI_API_KEY.',
+          (w) => _apiKeyField(),
+        ),
+      _Item(
+        'ChatGPT usage',
+        '5-hour and weekly limits of your plan.',
+        detail:
+            'Below ${_s.usageGuardPercent}% left in either limit, delegation and compaction use gpt-6-luna.',
+        (w) => CodexUsageMeter(controller: widget.controller),
+      ),
+      _Item(
+        'Test connection',
+        'Checks the credentials without starting a session.',
+        advanced: true,
+        (w) => _testButton(),
+      ),
+    ]),
+    if (c.platform.audio is AudioRouted)
+      _Group('android', 'Android', [
+        _Item(
+          'Audio route',
+          'Phone uses the call path with echo cancellation.',
+          (w) => _choices<AndroidAudioRoute>(
+            w,
+            id: 'android-audio-route',
+            title: 'Audio route',
+            desc: 'Phone uses the call path with echo cancellation.',
+            options: AndroidAudioRoute.values,
+            value: _s.androidAudioRoute,
+            label: (r) => r == AndroidAudioRoute.phone ? 'Phone (echo cancellation, default)' : 'Media',
+            hint: (r) => r == AndroidAudioRoute.phone
+                ? 'Call audio: loudspeaker or headset, call volume'
+                : 'Media audio and volume; weaker echo cancellation',
+            columns: 1,
+            onChanged: (v) => _apply(_s.copyWith(androidAudioRoute: v)),
+          ),
+        ),
+      ]),
+    _Group('about', 'Help & about', moreLabel: 'Keyboard shortcuts', [
+      _Item('About', 'Runtime details for troubleshooting.', (w) => _about(), full: true),
+      _Item(
+        'Keyboard shortcuts',
+        'Desktop keyboard controls.',
+        advanced: true,
+        full: true,
+        (w) => _shortcuts(),
+        keywords: _shortcutItems.map((e) => '${e.$1.join(' ')} ${e.$2}').join(' '),
+      ),
+    ]),
   ];
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, box) {
-      final wide = box.maxWidth >= 900;
-      final bodies = [
-        _connection(wide),
-        _voice(wide),
-        _context(wide),
-        _screen(wide),
-        _appearance(wide),
-        _shortcuts(),
-        _about(),
-      ];
-      final list = ListView(
-        key: const ValueKey('settings-list'),
-        controller: _scroll,
-        padding: EdgeInsets.fromLTRB(wide ? 8 : 0, wide ? 0 : 4, wide ? 8 : 0, 24),
-        children: [
-          for (var i = 0; i < bodies.length; i++)
-            Padding(key: _keys[i], padding: const EdgeInsets.only(bottom: 16), child: _section(i, bodies[i], wide)),
-          Center(
-            child: Text('Changes save automatically', style: body(12, color: WoiColors.textFaint)),
+      final wide = box.maxWidth >= _sideBySide;
+      final q = _query.trim().toLowerCase();
+      final children = <Widget>[];
+      for (final g in _groups()) {
+        bool match(_Item i) =>
+            q.isEmpty || '${g.title} ${i.title} ${i.hint} ${i.detail ?? ''} ${i.keywords}'.toLowerCase().contains(q);
+        final basic = [for (final i in g.items.where((i) => !i.advanced)) if (match(i)) i];
+        final adv = [for (final i in g.items.where((i) => i.advanced)) if (match(i)) i];
+        if (basic.isEmpty && adv.isEmpty) continue;
+        final open = q.isNotEmpty || _open.contains(g.id);
+        final shown = [...basic, if (open) ...adv];
+        children.add(
+          Column(
+            key: ValueKey('settings-group-${g.id}'),
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: EdgeInsets.fromLTRB(0, children.isEmpty ? 8 : 28, 0, 4),
+                child: Semantics(
+                  header: true,
+                  child: Text(g.title, style: body(13, weight: FontWeight.w600, color: WoiColors.cyan)),
+                ),
+              ),
+              for (var k = 0; k < shown.length; k++) ...[
+                if (k > 0) const Divider(height: 1),
+                shown[k].full ? shown[k].build(wide) : _wrap(wide, shown[k]),
+              ],
+              if (adv.isNotEmpty && q.isEmpty) ...[
+                if (shown.isNotEmpty) const Divider(height: 1),
+                _advancedToggle(g, adv.length, open),
+              ],
+            ],
           ),
-        ],
-      );
-      if (!wide) return list;
+        );
+      }
+      if (children.isEmpty) {
+        children.add(
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 32),
+            child: Center(
+              child: Text('No settings match "$_query"', style: body(13, color: WoiColors.textDim)),
+            ),
+          ),
+        );
+      }
+      final hPad = wide ? 24.0 : 16.0;
       return Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1180),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          constraints: const BoxConstraints(maxWidth: 860),
+          child: Column(
             children: [
-              Padding(padding: const EdgeInsets.only(right: 12), child: _rail()),
+              Padding(padding: EdgeInsets.fromLTRB(hPad, wide ? 12 : 8, hPad, 4), child: _searchField()),
               Expanded(
-                child: NotificationListener<ScrollNotification>(
-                  onNotification: (_) {
-                    _syncSection();
-                    return false;
-                  },
-                  child: list,
+                child: ListView(
+                  key: const ValueKey('settings-list'),
+                  controller: _scroll,
+                  padding: EdgeInsets.fromLTRB(hPad, 0, hPad, 24),
+                  children: [
+                    ...children,
+                    Padding(
+                      padding: const EdgeInsets.only(top: 24),
+                      child: Center(
+                        child: Text('Changes save automatically', style: body(12, color: WoiColors.textFaint)),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -219,519 +580,148 @@ class _SettingsViewState extends State<SettingsView> {
     },
   );
 
-  void _syncSection() {
-    final view = context.findRenderObject() as RenderBox?;
-    if (view == null || !view.attached) return;
-    final top = view.localToGlobal(Offset.zero).dy;
-    var best = 0;
-    for (var i = 0; i < _keys.length; i++) {
-      final box = _keys[i].currentContext?.findRenderObject() as RenderBox?;
-      if (box == null || !box.attached) continue;
-      if (box.localToGlobal(Offset.zero).dy - top < 120) best = i;
-    }
-    if (best != _active) setState(() => _active = best);
-  }
-
-  void _jump(int i) {
-    setState(() => _active = i);
-    final ctx = _keys[i].currentContext;
-    if (ctx != null) {
-      Scrollable.ensureVisible(ctx, duration: WoiMotion.slow, curve: WoiMotion.emphasized);
-    }
-  }
-
-  Widget _rail() => SizedBox(
-    width: 220,
-    child: GlassPanel(
-      padding: const EdgeInsets.all(8),
-      radius: WoiRadii.lg,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (var i = 0; i < _sections.length; i++)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              child: Material(
-                type: MaterialType.transparency,
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(WoiRadii.md),
-                  onTap: () => _jump(i),
-                  child: AnimatedContainer(
-                    duration: WoiMotion.fast,
-                    height: 44,
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(WoiRadii.md),
-                      color: i == _active ? WoiColors.cyan.withValues(alpha: 0.12) : Colors.transparent,
-                      border: Border.all(
-                        color: i == _active ? WoiColors.cyan.withValues(alpha: 0.35) : Colors.transparent,
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(_sections[i].$1, size: 18, color: i == _active ? WoiColors.cyan : WoiColors.textDim),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            _sections[i].$2,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: body(
-                              14,
-                              weight: i == _active ? FontWeight.w600 : FontWeight.w400,
-                              color: i == _active ? WoiColors.text : WoiColors.textDim,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
+  Widget _searchField() => TextField(
+    key: const ValueKey('settings-search'),
+    controller: _search,
+    onChanged: (v) => setState(() => _query = v),
+    style: body(14),
+    decoration: InputDecoration(
+      isDense: true,
+      hintText: 'Search settings',
+      prefixIcon: const Icon(Icons.search_rounded, size: 18),
+      suffixIcon: _query.isEmpty
+          ? null
+          : IconButton(
+              tooltip: 'Clear',
+              icon: const Icon(Icons.close_rounded, size: 18),
+              onPressed: () => setState(() {
+                _search.clear();
+                _query = '';
+              }),
             ),
-        ],
+    ),
+  );
+
+  Widget _advancedToggle(_Group g, int n, bool open) => Align(
+    alignment: Alignment.centerLeft,
+    child: TextButton.icon(
+      key: ValueKey('advanced-${g.id}'),
+      style: TextButton.styleFrom(
+        minimumSize: const Size(0, kTouchTarget),
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        foregroundColor: WoiColors.textDim,
+      ),
+      onPressed: () => setState(() => open ? _open.remove(g.id) : _open.add(g.id)),
+      icon: AnimatedRotation(
+        turns: open ? 0.5 : 0,
+        duration: WoiMotion.fast,
+        child: const Icon(Icons.expand_more_rounded, size: 18),
+      ),
+      label: Text(
+        open ? 'Hide ${g.moreLabel.toLowerCase()}' : '${g.moreLabel} ($n)',
+        style: body(13, weight: FontWeight.w500),
       ),
     ),
   );
 
-  Widget _section(int i, List<Widget> children, bool wide) {
-    final (icon, title, desc) = _sections[i];
-    return GlassPanel(
-      padding: wide ? const EdgeInsets.fromLTRB(22, 20, 22, 14) : const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: WoiColors.cyan.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(icon, size: 18, color: WoiColors.cyan),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Semantics(header: true, child: Text(title, style: display(17))),
-                    const SizedBox(height: 2),
-                    Text(desc, style: body(12.5, color: WoiColors.textDim)),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          for (var k = 0; k < children.length; k++) ...[
-            if (k > 0) Divider(height: 1, color: WoiColors.stroke),
-            children[k],
-          ],
-        ],
-      ),
-    );
+  /// Choice lists lay themselves out; other items get a [_row].
+  Widget _wrap(bool wide, _Item i) {
+    final w = i.build(wide);
+    if (w.key is ValueKey<String> && (w.key! as ValueKey<String>).value.startsWith('choices-')) return w;
+    return _row(wide, i.title, i.hint, w, detail: i.detail);
   }
 
-  /// Label + description on the left, control on the right (stacked on phone).
-  Widget _row(bool wide, String title, String desc, Widget control, {double controlWidth = 300}) {
-    final text = Column(
+  /// The label and its one-line hint (full text in a tooltip when there is more).
+  Widget _label(String title, String desc, String? detail) {
+    final hint = Text(
+      desc,
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+      style: body(12.5, color: WoiColors.textDim, height: 1.35),
+    );
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(title, style: body(14, weight: FontWeight.w500)),
-        const SizedBox(height: 3),
-        Text(desc, style: body(12.5, color: WoiColors.textDim, height: 1.35)),
+        const SizedBox(height: 2),
+        detail == null ? hint : Tooltip(message: '$desc\n$detail', waitDuration: WoiMotion.slow, child: hint),
       ],
     );
+  }
+
+  /// Label + hint on the left, control right-aligned (stacked on phone).
+  Widget _row(bool wide, String title, String desc, Widget control, {String? detail}) {
+    final isSwitch = control is _SwitchBox;
+    final text = _label(title, desc, detail);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 14),
-      child: wide
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: wide || isSwitch
           ? Row(
               children: [
                 Expanded(child: text),
                 const SizedBox(width: 24),
-                SizedBox(width: controlWidth, child: control),
+                isSwitch ? control : SizedBox(width: 320, child: control),
               ],
             )
           : Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [text, const SizedBox(height: 10), control],
+              children: [text, const SizedBox(height: 8), control],
             ),
     );
   }
 
-  // --------------------------------------------------------------- sections
+  Widget _switch(bool wide, bool value, ValueChanged<bool> onChanged, {Key? key}) =>
+      _SwitchBox(child: Switch(key: key, value: value, onChanged: onChanged));
 
-  List<Widget> _connection(bool wide) => [
-    _choices<BackendMode>(
-      wide,
-      id: 'backend',
-      title: 'Backend',
-      desc: 'Where the voice session runs. Switching reconnects.',
-      options: BackendMode.values,
-      value: _s.backendMode,
-      label: (m) => m.label,
-      hint: _backendHint,
-      columns: 1,
-      onChanged: (v) => _apply(_s.copyWith(backendMode: v)),
-    ),
-    if (_s.backendMode == BackendMode.gptLive)
-      _row(
-        wide,
-        'Use Direct realtime at the usage limit',
-        'When gpt-live reports the ChatGPT usage limit (HTTP 429), connect with Direct realtime until it resets.',
-        Align(
-          alignment: wide ? Alignment.centerRight : Alignment.centerLeft,
-          child: Switch(
-            value: _s.fallbackToDirectOnLimit,
-            onChanged: (v) => _apply(_s.copyWith(fallbackToDirectOnLimit: v)),
-          ),
-        ),
-        controlWidth: 120,
-      ),
-    if (_s.authMode == AuthMode.codex)
-      _row(
-        wide,
-        'Codex login',
-        'Read from ~/.codex/auth.json and refreshed automatically.',
-        _codexStatus(),
-        controlWidth: 340,
-      )
-    else
-      _row(
-        wide,
-        'API key',
-        'Stored locally in settings.json. Leave empty to use \$OPENAI_API_KEY.',
-        _apiKeyField(),
-        controlWidth: 340,
-      ),
-    _row(
-      wide,
-      'Test connection',
-      'Checks the credentials against the API without starting a session.',
-      _testButton(),
-      controlWidth: 340,
-    ),
+  static const _shortcutItems = [
+    (['Space'], 'Hold to talk (push-to-talk mode, when not typing)'),
+    (['Esc'], 'Interrupt Woi · reject a confirmation · close dialogs'),
+    (['Enter'], 'Approve a confirmation · send a message'),
+    (['Shift', 'Enter'], 'New line in the message box'),
+    (['Ctrl', '1'], 'Note tab'),
+    (['Ctrl', '2'], 'Chat tab'),
+    (['Ctrl', '3'], 'Terminal tab'),
+    (['Ctrl', '4'], 'Settings tab (also Ctrl+,; Esc goes back)'),
+    (['Ctrl', '\\'], 'Note and chat side by side (wide windows)'),
+    (['Ctrl', 'K'], 'Focus the message box'),
+    (['Ctrl', 'N'], 'New note / conversation'),
+    (['Ctrl', 'R'], 'Run the note line or selection as a message'),
+    (['Ctrl', 'Shift', 'T'], 'New terminal tab (Ctrl+Shift+W closes it)'),
+    (['Ctrl', 'Shift', 'C'], 'Copy in the terminal (Ctrl+Shift+V pastes)'),
   ];
 
-  List<Widget> _voice(bool wide) => [
-    if (_s.backendMode == BackendMode.gptLive)
-      _choices<String>(
-        wide,
-        id: 'voice-model',
-        title: 'Voice model',
-        desc: 'Speech-to-speech model used over WebRTC.',
-        options: {...kVoiceModels, _s.voiceModel}.toList(),
-        value: _s.voiceModel,
-        hint: (v) => kModelHints[v],
-        monoText: true,
-        onChanged: (v) => _apply(_s.copyWith(voiceModel: v)),
-      ),
-    _choices<String>(
-      wide,
-      id: 'realtime-model',
-      title: _s.backendMode == BackendMode.gptLive ? 'Realtime model (fallback)' : 'Realtime model',
-      desc: 'Used by the WebSocket realtime backends.',
-      options: {...kRealtimeModels, _s.realtimeModel}.toList(),
-      value: _s.realtimeModel,
-      hint: (v) => kModelHints[v],
-      monoText: true,
-      onChanged: (v) => _apply(_s.copyWith(realtimeModel: v)),
-    ),
-    _choices<String>(
-      wide,
-      id: 'voice',
-      title: 'Voice',
-      desc: 'How Woi sounds. Applies from the next session; the current one reconnects.',
-      options: {..._s.voiceChoices, _s.activeVoice}.toList(),
-      value: _s.activeVoice,
-      label: _cap,
-      columns: wide ? 5 : 2,
-      onChanged: (v) =>
-          _apply(_s.backendMode == BackendMode.gptLive ? _s.copyWith(liveVoice: v) : _s.copyWith(voice: v)),
-    ),
-  ];
-
-  List<Widget> _context(bool wide) => [
-    _row(
-      wide,
-      'ChatGPT usage',
-      'Your plan\'s 5-hour and weekly limits. Below ${_s.usageGuardPercent}% left in either, delegation and '
-          'compaction use gpt-6-luna.',
-      CodexUsageMeter(controller: widget.controller),
-      controlWidth: 340,
-    ),
-    _row(
-      wide,
-      'Compaction threshold',
-      'When the estimated context passes this many tokens, older turns are summarized into a short memory.',
-      _slider(
-        value: _s.compressionThreshold.clamp(2000, 100000).toDouble(),
-        min: 2000,
-        max: 100000,
-        divisions: 49,
-        label: '${formatTokens(_s.compressionThreshold)} tok',
-        semantic: 'Compaction threshold',
-        onChanged: (v) => setState(() => _s = _s.copyWith(compressionThreshold: v.round())),
-        onChangeEnd: (v) => _apply(_s.copyWith(compressionThreshold: v.round())),
-      ),
-      controlWidth: 340,
-    ),
-    _modelChoices(
-      wide,
-      id: 'compression-model',
-      title: 'Compression model',
-      desc: 'Writes the summary when the context is compacted.',
-      options: kCompressionModels,
-      value: _s.compressionModel,
-      ctl: _compressionModel,
-      fallback: 'gpt-6-luna',
-      set: (v, {debounce = false}) => _apply(_s.copyWith(compressionModel: v), debounce: debounce),
-    ),
-    _modelChoices(
-      wide,
-      id: 'delegate-model',
-      title: 'Delegate model',
-      desc: 'Runs longer multi-step tasks Woi hands off in the background.',
-      options: kDelegateModels,
-      value: _s.delegateModel,
-      ctl: _delegateModel,
-      fallback: 'gpt-6-luna',
-      set: (v, {debounce = false}) => _apply(_s.copyWith(delegateModel: v), debounce: debounce),
-    ),
-    _row(
-      wide,
-      'Screenshot tiers',
-      'Newest ${_s.imageFullCount} sent in full, next ${_s.imageScaledCount} at 1/${_s.imageScaleDivisor} size, '
-          'older ones replaced by a short description.',
-      Row(
-        children: [
-          for (final (label, value, options, set) in [
-            ('Full', _s.imageFullCount, const [1, 2, 3, 4, 5, 8], (int v) => _s.copyWith(imageFullCount: v)),
-            ('Scaled', _s.imageScaledCount, const [0, 3, 5, 8, 10], (int v) => _s.copyWith(imageScaledCount: v)),
-            ('Scale 1/', _s.imageScaleDivisor, const [2, 3, 4, 5, 8], (int v) => _s.copyWith(imageScaleDivisor: v)),
-          ])
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.only(right: 6),
-                child: _dropdown(label, '$value', [
-                  for (final o in {...options, value}) '$o',
-                ], (v) => _apply(set(int.parse(v)))),
-              ),
-            ),
-        ],
-      ),
-      controlWidth: 340,
-    ),
-    _row(
-      wide,
-      'Workspace folder',
-      'Relative paths and shell commands start here. Empty: the folder Woi was started from '
-          '(or home when started from home or /). Now: ${c.platform.files.workspaceDir}',
-      TextField(
-        controller: _workspace,
-        style: mono(13.5),
-        decoration: InputDecoration(labelText: 'Workspace folder', hintText: c.defaultWorkspace),
-        onChanged: (v) => _apply(_s.copyWith(workspaceDir: v.trim()), debounce: true),
-      ),
-    ),
-  ];
-
-  List<Widget> _screen(bool wide) => [
-    _row(
-      wide,
-      'Auto-screenshot when I speak',
-      'Captures the screen shortly after speech starts and sends it with your turn.',
-      Align(
-        alignment: wide ? Alignment.centerRight : Alignment.centerLeft,
-        child: Switch(
-          value: _s.autoScreenshot,
-          onChanged: (v) => _apply(_s.copyWith(autoScreenshot: v)),
-        ),
-      ),
-      controlWidth: 120,
-    ),
-    _row(
-      wide,
-      'Screenshot delay',
-      'Wait after you start speaking, so menus or pages you just opened have rendered.',
-      _slider(
-        value: _s.screenshotDelayMs.clamp(0, 4000).toDouble(),
-        min: 0,
-        max: 4000,
-        divisions: 40,
-        label: '${(_s.screenshotDelayMs / 1000).toStringAsFixed(1)} s',
-        semantic: 'Screenshot delay',
-        onChanged: _s.autoScreenshot ? (v) => setState(() => _s = _s.copyWith(screenshotDelayMs: v.round())) : null,
-        onChangeEnd: (v) => _apply(_s.copyWith(screenshotDelayMs: v.round())),
-      ),
-      controlWidth: 340,
-    ),
-    _choices<bool>(
-      wide,
-      id: 'camera-screenshot',
-      title: 'Camera and screenshots',
-      desc: 'While the camera is on, a camera frame goes with every turn.',
-      options: const [false, true],
-      value: _s.cameraReplacesScreenshot,
-      label: (v) => v ? 'Camera replaces the screenshot' : 'Camera adds to the screenshot',
-      hint: (v) => v ? 'Only the camera frame is sent' : 'Both the screen and the camera frame are sent',
-      onChanged: (v) => _apply(_s.copyWith(cameraReplacesScreenshot: v)),
-    ),
-    _row(
-      wide,
-      'Echo cancellation',
-      'Remove what the speakers play (Woi, music, videos) from the microphone so it is not heard as you.',
-      Align(
-        alignment: wide ? Alignment.centerRight : Alignment.centerLeft,
-        child: Switch(
-          value: _s.echoCancellation,
-          onChanged: (v) => _apply(_s.copyWith(echoCancellation: v)),
-        ),
-      ),
-      controlWidth: 120,
-    ),
-    if (c.platform.audio is AudioRouted)
-      _choices<AndroidAudioRoute>(
-        wide,
-        id: 'android-audio-route',
-        title: 'Audio route on Android',
-        desc: 'Phone uses the call path with its built-in echo cancellation; Media plays at media volume.',
-        options: AndroidAudioRoute.values,
-        value: _s.androidAudioRoute,
-        label: (r) => r == AndroidAudioRoute.phone ? 'Phone (echo cancellation, default)' : 'Media',
-        hint: (r) => r == AndroidAudioRoute.phone
-            ? 'Call audio: loudspeaker or headset, call volume'
-            : 'Media audio and volume; weaker echo cancellation',
-        onChanged: (v) => _apply(_s.copyWith(androidAudioRoute: v)),
-      ),
-    _row(
-      wide,
-      'Thinking chime',
-      'A soft chime when you stop speaking, while Woi works on the reply.',
-      Align(
-        alignment: wide ? Alignment.centerRight : Alignment.centerLeft,
-        child: Switch(
-          value: _s.thinkingEarcon,
-          onChanged: (v) => _apply(_s.copyWith(thinkingEarcon: v)),
-        ),
-      ),
-      controlWidth: 120,
-    ),
-    _row(
-      wide,
-      'Confirm shell commands',
-      'Ask before running any bash command (and commands typed into terminal tabs by voice).',
-      Align(
-        alignment: wide ? Alignment.centerRight : Alignment.centerLeft,
-        child: Switch(
-          value: _s.confirmBeforeBash,
-          onChanged: (v) => _apply(_s.copyWith(confirmBeforeBash: v)),
-        ),
-      ),
-      controlWidth: 120,
-    ),
-    _choices<int>(
-      wide,
-      id: 'edit-delay',
-      title: 'AI edits',
-      desc:
-          'Note and file edits show an inline diff first. They apply after the countdown unless you reject them '
-          '(Esc, "reject"); "undo that" reverts the last one.',
-      options: kEditApplyDelays,
-      value: _s.editApplyDelay,
-      onChanged: (v) => _apply(_s.copyWith(editApplyDelay: v)),
-      label: (v) => v == kRequireApproval ? 'Require approval' : (v == 0 ? 'Apply at once' : 'After $v s'),
-      columns: 5,
-    ),
-    _row(
-      wide,
-      'Run in terminal',
-      'Show the AI\'s shell commands in the Terminal tab (Ctrl+3, "AI" sub-tab). The output is still returned to the AI.',
-      Align(
-        alignment: wide ? Alignment.centerRight : Alignment.centerLeft,
-        child: Switch(
-          key: const ValueKey('run-in-terminal-switch'),
-          value: _s.runBashInTerminal,
-          onChanged: (v) => _apply(_s.copyWith(runBashInTerminal: v)),
-        ),
-      ),
-      controlWidth: 120,
-    ),
-  ];
-
-  List<Widget> _appearance(bool wide) => [
-    _choices<AppTheme>(
-      wide,
-      id: 'theme',
-      title: 'Theme',
-      desc: 'Light is the default; System follows the desktop setting.',
-      options: AppTheme.values,
-      value: _s.theme,
-      label: (t) => t.label,
-      hint: (t) => switch (t) {
-        AppTheme.light => 'Bright, high-contrast surfaces',
-        AppTheme.dark => 'Dim surfaces for low light',
-        AppTheme.system => 'Match the system appearance',
-      },
-      columns: wide ? 3 : 1,
-      onChanged: (v) => _apply(_s.copyWith(theme: v)),
-    ),
-  ];
-
-  List<Widget> _shortcuts() {
-    const items = [
-      (['Space'], 'Hold to talk (push-to-talk mode, when not typing)'),
-      (['Esc'], 'Interrupt Woi · reject a confirmation · close dialogs'),
-      (['Enter'], 'Approve a confirmation · send a message'),
-      (['Shift', 'Enter'], 'New line in the message box'),
-      (['Ctrl', '1'], 'Note tab'),
-      (['Ctrl', '2'], 'Chat tab'),
-      (['Ctrl', '3'], 'Terminal tab'),
-      (['Ctrl', '4'], 'Settings tab (also Ctrl+,; Esc goes back)'),
-      (['Ctrl', '\\'], 'Note and chat side by side (wide windows)'),
-      (['Ctrl', 'K'], 'Focus the message box'),
-      (['Ctrl', 'N'], 'New note / conversation'),
-      (['Ctrl', 'R'], 'Run the note line or selection as a message'),
-      (['Ctrl', 'Shift', 'T'], 'New terminal tab (Ctrl+Shift+W closes it)'),
-      (['Ctrl', 'Shift', 'C'], 'Copy in the terminal (Ctrl+Shift+V pastes)'),
-    ];
-    return [
-      Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        child: Column(
-          children: [
-            for (final (keys, label) in items)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                child: Row(
-                  children: [
-                    SizedBox(width: 130, child: Wrap(spacing: 4, children: [for (final k in keys) KeyCap(k)])),
-                    Expanded(
-                      child: Text(label, style: body(13.5, color: WoiColors.textDim)),
-                    ),
-                  ],
+  Widget _shortcuts() => Padding(
+    key: const ValueKey('settings-shortcuts'),
+    padding: const EdgeInsets.symmetric(vertical: 8),
+    child: Column(
+      children: [
+        for (final (keys, label) in _shortcutItems)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 5),
+            child: Row(
+              children: [
+                SizedBox(width: 130, child: Wrap(spacing: 4, children: [for (final k in keys) KeyCap(k)])),
+                Expanded(
+                  child: Text(label, style: body(13, color: WoiColors.textDim)),
                 ),
-              ),
-          ],
-        ),
-      ),
-    ];
-  }
-
-  List<Widget> _about() => [
-    Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Column(
-        children: [
-          _kv('Voice backend', c.pipeline.backend?.runtimeType.toString() ?? '—'),
-          _kv('Audio', c.platform.audio.description),
-          _kv('Data folder', c.platform.paths.dataDir),
-        ],
-      ),
+              ],
+            ),
+          ),
+      ],
     ),
-  ];
+  );
+
+  Widget _about() => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 8),
+    child: Column(
+      children: [
+        _kv('Voice backend', c.pipeline.backend?.runtimeType.toString() ?? '—'),
+        _kv('Audio', c.platform.audio.description),
+        _kv('Data folder', c.platform.paths.dataDir),
+      ],
+    ),
+  );
+
 
   // ---------------------------------------------------------------- widgets
 
@@ -805,9 +795,10 @@ class _SettingsViewState extends State<SettingsView> {
     String? Function(T)? hint,
     int? columns,
     bool monoText = false,
+    String? detail,
     List<Widget> extra = const [],
   }) {
-    final cols = wide ? (columns ?? 2) : (columns ?? 1).clamp(1, 2);
+    final cols = wide ? (columns ?? 1) : (columns ?? 1).clamp(1, 2);
     String name(T v) => label?.call(v) ?? '$v';
     Widget item(T v) {
       final h = hint?.call(v);
@@ -866,27 +857,30 @@ class _SettingsViewState extends State<SettingsView> {
         ),
       );
     }
+    final radios = RadioGroup<T>(
+      groupValue: value,
+      onChanged: (v) => v == null ? null : onChanged(v),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [...rows, ...extra]),
+    );
+    final text = Semantics(header: true, child: _label(title, desc, detail));
     return Padding(
       key: ValueKey('choices-$id'),
-      padding: const EdgeInsets.symmetric(vertical: 14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Semantics(
-            header: true,
-            child: Text(title, style: body(14, weight: FontWeight.w600)),
-          ),
-          const SizedBox(height: 3),
-          Text(desc, style: body(12.5, color: WoiColors.textDim, height: 1.35)),
-          const SizedBox(height: 6),
-          RadioGroup<T>(
-            groupValue: value,
-            onChanged: (v) => v == null ? null : onChanged(v),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: rows),
-          ),
-          ...extra,
-        ],
-      ),
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: wide
+          ? Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Padding(padding: const EdgeInsets.only(top: 8), child: text),
+                ),
+                const SizedBox(width: 24),
+                SizedBox(width: 400, child: radios),
+              ],
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [text, const SizedBox(height: 4), radios],
+            ),
     );
   }
 
@@ -915,7 +909,7 @@ class _SettingsViewState extends State<SettingsView> {
       label: (v) => v == _custom ? 'Custom' : v,
       hint: (v) => v == _custom ? 'Any model id' : kModelHints[v],
       monoText: true,
-      columns: wide ? 3 : 1,
+      columns: 1,
       onChanged: (v) {
         if (v == _custom) {
           setState(() => _customModel.add(id));
@@ -1058,4 +1052,47 @@ class _SettingsViewState extends State<SettingsView> {
       ),
     );
   }
+}
+
+class _Item {
+  _Item(
+    this.title,
+    this.hint,
+    this.build, {
+    this.detail,
+    this.advanced = false,
+    this.full = false,
+    this.keywords = '',
+  });
+  final String title;
+
+  /// One line under the title; [detail] adds the rest in a tooltip.
+  final String hint;
+  final String? detail;
+  final Widget Function(bool wide) build;
+
+  /// Behind the group's expander.
+  final bool advanced;
+
+  /// Builds its own full-width layout (no label row).
+  final bool full;
+
+  /// Extra search terms.
+  final String keywords;
+}
+
+class _Group {
+  _Group(this.id, this.title, this.items, {this.moreLabel = 'Advanced'});
+  final String id;
+  final String title;
+  final List<_Item> items;
+  final String moreLabel;
+}
+
+/// A switch stays on the label's row even on phones.
+class _SwitchBox extends StatelessWidget {
+  const _SwitchBox({required this.child});
+  final Widget child;
+  @override
+  Widget build(BuildContext context) => child;
 }
