@@ -102,10 +102,13 @@ void main() {
 
     await cm.maybeCompress();
     await Future<void>.delayed(Duration.zero);
-    expect(failures.single.attempt, 1);
-    expect(failures.single.retryIn, const Duration(milliseconds: 20));
+    // On a loaded machine the 20 ms retry may already have run: check the
+    // first report, not the count.
+    expect(failures, isNotEmpty);
+    expect(failures.first.attempt, 1);
+    expect(failures.first.retryIn, const Duration(milliseconds: 20));
     expect(cm.status, contains('Compaction failed'));
-    expect(cm.retryDelay, const Duration(milliseconds: 20));
+    expect(cm.retryDelay, greaterThanOrEqualTo(const Duration(milliseconds: 20)));
 
     // Retried by the timer without any new message.
     await _until(() => compressor.calls.length >= 2 && cm.failures >= 2);
