@@ -25,6 +25,9 @@ class WoiVoiceInteractionService : VoiceInteractionService() {
         super.onReady()
         instance = this
         Log.i(WoiBridge.TAG, "voice interaction service ready")
+        // The system binds the default assistant at boot and again after Woi
+        // is force-stopped (which also drops the accessibility service).
+        WoiA11yKeeper.ensure(this, "assistant ready")
     }
 
     override fun onShutdown() {
@@ -47,6 +50,7 @@ class WoiVoiceInteractionService : VoiceInteractionService() {
 class WoiAssistActivity : android.app.Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        WoiA11yKeeper.ensure(this, "assist intent")
         val svc = WoiVoiceInteractionService.instance
         if (svc != null) {
             Log.i(WoiBridge.TAG, "assist intent -> showSession")
@@ -96,6 +100,7 @@ class WoiSession(ctx: Context) : VoiceInteractionSession(ctx) {
 
     override fun onShow(args: Bundle?, showFlags: Int) {
         super.onShow(args, showFlags)
+        WoiA11yKeeper.ensure(context, "assistant")
         delivered = false
         screenText = null
         appName = null

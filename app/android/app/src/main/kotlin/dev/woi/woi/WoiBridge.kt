@@ -143,6 +143,11 @@ object WoiBridge {
                 result.success(null)
             }
             // --- accessibility input ---
+            "accessibilityStatus" -> {
+                WoiA11yKeeper.ensure(ctx, "status")
+                result.success(WoiA11yKeeper.status(ctx))
+            }
+            "requestBatteryExemption" -> result.success(WoiA11yKeeper.requestBatteryExemption(ctx))
             "a11yOpenSettings" -> {
                 val i = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 ctx.startActivity(i)

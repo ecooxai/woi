@@ -30,6 +30,10 @@ class WoiAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         instance = this
+        safe("onServiceConnected") {
+            super.onServiceConnected()
+            android.util.Log.i(WoiBridge.TAG, "a11y service connected")
+        }
     }
 
     override fun onDestroy() {
@@ -42,30 +46,32 @@ class WoiAccessibilityService : AccessibilityService() {
         return super.onUnbind(intent)
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
-        val pkg = event.packageName?.toString() ?: return
-        if (pkg == "com.android.systemui") return
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) = safe("onAccessibilityEvent") {
+        if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return@safe
+        val pkg = event.packageName?.toString() ?: return@safe
+        if (pkg == "com.android.systemui") return@safe
         activePackage = pkg
         if (pkg != packageName) targetPackage = pkg
     }
 
     override fun onInterrupt() {}
 
-    private fun woiInFront(): Boolean {
+    private fun woiInFront(): Boolean = try {
         val root = rootInActiveWindow?.packageName?.toString()
-        return (root ?: activePackage) == packageName
+        (root ?: activePackage) == packageName
+    } catch (e: Throwable) {
+        activePackage == packageName
     }
 
     /** Sends Woi to the back (if in front) and waits for the app below. */
     private fun leaveWoi(settleMs: Long = 150, then: () -> Unit) {
-        if (!woiInFront()) return then()
+        if (!woiInFront()) return safe("leaveWoi", then)
         WoiBridge.activity?.moveTaskToBack(true)
         val start = System.currentTimeMillis()
         fun poll() {
             if (!woiInFront() || System.currentTimeMillis() - start > 1200) {
                 android.util.Log.i(WoiBridge.TAG, "left Woi in ${System.currentTimeMillis() - start} ms; front=${rootInActiveWindow?.packageName}")
-                WoiBridge.main.postDelayed(then, settleMs)
+                WoiBridge.main.postDelayed({ safe("leaveWoi", then) }, settleMs)
             } else {
                 WoiBridge.main.postDelayed(::poll, 50)
             }
@@ -80,7 +86,7 @@ class WoiAccessibilityService : AccessibilityService() {
      * Woi's task goes to the back as before.
      */
     private fun aside(settleMs: Long, result: MethodChannel.Result, visual: Boolean = false, block: (MethodChannel.Result) -> Unit) {
-        if (!WoiOverlay.showing) return leaveWoi(settleMs) { block(result) }
+        if (!WoiOverlay.showing) return leaveWoi(settleMs) { guarded("aside", result) { block(it) } }
         WoiOverlay.stepAside(visual)
         val r = WoiOverlay.releasing(result)
         val start = System.currentTimeMillis()
@@ -89,7 +95,7 @@ class WoiAccessibilityService : AccessibilityService() {
             // is not focusable; typing and node actions need that.
             if (!woiInFront() || System.currentTimeMillis() - start > 800) {
                 android.util.Log.i(WoiBridge.TAG, "panel aside in ${System.currentTimeMillis() - start} ms; front=${rootInActiveWindow?.packageName}")
-                WoiBridge.main.postDelayed({ block(r) }, if (visual) 120L else 60L)
+                WoiBridge.main.postDelayed({ guarded("aside", r) { block(it) } }, if (visual) 120L else 60L)
             } else {
                 WoiBridge.main.postDelayed(::poll, 40)
             }
@@ -104,8 +110,8 @@ class WoiAccessibilityService : AccessibilityService() {
             builder.addStroke(GestureDescription.StrokeDescription(path, i * 150L, 40L))
         }
         val ok = dispatchGesture(builder.build(), object : GestureResultCallback() {
-            override fun onCompleted(g: GestureDescription?) = result.success(true)
-            override fun onCancelled(g: GestureDescription?) = result.error("cancelled", "gesture cancelled", null)
+            override fun onCompleted(g: GestureDescription?) = safe("gesture") { result.success(true) }
+            override fun onCancelled(g: GestureDescription?) = safe("gesture") { result.error("cancelled", "gesture cancelled", null) }
         }, null)
         if (!ok) result.error("failed", "dispatchGesture refused", null)
     }
@@ -233,9 +239,12 @@ class WoiAccessibilityService : AccessibilityService() {
                         "x" to r.left, "y" to r.top, "w" to r.width(), "h" to r.height()))
                 }
             }
-            for (i in 0 until n.childCount) n.getChild(i)?.let { walk(it, depth + 1) }
+            for (i in 0 until n.childCount) {
+                val c = try { n.getChild(i) } catch (e: Throwable) { null } ?: continue
+                try { walk(c, depth + 1) } finally { recycle(c) }
+            }
         }
-        for (root in roots) walk(root, 0)
+        for (root in roots) try { walk(root, 0) } finally { recycle(root) }
         return out
     }
 
@@ -260,30 +269,64 @@ class WoiAccessibilityService : AccessibilityService() {
     private fun screenshot(maxWidth: Int, result: MethodChannel.Result) {
         if (Build.VERSION.SDK_INT < 30) return result.error("unsupported", "needs Android 11", null)
         takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
-            override fun onSuccess(shot: ScreenshotResult) {
+            override fun onSuccess(shot: ScreenshotResult) = guarded("screenshot", result) { result ->
                 val hw = Bitmap.wrapHardwareBuffer(shot.hardwareBuffer, shot.colorSpace)
                 shot.hardwareBuffer.close()
-                if (hw == null) return result.error("failed", "no bitmap", null)
+                if (hw == null) return@guarded result.error("failed", "no bitmap", null)
                 WoiBridge.io.execute {
-                    val sw = hw.copy(Bitmap.Config.ARGB_8888, false)
-                    hw.recycle()
-                    val map = WoiScreen.encode(sw, maxWidth)
-                    sw.recycle()
-                    WoiBridge.main.post { result.success(map) }
+                    try {
+                        val sw = hw.copy(Bitmap.Config.ARGB_8888, false)
+                        hw.recycle()
+                        val map = WoiScreen.encode(sw, maxWidth)
+                        sw.recycle()
+                        WoiBridge.main.post { safe("screenshot") { result.success(map) } }
+                    } catch (e: Throwable) {
+                        android.util.Log.w(WoiBridge.TAG, "a11y screenshot encode failed", e)
+                        WoiBridge.main.post { safe("screenshot") { result.error("failed", e.message ?: "$e", null) } }
+                    }
                 }
             }
 
-            override fun onFailure(errorCode: Int) = result.error("failed", "takeScreenshot error $errorCode", null)
+            override fun onFailure(errorCode: Int) = safe("screenshot") { result.error("failed", "takeScreenshot error $errorCode", null) }
         })
     }
 
     companion object {
         @Volatile var instance: WoiAccessibilityService? = null
 
+        /** Runs [block]; an exception is logged, never thrown into the
+         *  framework (an uncaught one would kill the process and unbind the
+         *  service). */
+        inline fun safe(where: String, block: () -> Unit) {
+            try {
+                block()
+            } catch (e: Throwable) {
+                android.util.Log.w(WoiBridge.TAG, "a11y $where failed", e)
+            }
+        }
+
+        /** Like [safe], but also answers [result] with the error (once). */
+        inline fun guarded(where: String, result: MethodChannel.Result, block: (MethodChannel.Result) -> Unit) {
+            try {
+                block(result)
+            } catch (e: Throwable) {
+                android.util.Log.w(WoiBridge.TAG, "a11y $where failed", e)
+                safe(where) { result.error("failed", e.message ?: "$e", null) }
+            }
+        }
+
+        @Suppress("DEPRECATION")
+        fun recycle(n: AccessibilityNodeInfo?) {
+            if (n == null || Build.VERSION.SDK_INT >= 33) return
+            try { n.recycle() } catch (_: Throwable) {}
+        }
+
         fun handle(call: MethodCall, result: MethodChannel.Result) {
             val s = instance ?: return result.error(
                 "no_accessibility",
-                "Woi's accessibility service is off (Settings > Accessibility > Woi)", null
+                if (WoiA11yKeeper.ensure(WoiBridge.appContext, call.method))
+                    "Woi's accessibility service was off and is being switched back on; try again in a moment"
+                else "Woi's accessibility service is off (Settings > Accessibility > Woi)", null
             )
             when (call.method) {
                 "click", "doubleClick" -> {

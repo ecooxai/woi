@@ -39,6 +39,7 @@ class MainActivity : FlutterActivity() {
     override fun onStart() {
         started = true
         WoiBridge.activity = this
+        WoiA11yKeeper.ensure(this, "app start")
         // The launcher (or "open full app") wins over a floating panel.
         if (WoiOverlay.showing) WoiOverlay.dismiss()
         reattachFlutterView()

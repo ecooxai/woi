@@ -21,12 +21,22 @@ import android.util.Log
 class WoiForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
+    /** Cheap accessibility check while Woi runs in the background. */
+    private val keepA11y = object : Runnable {
+        override fun run() {
+            WoiA11yKeeper.ensure(this@WoiForegroundService, "periodic")
+            WoiBridge.main.postDelayed(this, A11Y_CHECK_MS)
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         instance = this
+        WoiBridge.main.post(keepA11y)
     }
 
     override fun onDestroy() {
+        WoiBridge.main.removeCallbacks(keepA11y)
         if (instance === this) instance = null
         super.onDestroy()
     }
@@ -119,6 +129,7 @@ class WoiForegroundService : Service() {
     companion object {
         private const val CHANNEL = "woi_session"
         private const val NOTIF_ID = 42
+        private const val A11Y_CHECK_MS = 30_000L
         const val ACTION_VOICE = "woi.voice"
         const val ACTION_LOGIN = "woi.login"
         const val ACTION_SHARE = "woi.share"
