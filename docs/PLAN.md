@@ -265,6 +265,24 @@ turn), send key events to the current app (esc/back, ctrl+c copy, paste, select 
   change was NOT merged (it would remove screen-reader support for no gain). Next: count frames per key and
   profile the editor (layout of the whole note per keystroke?) with `--profile` + DevTools timeline.
 
+### Perf (perf25): where a keystroke goes
+- Method: release, :11, 1600x900, `WOI_FRAME_STATS=1`, the seeded long note (803 words / 4.3k chars, ~80
+  highlighted list lines) focused on the left (checked by screenshot), 10 keys/s for 30 s.
+- Baseline (1 clean sample, load 14.6): CPU 35.7%, ~15 frames/s while typing = ~1.5 frames per key (keys +
+  caret blink), so the frame count is already close to the minimum. Per frame: build+layout ~9-13 ms on the UI
+  thread (idle frames: ~2-4 ms), raster ~11-13 ms. The cost is per-frame work on the whole note, not extra frames:
+  every key re-runs `highlightMarkdown` on the whole text, rebuilds every TextSpan and lays out the whole single
+  paragraph, and the editor layer (the visible text) is re-rasterized on software GL.
+- Fix so far (commit perf25): `MarkdownEditingController.buildTextSpan` returns the identical cached span when
+  text / AI range / glow / composing / style are unchanged, so EditableText rebuilds that do not change the text
+  (focus, selection, caret) skip span building and relayout. Small and safe; it does not touch the per-key path.
+- After-numbers NOT measured: the parallel voice E2E window on :11 covered Woi's window, so the after/base2
+  samples (1.0% / 1.0%, 0 frames) typed into nothing and are invalid. Rerun on a free display with a
+  window-raise + screenshot check before typing.
+- Next (needed to reach <15%): incremental highlighting (re-highlight only from the edited line to the next
+  line whose fence state matches; keep the other lines' TextSpans) and splitting the editor's text into
+  per-block paragraphs so a key lays out / rasters one block, not the whole note.
+
 ## Real-room echo (echo15)
 P0: on built-in speakers + mic the PipeWire WebRTC canceller removes only ~15–30 dB in a real room; server VAD
 heard the residual as the user and Woi answered its own words ("Pointer moved…" → user turn "Boiner moot").
