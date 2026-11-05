@@ -715,15 +715,17 @@ class TurnPipeline extends ChangeNotifier {
       if (_mic != null) await _closeMic();
       if (!identical(_backend, b)) return;
     } else if (_micMode != MicMode.muted) {
-      await _openMic();
-      if (!identical(_backend, b)) return;
-      _changed();
+      // Concurrently with the handshake: connect never waits for the mic (a
+      // slow device or AEC module load), and a failed open does not stop it.
+      unawaited(_openMicWhileConnecting(b));
     }
     UsageLimit? limit;
     try {
+      debugPrint('pre-connect: connect start');
       final cfg = await sessionConfig(_conv);
       context.configure(accounting: b.contextAccounting, overheadTokens: contextOverhead(cfg, b.contextAccounting));
       await b.connect(cfg);
+      debugPrint('pre-connect: connect end');
       if (!identical(_backend, b)) return;
       _status = SessionStatus.connected;
       usageLimit = null;
@@ -733,8 +735,16 @@ class TurnPipeline extends ChangeNotifier {
       _pushScreenMemory();
       _flushPendingImages();
       // The mic only runs while connected (offline it would capture for
-      // nothing): the platform capture, or the backend's own (WebRTC).
-      if (_micMode != MicMode.muted) await _openMic();
+      // nothing): the backend's own (WebRTC), or the platform capture, whose
+      // open (started with connect) is not awaited: a slow one must not hold
+      // the session up.
+      if (_micMode != MicMode.muted) {
+        if (b is ManagedAudioBackend) {
+          await _openMic();
+        } else {
+          unawaited(_openMic());
+        }
+      }
       _levelsChanged.value++;
     } catch (e) {
       if (!identical(_backend, b)) return;
@@ -1145,11 +1155,42 @@ class TurnPipeline extends ChangeNotifier {
     _changed();
   }
 
-  Future<void> _openMic() async {
-    if (_mic != null) return;
+  Future<void> _openMicWhileConnecting(VoiceBackend b) async {
+    debugPrint('pre-connect: mic open start');
+    try {
+      await _openMic();
+    } catch (e) {
+      debugPrint('pre-connect: mic open failed: $e');
+    }
+    debugPrint('pre-connect: mic open end (open ${_mic != null}, ${_status.name})');
+    if (identical(_backend, b)) _changed();
+  }
+
+  // An open in flight (shared by concurrent callers) and the close
+  // generation: a mic that arrives after a close is closed again.
+  Future<void>? _micOpening;
+  int _micGen = 0;
+
+  Future<void> _openMic() {
+    if (_mic != null) return Future.value();
+    final pending = _micOpening;
+    if (pending != null) return pending;
+    final f = _micOpening = _doOpenMic();
+    unawaited(f.whenComplete(() {
+      if (identical(_micOpening, f)) _micOpening = null;
+    }));
+    return f;
+  }
+
+  Future<void> _doOpenMic() async {
+    final gen = _micGen;
     try {
       final managed = _managed;
       final mic = managed != null ? await managed.openManagedMic() : await audio.openMic();
+      if (gen != _micGen || _disposed) {
+        await mic.close();
+        return;
+      }
       _micManaged = managed != null;
       managed?.setInputEnabled(_forwarding);
       _mic = mic;
@@ -1203,6 +1244,8 @@ class TurnPipeline extends ChangeNotifier {
   }
 
   Future<void> _closeMic() async {
+    _micGen++;
+    _micOpening = null;
     _pending.clear();
     _preShot = null;
     await _micSub?.cancel();
@@ -1273,7 +1316,13 @@ class TurnPipeline extends ChangeNotifier {
   /// Mic chunks replaced by silence by the half-duplex gate (tests/diagnostics).
   int gatedChunks = 0;
 
+  bool _sawMicChunk = false;
+
   void _onMicChunk(Uint8List chunk) {
+    if (!_sawMicChunk) {
+      _sawMicChunk = true;
+      debugPrint('pre-connect: first mic chunk (${_status.name})');
+    }
     if (_status != SessionStatus.connected) {
       if (!_micManaged && _forwarding && !_suspended) _bufferPreConnect(chunk);
       return;

@@ -67,6 +67,12 @@ class FakePcmPlayer implements PcmPlayer {
 class FakeAudioIO implements AudioIO, EchoCancellable {
   FakeMic? mic;
 
+  /// When set, [openMic] waits for it (a slow device / AEC module load).
+  Completer<void>? openMicGate;
+
+  /// When set, [openMic] throws it.
+  Object? openMicError;
+
   @override
   bool echoCancellation = true;
 
@@ -90,6 +96,10 @@ class FakeAudioIO implements AudioIO, EchoCancellable {
   @override
   Future<MicStream> openMic() async {
     micOpens.add(echoCancellation);
+    final g = openMicGate;
+    if (g != null) await g.future;
+    final e = openMicError;
+    if (e != null) throw e;
     return mic = FakeMic();
   }
 
@@ -351,6 +361,7 @@ class ScriptedBackend extends VoiceBackend {
   Stream<BackendEvent> get events => _events.stream;
   @override
   Future<void> connect(SessionConfig config) async {
+    connectStarted = true;
     final g = connectGate;
     if (g != null) await g.future;
     final e = connectError;
@@ -360,6 +371,9 @@ class ScriptedBackend extends VoiceBackend {
 
   /// When set, [connect] waits for it (a slow handshake).
   Completer<void>? connectGate;
+
+  /// [connect] was called (before its gate opened).
+  bool connectStarted = false;
 
   @override
   void sendAudio(Uint8List pcm16) {

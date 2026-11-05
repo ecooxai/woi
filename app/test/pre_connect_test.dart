@@ -120,6 +120,63 @@ void main() {
       expect(cat(next.sentAudio), cat([for (var i = 0; i < 10; i++) tagged(i)]));
     });
 
+    test('a slow mic open does not hold up connect; its audio still flushes on ready', () async {
+      await h.pipeline.suspend();
+      final micGate = h.fp.audio.openMicGate = Completer<void>();
+      gate = Completer<void>();
+      unawaited(h.pipeline.resume());
+      await waitFor(() => h.lastBackend is ScriptedBackend && h.scripted.connectStarted);
+      expect(h.pipeline.status, SessionStatus.connecting);
+      // connect went ahead while the mic is still opening.
+      micGate.complete();
+      await waitFor(() => h.pipeline.capturingWhileConnecting);
+      final mic = h.fp.audio.mic!;
+      for (var i = 0; i < 10; i++) {
+        mic.push(tagged(i));
+      }
+      expect(h.scripted.sentAudio, isEmpty);
+      gate!.complete();
+      await waitFor(() => h.pipeline.status == SessionStatus.connected);
+      mic.push(tagged(10));
+      expect(cat(h.scripted.sentAudio), cat([for (var i = 0; i < 11; i++) tagged(i)]));
+      expect(h.pipeline.preConnectFlushedBytes, tagged(0).length * 10);
+      expect(h.fp.audio.micOpens, hasLength(2), reason: 'one open, not a second one after ready');
+    });
+
+    test('a mic open that never completes does not stop connect', () async {
+      await h.pipeline.suspend();
+      final micGate = h.fp.audio.openMicGate = Completer<void>();
+      unawaited(h.pipeline.resume());
+      await waitFor(() => h.pipeline.status == SessionStatus.connected);
+      // The mic shows up late: it streams live.
+      micGate.complete();
+      await waitFor(() => h.fp.audio.mic != null && !h.fp.audio.mic!.closed && h.pipeline.micLevel != null);
+      final mic = h.fp.audio.mic!;
+      await Future<void>.delayed(Duration.zero);
+      mic.push(tagged(1));
+      expect(cat(h.scripted.sentAudio), tagged(1));
+    });
+
+    test('a failed mic open does not stop connect', () async {
+      await h.pipeline.suspend();
+      h.fp.audio.openMicError = StateError('no mic');
+      unawaited(h.pipeline.resume());
+      await waitFor(() => h.pipeline.status == SessionStatus.connected);
+    });
+
+    test('a mic opened while connecting is closed by a disconnect before it arrives', () async {
+      await h.pipeline.suspend();
+      final micGate = h.fp.audio.openMicGate = Completer<void>();
+      gate = Completer<void>();
+      unawaited(h.pipeline.resume());
+      await waitFor(() => h.lastBackend is ScriptedBackend && h.scripted.connectStarted);
+      await h.pipeline.suspend();
+      micGate.complete();
+      await waitFor(() => h.fp.audio.mic != null);
+      await waitFor(() => h.fp.audio.mic!.closed);
+      expect(h.pipeline.capturingWhileConnecting, isFalse);
+    });
+
     test('speech in the pre-roll grabs the screen then and attaches it to the turn', () async {
       final mic = h.mic;
       gate = Completer<void>();
