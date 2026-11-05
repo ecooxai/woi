@@ -16,7 +16,10 @@
 # Script per run: two prompts with long answers (self-talk window), a
 # "Stop" barge-in and a question barge-in while Woi speaks, then idle.
 # Reports user turns that are not ours (self-talk), echo turns dropped,
-# cut replies, barge-in stop latency.
+# cut replies, barge-in stop latency, whether the stop was honoured (Woi
+# still silent 3 s after it stopped), whether the question got an answer
+# (not the old reply resumed), and pauses / local cuts outside the user
+# fixtures (Woi stopped by its own echo).
 #
 # usage: QA_BIN=<bundle/woi> qa/aec/e2e_echo.sh <run-name>
 #        (QA_OUT, QA_SANDBOX, QA_DISPLAY=:11, ECHO_GAIN=0.3, ECHO_DELAY=0.15)
@@ -139,8 +142,14 @@ barge_at() { # fixture onset_s label
   local t0; t0=$(date +%s.%N)
   user "$1"
   local onset; onset=$(echo "$t0 + $2" | bc)
+  echo "$3 $onset" >>"$QA_OUT/barge_onsets"
   sleep 6
-  echo "$3 $($LAT stop "$SPK" "$onset" 1.5)" >>"$QA_OUT/barge.txt"
+  local ms; ms=$($LAT stop "$SPK" "$onset" 1.5)
+  echo "$3 $ms" >>"$QA_OUT/barge.txt"
+  # Still silent 3 s after the stop? (a resumed reply / new answer is audio)
+  local s0 s1; s0=$(echo "$onset + $ms / 1000 + 0.25" | bc -l); s1=$(echo "$onset + $ms / 1000 + 3" | bc -l)
+  while [ "$(echo "$(date +%s.%N) < $s1" | bc -l)" = 1 ]; do sleep 0.5; done
+  echo "$3 $($LAT active "$SPK" "$s0" "$s1")" >>"$QA_OUT/after_stop.txt"
   T_PROMPT=$onset; wait_quiet 4 90
 }
 barge_at "$FIX/10_stop.wav" 0.30 stop
@@ -148,7 +157,7 @@ barge_at "$FIX/01_hello.wav" 0.30 question
 sleep 10
 qa_stop_app
 
-python3 -I - "$QA_OUT" "$NAME" <<'EOF'
+REPO=$REPO python3 -I - "$QA_OUT" "$NAME" <<'EOF'
 import array, glob, json, math, struct, sys, wave
 out, name = sys.argv[1], sys.argv[2]
 import difflib, re
@@ -167,6 +176,29 @@ def fuzzy(t, f):  # same first word, >= 50% of the words shared, or close spelli
     return difflib.SequenceMatcher(None, norm(t), norm(f)).ratio() >= 0.7
 def is_ours(t):  # one of the played fixtures (not Woi heard back)
     return any(fuzzy(t, f) for f in said)
+import os
+def lines(p):
+    return [l.split() for l in open(p).read().split("\n") if l.strip()] if os.path.exists(p) else []
+onsets = {l[0]: float(l[1]) for l in lines(f"{out}/barge_onsets")}
+after = {l[0]: int(l[1]) for l in lines(f"{out}/after_stop.txt")}
+# User fixture spans (play start .. +duration+2.5 s): onsets / cuts outside
+# them are Woi's own echo.
+fixdur = [4.0, 6.5, 4.0, 4.0, 1.5, 4.0]  # fallback
+try:
+    fixdur = []
+    for f in ["qa/fixtures/12_mars_facts.wav", "qa/fixtures/11_long_story.wav",
+              "qa/fixtures/11_long_story.wav", "research/fixtures/10_stop.wav", "qa/fixtures/11_long_story.wav",
+              "research/fixtures/01_hello.wav"]:
+        with wave.open(os.path.join(os.environ.get("REPO", "."), f)) as w:
+            fixdur.append(w.getnframes() / w.getframerate())
+except Exception:
+    fixdur = []
+utimes = [float(l[0]) for l in lines(f"{out}/user_times")]
+spans = [(t, t + (fixdur[i] if i < len(fixdur) else 6.0) + 2.5) for i, t in enumerate(utimes)]
+def by_user(ms):
+    return any(a <= ms / 1000 <= b for a, b in spans)
+def evts(pat):
+    return [int(m.group(1)) for m in re.finditer(pat + r"[^\n]*t=(\d+)", log)]
 convs = sorted(glob.glob(f"{out}/data-{name}/woi/conversations/*.json"))
 msgs = []
 for c in convs:
@@ -198,6 +230,11 @@ try:
     fr = [math.sqrt(sum(v * v for v in x[i:i+2400]) / 2400) for i in range(0, len(x) - 2400, 2400)]
 except (OSError, EOFError) as e:
     print(f"mic.wav unusable ({e}); mic levels skipped", file=sys.stderr)
+# The question barge: a "how are you" user turn followed by a reply.
+q_answered = False
+for i, m in enumerate(msgs):
+    if m.get("kind") == "user" and "how are you" in norm(m.get("text")):
+        q_answered = any(x.get("kind") == "assistant" and (x.get("text") or "").strip() for x in msgs[i + 1:])
 act = sorted(v for v in fr if v > 30)
 lvl = lambda q: round(20 * math.log10(act[int(q * (len(act) - 1))] / 32768), 1) if act else None
 print(json.dumps({
@@ -211,6 +248,15 @@ print(json.dumps({
     "local_onsets_resumed": log.count("onset not confirmed"),
     "self_talk_pauses": log.count("self-talk: pausing"),
     "barge_stop_ms": [l for l in barge if l],
+    "stop_after_ms_audio": after.get("stop"),
+    "stop_honoured": (after.get("stop") is not None and after["stop"] < 150
+                      and not [t for t in evts("onset not confirmed, resuming") if t / 1000 > onsets.get("stop", 1e12)
+                               and t / 1000 < onsets.get("stop", 0) + 4]),
+    "question_answered": q_answered,
+    "question_resumed_old": bool([t for t in evts("onset not confirmed, resuming") if 0 < t / 1000 - onsets.get("question", 1e12) < 4]),
+    "local_cuts": len(evts("local cut")),
+    "false_local_cuts": len([t for t in evts("local cut") if not by_user(t)]),
+    "false_pauses": len([t for t in evts("barge-in: local onset") if not by_user(t)]),
     "mic_level_dbfs_p50_p90": [lvl(0.5), lvl(0.9)],
 }, indent=1))
 EOF

@@ -605,6 +605,9 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
   }
 
   @override
+  void playbackPaused(bool paused) => paused ? playback.pause() : playback.resume();
+
+  @override
   void cancelResponse() {
     _interruptPlayback();
     _wantResponse = false;

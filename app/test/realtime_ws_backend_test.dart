@@ -718,6 +718,23 @@ void main() {
       await r.dispose();
     });
   });
+
+  test('PlaybackTracker: a pause freezes the played position; resume continues from it', () {
+    var clock = DateTime(2026);
+    final t = PlaybackTracker(outputLatency: Duration.zero, now: () => clock);
+    t.onAudio('a', 24000 * 2 * 2); // 2 s
+    clock = clock.add(const Duration(milliseconds: 500));
+    t.pause();
+    clock = clock.add(const Duration(milliseconds: 900));
+    expect(t.playedMs('a'), 500, reason: 'paused: nothing more heard');
+    expect(t.isPlaying, isTrue);
+    t.resume();
+    clock = clock.add(const Duration(milliseconds: 300));
+    expect(t.playedMs('a'), 800);
+    t.pause();
+    t.reset();
+    expect(t.isPlaying, isFalse);
+  });
 }
 
 Future<void> waitUntil(bool Function() cond, {Duration timeout = const Duration(seconds: 3)}) async {

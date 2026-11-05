@@ -5,6 +5,7 @@
   latency.py quiet  ACTIVE T GAP         1 if no speaker audio in the last GAP s before now and after T
   latency.py stop   ACTIVE T [GAP]       last audio chunk after T before a >=GAP s silence (ms after T)
   latency.py speaking ACTIVE WINDOW      1 if speaker audio within the last WINDOW s
+  latency.py active ACTIVE T0 T1         ms of speaker audio between epochs T0 and T1 (~10 ms chunks)
 """
 import sys, time
 
@@ -40,3 +41,9 @@ elif cmd == "stop":
             break
         prev = t
     print(round((prev - t0) * 1000))
+elif cmd == "active":
+    t0, t1 = float(sys.argv[3]), float(sys.argv[4])
+    xs = sorted(t for t in ts if t0 < t <= t1)
+    # chunk length from the spacing of consecutive chunks (gaps capped at 20 ms)
+    print(round(sum(min(b - a, 0.02) for a, b in zip(xs, xs[1:])) * 1000) + (10 if xs else 0))
+

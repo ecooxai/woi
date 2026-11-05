@@ -17,11 +17,31 @@ class PlaybackTracker {
   final Map<String, int> _receivedMs = {};
   final List<String> _order = [];
   DateTime? _endAt;
+  DateTime? _pausedAt;
+
+  /// Local playback paused (a barge-in onset): the played position stops
+  /// advancing until [resume] (or [reset] when it is cut).
+  void pause() => _pausedAt ??= _now();
+
+  /// Playback continues from where [pause] stopped it.
+  void resume() {
+    final p = _pausedAt;
+    if (p == null) return;
+    _pausedAt = null;
+    final d = _now().difference(p);
+    for (final s in _segments) {
+      s.start = s.start.add(d);
+    }
+    final e = _endAt;
+    if (e != null) _endAt = e.add(d);
+  }
+
+  DateTime _clock() => _pausedAt ?? _now();
 
   /// Records [bytes] of PCM16 24 kHz audio for [itemId] written to the player now.
   void onAudio(String itemId, int bytes) {
     if (bytes <= 0) return;
-    final now = _now();
+    final now = _clock();
     var start = _endAt;
     if (start == null || start.isBefore(now)) start = now.add(outputLatency);
     final durUs = bytes * 1000000 ~/ kVoiceBytesPerSecond;
@@ -39,12 +59,12 @@ class PlaybackTracker {
 
   bool get isPlaying {
     final e = _endAt;
-    return e != null && _now().isBefore(e);
+    return e != null && (_pausedAt != null || _now().isBefore(e));
   }
 
   /// Milliseconds of [itemId] heard so far.
   int playedMs(String itemId) {
-    final now = _now();
+    final now = _clock();
     var us = 0;
     for (final s in _segments) {
       if (s.itemId != itemId) continue;
@@ -71,12 +91,13 @@ class PlaybackTracker {
     _receivedMs.clear();
     _order.clear();
     _endAt = null;
+    _pausedAt = null;
   }
 }
 
 class _Segment {
   _Segment(this.itemId, this.start, this.durUs);
   final String itemId;
-  final DateTime start;
+  DateTime start;
   final int durUs;
 }

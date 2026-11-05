@@ -199,6 +199,10 @@ abstract class VoiceBackend {
 
   void cancelResponse();
 
+  /// Local playback was paused ([paused] true) or resumed from the same
+  /// point: a later truncation uses the position heard before the pause.
+  void playbackPaused(bool paused) {}
+
   /// The user asked to stop ("stop", "cancel", "never mind"): cancel what is
   /// playing and drop the reply the model makes to that request (no spoken
   /// acknowledgement, no delegated action).

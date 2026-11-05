@@ -311,6 +311,21 @@ class TurnPipeline extends ChangeNotifier {
   Duration onsetHoldExtra = const Duration(milliseconds: 1500);
   bool _onsetHeld = false;
   int onsetsHeld = 0;
+
+  /// Local stop cut: an onset still unconfirmed by the server whose peak
+  /// excess RMS is at least this is the user talking (the server VAD misses
+  /// a short "stop" over Woi's echo, even at threshold 0.3): Woi stops and
+  /// waits instead of resuming. Measured on the PipeWire E2E (echo27):
+  /// real speech (stop / question / barge fixtures) peaked at 0.067-0.141,
+  /// the only echo false onset at 0.018.
+  static const onsetCutMinRms = 0.04;
+
+  /// A peak this high cuts at the end of [_onsetConfirmWindow] already
+  /// (no extra hold), so "stop" feels fast.
+  static const onsetFastCutRms = 0.06;
+  double onsetCutRms = onsetCutMinRms;
+  double onsetFastCutRmsValue = onsetFastCutRms;
+  int localCuts = 0;
   // Raw platform mic used only for onset detection when the backend owns the
   // real mic (its stream is a delayed server echo, too late for barge-in).
   MicStream? _onsetMic;
@@ -729,26 +744,53 @@ class TurnPipeline extends ChangeNotifier {
     final b = _unheard();
     _stopOut();
     _paused = b;
+    _backend?.playbackPaused(true);
     _onsetHeld = false;
     _pauseTimer = Timer(_onsetConfirmWindow, _onsetUnconfirmed);
   }
 
   /// No server speech start within [_onsetConfirmWindow]: resume, unless
-  /// the onset was strong enough to hold the pause a little longer.
+  /// the onset was strong enough to hold the pause a little longer, or so
+  /// strong that it is the user ([_localCut]).
   void _onsetUnconfirmed() {
     _pauseTimer = null;
     if (_paused == null) return;
-    if (!_onsetHeld && _guard.onsetPeakRms >= onsetHoldMinRms) {
+    final peak = _guard.onsetPeakRms;
+    if (!_onsetHeld && peak >= onsetFastCutRmsValue) return _localCut(peak);
+    if (!_onsetHeld && peak >= onsetHoldMinRms) {
       _onsetHeld = true;
       onsetsHeld++;
       debugPrint(
-        'barge-in: strong onset (peak excess rms ${_guard.onsetPeakRms.toStringAsFixed(3)}): '
+        'barge-in: strong onset (peak excess rms ${peak.toStringAsFixed(3)}): '
         'holding ${onsetHoldExtra.inMilliseconds} ms more',
       );
-      _pauseTimer = Timer(onsetHoldExtra, _resume);
+      _pauseTimer = Timer(onsetHoldExtra, _onsetUnconfirmed);
       return;
     }
+    if (peak >= onsetCutRms) return _localCut(peak);
+    debugPrint('barge-in: onset unconfirmed (peak excess rms ${peak.toStringAsFixed(3)} < ${onsetCutRms.toStringAsFixed(3)})');
     _resume();
+  }
+
+  /// A strong onset the server never confirmed: the user interrupted
+  /// (typically a short "stop"). Stop like a confirmed barge-in (playback
+  /// off, reply cancelled and truncated at the heard position), create no
+  /// response and wait for the user. A late transcript for the span is
+  /// handled as usual (stop stays stopped, a request is answered, echo or
+  /// filler does nothing: the cut reply is not resumed).
+  void _localCut(double peak) {
+    _pauseTimer?.cancel();
+    _pauseTimer = null;
+    if (_paused == null || _userSpeaking || _disposed) return;
+    localCuts++;
+    debugPrint(
+      'barge-in: local cut (peak excess rms ${peak.toStringAsFixed(3)}, no server speech start): '
+      'stopped, waiting for the user t=${DateTime.now().millisecondsSinceEpoch}',
+    );
+    _bargeIn();
+    _cutTail = null;
+    _awaitingResponse = false;
+    _changed();
   }
 
   /// The written audio the speaker has not played yet.
@@ -777,8 +819,12 @@ class TurnPipeline extends ChangeNotifier {
     _paused = null;
     if (p == null || _userSpeaking || _disposed) return;
     final pcm = p.takeBytes();
+    _backend?.playbackPaused(false);
     onsetsResumed++;
-    debugPrint('barge-in: onset not confirmed, resuming (${pcm.length * 1000 ~/ kVoiceBytesPerSecond} ms left)');
+    debugPrint(
+      'barge-in: onset not confirmed, resuming (${pcm.length * 1000 ~/ kVoiceBytesPerSecond} ms left) '
+      't=${DateTime.now().millisecondsSinceEpoch}',
+    );
     if (pcm.isNotEmpty) _play(pcm);
     _changed();
   }
