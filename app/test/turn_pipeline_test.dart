@@ -1864,10 +1864,13 @@ void main() {
   group('idle power and usage limit (iter8)', () {
     const limit429 = 'gpt-live call failed: HTTP 429 {"error":{"type":"usage_limit_reached","resets_at":4102444800}}';
 
-    test('the mic only opens once connected; a failed connect releases the backend', () async {
+    test('a failed connect closes the pre-connect mic and releases the backend', () async {
       final h = await Harness.create(backend: () => ScriptedBackend()..connectError = StateError('network down'));
       expect(h.pipeline.status, SessionStatus.error);
-      expect(h.fp.audio.mic, isNull, reason: 'no capture without a session');
+      // The mic opens with the connect (pre-connect capture), and closes when
+      // it fails with no automatic retry pending.
+      expect(h.fp.audio.mic?.closed ?? true, isTrue, reason: 'no capture without a session');
+      expect(h.pipeline.capturingWhileConnecting, isFalse);
       expect(h.scripted.closed, isTrue, reason: 'a half-built session must not keep its media alive');
       expect(h.pipeline.phase, AssistantPhase.offline);
       await h.dispose();

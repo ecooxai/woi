@@ -43,7 +43,16 @@ class _InputBarState extends State<InputBar> {
     final p = pipeline;
     return SelectedListenable<Object>(
       p,
-      () => (p.status, p.phase, p.reconnecting, p.reconnectWaiting, p.pttHeld, p.statusDetail, p.conversation),
+      () => (
+        p.status,
+        p.phase,
+        p.reconnecting,
+        p.reconnectWaiting,
+        p.pttHeld,
+        p.statusDetail,
+        p.conversation,
+        p.capturingWhileConnecting,
+      ),
     );
   }
 
@@ -101,7 +110,9 @@ class _InputBarState extends State<InputBar> {
             onModeChanged: c.actions.setMicMode,
             onPttDown: pipeline.pttDown,
             onPttUp: pipeline.pttUp,
-            enabled: connected,
+            // While connecting too: a press (or hands-free speech) is
+            // recorded and sent once the session is ready.
+            enabled: connected || status == SessionStatus.connecting,
           ),
         );
 
@@ -126,6 +137,7 @@ class _InputBarState extends State<InputBar> {
               // Between reconnect attempts: still (the label says it).
               animate: mode == VoiceMode.reconnecting ? !pipeline.reconnectWaiting : null,
               compact: phone,
+              capturing: pipeline.capturingWhileConnecting,
             ),
           },
         );

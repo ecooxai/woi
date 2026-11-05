@@ -649,10 +649,11 @@ class AppController extends ChangeNotifier {
   Future<void> _applyEchoCancellation(AppSettings prev) async {
     if (platform.audio case final EchoCancellable ec) ec.echoCancellation = _settings.echoCancellation;
     if (platform.audio case final AudioRouted r) r.audioRoute = _settings.androidAudioRoute.name;
-    if (prev.sessionDiffers(_settings)) return; // reconnecting anyway
     if (pipeline.backendManagesAudio) {
+      if (prev.sessionDiffers(_settings)) return; // reconnecting anyway
       await pipeline.connect();
     } else {
+      // The platform mic stays open across a reconnect: reopen it now.
       await pipeline.reopenMic();
     }
   }
@@ -661,7 +662,8 @@ class AppController extends ChangeNotifier {
   /// the new route. gpt-live's WebRTC audio is not affected.
   Future<void> _applyAudioRoute(AppSettings prev) async {
     if (platform.audio case final AudioRouted r) r.audioRoute = _settings.androidAudioRoute.name;
-    if (prev.sessionDiffers(_settings) || pipeline.backendManagesAudio) return;
+    if (pipeline.backendManagesAudio) return;
+    // The platform mic stays open across a reconnect: reopen it now.
     await pipeline.reopenMic();
   }
 

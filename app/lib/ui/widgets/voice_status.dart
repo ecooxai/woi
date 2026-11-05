@@ -77,6 +77,10 @@ Color voiceModeColor(VoiceMode m) => switch (m) {
   VoiceMode.compacting => WoiColors.violet,
 };
 
+/// [m] (connecting or reconnecting) while the mic already records.
+String preConnectLabel(VoiceMode m) =>
+    m == VoiceMode.reconnecting ? 'Listening… reconnecting' : 'Listening… connecting';
+
 // Phase-only helpers.
 String phaseLabel(AssistantPhase p) => voiceModeLabel(voiceModeFor(p));
 Color phaseColor(AssistantPhase p) => voiceModeColor(voiceModeFor(p));
@@ -177,6 +181,7 @@ class VoiceStatusIndicator extends StatefulWidget {
     this.showLabel = true,
     this.animate,
     this.compact = false,
+    this.capturing = false,
   });
 
   /// Phones: [voiceModeShortLabel], the full label in a tooltip.
@@ -190,6 +195,10 @@ class VoiceStatusIndicator extends StatefulWidget {
   final ValueListenable<double>? micLevel;
   final ValueListenable<double>? outputLevel;
   final bool showLabel;
+
+  /// The mic records while the session (re)connects (its audio is sent once
+  /// ready): connecting modes read "Listening… connecting".
+  final bool capturing;
 
   @override
   State<VoiceStatusIndicator> createState() => _VoiceStatusIndicatorState();
@@ -243,8 +252,9 @@ class _VoiceStatusIndicatorState extends State<VoiceStatusIndicator> {
   @override
   Widget build(BuildContext context) {
     final m = widget.mode;
-    final color = voiceModeColor(m);
-    final label = voiceModeLabel(m);
+    final pre = widget.capturing && (m == VoiceMode.connecting || m == VoiceMode.reconnecting);
+    final color = pre ? WoiColors.cyan : voiceModeColor(m);
+    final label = pre ? preConnectLabel(m) : voiceModeLabel(m);
     final Widget row = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -268,7 +278,7 @@ class _VoiceStatusIndicatorState extends State<VoiceStatusIndicator> {
           const SizedBox(width: 6),
           Flexible(
             child: Text(
-              widget.compact ? voiceModeShortLabel(m) : label,
+              widget.compact ? (pre ? 'Listening…' : voiceModeShortLabel(m)) : label,
               key: const ValueKey('voice-label'),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
