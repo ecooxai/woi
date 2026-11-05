@@ -301,6 +301,7 @@ print(json.dumps({
     "kws_lags_ms": [int(m.group(1)) for m in re.finditer(r"kws [^\n]*lag (\d+) ms", log)],
     "kws_ignored": log.count("ignored (Woi not speaking)"),
     "kws_vetoes": log.count("vetoed by the reference"),
+    "kws_reference_hits": len(re.findall(r'kws: reference "', log)),
     "kws_errors": [l for l in log.split("\n") if re.search(r"kws: (isolate error|unavailable)", l)][:3],
     "cpu_pct_speaking_idle": cpu_pct(),
 }, indent=1))

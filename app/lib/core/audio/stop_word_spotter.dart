@@ -363,10 +363,15 @@ void _worker(List<Object?> args) {
         final pcm = (msg[1] as TransferableTypedData).materialize().asUint8List();
         final start = msg[2] as int;
         final end = start + pcm.length ~/ 48;
-        for (final _ in ref.feed(kwsResample24to16(pcm), end)) {
+        for (final kw in ref.feed(kwsResample24to16(pcm), end)) {
           refHits.add(end);
+          tx.send(['log', 'reference "$kw" at $end']);
         }
-        refHits.removeWhere((t) => t < end - 10000);
+        // By the wall clock, not by [end]: the server streams faster than
+        // real time, so the reference can run tens of seconds ahead of what
+        // the mic hears; pruning by [end] dropped hits not yet played.
+        final now = DateTime.now().millisecondsSinceEpoch;
+        refHits.removeWhere((t) => t < now - 10000);
         decide();
       case 'reload':
         mic.free();
