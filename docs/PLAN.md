@@ -591,3 +591,35 @@ speaking or paused → `_pause()` + `_localCut('kws ...')` (`kwsCuts`), else ign
 `stopWordDetection` (default on) + `stopWords` (default ["stop"], longest-match BPE mapping), Audio → Advanced and
 `set_setting stop_word_detection / stop_words`. Linux release bundle +37 MB (onnxruntime 27.0 + sherpa C API 4.9 +
 model 5.3). Not yet run live: E2E next.
+Live E2E (echo31 round 3, release build on :11, gpt-realtime-2.1 direct, `qa/aec/e2e_echo.sh`). Smoke test: model copied
+to `<dataDir>/kws/` on first use, `kws: armed ▁ST O P @STOP (mic 0.40, ref 0.10)`, isolate runs, no errors in any run.
+New QA hooks: `WOI_QA_DUMP_KWS_MIC=<path>` (spotter's mic as raw s16 + `.times`; e2e `QA_DUMP_KWS_MIC=1`),
+`WOI_QA_KWS_MIC_THRESHOLD`, e2e summary keys `kws_*` and `cpu_pct_speaking_idle` (woi utime+stime per 1 s, % of one
+core while the speaker is active / silent); `tool/kws_proto.dart` reads the bundled model names and raw dumps.
+Fixes found live: (1) **the AEC eats the "s" of a stop said over Woi** (AEC'd dump: one 200 ms "-top" burst; zero hits
+over the whole run even at 0.2), while the raw mic of the same run gives the hit at onset +1.1 s at 0.4. Linux now spots
+on a second capture of the source **before the AEC** (`RawMicCapable.openRawMic`, pw-record, only when echo
+cancellation is on and stop words are enabled); Woi's own words are left to the reference veto. (2) The reference
+stream was never flushed after Woi's last word, so a final "I've stopped." was not decoded and not vetoed: the
+reference is now padded with silence up to the mic clock once Woi's audio ended. (3) Reference hits were pruned
+10 s behind the *latest written* reference, which runs tens of seconds ahead of playback (server faster than real
+time): Woi's "the bell rang once, then stopped" was pruned before it played → false kws cut in kws-c. Now pruned by
+the wall clock; reference hits are logged.
+
+| run | mode | build | stop ms | stop honoured | kws cuts / false / ignored / vetoes / ref hits | question ms, answered | false pauses | wrong interrupts | CPU % speaking / silent |
+|---|---|---|---|---|---|---|---|---|---|
+| kws-a | QA (server speech ignored) | AEC mic | 425 (short-word cut +1.11 s) | yes | 0 / 0 / 0 / 0 / – (stop missed) | 391, yes | 0 | 0 | 34.1 / 20.9 |
+| kws-b | QA | raw mic | 22 (pause at onset +0.36 s, **kws cut +1.03 s**, lag 13 ms) | yes | 1 / 0 / 1 / 0 / – | 233, yes | 1 | 0 | 40.2 / 22.7 |
+| kws-c | normal | raw mic, padding | 241 (server) | yes | 1 / **1** ("then stopped", fix 3) / 0 / 0 / – | 273, yes | 1 | 1 (the kws cut) | 37.2 / 24.2 |
+| kws-d | normal | all fixes | 391 (server) | yes | 0 / 0 / 0 / 0 / 1 | 295, yes | 1 | 0 | 33.6 / 18.7 |
+| kws-e | QA | all fixes | 7173 (missed) | no | 0 / 0 / 0 / 0 / 2 | 307, yes | 2 | 0 | 36.7 / 20.5 |
+
+Threshold: **mic stays 0.4**. Offline sweeps on the raw mic: kws-b 0.5–0.2 all give the stop and one late "stopped"
+(vetoed by the padded reference now); kws-c 0.3 and below add a hit on Woi's echoed "then stopped"; kws-e's stop is not
+found even at 0.2 (the word lands on loud echo), and 0.25 adds an echo hit. Lower thresholds buy no recall here, only
+false hits. Recall over speech with the raw mic: 2 of 3 stops (kws-b live, kws-a offline), cut ~1.0–1.1 s after the
+onset (the word ends ~0.5 s in; the model fires ~0.4 s after the end + 0.3 s veto wait), so kws is a backstop behind
+the server (~240–390 ms) and the local pause, not a faster path. CPU: no kws-off baseline was run; the app on :11
+(software GL) uses ~34–40 % of a core while speaking vs ~19–24 % silent (UI animation + audio + two spotters).
+Known: pause/resume re-writes the unheard audio, so the reference sees it twice (two stamps; the resumed one is the
+right one; extra stamps can only veto, never cut).
