@@ -463,7 +463,7 @@ packages:
     source: hosted
     version: "0.6.0"
   sherpa_onnx:
-    dependency: "direct dev"
+    dependency: "direct main"
     description:
       name: sherpa_onnx
       sha256: fce38e628bacdd0ff9dd3e11011657b96611158685ef08985a3203cef6e0d171

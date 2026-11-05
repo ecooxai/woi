@@ -53,6 +53,7 @@ class _SettingsViewState extends State<SettingsView> {
   late final _compressionModel = TextEditingController(text: _s.compressionModel);
   late final _delegateModel = TextEditingController(text: _s.delegateModel);
   late final _workspace = TextEditingController(text: _s.workspaceDir);
+  late final _stopWords = TextEditingController(text: _s.stopWords.join(', '));
 
   /// Model choices showing the custom-id field.
   final _customModel = <String>{};
@@ -89,6 +90,7 @@ class _SettingsViewState extends State<SettingsView> {
     _compressionModel.dispose();
     _delegateModel.dispose();
     _workspace.dispose();
+    _stopWords.dispose();
     _search.dispose();
     _scroll.dispose();
     super.dispose();
@@ -251,6 +253,29 @@ class _SettingsViewState extends State<SettingsView> {
         'Thinking chime',
         'A soft chime while Woi works on the reply.',
         (w) => _switch(w, _s.thinkingEarcon, (v) => _apply(_s.copyWith(thinkingEarcon: v))),
+      ),
+      _Item(
+        'Stop word detection',
+        'Saying "stop" cuts Woi right away, detected on this device.',
+        detail:
+            'An offline keyword spotter listens to the microphone only while Woi speaks or is paused; '
+            "Woi's own voice is ignored. No audio leaves the device for this.",
+        advanced: true,
+        keywords: 'kws keyword spotting stop word interrupt barge-in offline',
+        (w) => _switch(w, _s.stopWordDetection, (v) => _apply(_s.copyWith(stopWordDetection: v))),
+      ),
+      _Item(
+        'Stop words',
+        'Comma-separated English words or phrases.',
+        detail: 'Words the stop word detection listens for. Default: stop. More words can add false stops.',
+        advanced: true,
+        keywords: 'kws keyword spotting stop word interrupt',
+        (w) => TextField(
+          controller: _stopWords,
+          style: mono(13.5),
+          decoration: const InputDecoration(labelText: 'Stop words', hintText: 'stop', isDense: true),
+          onChanged: (v) => _apply(_s.copyWith(stopWords: parseStopWords(v)), debounce: true),
+        ),
       ),
     ]),
     _Group('screen', 'Screen & camera', [

@@ -10,6 +10,7 @@ import '../../platform/audio_io.dart';
 import '../../platform/screen_capture.dart';
 import '../../tools/tool_registry.dart';
 import '../audio/earcon.dart';
+import '../audio/stop_word_spotter.dart';
 import '../audio/wav.dart';
 import '../context/context_manager.dart';
 import '../context/image_tiers.dart';
@@ -55,7 +56,16 @@ class PipelineOptions {
     this.onsetMicWithManagedAudio = true,
     this.bargeInFloor = 0.02,
     this.halfDuplexWhileSpeaking = false,
+    this.stopWordDetection = false,
+    this.stopWords = const ['stop'],
   });
+
+  /// Offline stop-word spotting while Woi speaks or is paused: a hit on the
+  /// mic (not in Woi's own audio) pauses and cuts locally (`kws`).
+  final bool stopWordDetection;
+
+  /// Keywords for [stopWordDetection] (mapped to model tokens).
+  final List<String> stopWords;
 
   /// Android media route: while Woi's audio plays (and briefly after), send
   /// silence to the server instead of the mic, so residual echo of Woi's
@@ -114,6 +124,7 @@ class TurnPipeline extends ChangeNotifier {
     this.onTurnStart,
     this.localCommand,
     this.onSelfTalk,
+    this.stopWordSpotter,
     @visibleForTesting EchoGuard? echoGuard,
   }) : _conv = conversation,
        _guard = echoGuard ?? EchoGuard() {
@@ -122,6 +133,15 @@ class TurnPipeline extends ChangeNotifier {
   }
 
   final VoiceBackend Function() backendFactory;
+
+  /// Creates the offline stop-word spotter (null: none). Started lazily the
+  /// first time Woi is audible with [PipelineOptions.stopWordDetection] on.
+  final StopWordSpotter Function()? stopWordSpotter;
+  StopWordSpotter? _kws;
+  StreamSubscription<KwsHit>? _kwsSub;
+  String? _kwsWords;
+  int kwsCuts = 0;
+  int kwsIgnored = 0;
   final AudioIO audio;
   final ScreenCapture screen;
   final ToolRegistry tools;
@@ -788,11 +808,85 @@ class TurnPipeline extends ChangeNotifier {
     while (_stretch.length > 1 && _stretchBytes - _stretch.first.length > kVoiceBytesPerSecond * 60) {
       _stretchBytes -= _stretch.removeAt(0).length;
     }
+    _kwsReference(pcm16);
     _guard.onPlayback(pcm16);
     // Echo tail (the guard's window) plus the server VAD's reaction time.
     _echoWindowUntil = DateTime.now().add(Duration(milliseconds: _guard.queuedMs + 1300));
     _audibleUntil = DateTime.now().add(Duration(milliseconds: _guard.queuedMs) + _echoTail);
     _out?.write(pcm16);
+  }
+
+  // ---- offline stop-word spotting
+
+  /// Woi is speaking or paused: the only time the spotter is fed.
+  bool get _kwsActive => _playing || _paused != null || _assistantAudible;
+
+  /// Starts the spotter (setting on) or stops it (off); re-arms on a new
+  /// keyword list.
+  bool _kwsEnsure() {
+    final o = options();
+    if (!o.stopWordDetection || stopWordSpotter == null || _micMode != MicMode.handsFree) {
+      if (_kws != null) unawaited(_kwsStop());
+      return false;
+    }
+    final words = o.stopWords.map((w) => w.trim()).where((w) => w.isNotEmpty).toList();
+    if (words.isEmpty) return false;
+    final key = words.join('\n');
+    if (_kws == null) {
+      final k = stopWordSpotter!();
+      _kws = k;
+      _kwsSub = k.hits.listen(_onKwsHit);
+    }
+    if (key != _kwsWords) {
+      _kwsWords = key;
+      _kws!.start(words).catchError((Object e) => debugPrint('kws: unavailable: $e'));
+    }
+    return true;
+  }
+
+  Future<void> _kwsStop() async {
+    final k = _kws;
+    _kws = null;
+    _kwsWords = null;
+    await _kwsSub?.cancel();
+    _kwsSub = null;
+    await k?.dispose();
+  }
+
+  /// Woi's audio, stamped with when the speaker plays it.
+  void _kwsReference(Uint8List pcm16) {
+    if (!_kwsEnsure()) return;
+    _kws!.addReference(pcm16, DateTime.now().add(Duration(milliseconds: max(0, _guard.queuedMs))));
+  }
+
+  /// Mic audio (after the AEC) while Woi is audible or paused.
+  void _kwsMic(Uint8List chunk) {
+    if (!_kwsActive || _micMode != MicMode.handsFree) return;
+    if (!_kwsEnsure()) return;
+    _kws!.addMic(chunk, DateTime.now());
+  }
+
+  /// A stop word the user said over Woi: pause + local cut (stays stopped).
+  void _onKwsHit(KwsHit h) {
+    if (_disposed) return;
+    final speaking = _playing || _paused != null;
+    final lag = DateTime.now().difference(h.micTime).inMilliseconds;
+    if (!speaking || !options().stopWordDetection) {
+      kwsIgnored++;
+      debugPrint('kws: "${h.keyword}" ignored (Woi not speaking), lag $lag ms');
+      return;
+    }
+    kwsCuts++;
+    final why = 'kws "${h.keyword}" threshold ${h.threshold.toStringAsFixed(2)}, lag $lag ms';
+    debugPrint('barge-in: $why t=${DateTime.now().millisecondsSinceEpoch}');
+    if (_userSpeaking) {
+      // The server already has the turn: just make sure Woi is silent.
+      _bargeIn();
+      _changed();
+      return;
+    }
+    if (_paused == null) _pause();
+    _localCut(why);
   }
 
   /// Local onset: silence Woi now, keep the unheard rest for [_resume].
@@ -1007,7 +1101,10 @@ class TurnPipeline extends ChangeNotifier {
       }
       _onsetMic = m;
       _onsetSub = m.chunks.listen((c) {
-        if (_status == SessionStatus.connected && _micMode == MicMode.handsFree) _feedOnset(c);
+        if (_status == SessionStatus.connected && _micMode == MicMode.handsFree) {
+          _feedOnset(c);
+          _kwsMic(c);
+        }
       });
     } catch (e) {
       debugPrint('barge-in mic unavailable: $e');
@@ -1081,6 +1178,7 @@ class TurnPipeline extends ChangeNotifier {
   void _onMicChunk(Uint8List chunk) {
     final b = _backend;
     if (b == null || _status != SessionStatus.connected || !_forwarding) return;
+    if (!_micManaged) _kwsMic(chunk);
     // Android media route: half-duplex. While Woi plays (+300 ms) the server
     // gets silence; a local onset opens it with ~160 ms of lead-in.
     final halfDuplex = !_micManaged && options().halfDuplexWhileSpeaking && _micMode == MicMode.handsFree;
@@ -2230,6 +2328,7 @@ class TurnPipeline extends ChangeNotifier {
   }
 
   Future<void> shutdown() async {
+    await _kwsStop();
     _reconnectTimer?.cancel();
     _reconnecting = false;
     _phaseTicker?.cancel();

@@ -414,6 +414,17 @@ class AppActions {
         if (r == null) throw AppActionError('audio_route must be phone or media');
         next = s.copyWith(androidAudioRoute: r);
         done = 'Android audio route ${r.name}';
+      case 'stop_word_detection' || 'stop_word' || 'kws' || 'keyword_spotting':
+        final on = RegExp(r'^(on|true|yes|enable|enabled|1)$').hasMatch(lv);
+        final off = RegExp(r'^(off|false|no|disable|disabled|0)$').hasMatch(lv);
+        if (!on && !off) throw AppActionError('stop_word_detection must be on or off');
+        next = s.copyWith(stopWordDetection: on);
+        done = 'stop word detection ${on ? 'on' : 'off'}';
+      case 'stop_words' || 'stopwords' || 'keywords':
+        final words = RegExp(r'^(default|reset)$').hasMatch(lv) ? const ['stop'] : parseStopWords(v);
+        if (words.isEmpty) throw AppActionError('stop_words needs at least one word');
+        next = s.copyWith(stopWords: words);
+        done = 'stop words ${words.join(', ')}';
       case 'edit_apply_delay' || 'auto_apply' || 'edit_delay':
         final d = RegExp(r'approv|ask|never|manual|off').hasMatch(lv)
             ? kRequireApproval
@@ -492,7 +503,7 @@ class AppActions {
       default:
         throw AppActionError(
           'unknown setting "$key" (theme, mic_mode, voice, voice_model, compaction_threshold, run_in_terminal, '
-          'edit_apply_delay, echo_cancellation, audio_route, usage_guard, auto_screenshot, screenshot_delay, '
+          'edit_apply_delay, echo_cancellation, audio_route, stop_word_detection, stop_words, usage_guard, auto_screenshot, screenshot_delay, '
           'camera_replaces_screenshot, thinking_chime, confirm_commands, fallback_to_direct, backend, '
           'compression_model, delegate_model, chat_pane, workspace)',
         );

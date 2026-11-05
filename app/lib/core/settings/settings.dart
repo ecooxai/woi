@@ -136,6 +136,8 @@ class AppSettings {
     this.fallbackToDirectOnLimit = false,
     this.echoCancellation = true,
     this.androidAudioRoute = AndroidAudioRoute.phone,
+    this.stopWordDetection = true,
+    this.stopWords = const ['stop'],
     this.usageGuardPercent = 20,
     this.chatPaneFraction = kDefaultChatPaneFraction,
   });
@@ -203,6 +205,13 @@ class AppSettings {
 
   /// Android only: [AndroidAudioRoute.phone] (default) or media.
   final AndroidAudioRoute androidAudioRoute;
+
+  /// Offline stop-word spotting (sherpa-onnx, on device) while Woi speaks:
+  /// saying a stop word cuts Woi right away, without waiting for the server.
+  final bool stopWordDetection;
+
+  /// The words [stopWordDetection] listens for (English, default "stop").
+  final List<String> stopWords;
   /// When either Codex usage window (5 h, week) has less than this many
   /// percent remaining, delegation and compaction use gpt-6-luna even if a
   /// more expensive model is selected. 0 = off.
@@ -245,6 +254,8 @@ class AppSettings {
     bool? cameraReplacesScreenshot,
     bool? echoCancellation,
     AndroidAudioRoute? androidAudioRoute,
+    bool? stopWordDetection,
+    List<String>? stopWords,
     bool? fallbackToDirectOnLimit,
     int? usageGuardPercent,
     double? chatPaneFraction,
@@ -275,6 +286,8 @@ class AppSettings {
     fallbackToDirectOnLimit: fallbackToDirectOnLimit ?? this.fallbackToDirectOnLimit,
     echoCancellation: echoCancellation ?? this.echoCancellation,
     androidAudioRoute: androidAudioRoute ?? this.androidAudioRoute,
+    stopWordDetection: stopWordDetection ?? this.stopWordDetection,
+    stopWords: stopWords ?? this.stopWords,
     usageGuardPercent: usageGuardPercent ?? this.usageGuardPercent,
     chatPaneFraction: chatPaneFraction ?? this.chatPaneFraction,
   );
@@ -315,6 +328,8 @@ class AppSettings {
     'fallbackToDirectOnLimit': fallbackToDirectOnLimit,
     'echoCancellation': echoCancellation,
     'androidAudioRoute': androidAudioRoute.name,
+    'stopWordDetection': stopWordDetection,
+    'stopWords': stopWords,
     'usageGuardPercent': usageGuardPercent,
     'chatPaneFraction': chatPaneFraction,
   };
@@ -360,6 +375,13 @@ class AppSettings {
       fallbackToDirectOnLimit: b('fallbackToDirectOnLimit', d.fallbackToDirectOnLimit),
       echoCancellation: b('echoCancellation', d.echoCancellation),
       androidAudioRoute: AndroidAudioRoute.values.asNameMap()[j['androidAudioRoute']] ?? d.androidAudioRoute,
+      stopWordDetection: b('stopWordDetection', d.stopWordDetection),
+      stopWords: j['stopWords'] is List
+          ? [
+              for (final w in j['stopWords'] as List)
+                if (w is String && w.trim().isNotEmpty) w.trim().toLowerCase(),
+            ]
+          : d.stopWords,
       usageGuardPercent: i('usageGuardPercent', d.usageGuardPercent).clamp(0, 100),
       chatPaneFraction: ((j['chatPaneFraction'] as num?)?.toDouble() ?? d.chatPaneFraction).clamp(
         kChatPaneMinFraction,
@@ -396,3 +418,9 @@ class SettingsStore {
     await tmp.rename(path);
   }
 }
+
+/// "stop, hold on" -> ["stop", "hold on"] (lower case, no empties).
+List<String> parseStopWords(String text) => [
+  for (final w in text.split(RegExp(r'[,;\n]')))
+    if (w.trim().isNotEmpty) w.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' '),
+];
