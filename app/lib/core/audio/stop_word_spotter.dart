@@ -337,6 +337,15 @@ void _worker(List<Object?> args) {
       case 'mic':
         final pcm = (msg[1] as TransferableTypedData).materialize().asUint8List();
         final at = msg[2] as int;
+        // Woi's audio ended (the reference is behind the mic clock): feed the
+        // reference silence up to now, else the streaming model keeps its
+        // last frames undecoded and misses a final word ("I've stopped.").
+        final gap = at - ref.fedUntil;
+        if (ref.fedUntil > 0 && gap > 100 && gap < 3000) {
+          for (final _ in ref.feed(Float32List(gap * 16), at)) {
+            refHits.add(at);
+          }
+        }
         for (final kw in mic.feed(kwsResample24to16(pcm), at)) {
           pending.add((kw, at));
         }
