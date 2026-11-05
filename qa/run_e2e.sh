@@ -3,8 +3,12 @@
 #
 #   qa/run_e2e.sh                       # default phases
 #   PHASES="live direct" qa/run_e2e.sh  # subset: live full direct barge compact ux media extras
+#   PHASES=hello qa/run_e2e.sh          # smoke: 01_hello on Direct realtime only
 #   QA_BIN=/path/to/bundle/woi qa/run_e2e.sh
 #   QA_DISPLAY=:12 qa/run_e2e.sh        # test display (default :11; :0 is refused)
+#   QA_PRIVATE_PW=1 qa/run_e2e.sh       # audio on a private, hardware-free PipeWire
+#                                       # (qa/private_pw.sh; runtime in $QA_OUT-pw),
+#                                       # torn down on exit; the host daemons are untouched
 #
 # Phases: live = fixtures 01-15 on gpt-live; full = the same list on Direct
 # realtime (when gpt-live is unavailable); direct = the direct subset;
@@ -51,8 +55,18 @@ if [ -z "${QA_BIN:-}" ]; then
 fi
 export QA_BIN
 
+PRIVATE_PW=0
+if [ "${QA_PRIVATE_PW:-0}" = 1 ]; then
+  export QA_PW_BASE=${QA_PW_BASE:-${QA_OUT%/}-pw}
+  pw_env=$("$QA_DIR/private_pw.sh" start) || { echo "private pipewire failed to start" >&2; exit 1; }
+  PRIVATE_PW=1
+  eval "$pw_env" # XDG_RUNTIME_DIR, PIPEWIRE_RUNTIME_DIR, PULSE_SERVER...: every client, the app included
+  qa_log "audio: private pipewire at $PULSE_SERVER"
+fi
+
 cleanup() {
   qa_teardown
+  [ "$PRIVATE_PW" = 1 ] && "$QA_DIR/private_pw.sh" stop
   if [ -n "$WORKTREE" ] && [ "${QA_KEEP_WORKTREE:-0}" != 1 ]; then
     git -C "$REPO" worktree remove --force "$WORKTREE" 2>/dev/null && echo "worktree removed" >&2
   fi
@@ -453,6 +467,19 @@ phase_live() {
   qa_stop_app
 }
 
+# Smoke: Direct realtime, 01_hello only (heard + spoken reply + latency).
+phase_hello() {
+  local mode=hello
+  qa_launch_app $mode '{"backendMode":"direct","realtimeModel":"'"$QA_REALTIME_MODEL"'"}' || return 1
+  qa_place_app $APP_X $APP_Y $APP_W $APP_H
+  sleep 8  # the WebSocket backend logs nothing on connect
+  run_fixture $mode 01_hello "$FIX/01_hello.wav"
+  local ok=FAIL; [ "$LAST_LAT" != -1 ] && ok=PASS
+  result $mode 01_hello "$LAST_LAT" "$LAST_DIALOG" $ok ""
+  transcripts $mode
+  qa_stop_app
+}
+
 phase_direct() {
   local mode=direct
   prep_click_target
@@ -739,6 +766,7 @@ for ph in $PHASES; do
     full) phase_live full ;;
     extras) phase_extras ;;
     direct) phase_direct ;;
+    hello) phase_hello ;;
     compact) phase_compact ;;
     ux) phase_ux ;;
     media) phase_media ;;
