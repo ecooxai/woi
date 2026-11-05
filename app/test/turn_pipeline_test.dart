@@ -236,7 +236,7 @@ void main() {
   });
 
   group('screenshot tiers', () {
-    test('older screenshots go to 1/5 size, then to a description, in the live context', () async {
+    test('older screenshots go to 1/2 size, then to a description, in the live context', () async {
       final sizes = <(int, int)>[];
       final h = await Harness.create(
         images: (store) => ImageCompactor(
@@ -266,7 +266,7 @@ void main() {
       final described = r.singleWhere((x) => x.$3 != null && x.$2 == null);
       expect(described.$1, 'img_1_v1', reason: 'the second swap targets the item the first one created');
       expect(described.$3, contains('A terminal with ls output.'));
-      expect(sizes.first, (256, 144), reason: '1280x720 / 5');
+      expect(sizes.first, (640, 360), reason: '1280x720 / 2');
       // Originals stay; the reduced copy is saved next to them.
       expect(File(shots.first.image!.path).existsSync(), isTrue);
       expect(File(shots[1].meta[ImageMeta.sentPath]! as String).existsSync(), isTrue);
@@ -276,7 +276,7 @@ void main() {
       final p = h.context.parts();
       expect(p.imagesReduced, 5);
       expect(p.imagesDescribed, 1);
-      expect(p.imagesSaved, greaterThan(5 * 400));
+      expect(p.imagesSaved, greaterThan(5 * 100));
       await h.dispose();
     });
 

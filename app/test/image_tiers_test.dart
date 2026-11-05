@@ -10,7 +10,7 @@ Message _shot([String text = '']) =>
     Message(kind: MessageKind.system, text: text, image: _img, meta: {'type': 'screenshot'});
 
 void main() {
-  test('policy: newest 3 full, next 5 at 1/5, older described; never back up', () {
+  test('policy: newest 3 full, next 5 at 1/2, older described; never back up', () {
     const p = ImageTierPolicy(rawRecentTurns: 0);
     final msgs = [for (var i = 0; i < 10; i++) _shot('$i')];
     final plan = p.plan(msgs);
@@ -80,7 +80,7 @@ void main() {
           ..[ImageMeta.sentHeight] = 144;
       }
       final after = cm.estimatedTokens;
-      expect(after, 10 * 4 + 3 * 765 + 5 * 497 + 2 * (20 + 12));
+      expect(after, 10 * 4 + 3 * 765 + 5 * 612 + 2 * (20 + 12));
       final p = cm.parts();
       expect(p.imageCount, 8);
       expect(p.imagesReduced, 5);
@@ -99,7 +99,7 @@ void main() {
         ..[ImageMeta.sentWidth] = 256
         ..[ImageMeta.sentHeight] = 144;
       final scale = 8000 / (4 * 769);
-      expect(cm.estimatedTokens, 8000 - ((765 - 497) * scale).round());
+      expect(cm.estimatedTokens, 8000 - ((765 - 612) * scale).round());
     });
 
     test('text-only accounting: descriptions count, only the latest image does', () {

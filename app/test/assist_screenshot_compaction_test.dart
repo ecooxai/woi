@@ -108,14 +108,14 @@ void main() {
     expect(cm.retryDelay, const Duration(milliseconds: 20));
 
     // Retried by the timer without any new message.
-    await Future<void>.delayed(const Duration(milliseconds: 60));
+    await _until(() => compressor.calls.length >= 2 && cm.failures >= 2);
     expect(compressor.calls.length, greaterThanOrEqualTo(2));
     expect(cm.failures, greaterThanOrEqualTo(2));
     expect(cm.retryDelay, greaterThanOrEqualTo(const Duration(milliseconds: 40)));
 
     // Recovers: the next retry succeeds and clears the error.
     compressor.failWith = null;
-    await Future<void>.delayed(const Duration(milliseconds: 400));
+    await _until(() => cm.lastError == null && cm.failures == 0);
     expect(cm.lastError, isNull);
     expect(cm.failures, 0);
     expect(cm.status, isNull);
@@ -138,4 +138,12 @@ void main() {
     expect(cm.retryDelay, const Duration(minutes: 5));
     cm.dispose();
   });
+}
+
+/// Waits (real time, up to 10 s) until [done]: the retry timers are real, and
+/// a fixed short delay was flaky on a loaded machine.
+Future<void> _until(bool Function() done) async {
+  for (var i = 0; i < 1000 && !done(); i++) {
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
 }

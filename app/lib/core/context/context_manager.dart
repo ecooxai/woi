@@ -157,10 +157,10 @@ class ContextManager extends ChangeNotifier {
 
   final Compressor compressor;
 
-  /// Cost of a 1/5-size screenshot relative to a full one. Measured on
+  /// Cost of a reduced (1/2-size) screenshot relative to a full one. Measured on
   /// gpt-realtime-2 (2026-11-03): 1280x720 ≈ 382 tokens, 256x144 ≈ 247;
   /// small images are not much cheaper, so the tile formula is no guide.
-  static const reducedImageShare = 0.65;
+  static const reducedImageShare = 0.8;
   int threshold;
   String compressionModel;
   int imageTokenCost;

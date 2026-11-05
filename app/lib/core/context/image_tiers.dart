@@ -102,7 +102,7 @@ class ImageTierPolicy {
   const ImageTierPolicy({
     this.fullCount = 3,
     this.reducedCount = 5,
-    this.reduceFactor = 5,
+    this.reduceFactor = 2,
     this.rawRecentTurns = kRawRecentTurns,
   });
 
