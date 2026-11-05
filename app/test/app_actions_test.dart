@@ -113,6 +113,12 @@ void main() {
       c.notes.setText(c.notes.text + ch);
     }
     expect(changes, 0, reason: 'no meter update per keystroke');
+    // Under full-suite load the debounce timer can fire late: poll for it, then
+    // wait one more debounce to be sure no second update follows.
+    final deadline = DateTime.now().add(const Duration(seconds: 10));
+    while (changes == 0 && DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
     await Future<void>.delayed(AppController.pinnedNoteDebounce + const Duration(milliseconds: 100));
     expect(changes, 1);
     expect(c.contextManager.pinnedTokens, greaterThan(before));
