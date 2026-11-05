@@ -338,6 +338,41 @@ E2E (`e2e_echo.sh after-defer`, gate off, deferred turns, far_field) vs the gate
 One deferred turn occurred (timeout → cut). Next: pin the transcription `language` to the UI language so echo is
 transcribed in English and the guard can match it; a headset → `near_field` switch.
 
+Why AEC3 cancels so little (aec25, 2026-11-04, offline rig, `render_echo.py` + `aec3_offline.cc` at 48 kHz mono,
+exactly PipeWire 1.6.7's config; the installed libspa-aec-webrtc only exposes high_pass_filter, noise_suppression,
+voice_detection, transient_suppression, mobile_mode, gain_control, so no AEC3 tuning knobs). The app's host is
+already mono at the graph rate (48 kHz), reference = default-sink monitor, so no channel/rate mismatch.
+- **Low ERLE = the delay jump, not the settings or the clipping.** Steady state AEC3 reaches 39-47 dB (far-only
+  5-20 s). The 12.7/17.9 dB figures are energy-weighted and dominated by the rig's +120 ms delay jump at 52 s
+  (ERLE 4 dB for 4 s, still 15 dB 10 s later) plus the first 1-5 s of convergence (15 dB). Without the jump: 22.4 /
+  26.0 dB (turns), 25.0 / 26.5 dB (stress). Jumps of 20/60 ms recover (24.6/23.4 dB at reply starts); +-10 ms
+  jitter costs ~1 dB. Speaker overdrive: drive 1.0 instead of 2.2 gives only +2/+5 dB; no drift +5/+9 dB.
+- **None of the exposed args change ERLE** (+-0.5 dB): HPF, voice_detection, NS, TS. mobile_mode (AECM) outputs
+  silence at 48 kHz: unusable.
+- **NS + transient suppression ate the user, not the echo**: double-talk near-end -26.6 dB with them, -3.9 dB
+  without (turns rig; stress -20.5 -> -7.4), ERLE and VAD false starts unchanged, near-only loss 0.9 dB both.
+  NS alone off: -18.5 dB, TS alone off: -14.5 dB (stress) — both have to go. That is the lost short "stop": it
+  was cut ~23 dB more than the echo. **Applied**: `aec.args` NS and TS off (`pipewire_aec.dart`).
+
+| rig / setting | ERLE start / body (dB) | residual start / body (dBFS) | near-only loss | double-talk near-end | VAD false starts |
+|---|---|---|---|---|---|
+| turns, Woi before (gain_control off) | 12.7 / 17.9 | -34.1 / -40.8 | 0.9 | -26.6 dB | 1 |
+| turns, NS + TS off (applied) | 12.7 / 17.9 | -34.1 / -40.8 | 0.9 | **-3.9 dB** | 1 |
+| turns, TS off only | 12.7 / 17.9 | -34.1 / -40.8 | 0.9 | -31.3 dB | 2 |
+| turns, no delay jump | 22.4 / 26.0 | -43.8 / -49.0 | 0.9 | -26.5 dB | 0 |
+| turns, no delay jump, NS + TS off | 22.2 / 25.8 | -43.6 / -48.7 | 0.9 | -3.6 dB | 0 |
+| stress, default | 13.0 / 15.6 | -34.2 / -38.8 | 1.1 | -20.2 dB | 3 |
+| stress, NS + TS off | 12.9 / 15.7 | -34.2 / -38.8 | 1.0 | -7.4 dB | 3 |
+| stress, no delay jump | 25.0 / 26.5 | -46.3 / -49.7 | 1.1 | -20.5 dB | 0 |
+| stress, drive 1.0 (less clipping) | 15.3 / 20.3 | -36.4 / -43.7 | 1.1 | -20.0 dB | - |
+| stress, no drift | 17.9 / 24.3 | -39.1 / -47.5 | 1.1 | -20.6 dB | - |
+| stress, linear + static (no clip/jump/drift) | 25.3 / 33.1 | -46.3 / -56.5 | 1.1 | -20.5 dB | - |
+| stress, jump 20 / 60 / -60 ms | 24.6 / 23.4 / 13.0 start | - | 1.1 | -20 dB | - |
+Next: in the real graph, delay jumps come from quantum changes (the sink's ALSA delay moves with the quantum while
+the monitor does not) and xruns. The host sets no `node.latency`, so other clients can move the quantum while
+Woi talks. Pinning it (480/48000 measured OK, 256 crashes) is the next thing to try; it needs a live check.
+Lowering Woi's playback gain buys little (drive 2.2 -> 1.0: +2-5 dB).
+
 Short foreign / filler echo (echo21, 2026-11-04): the transcriber turns fragments of English echo into short
 Korean ("아", "하고"), which [isEchoOf] cannot match. New rule (`shortEchoReason` in `echo_transcript.dart`), applied
 where the transcript guard decides (held echo-suspect turns, deferred turns): a turn that began while Woi was
@@ -370,3 +405,48 @@ window is not too short: suspects started with 6 to 35 s still left in it (`queu
 is queued), so extending the tail would change nothing. `audible=n` on every turn even while the guard expected echo
 (`_out.isPlaying` reads false while playback is queued): suspects still get flagged through the guard and the window.
 Barge-in latencies swing a lot between single runs (the stop latency depends on when the onset fires); no rule change.
+
+`audible=n` explained (echo22, 2026-11-04): the player clock was right (`PlaybackClock.isPlaying` is true from the
+first write until the queued audio has played; now unit-tested). The per-turn log read `_assistantAudible` *after*
+`_bargeIn()` / the local-onset `_pause()` had stopped the player, and every suspect turn in `after-lang2` was
+`local=y` (paused or cut), so it always said `n`. Fix: the state is snapshotted before the cut and logged as
+`audible=y` (playing/queued) | `p` (paused by a local onset) | `t` (echo tail) | `n`. `_assistantAudible` now also
+covers a 300 ms room tail after playback ends or is cut (echo suspicion, the onset detector's `audible`, the local
+VAD's sensitivity, the gate); phase, `_bargeIn`, the local onset (nothing to pause in the tail) and the Android
+half-duplex gate (`_sendGated`, it has its own 300 ms hangover) use the player state only, so their behaviour is
+unchanged. Expected E2E effect: none on decisions (suspects were already flagged via the guard / echo window), only
+truthful logs. `e2e_echo.sh` now reads mic.wav's samples from the file length (pw-record is killed, so the header
+sizes are never finalized); re-parsed `after-lang2`: mic p50 −25.0 / p90 −19.9 dBFS. **Open:** `e2e_echo.sh
+after-audible` was not run (time limit); run it to confirm no regression and get per-turn `audible=` tags.
+
+Lost "stop" (echo22, 2026-11-04, `after-audible` P0: stop 7170 ms, server never sent speech_started). Why: in the
+E2E room the 0.3 s "Stop" lands at about the echo's level (mic around it −20…−22 dBFS, echo p50 −25 / p90 −20), so
+excess over the predicted echo is tiny (0.017; 0.008 in `after-armed`) and the local onset fires ~0.4 s late, near the
+word's end. While Woi speaks the session runs server_vad threshold 0.5 / prefix 300 / silence 500 with
+`create_response`/`interrupt_response` false (only those two flip; threshold unchanged). The server VAD never fires on
+the steady echo and a short word at ~0 dB SNR does not move it; a 1.5 s "Hello, how are you?" is confirmed after ~1 s.
+Tried (a+c): an unconfirmed onset stays armed. 0.7 s after resuming (1.6 s after the onset, unless a speech start
+came) the mic around it (2.2 s ring) is committed as its own item (`input_audio_buffer.clear` / `append` / `commit`),
+transcribed, deleted, never answered (`VoiceBackend.probeSpan` → `ProbeTranscript`); a stop phrase within 5 s cuts the
+reply (`probeStops`). Unit-tested. E2E `after-armed` (probe at resume, no delay yet): **stop still lost, 6522 ms**, the
+stop clip transcribed as "" (so did all 5 echo-only clips; gpt-4o-mini-transcribe gives nothing at that SNR), question
+0.24 s, 1 extra turn ("iu"), 7 resumed onsets. The undelayed probe cleared the buffer 166 ms before the server
+confirmed the question, which split it ("iu" + probe "How are you?"): hence the 0.7 s delay and the cancel on
+speech start (not yet E2E-verified). **Open:** server-side transcription cannot rescue a word buried in the echo; next
+is a local decision (option c: the guard's voice bands / excess on the paused span decide "do not resume" and cut,
+or a semantic_vad / lower-threshold session while speaking, b), then rerun `e2e_echo.sh`.
+
+echo22 e26 (2026-11-04, after aec25 NS/TS off; `after-nsoff`: stop 361 ms, question 1064 ms, self-talk "" / "啊", 3
+replies interrupted, 2 of them wrongly). Changes: (1) a deferred server turn that has no local onset now keeps Woi
+playing when `deferWindow` runs out. It stays undecided until a local onset or a non-echo transcript interrupts, or
+an empty or echo transcript drops it unanswered. (2) `shortEchoReason` now also applies to local-onset turns that
+start while Woi is audible (y/p), so a lone "啊" resumes the reply. Stop phrases are still never echo. (3) Removed the
+armed probe (`probeSpan`/`ProbeTranscript`). Every live probe got `input_audio_buffer_commit_empty`, even with
+clear/append/commit sent in one tick. Earlier, the clip transcribed as "" at that SNR anyway, and clearing the live
+buffer split a real turn. (4) `e2e_echo.sh` matches fixtures fuzzily (first word, or ≥50% word overlap).
+E2E, two runs alone: `after-e26a`: stop 2660 ms (server speech start came 1.8 s after the onset; transcribed "好。",
+interrupted as a stop request), question 1304 ms, 5 fixture turns + "好。" (the stop), 0 wrong interrupts, 4 resumed
+onsets, the empty deferred turn dropped without a cut. `after-e26b`: **stop lost, 7200 ms** (onset resumed, no server
+speech start at all), question 1252 ms, 5 fixture turns, 0 self-talk, 0 wrong interrupts, 4 resumed onsets.
+False cuts are fixed. Stop is still decided by whether the server VAD fires (361 / 2660 / 7200 ms over three runs).
+**Open:** a local "do not resume" decision on the paused span (option c above).

@@ -77,8 +77,13 @@ class PipewireEchoCancel {
 
   /// The PipeWire config the host runs. Mono at the PipeWire graph rate; the
   /// capture child converts to 24 kHz s16. AGC stays off (server VAD and the
-  /// level meter want a stable gain); WebRTC's high-pass filter and noise
-  /// suppression stay at their defaults (on).
+  /// level meter want a stable gain); WebRTC's high-pass filter stays on.
+  /// Noise and transient suppression are off: offline (qa/aec, turns rig) they
+  /// cost the user's voice 27 dB while Woi talks (double-talk near-end -26.6 dB
+  /// with them, -3.9 dB without) and removed no echo (ERLE 12.7/17.9 dB at
+  /// reply starts/bodies either way, same VAD false starts), which is why a
+  /// short "stop" over Woi's speech was lost. The server's far_field noise
+  /// reduction handles background noise.
   ///
   /// [micTarget] / [speakerTarget] pin the mic and the reference to given
   /// nodes instead of following the defaults (QA on virtual devices:
@@ -110,7 +115,12 @@ context.modules = [
     { name = libpipewire-module-echo-cancel
       args = {
         library.name = aec/libspa-aec-webrtc
-        aec.args = { webrtc.gain_control = false }
+        # NS + transient suppression off: +23 dB of near-end in double talk, same ERLE.
+        aec.args = {
+            webrtc.gain_control = false
+            webrtc.noise_suppression = false
+            webrtc.transient_suppression = false
+        }
         # Reference = monitor of the default sink: cancels ALL system audio.
         monitor.mode = true
         audio.channels = 1

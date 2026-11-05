@@ -234,6 +234,17 @@ class TurnPipeline extends ChangeNotifier {
     _changed();
   }
 
+  /// No transcript within [deferWindow] and no local onset: no evidence it
+  /// is the user (an echo burst the server VAD took for speech often has an
+  /// empty transcript), so Woi plays on. The turn stays undecided: a later
+  /// local onset or a non-echo transcript interrupts then; an empty or
+  /// echo-like one drops it unanswered ([_checkDeferred]).
+  void _deferTimeout() {
+    _deferTimer = null;
+    if (!_deferPending) return;
+    debugPrint('deferred turn: no transcript yet and no local onset: Woi plays on');
+  }
+
   /// Transcript of a deferred turn: echo → drop it (Woi was never cut);
   /// clearly not echo (or "stop") → interrupt now.
   void _checkDeferred(Message m, {required bool done}) {
@@ -404,13 +415,35 @@ class TurnPipeline extends ChangeNotifier {
   /// Bumps when the mic or player (and so the level listenables) change.
   ValueListenable<int> get levelSourcesChanged => _levelsChanged;
 
-  bool get _assistantAudible => _out?.isPlaying ?? false;
+  /// Woi's audio is queued or playing (the player's clock: from the first
+  /// write until everything written has been played; false once stopped).
+  bool get _playing => _out?.isPlaying ?? false;
+
+  /// Woi may be heard in the mic now: from the first chunk handed to the
+  /// player until the queued audio has played, plus [_echoTail] (the room's
+  /// tail after playback ends or is cut). Turn suspicion and the local VAD
+  /// use this; the phase, barge-in, local onset (pause) and the half-duplex
+  /// gate use [_playing] (nothing to cut in the tail; the gate has its own
+  /// hangover).
+  bool get _assistantAudible => _playing || DateTime.now().isBefore(_audibleUntil);
+  DateTime _audibleUntil = DateTime.fromMillisecondsSinceEpoch(0);
+  static const _echoTail = Duration(milliseconds: 300);
+
+  /// For the per-turn log: playing (y), paused by a local onset (p), only the
+  /// echo tail (t), or silent (n).
+  String get _audibleTag => _playing
+      ? 'y'
+      : _paused != null
+      ? 'p'
+      : _assistantAudible
+      ? 't'
+      : 'n';
 
   AssistantPhase get phase {
     if (_status != SessionStatus.connected) return AssistantPhase.offline;
     if (_userSpeaking) return AssistantPhase.userSpeaking;
     if (_toolsRunning > 0) return AssistantPhase.toolRunning;
-    if (_assistantAudible || (_assistantMsg?.streaming ?? false)) return AssistantPhase.speaking;
+    if (_playing || (_assistantMsg?.streaming ?? false)) return AssistantPhase.speaking;
     if (_awaitingResponse) return AssistantPhase.thinking;
     return _micMode == MicMode.muted ? AssistantPhase.idle : AssistantPhase.listening;
   }
@@ -424,7 +457,7 @@ class TurnPipeline extends ChangeNotifier {
   /// backend has nothing in flight, for [settleAfter].
   void _settleIfStale() {
     if (!_awaitingResponse || _status != SessionStatus.connected) return;
-    if (_toolsRunning > 0 || _userSpeaking || _assistantMsg != null || _assistantAudible || _holding || _paused != null) {
+    if (_toolsRunning > 0 || _userSpeaking || _assistantMsg != null || _playing || _holding || _paused != null) {
       return;
     }
     if (_backend?.busy ?? false) {
@@ -648,6 +681,7 @@ class TurnPipeline extends ChangeNotifier {
 
   /// Stops playback now (and tells the echo guard nothing more is heard).
   void _stopOut() {
+    if (_playing) _audibleUntil = DateTime.now().add(_echoTail + const Duration(milliseconds: 60));
     _out?.stop();
     _guard.stopPlayback();
     _pauseTimer?.cancel();
@@ -676,6 +710,7 @@ class TurnPipeline extends ChangeNotifier {
     _guard.onPlayback(pcm16);
     // Echo tail (the guard's window) plus the server VAD's reaction time.
     _echoWindowUntil = DateTime.now().add(Duration(milliseconds: _guard.queuedMs + 1300));
+    _audibleUntil = DateTime.now().add(Duration(milliseconds: _guard.queuedMs) + _echoTail);
     _out?.write(pcm16);
   }
 
@@ -840,7 +875,7 @@ class TurnPipeline extends ChangeNotifier {
       b.sendAudio(chunk);
       return true;
     }
-    if (_assistantAudible && !_userSpeaking) _gateUntil = now.add(_gateHangover);
+    if (_playing && !_userSpeaking) _gateUntil = now.add(_gateHangover);
     if (now.isBefore(_gateUntil)) {
       gatedChunks++;
       _gated.add(chunk);
@@ -946,7 +981,7 @@ class TurnPipeline extends ChangeNotifier {
 
   /// Stops the assistant now; returns whether anything was interrupted.
   bool _bargeIn() {
-    final speaking = _assistantAudible || _assistantMsg != null || _paused != null;
+    final speaking = _playing || _assistantMsg != null || _paused != null;
     if (!speaking) return false;
     bargeIns++;
     final tail = _unheard().takeBytes();
@@ -982,7 +1017,7 @@ class TurnPipeline extends ChangeNotifier {
   /// audio right away; the server confirms the turn a few hundred ms later.
   void _localOnset() {
     if (_deferPending) return _confirmDeferred('local detector');
-    if (_userSpeaking || !_assistantAudible) return;
+    if (_userSpeaking || !_playing) return;
     localOnsets++;
     _lastOnsetAt = DateTime.now();
     _pause();
@@ -1063,7 +1098,9 @@ class TurnPipeline extends ChangeNotifier {
   /// server took for speech): no reply, no tool action, no bubble; what the
   /// echo cut off plays on. Repeated echo pauses hands-free listening.
   bool _shortEcho(Message m, String text, List<String> said) {
-    if (_localOnsetTurns.contains(m.id)) return false; // the detector heard the user
+    // The detector heard the user; but while Woi is audible a lone filler or
+    // foreign syllable is far likelier its echo burst that tripped it.
+    if (_localOnsetTurns.contains(m.id) && !_audibleTurns.contains(m.id)) return false;
     final user = <String>[];
     for (final x in _conv.messages.reversed) {
       if (x.kind != MessageKind.user || identical(x, m) || x.text.trim().isEmpty) continue;
@@ -1081,6 +1118,10 @@ class TurnPipeline extends ChangeNotifier {
   /// Turns that began with (or right after) a local near-end onset: never
   /// dropped by the short-transcript rule ([shortEchoReason]).
   final Set<String> _localOnsetTurns = {};
+
+  /// Turns that began while Woi was playing or paused by the onset
+  /// (audible y/p): the short rule applies even with a local onset.
+  final Set<String> _audibleTurns = {};
 
   /// Echo turns dropped by the short foreign/filler transcript rule.
   int shortEchoDrops = 0;
@@ -1216,6 +1257,9 @@ class TurnPipeline extends ChangeNotifier {
     // got zeros while echo was expected, so just after a reply that ended
     // normally echo can only have leaked through an onset that opened the
     // gate.
+    // Snapshot before [_bargeIn] stops the player (the log used to read it
+    // after the cut, so it said "audible=n" on every interrupting turn).
+    final audibleTag = _audibleTag;
     final onset = _lastOnsetAt;
     final leaked =
         !echoGate || _micManaged || (onset != null && now.difference(onset) < const Duration(seconds: 5));
@@ -1258,9 +1302,10 @@ class TurnPipeline extends ChangeNotifier {
     _utterancePcm.add(_preRoll.drain());
     _currentUtterance = msg;
     if (local) _localOnsetTurns.add(msg.id);
+    if (audibleTag == 'y' || audibleTag == 'p') _audibleTurns.add(msg.id);
     _turnInfo[msg.id] =
         'suspect=${echoLikely ? 'y' : 'n'} deferred=${defer ? 'y' : 'n'} local=${local ? 'y' : 'n'} '
-        'audible=${_assistantAudible ? 'y' : 'n'} guard=${_guard.echoExpected ? 'y' : 'n'} '
+        'audible=$audibleTag guard=${_guard.echoExpected ? 'y' : 'n'} '
         'window=${_echoWindowUntil.difference(now).inMilliseconds}ms';
     if (echoLikely) {
       _echoSuspects[msg.id] = [
@@ -1272,7 +1317,7 @@ class TurnPipeline extends ChangeNotifier {
     if (defer) {
       _deferMsg = msg;
       _deferTimer?.cancel();
-      _deferTimer = Timer(deferWindow, () => _confirmDeferred('timeout'));
+      _deferTimer = Timer(deferWindow, _deferTimeout);
     } else if (interrupted || _echoSuspects.containsKey(msg.id) || (_holding && _holdMsg == null)) {
       _beginHold(msg);
     }
