@@ -380,7 +380,7 @@ Tried (a+c): an unconfirmed onset stays armed. 0.7 s after resuming (1.6 s after
 came) the mic around it (2.2 s ring) is committed as its own item (`input_audio_buffer.clear` / `append` / `commit`),
 transcribed, deleted, never answered (`VoiceBackend.probeSpan` → `ProbeTranscript`); a stop phrase within 5 s cuts the
 reply (`probeStops`). Unit-tested. E2E `after-armed` (probe at resume, no delay yet): **stop still lost, 6522 ms**, the
-stop clip transcribed as "" (so did all 6 echo-only clips; gpt-4o-mini-transcribe gives nothing at that SNR), question
+stop clip transcribed as "" (so did all 5 echo-only clips; gpt-4o-mini-transcribe gives nothing at that SNR), question
 0.24 s, 1 extra turn ("iu"), 7 resumed onsets. The undelayed probe cleared the buffer 166 ms before the server
 confirmed the question, which split it ("iu" + probe "How are you?"): hence the 0.7 s delay and the cancel on
 speech start (not yet E2E-verified). **Open:** server-side transcription cannot rescue a word buried in the echo; next
