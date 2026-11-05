@@ -636,11 +636,13 @@ right one; extra stamps can only veto, never cut).
 
 ### Android: keeping the accessibility service on (MI 8, LineageOS 22.2 / Android 15)
 
-Root cause: Android drops a service from `enabled_accessibility_services` whenever its package is force-stopped
-(AccessibilityManagerService's package monitor), and **every APK install/update force-stops the package**
-(`am_kill … stop dev.woi.woi due to installPackageLI`), so each update turned screen control off; Settings →
-Force stop / `am force-stop` does the same. No Woi crash was in the logs and Woi was not killed by the battery
-manager (it was not on the deviceidle whitelist either). Mechanisms (WoiA11yKeeper.kt):
+Findings: before the fix the setting was `enabled_accessibility_services=null`, `accessibility_enabled=0`; the
+last change was the 13:16:57 install (`am_kill … stop dev.woi.woi due to installPackageLI`, release build
+versionCode 2010). There was no Woi crash in the logs and no battery kill (Woi was not on the deviceidle whitelist).
+With this build neither a same-signature update nor `am force-stop` dropped the service: the system rebound it
+by itself in about 1 s. So it is most likely dropped by some installs (e.g. release/debug swaps, downgrades) and
+by restricted settings (an ACCESS_RESTRICTED_SETTINGS rejection was recorded that morning), not by crashes.
+Mechanisms (WoiA11yKeeper.kt):
 - With `WRITE_SECURE_SETTINGS` (granted once: `adb shell pm grant dev.woi.woi android.permission.WRITE_SECURE_SETTINGS`)
   Woi appends `dev.woi.woi/.WoiAccessibilityService` to the list (never removes or reorders others) and sets
   `accessibility_enabled=1`: after an update (MY_PACKAGE_REPLACED), on boot, when the system binds the assistant
