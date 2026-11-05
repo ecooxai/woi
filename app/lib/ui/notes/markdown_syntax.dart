@@ -203,6 +203,11 @@ class MarkdownEditingController extends TextEditingController {
     final ai = _ai;
     final aiOn = ai != null && ai.isValid && !ai.isCollapsed && ai.end <= t.length;
     final composing = withComposing && value.isComposingRangeValid ? value.composing : null;
+    // Same inputs: the same span object, so RenderEditable skips relayout
+    // (EditableText rebuilds on focus / selection / caret changes too).
+    final key = (t, aiOn ? ai : null, aiOn ? aiGlow : null, composing, style);
+    final cached = _spanCache;
+    if (cached != null && _spanKey == key) return cached;
     final children = <InlineSpan>[];
     for (final r in _cacheRuns) {
       // Split each run at the AI range and composing range boundaries.
@@ -228,8 +233,12 @@ class MarkdownEditingController extends TextEditingController {
         children.add(TextSpan(text: t.substring(a, b), style: st));
       }
     }
-    return TextSpan(style: style ?? MdEditorStyle.base(), children: children);
+    _spanKey = key;
+    return _spanCache = TextSpan(style: style ?? MdEditorStyle.base(), children: children);
   }
+
+  Object? _spanKey;
+  TextSpan? _spanCache;
 }
 
 /// If [offset] is on the `[ ]` / `[x]` box of a checklist line, the 0-based
