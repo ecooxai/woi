@@ -7,9 +7,8 @@ import '../../core/app_controller.dart';
 import '../../core/models/message.dart';
 import '../../platform/media_viewer.dart';
 import '../theme.dart';
-import '../widgets/edit_review_card.dart';
-import '../widgets/input_bar.dart';
-import '../widgets/message_tile.dart';
+import '../screens/history_drawer.dart';
+import '../screens/home_screen.dart';
 
 /// Panel height as a share of the screen height.
 const kAssistPanelDefault = 0.6;
@@ -21,8 +20,10 @@ const kAssistDismissVelocity = 900.0;
 
 /// The assistant floating over another app (Android, WoiOverlay.kt): a light
 /// scrim (tap = dismiss) and a bottom panel with rounded top corners holding
-/// the compact UI: header (screenshot thumbnail, open full app, close), the
-/// recent transcript, a pending edit, and the input bar with status and mic.
+/// the main app's tab UI ([WoiTabs]: Note, Chat, Terminal, Settings and the
+/// input bar, narrow layout) with the screenshot thumbnail, open full app
+/// and close at the end of the tab strip row. Same engine and controller as
+/// the full app (the panel is a route above [HomeScreen]).
 ///
 /// The drag handle resizes it between [kAssistPanelMin] and [kAssistPanelMax];
 /// dragging below the minimum or flinging down dismisses.
@@ -34,9 +35,17 @@ class AssistPanel extends StatefulWidget {
     required this.onOpenApp,
     this.initialFraction = kAssistPanelDefault,
     this.onFractionChanged,
+    this.initialView = HomeView.chat,
+    this.onViewChanged,
   });
 
   final AppController controller;
+
+  /// The tab shown first (the last one used in the panel).
+  final HomeView initialView;
+
+  /// The panel's tab changed (to remember it; separate from the app's tab).
+  final ValueChanged<HomeView>? onViewChanged;
   final double initialFraction;
 
   /// After a resize, with the new height share (to remember it).
@@ -133,83 +142,73 @@ class _AssistPanelState extends State<AssistPanel> {
   }
 
   Widget _panel(BuildContext context, double screenH, {required double bottomInset}) {
+    Widget dragArea(Widget child, {Key? key}) => GestureDetector(
+      key: key,
+      behavior: HitTestBehavior.opaque,
+      onVerticalDragUpdate: (d) => _onDragUpdate(d, screenH),
+      onVerticalDragEnd: _onDragEnd,
+      child: child,
+    );
     return Material(
       key: const ValueKey('assist-panel'),
-      color: WoiColors.bg0,
+      color: WoiColors.bg1,
       elevation: 12,
       shadowColor: WoiColors.shadow,
       clipBehavior: Clip.antiAlias,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
-      child: MediaQuery.removeViewPadding(
+      // The panel itself moves above the keyboard: no insets inside it.
+      child: MediaQuery.removeViewInsets(
         context: context,
-        removeTop: true,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            GestureDetector(
-              key: const ValueKey('assist-handle'),
-              behavior: HitTestBehavior.opaque,
-              onVerticalDragUpdate: (d) => _onDragUpdate(d, screenH),
-              onVerticalDragEnd: _onDragEnd,
-              child: Column(
-                children: [
-                  SizedBox(
-                    height: 18,
-                    child: Center(
-                      child: Container(
-                        width: 36,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: WoiColors.strokeStrong,
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
+        removeBottom: true,
+        child: MediaQuery.removePadding(
+          context: context,
+          removeTop: true,
+          removeBottom: true,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              dragArea(
+                key: const ValueKey('assist-handle'),
+                SizedBox(
+                  height: 16,
+                  child: Center(
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      decoration: BoxDecoration(color: WoiColors.strokeStrong, borderRadius: BorderRadius.circular(2)),
                     ),
                   ),
-                  _header(),
-                ],
+                ),
               ),
-            ),
-            Expanded(child: _body()),
-            Padding(
-              padding: EdgeInsets.fromLTRB(8, 4, 8, 8 + bottomInset),
-              child: _footer(),
-            ),
-          ],
+              Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(bottom: bottomInset),
+                  child: ListenableBuilder(listenable: c, builder: (context, _) => _body(dragArea)),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _header() {
-    return SizedBox(
-      height: 44,
-      child: Row(
-        children: [
-          const SizedBox(width: 16),
-          Text('Woi', style: display(17, weight: FontWeight.w700, spacing: -0.4)),
-          const Spacer(),
-          ListenableBuilder(
-            listenable: c.ready ? c.pipeline : c,
-            builder: (context, _) => _thumbnail(),
-          ),
-          IconButton(
-            key: const ValueKey('assist-open-app'),
-            tooltip: 'Open full app',
-            icon: Icon(Icons.open_in_full_rounded, size: 20, color: WoiColors.textDim),
-            onPressed: widget.onOpenApp,
-          ),
-          IconButton(
-            key: const ValueKey('assist-close'),
-            tooltip: 'Close',
-            icon: Icon(Icons.close_rounded, size: 22, color: WoiColors.textDim),
-            onPressed: _dismiss,
-          ),
-          const SizedBox(width: 4),
-        ],
-      ),
-    );
-  }
+  /// Thumbnail, open full app and close (at the end of the tab strip row).
+  List<Widget> _actions() => [
+    ListenableBuilder(listenable: c.ready ? c.pipeline : c, builder: (context, _) => _thumbnail()),
+    IconButton(
+      key: const ValueKey('assist-open-app'),
+      tooltip: 'Open full app',
+      icon: Icon(Icons.open_in_full_rounded, size: 20, color: WoiColors.textDim),
+      onPressed: widget.onOpenApp,
+    ),
+    IconButton(
+      key: const ValueKey('assist-close'),
+      tooltip: 'Close',
+      icon: Icon(Icons.close_rounded, size: 22, color: WoiColors.textDim),
+      onPressed: _dismiss,
+    ),
+  ];
 
   /// The newest screenshot in the conversation (normally the assist one).
   Widget _thumbnail() {
@@ -218,13 +217,14 @@ class _AssistPanelState extends State<AssistPanel> {
     if (img == null) return const SizedBox.shrink();
     final ratio = img.height > 0 ? img.width / img.height : 0.5;
     return Padding(
-      padding: const EdgeInsets.only(right: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 4),
       child: Tooltip(
         message: 'Attached screenshot',
         child: InkWell(
           key: const ValueKey('assist-thumbnail'),
           borderRadius: BorderRadius.circular(6),
-          onTap: () => c.platform.viewer.show(MediaItem(kind: MediaKind.image, path: img.path, customTitle: 'Screenshot')),
+          onTap: () =>
+              c.platform.viewer.show(MediaItem(kind: MediaKind.image, path: img.path, customTitle: 'Screenshot')),
           child: Container(
             height: 36,
             width: (36 * ratio).clamp(16.0, 64.0),
@@ -246,58 +246,61 @@ class _AssistPanelState extends State<AssistPanel> {
     );
   }
 
-  Widget _body() {
-    if (!c.ready) return _centered(c.initError == null ? 'Starting Woi…' : 'Woi failed to start: ${c.initError}');
-    return ListenableBuilder(
-      listenable: Listenable.merge([c, c.pipeline]),
-      builder: (context, _) {
-        if (c.needsLogin) return _centered('Sign in to Woi first: open the full app.');
-        final msgs = c.pipeline.conversation.messages;
-        if (msgs.isEmpty) return _centered('Ask about this screen, or anything else.');
-        return LayoutBuilder(
-          builder: (context, box) => ListView.builder(
-            key: const ValueKey('assist-transcript'),
-            reverse: true,
-            padding: const EdgeInsets.fromLTRB(10, 4, 10, 4),
-            itemCount: msgs.length,
-            itemBuilder: (context, i) {
-              final m = msgs[msgs.length - 1 - i];
-              return MessageTile(
-                key: ValueKey(m.id),
-                message: m,
-                audio: c.platform.audio,
-                viewer: c.platform.viewer,
-                maxBubbleWidth: box.maxWidth * 0.86,
-              );
-            },
-          ),
-        );
-      },
+  /// The main app's tab UI (narrow layout), in its own scaffold for the
+  /// history drawer and snack bars.
+  Widget _body(Widget Function(Widget child) dragArea) {
+    if (!c.ready) {
+      return _withActions(
+        dragArea,
+        _centered(c.initError == null ? 'Starting Woi…' : 'Woi failed to start: ${c.initError}'),
+      );
+    }
+    if (c.needsLogin) return _withActions(dragArea, _centered('Sign in to Woi first: open the full app.'));
+    return Scaffold(
+      backgroundColor: WoiColors.bg1,
+      resizeToAvoidBottomInset: false,
+      endDrawer: HistoryDrawer(controller: c),
+      body: WoiTabs(
+        key: const ValueKey('assist-tabs'),
+        controller: c,
+        embedded: true,
+        initialView: widget.initialView,
+        onViewChanged: widget.onViewChanged,
+        headerTrailing: _actions(),
+        wrapHeader: dragArea,
+      ),
     );
   }
 
-  Widget _footer() {
-    if (!c.ready) return const SizedBox.shrink();
-    return ListenableBuilder(
-      listenable: c,
-      builder: (context, _) {
-        if (c.needsLogin) return const SizedBox.shrink();
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            EditReviewCard(review: c.review, maxDiffHeight: 120),
-            InputBar(controller: c, phone: true),
-          ],
-        );
-      },
-    );
-  }
+  /// Before the app is ready (or signed in): just the header actions.
+  Widget _withActions(Widget Function(Widget child) dragArea, Widget child) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      dragArea(
+        SizedBox(
+          height: kTouchTarget,
+          child: Row(
+            children: [
+              const SizedBox(width: 16),
+              Text('Woi', style: display(17, weight: FontWeight.w700, spacing: -0.4)),
+              const Spacer(),
+              ..._actions(),
+            ],
+          ),
+        ),
+      ),
+      Expanded(child: child),
+    ],
+  );
 
   Widget _centered(String text) => Center(
     child: Padding(
       padding: const EdgeInsets.all(24),
-      child: Text(text, textAlign: TextAlign.center, style: body(14, color: WoiColors.textDim)),
+      child: Text(
+        text,
+        textAlign: TextAlign.center,
+        style: body(14, color: WoiColors.textDim),
+      ),
     ),
   );
 }

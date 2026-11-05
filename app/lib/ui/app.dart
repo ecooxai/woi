@@ -45,6 +45,10 @@ class _WoiAppState extends State<WoiApp> with WidgetsBindingObserver {
   AndroidIntegration? _android;
   AssistPanelPresenter? _assistPanel;
 
+  /// The last tab used in the assist panel (Chat at first; kept apart from
+  /// the full app's tab for this run).
+  HomeView _assistTab = HomeView.chat;
+
   @override
   void initState() {
     super.initState();
@@ -92,6 +96,8 @@ class _WoiAppState extends State<WoiApp> with WidgetsBindingObserver {
         builder: (context, _) => AssistPanel(
           controller: _controller,
           initialFraction: bridge.overlayFraction,
+          initialView: _assistTab,
+          onViewChanged: (v) => _assistTab = v,
           onFractionChanged: (f) {
             bridge.overlayFraction = f;
             call('overlaySaveFraction', {'fraction': f});
