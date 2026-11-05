@@ -114,6 +114,9 @@ class WoiSession(ctx: Context) : VoiceInteractionSession(ctx) {
             }
             val c = container
             if (c != null) WoiOverlay.show(this, c) else overlay = false
+            // Record from the gesture on (the panel's microphone service is
+            // up now); Dart's mic open takes this audio over (WoiAudio).
+            if (overlay) WoiAudio.startEarly(context)
         }
         // The screenshot normally arrives within ~300 ms; without it (assist
         // screenshots disabled) go on anyway.

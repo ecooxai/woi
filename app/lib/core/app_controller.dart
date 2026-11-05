@@ -905,6 +905,22 @@ class AppController extends ChangeNotifier {
     });
   }
 
+  /// The floating assistant panel (Android) opened: the user is about to
+  /// speak. Reconnects now (not on the lifecycle event, which an engine that
+  /// never paused doesn't get) with the mic on, so capture starts at once and
+  /// is buffered while connecting. A muted mic is turned on first, as the
+  /// assist event did (that one waits for the screenshot, up to 2 s).
+  Future<void> assistantShown() async {
+    if (!_ready || _needsLogin) return;
+    _assistantTimer?.cancel();
+    _assistantTimer = null;
+    if (_settings.micMode == MicMode.muted) await setMicMode(MicMode.handsFree);
+    if (pipeline.suspended) {
+      debugPrint('voice: resume on assist');
+      await pipeline.resume();
+    }
+  }
+
   void _scheduleBackgroundSuspend() {
     _backgroundTimer?.cancel();
     _backgroundTimer = Timer(backgroundSuspendDelay, () {

@@ -6,6 +6,7 @@ import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.AudioRecordingConfiguration
 import android.os.Build
+import android.os.SystemClock
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.AudioTrack
@@ -66,8 +67,13 @@ object WoiAudio {
         override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
             try {
                 val args = arguments as? Map<*, *>
-                micAec = args?.get("aec") as? Boolean ?: true
-                if (WoiAudioRoute.setRoute(args?.get("route") as? String)) playerClose()
+                val aecArg = args?.get("aec") as? Boolean ?: true
+                val routeArg = args?.get("route") as? String
+                WoiBridge.appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                    .putBoolean(KEY_AEC, aecArg).putString(KEY_ROUTE, routeArg).apply()
+                if (adoptEarly(events, aecArg, routeArg)) return
+                micAec = aecArg
+                if (WoiAudioRoute.setRoute(routeArg)) playerClose()
                 openMic(events)
             } catch (e: Throwable) {
                 events.error("mic", e.message ?: e.toString(), null)
@@ -92,11 +98,114 @@ object WoiAudio {
         if (othersRecording(am().activeRecordingConfigurations)) {
             yield()
         } else {
-            startRecord(events)
+            startRecord()
         }
     }
 
+    // ---------------- early capture (assist activation) ----------------
+    //
+    // The assist gesture starts recording right away, before Dart (cold start:
+    // engine + controller init, ~1-2 s) opens its mic stream. The chunks wait
+    // here; the Dart mic open adopts the running recorder and gets them first,
+    // in order, then the live chunks: no gap, no duplicate. Dart buffers them
+    // until the voice session is up (PreConnectBuffer) and trims leading
+    // silence. Nobody adopting it within [EARLY_TIMEOUT_MS] drops it.
+
+    private const val PREFS = "woi_audio"
+    private const val KEY_AEC = "aec"
+    private const val KEY_ROUTE = "route"
+    private const val EARLY_TIMEOUT_MS = 10_000L
+    private const val EARLY_MAX_BYTES = RATE * 2 * 15
+    private var early: java.util.ArrayDeque<ByteArray>? = null
+    private var earlyBytes = 0
+    private var earlyAt = 0L
+    private val earlyTimeout = Runnable {
+        if (early != null && micSink == null) {
+            Log.i(WoiBridge.TAG, "early mic: not adopted in ${EARLY_TIMEOUT_MS} ms, closing")
+            dropEarly()
+        }
+    }
+
+    /** Assist activation: starts the recorder now (main thread). No-op while
+     *  Dart's mic is open, already early, or without the permission. */
+    fun startEarly(ctx: Context) {
+        try {
+            if (micSink != null || early != null || record != null) return
+            if (!WoiBridge.hasPermission(ctx, android.Manifest.permission.RECORD_AUDIO)) return
+            if (othersRecording(am().activeRecordingConfigurations)) return
+            val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            micAec = prefs.getBoolean(KEY_AEC, true)
+            if (WoiAudioRoute.setRoute(prefs.getString(KEY_ROUTE, null))) playerClose()
+            early = java.util.ArrayDeque()
+            earlyBytes = 0
+            earlyAt = SystemClock.elapsedRealtime()
+            startRecord()
+            WoiBridge.main.postDelayed(earlyTimeout, EARLY_TIMEOUT_MS)
+            Log.i(WoiBridge.TAG, "early mic: recording from activation")
+        } catch (e: Throwable) {
+            Log.w(WoiBridge.TAG, "early mic failed", e)
+            dropEarly()
+        }
+    }
+
+    /** Dart opens its mic: takes over the early recorder when its settings
+     *  match, sending the buffered chunks first. */
+    private fun adoptEarly(events: EventChannel.EventSink, aecArg: Boolean, routeArg: String?): Boolean {
+        val q = early ?: return false
+        val routeSame = (if (routeArg == WoiAudioRoute.MEDIA) WoiAudioRoute.MEDIA else WoiAudioRoute.PHONE) == WoiAudioRoute.route
+        if (record == null || aecArg != micAec || !routeSame) {
+            dropEarly()
+            return false
+        }
+        WoiBridge.main.removeCallbacks(earlyTimeout)
+        early = null
+        micSink = events
+        healed = false
+        healNoted = false
+        val cb = object : AudioManager.AudioRecordingCallback() {
+            override fun onRecordingConfigChanged(configs: MutableList<AudioRecordingConfiguration>) = evaluate(configs)
+        }
+        recCallback = cb
+        am().registerAudioRecordingCallback(cb, WoiBridge.main)
+        Log.i(
+            WoiBridge.TAG,
+            "early mic: adopted after ${SystemClock.elapsedRealtime() - earlyAt} ms, " +
+                "flushing ${q.size} chunks (${earlyBytes * 1000L / (RATE * 2)} ms)"
+        )
+        for (c in q) events.success(c)
+        return true
+    }
+
+    /** The panel went before Dart took the early recorder. */
+    fun cancelEarly() = dropEarly()
+
+    private fun dropEarly() {
+        WoiBridge.main.removeCallbacks(earlyTimeout)
+        if (early == null) return
+        early = null
+        earlyBytes = 0
+        if (micSink == null) {
+            stopRecord()
+            WoiAudioRoute.leaveCommunication()
+            syncPlayerRoute()
+        }
+    }
+
+    private fun deliver(chunk: ByteArray) {
+        val sink = micSink
+        if (sink != null) return sink.success(chunk)
+        val q = early ?: return
+        q.addLast(chunk)
+        earlyBytes += chunk.size
+        while (earlyBytes > EARLY_MAX_BYTES && q.size > 1) earlyBytes -= q.removeFirst().size
+    }
+
     private fun closeMic() {
+        if (early != null) {
+            WoiBridge.main.removeCallbacks(earlyTimeout)
+            early = null
+            earlyBytes = 0
+        }
         recCallback?.let { am().unregisterAudioRecordingCallback(it) }
         recCallback = null
         val wasYielded = yielded
@@ -125,7 +234,7 @@ object WoiAudio {
                     yielded = false
                     Log.i(WoiBridge.TAG, "mic free again: resuming")
                     try {
-                        startRecord(sink)
+                        startRecord()
                         emitMicState(false)
                     } catch (e: Throwable) {
                         sink.error("mic", e.message ?: e.toString(), null)
@@ -159,7 +268,7 @@ object WoiAudio {
     }
 
     @SuppressLint("MissingPermission")
-    private fun startRecord(events: EventChannel.EventSink, keepFocus: Boolean = false) {
+    private fun startRecord(keepFocus: Boolean = false) {
         stopRecord(keepFocus)
         WoiAudioRoute.enterCommunication()
         syncPlayerRoute()
@@ -271,7 +380,7 @@ object WoiAudio {
                         idleSum = 0.0; idleN = 0; idleZero = 0
                     }
                 }
-                WoiBridge.main.post { if (record === rec) events.success(chunk) }
+                WoiBridge.main.post { if (record === rec) deliver(chunk) }
             }
         }, "woi-mic").apply {
             priority = Thread.MAX_PRIORITY
@@ -328,7 +437,7 @@ object WoiAudio {
         try {
             // Keeps the media route's listen focus: no resume blip for the
             // paused app.
-            startRecord(sink, keepFocus = true)
+            startRecord(keepFocus = true)
         } catch (e: Throwable) {
             sink.error("mic", e.message ?: e.toString(), null)
         }

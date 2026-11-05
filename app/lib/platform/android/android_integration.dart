@@ -95,6 +95,7 @@ class AndroidIntegration {
         _overlay = true;
         _voiceOn = true;
         if (controller.ready && controller.needsLogin) _onController();
+        if (controller.ready) unawaited(controller.assistantShown());
       } else {
         _overlay = false;
         controller.assistantDismissed();

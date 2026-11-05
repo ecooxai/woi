@@ -121,6 +121,7 @@ object WoiOverlay {
     /** Takes the panel down (session hidden, dismissed, or the full app opens). */
     fun hide() {
         val v = view ?: return
+        WoiAudio.cancelEarly()
         WoiBridge.main.removeCallbacks(reveal)
         WoiBridge.main.removeCallbacks(restore)
         if (asideCount > 0 || asideVisual) applyAside(false, false)
