@@ -468,6 +468,21 @@ class ScriptedBackend extends VoiceBackend {
   @override
   void acceptTurn() => accepts++;
 
+  /// beginPreConnectFlush calls: (bufferedMs, firstVoicedMs).
+  final flushes = <(int, int?)>[];
+  @override
+  void beginPreConnectFlush(int bufferedMs, {int? firstVoicedMs}) => flushes.add((bufferedMs, firstVoicedMs));
+
+  /// [audioBytes] when endPreConnectFirstTurn was called.
+  final firstTurnEnds = <int>[];
+  @override
+  void endPreConnectFirstTurn() => firstTurnEnds.add(audioBytes);
+
+  /// setIdle calls.
+  final idles = <bool>[];
+  @override
+  void setIdle(bool idle) => idles.add(idle);
+
   @override
   void setReplyHold(bool hold) => holds.add(hold);
   @override

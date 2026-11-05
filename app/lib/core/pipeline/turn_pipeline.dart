@@ -668,7 +668,7 @@ class TurnPipeline extends ChangeNotifier {
   /// The 120 ms phase poll (audible playback, stale "thinking") only runs
   /// while a session is connected: an offline or suspended Woi has no timers.
   void _syncPhaseTicker() {
-    final want = _status == SessionStatus.connected && !_disposed;
+    final want = _status == SessionStatus.connected && !_disposed && !_idleWarm;
     if (want && _phaseTicker == null) {
       _phaseTicker = Timer.periodic(const Duration(milliseconds: 120), (_) {
         _settleIfStale();
@@ -709,6 +709,7 @@ class TurnPipeline extends ChangeNotifier {
     _changed();
     final b = backendFactory();
     _backend = b;
+    if (_idleWarm) b.setIdle(true);
     _eventSub = b.events.listen(
       _onEvent,
       onError: (Object e) {
@@ -821,9 +822,78 @@ class TurnPipeline extends ChangeNotifier {
   /// Reconnects after [suspend]. Does nothing unless suspended.
   Future<void> resume() async {
     if (_disposed || !_suspended) return;
+    _idleWarm = false;
     debugPrint('voice: resuming');
     await connect();
     _retryIfFailed();
+  }
+
+  /// Warm idle (the Android assistant panel closed): the mic is closed but
+  /// the session stays connected, so the next activation skips the
+  /// handshake. Nothing is sent, no timers run, and a dropped connection is
+  /// not re-established until [leaveIdleWarm].
+  bool get idleWarm => _idleWarm;
+  bool _idleWarm = false;
+
+  Future<void> enterIdleWarm() {
+    if (_disposed || _idleWarm || _suspended) return Future.value();
+    debugPrint('voice: warm idle (mic off, session kept, status ${_status.name})');
+    _idleWarm = true;
+    _backend?.setIdle(true);
+    return _syncWarm();
+  }
+
+  /// Ends [enterIdleWarm]: the mic reopens on the kept session (or a dropped
+  /// / suspended one connects again).
+  Future<void> leaveIdleWarm() {
+    if (_disposed || !_idleWarm) return Future.value();
+    _idleWarm = false;
+    if (_suspended) return resume();
+    _backend?.setIdle(false);
+    return _syncWarm();
+  }
+
+  // Brings the mic and session in line with [_idleWarm]; after each await a
+  // newer enter/leave wins (a quick dismiss + show keeps the mic open).
+  Future<void> _syncWarm() async {
+    if (_disposed || _suspended) return;
+    if (_idleWarm) {
+      if (_reconnecting || _status == SessionStatus.error) {
+        // No reconnect storm while unused: the next activation connects.
+        _reconnectTimer?.cancel();
+        _reconnectTimer = null;
+        _reconnecting = false;
+        _reconnectAttempt = 0;
+        await _disconnectBackend(keepMic: true);
+        if (!_idleWarm) return;
+      } else {
+        _resetTurnState();
+      }
+      // Detaches the mic synchronously: a later leave opens a fresh one.
+      await _closeMic();
+      if (!_idleWarm) return;
+      _managed?.setInputEnabled(false);
+      _syncPhaseTicker();
+      _changed();
+      return;
+    }
+    _syncPhaseTicker();
+    final connected = _status == SessionStatus.connected && _backend != null;
+    // Still connecting (dismissed during the handshake): the platform mic
+    // buffers until it is up.
+    final connecting = _status == SessionStatus.connecting && _backend != null && _managed == null;
+    if (connected || connecting) {
+      if (_mic == null) debugPrint('voice: warm session reused (${_status.name})');
+      if (_micMode != MicMode.muted) {
+        await _openMic();
+        _managed?.setInputEnabled(_forwarding);
+      }
+      _changed();
+    } else {
+      debugPrint('voice: warm session gone (${_status.name}); connecting');
+      await connect();
+      _retryIfFailed();
+    }
   }
 
   void _resetTurnState() {
@@ -1188,7 +1258,7 @@ class TurnPipeline extends ChangeNotifier {
   int _micGen = 0;
 
   Future<void> _openMic() {
-    if (_mic != null) return Future.value();
+    if (_mic != null || _idleWarm) return Future.value();
     final pending = _micOpening;
     if (pending != null) return pending;
     final f = _micOpening = _doOpenMic();
@@ -1264,21 +1334,21 @@ class TurnPipeline extends ChangeNotifier {
     _micOpening = null;
     _pending.clear();
     _preShot = null;
-    await _micSub?.cancel();
+    // Detached at once (before any await): an open that follows gets a new
+    // mic instead of seeing this one still set.
+    final sub = _micSub, m = _mic, os = _onsetSub, o = _onsetMic, ks = _kwsRawSub, r = _kwsRawMic;
     _micSub = null;
-    final m = _mic;
     _mic = null;
     _micManaged = false;
-    await m?.close();
-    await _onsetSub?.cancel();
     _onsetSub = null;
-    final o = _onsetMic;
     _onsetMic = null;
-    await o?.close();
-    await _kwsRawSub?.cancel();
     _kwsRawSub = null;
-    final r = _kwsRawMic;
     _kwsRawMic = null;
+    await sub?.cancel();
+    await m?.close();
+    await os?.cancel();
+    await o?.close();
+    await ks?.cancel();
     await r?.close();
     _levelsChanged.value++;
   }
@@ -1401,7 +1471,7 @@ class TurnPipeline extends ChangeNotifier {
   void _bufferPreConnect(Uint8List chunk) {
     final voiced = _pending.add(chunk);
     if (!voiced || _preShot != null) return;
-    if (!options().autoScreenshot) return;
+    if (!options().autoScreenshot || _activationShotFresh) return;
     // Speech in the pre-roll: grab the screen now, as a live turn would.
     _preShot = options().capture(screen).then<Screenshot?>((s) => s).catchError((
       Object e,
@@ -1421,10 +1491,26 @@ class TurnPipeline extends ChangeNotifier {
     debugPrint('pre-connect: buffer ${_pending.describe()}');
     final frames = _pending.take();
     final clip = BytesBuilder(copy: false);
-    b.beginPreConnectFlush(frames.fold<int>(0, (a, f) => a + f.length) * 1000 ~/ kVoiceBytesPerSecond);
+    final voicedAt = _pending.takenFirstVoicedBytes;
+    // The first utterance's turn start reaches back over the buffer; once a
+    // pause ended it, the rest of the flush gets the normal start (a second
+    // turn inside the flush would otherwise re-include the first one).
+    final pauseAt = _pending.takenFirstPauseBytes;
+    b.beginPreConnectFlush(
+      frames.fold<int>(0, (a, f) => a + f.length) * 1000 ~/ kVoiceBytesPerSecond,
+      firstVoicedMs: voicedAt == null ? null : voicedAt * 1000 ~/ kVoiceBytesPerSecond,
+    );
+    var sent = 0;
+    var firstTurnEnded = false;
     for (final f in frames) {
       b.sendAudio(f);
       clip.add(f);
+      sent += f.length;
+      if (!firstTurnEnded && pauseAt != null && sent >= pauseAt) {
+        firstTurnEnded = true;
+        debugPrint('pre-connect: first utterance ended at ${pauseAt * 1000 ~/ kVoiceBytesPerSecond} ms of the flush');
+        b.endPreConnectFirstTurn();
+      }
       if (!b.hasServerVad && _micMode == MicMode.handsFree) {
         switch (_localVad.process(f)) {
           case VadEvent.speechStarted:
@@ -1948,6 +2034,13 @@ class TurnPipeline extends ChangeNotifier {
     final replace = cam != null && opts.cameraReplacesScreenshot;
     if (cam != null) attachContextImage(cam, to: replace ? msg : null);
     if (replace || !opts.autoScreenshot) return;
+    if (_activationShotFresh) {
+      // The assist screenshot of this activation shows the same screen.
+      debugPrint(
+        'screenshot: skipped, assist screenshot sent ${DateTime.now().difference(_activationShotAt!).inMilliseconds} ms ago',
+      );
+      return;
+    }
     try {
       final s = await shot ?? await options().capture(screen);
       await attachScreenshot(s, note: 'Screen when the user spoke.', to: msg);
@@ -1970,6 +2063,7 @@ class TurnPipeline extends ChangeNotifier {
     bool activation = false,
   }) async {
     onScreenshotCaptured?.call(shot);
+    if (activation) _activationShotAt = DateTime.now();
     final target =
         to ??
         _addMessage(
@@ -2002,6 +2096,15 @@ class TurnPipeline extends ChangeNotifier {
     _persistSoon();
     _changed();
     unawaited(compactImages());
+  }
+
+  /// An auto-screenshot this soon after an activation screenshot (Android
+  /// assist) is skipped: it would be the same screen again.
+  static const Duration activationShotWindow = Duration(seconds: 5);
+  DateTime? _activationShotAt;
+  bool get _activationShotFresh {
+    final at = _activationShotAt;
+    return at != null && DateTime.now().difference(at) < activationShotWindow;
   }
 
   // Images attached while no session is up (the assistant gesture resumes a
@@ -2343,6 +2446,15 @@ class TurnPipeline extends ChangeNotifier {
       case Usage(:final totalContextTokens):
         context.onUsage(totalContextTokens);
       case BackendError(:final message, :final fatal, :final code):
+        if (fatal && (code == kIdleClosedCode || (_idleWarm && reconnectableCodes.contains(code)))) {
+          // The idle warm session dropped: no reconnect while unused, no
+          // error line; the next activation connects.
+          debugPrint('voice: warm session closed ($message)');
+          _status = SessionStatus.disconnected;
+          unawaited(_releaseBackend().then((_) => _syncPhaseTicker()));
+          _changed();
+          return;
+        }
         if (fatal && reconnectableCodes.contains(code) && maxAutoReconnects > 0) {
           _addSystem('$message; reconnecting…', meta: {'type': 'reconnect'});
           _scheduleReconnect(message);

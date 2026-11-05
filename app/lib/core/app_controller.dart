@@ -882,26 +882,47 @@ class AppController extends ChangeNotifier {
         _syncUsagePolling();
         _backgroundTimer?.cancel();
         _backgroundTimer = null;
-        if (pipeline.suspended && !_needsLogin) unawaited(pipeline.resume());
+        if (pipeline.suspended && !_needsLogin) {
+          unawaited(pipeline.resume());
+        } else if (pipeline.idleWarm) {
+          unawaited(pipeline.leaveIdleWarm());
+        }
       case AppLifecycleState.inactive:
         break;
     }
   }
 
-  /// How long a dismissed assistant panel keeps the voice session.
+  /// How long a dismissed assistant panel keeps the voice session when the
+  /// keep-alive ([AppSettings.assistantKeepAliveSeconds]) is off.
   Duration assistantIdleDelay = const Duration(seconds: 3);
   Timer? _assistantTimer;
 
-  /// The floating assistant panel (Android) was dismissed: stop talking now
-  /// and drop the voice session shortly after (no mic, no network: idle CPU
+  /// Replaces the [AppSettings.assistantKeepAliveSeconds] (tests).
+  @visibleForTesting
+  Duration? assistantKeepAliveOverride;
+
+  /// How long a dismissed assistant panel keeps the (idle, mic-less) voice
+  /// session connected: the next activation within it skips the handshake.
+  Duration get assistantKeepAlive {
+    final o = assistantKeepAliveOverride;
+    if (o != null) return o;
+    final s = _settings.assistantKeepAliveSeconds;
+    return s <= 0 ? assistantIdleDelay : Duration(seconds: s);
+  }
+
+  /// The floating assistant panel (Android) was dismissed: stop talking and
+  /// close the mic now, keep the session warm (connected, idle: no audio, no
+  /// timers) for [assistantKeepAlive], then drop it (no network: idle CPU
   /// back to ~0) unless the panel or the app comes back first. The mic mode
-  /// setting is unchanged; the next invocation reconnects.
+  /// setting is unchanged; the next invocation reopens the mic (or
+  /// reconnects).
   void assistantDismissed() {
     if (!_ready) return;
     final ph = pipeline.phase;
     if (ph == AssistantPhase.speaking || ph == AssistantPhase.thinking) pipeline.interrupt();
     _assistantTimer?.cancel();
-    _assistantTimer = Timer(assistantIdleDelay, () {
+    if (_inBackground) unawaited(pipeline.enterIdleWarm());
+    _assistantTimer = Timer(assistantKeepAlive, () {
       _assistantTimer = null;
       if (_inBackground && _ready) unawaited(pipeline.suspend());
     });
@@ -920,6 +941,9 @@ class AppController extends ChangeNotifier {
     if (pipeline.suspended) {
       debugPrint('voice: resume on assist');
       await pipeline.resume();
+    } else if (pipeline.idleWarm) {
+      debugPrint('voice: warm session on assist');
+      await pipeline.leaveIdleWarm();
     }
   }
 

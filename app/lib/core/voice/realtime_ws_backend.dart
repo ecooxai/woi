@@ -268,11 +268,41 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
   int? _flushPaddingMs;
 
   @override
-  void beginPreConnectFlush(int bufferedMs) {
+  void beginPreConnectFlush(int bufferedMs, {int? firstVoicedMs}) {
     if (!_ready || bufferedMs <= 0) return;
-    _flushPaddingMs = min(maxFlushPrefixPaddingMs, max(vadPrefixPaddingMs, bufferedMs + vadPrefixPaddingMs));
-    _log('pre-connect flush of $bufferedMs ms: first turn prefix padding $_flushPaddingMs ms');
+    // From the end of the flushed audio back to just before its first speech
+    // (or its start): never into audio before the first utterance.
+    final reach = firstVoicedMs == null ? bufferedMs : max(0, bufferedMs - firstVoicedMs);
+    _flushPaddingMs = min(maxFlushPrefixPaddingMs, max(vadPrefixPaddingMs, reach + vadPrefixPaddingMs));
+    _log(
+      'pre-connect flush of $bufferedMs ms (first voiced at ${firstVoicedMs ?? '?'} ms): '
+      'first turn prefix padding $_flushPaddingMs ms',
+    );
     _sendTurnDetection();
+  }
+
+  @override
+  void endPreConnectFirstTurn() {
+    if (_flushPaddingMs == null) return;
+    _log('pre-connect flush: first utterance over, normal prefix padding');
+    _endFlushPadding();
+  }
+
+  /// The assistant panel is closed and the mic off ([setIdle]).
+  bool _panelIdle = false;
+
+  @override
+  void setIdle(bool idle) {
+    if (_panelIdle == idle) return;
+    _panelIdle = idle;
+    if (!idle) return;
+    _flushPaddingMs = null;
+    if (_userSpeaking && _ready) {
+      // The mic closed mid-utterance: drop the half turn instead of leaving
+      // it open (no more audio comes to end it).
+      _send({'type': 'input_audio_buffer.clear'});
+      _userSpeaking = false;
+    }
   }
 
   /// The first turn after the flush started: normal padding from now on.
@@ -461,6 +491,13 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
 
   Future<void> _reconnect(String why) async {
     if (_reconnecting || _closed) return;
+    if (_panelIdle) {
+      // Warm but unused: no reconnect storm in the background; the next
+      // activation connects.
+      _log('idle: not reconnecting ($why)');
+      _emit(BackendError('Voice $why while idle', code: kIdleClosedCode, fatal: true));
+      return;
+    }
     _reconnecting = true;
     final context = _restoreContext();
     _emit(BackendError('Voice $why; reconnecting…', code: 'reconnecting'));

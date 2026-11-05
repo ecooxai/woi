@@ -415,6 +415,37 @@ void main() {
       await r.dispose();
     });
 
+    test('the widened start reaches back only to just before the first speech', () async {
+      final r = _Rig();
+      await r.connect();
+      r.backend.beginPreConnectFlush(4000, firstVoicedMs: 1500);
+      expect(tds(r).last['prefix_padding_ms'], 2800);
+      r.backend.beginPreConnectFlush(4000, firstVoicedMs: 3950);
+      expect(tds(r).last['prefix_padding_ms'], 350);
+      await r.dispose();
+    });
+
+    test('a second turn inside the flush gets the normal start: reset mid-flush after the first utterance', () async {
+      final r = _Rig();
+      await r.connect();
+      r.backend.beginPreConnectFlush(4000, firstVoicedMs: 200);
+      expect(tds(r).last['prefix_padding_ms'], 4100);
+      r.backend.sendAudio(Uint8List(4800));
+      r.backend.endPreConnectFirstTurn();
+      r.backend.sendAudio(Uint8List(4800));
+      final types = r.ws.types;
+      expect(tds(r), hasLength(3));
+      expect(tds(r).last['prefix_padding_ms'], 300);
+      final reset = types.lastIndexOf('session.update');
+      expect(types.indexOf('input_audio_buffer.append'), lessThan(reset));
+      expect(types.lastIndexOf('input_audio_buffer.append'), greaterThan(reset));
+      // speech_stopped of the first turn later: no second reset.
+      r.ws.push({'type': 'input_audio_buffer.speech_stopped', 'item_id': 'u1', 'audio_end_ms': 1500});
+      await _pump();
+      expect(tds(r), hasLength(3));
+      await r.dispose();
+    });
+
     test('padding is capped; an empty flush changes nothing', () async {
       final r = _Rig();
       await r.connect();
@@ -636,6 +667,30 @@ void main() {
       final restored = r.ws.ofType('conversation.item.create').single['item'] as Map;
       expect(restored['role'], 'system');
       expect(jsonEncode(restored), contains('my name is Alice'));
+      await r.dispose();
+    });
+
+    test('idle (panel closed): a dropped socket is not reconnected; one fatal idle_closed error', () async {
+      final r = _Rig();
+      await r.connect();
+      r.backend.setIdle(true);
+      await r.ws.drop();
+      await _pump();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(r.server.sockets, hasLength(1), reason: 'no reconnect while idle');
+      final err = r.of<BackendError>().single;
+      expect(err.code, kIdleClosedCode);
+      expect(err.fatal, isTrue);
+      await r.dispose();
+    });
+
+    test('idle mid-utterance clears the half turn', () async {
+      final r = _Rig();
+      await r.connect();
+      r.ws.push({'type': 'input_audio_buffer.speech_started', 'item_id': 'u1', 'audio_start_ms': 0});
+      await _pump();
+      r.backend.setIdle(true);
+      expect(r.ws.types.last, 'input_audio_buffer.clear');
       await r.dispose();
     });
 

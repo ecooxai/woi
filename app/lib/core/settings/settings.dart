@@ -122,6 +122,7 @@ class AppSettings {
     this.autoScreenshot = true,
     this.screenshotScale = 0.0,
     this.screenshotJpegQuality = 80,
+    this.assistantKeepAliveSeconds = 120,
     this.confirmBeforeBash = true,
     this.runBashInTerminal = false,
     this.micMode = MicMode.handsFree,
@@ -163,6 +164,12 @@ class AppSettings {
   /// pixels (0.25-1, never upscaled) and JPEG quality (50-100).
   final double screenshotScale;
   final int screenshotJpegQuality;
+
+  /// Android assistant panel: how long the voice session stays connected
+  /// after the panel closes (the mic closes at once), so the next activation
+  /// skips the 2-7 s handshake. 0: suspend shortly after closing.
+  final int assistantKeepAliveSeconds;
+  static const List<int> assistantKeepAliveChoices = [0, 30, 120, 300];
   final bool confirmBeforeBash;
 
   /// run_bash runs visibly in the terminal's AI tab (output still returned).
@@ -248,6 +255,7 @@ class AppSettings {
     bool? autoScreenshot,
     double? screenshotScale,
     int? screenshotJpegQuality,
+    int? assistantKeepAliveSeconds,
     bool? confirmBeforeBash,
     bool? runBashInTerminal,
     MicMode? micMode,
@@ -281,6 +289,7 @@ class AppSettings {
     autoScreenshot: autoScreenshot ?? this.autoScreenshot,
     screenshotScale: screenshotScale ?? this.screenshotScale,
     screenshotJpegQuality: screenshotJpegQuality ?? this.screenshotJpegQuality,
+    assistantKeepAliveSeconds: assistantKeepAliveSeconds ?? this.assistantKeepAliveSeconds,
     confirmBeforeBash: confirmBeforeBash ?? this.confirmBeforeBash,
     runBashInTerminal: runBashInTerminal ?? this.runBashInTerminal,
     micMode: micMode ?? this.micMode,
@@ -325,6 +334,7 @@ class AppSettings {
     'autoScreenshot': autoScreenshot,
     'screenshotScale': screenshotScale,
     'screenshotJpegQuality': screenshotJpegQuality,
+    'assistantKeepAliveSeconds': assistantKeepAliveSeconds,
     'confirmBeforeBash': confirmBeforeBash,
     'runBashInTerminal': runBashInTerminal,
     'micMode': micMode.name,
@@ -376,6 +386,7 @@ class AppSettings {
         _ => d.screenshotScale,
       },
       screenshotJpegQuality: i('screenshotJpegQuality', d.screenshotJpegQuality).clamp(50, 100),
+      assistantKeepAliveSeconds: i('assistantKeepAliveSeconds', d.assistantKeepAliveSeconds).clamp(0, 600),
       confirmBeforeBash: b('confirmBeforeBash', d.confirmBeforeBash),
       runBashInTerminal: b('runBashInTerminal', d.runBashInTerminal),
       micMode: MicMode.values.asNameMap()[j['micMode']] ?? d.micMode,

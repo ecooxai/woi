@@ -95,7 +95,10 @@ class PreConnectBuffer {
 
   /// The buffered audio (leading digital silence trimmed), in order, as
   /// frames of at most [frameBytes]; empties the buffer.
-  List<Uint8List> take({int frameBytes = kVoiceBytesPerSecond * 2 ~/ 10}) {
+  ///
+  /// Also sets [takenFirstVoicedBytes] and [takenFirstPauseBytes] (offsets
+  /// into the returned audio).
+  List<Uint8List> take({int frameBytes = kVoiceBytesPerSecond * 2 ~/ 10, int pauseBytes = kDefaultPauseBytes}) {
     var first = _zero.indexOf(false);
     if (first < 0) first = _chunks.length;
     var lead = 0;
@@ -107,16 +110,51 @@ class PreConnectBuffer {
       all.add(c);
     }
     var bytes = all.takeBytes();
+    var start = 0;
     if (lead > maxLeadSilenceBytes) {
-      final start = (lead - keepBeforeVoiceBytes) & ~1;
+      start = (lead - keepBeforeVoiceBytes) & ~1;
       bytes = Uint8List.sublistView(bytes, start);
     }
+    _segment(start, pauseBytes);
     clear();
     final out = <Uint8List>[];
     for (var o = 0; o < bytes.length; o += frameBytes) {
       out.add(Uint8List.fromList(Uint8List.sublistView(bytes, o, min(o + frameBytes, bytes.length))));
     }
     return out;
+  }
+
+  /// A run of unvoiced audio this long ends an utterance: longer than the
+  /// server VAD's 500 ms silence, so its first turn is over by then.
+  static const int kDefaultPauseBytes = kVoiceBytesPerSecond * 7 ~/ 10;
+
+  /// Of the last [take]: where the first voiced chunk starts, or null.
+  int? takenFirstVoicedBytes;
+
+  /// Of the last [take]: where the first utterance is followed by
+  /// [kDefaultPauseBytes] of unvoiced audio (the end of that pause), or null
+  /// when speech runs to the end of the buffer.
+  int? takenFirstPauseBytes;
+
+  void _segment(int start, int pauseBytes) {
+    takenFirstVoicedBytes = null;
+    takenFirstPauseBytes = null;
+    var off = -start;
+    var quiet = 0;
+    for (var i = 0; i < _chunks.length; i++) {
+      final len = _chunks[i].length;
+      if (_voiced[i]) {
+        takenFirstVoicedBytes ??= max(0, off);
+        quiet = 0;
+      } else if (takenFirstVoicedBytes != null) {
+        quiet += len;
+        if (quiet >= pauseBytes) {
+          takenFirstPauseBytes = off + len;
+          return;
+        }
+      }
+      off += len;
+    }
   }
 
   /// Every sample within ±1 LSB of zero: no microphone signal at all.

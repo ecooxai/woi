@@ -5,6 +5,7 @@ import 'package:woi/core/auth/auth.dart';
 import 'package:woi/core/models/message.dart';
 import 'package:woi/core/pipeline/turn_pipeline.dart';
 import 'package:woi/core/settings/settings.dart';
+import 'package:woi/core/voice/voice_backend.dart';
 import 'package:woi/platform/android/android_bridge.dart';
 import 'package:woi/platform/platform_services.dart';
 import 'package:woi/ui/assist/assist_panel.dart';
@@ -386,7 +387,7 @@ void main() {
   testWidgets('dismissing the assistant interrupts and suspends the voice session once in the background', (t) async {
     final env = _Env();
     await env.start(t, mobile: true);
-    env.c.assistantIdleDelay = const Duration(milliseconds: 50);
+    env.c.assistantKeepAliveOverride = const Duration(milliseconds: 50);
     await t.runAsync(() async {
       await env.c.pipeline.connect();
     });
@@ -426,7 +427,7 @@ void main() {
     expect(env.c.settings.micMode, MicMode.handsFree);
     expect(env.c.pipeline.status, isNot(SessionStatus.disconnected));
     // A pending dismissal suspend is cancelled by showing again.
-    env.c.assistantIdleDelay = const Duration(milliseconds: 50);
+    env.c.assistantKeepAliveOverride = const Duration(milliseconds: 50);
     env.c.onLifecycle(AppLifecycleState.paused);
     env.c.assistantDismissed();
     await t.runAsync(() => env.c.assistantShown());
@@ -434,5 +435,118 @@ void main() {
     await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 100)));
     expect(env.c.pipeline.suspended, isFalse);
     await env.stop(t);
+  });
+
+  group('warm keep-alive after dismissal', () {
+    testWidgets('the mic closes at once; the session stays connected and is reused without a handshake', (t) async {
+      final env = _Env();
+      await env.start(t, mobile: true);
+      env.c.assistantKeepAliveOverride = const Duration(seconds: 30);
+      await t.runAsync(() => env.c.pipeline.connect());
+      final backend = env.c.pipeline.backend! as ScriptedBackend;
+      final mic = env.fp.audio.mic!;
+      final opens = env.fp.audio.micOpens.length;
+      env.c.onLifecycle(AppLifecycleState.paused);
+      env.c.assistantDismissed();
+      await _settle(t);
+      expect(mic.closed, isTrue, reason: 'mic closed immediately (privacy, CPU)');
+      expect(env.c.pipeline.idleWarm, isTrue);
+      expect(env.c.pipeline.suspended, isFalse);
+      expect(env.c.pipeline.status, SessionStatus.connected);
+      expect(backend.closed, isFalse);
+      expect(backend.idles, [true]);
+      final sent = backend.audioBytes;
+      // Nothing is sent while warm and dismissed.
+      await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+      expect(backend.audioBytes, sent);
+
+      await t.runAsync(() => env.c.assistantShown());
+      await _settle(t);
+      expect(env.c.pipeline.idleWarm, isFalse);
+      expect(identical(env.c.pipeline.backend, backend), isTrue, reason: 'same session, no reconnect');
+      expect(backend.idles, [true, false]);
+      expect(env.fp.audio.micOpens.length, opens + 1);
+      final mic2 = env.fp.audio.mic!;
+      expect(mic2.closed, isFalse);
+      mic2.push(pcm(20, amplitude: 3000));
+      expect(backend.audioBytes, greaterThan(sent), reason: 'live audio streams directly');
+      await env.stop(t);
+    });
+
+    testWidgets('the keep-alive expires, then the session suspends', (t) async {
+      final env = _Env();
+      await env.start(t, mobile: true);
+      env.c.assistantKeepAliveOverride = const Duration(milliseconds: 150);
+      await t.runAsync(() => env.c.pipeline.connect());
+      final backend = env.c.pipeline.backend! as ScriptedBackend;
+      env.c.onLifecycle(AppLifecycleState.paused);
+      env.c.assistantDismissed();
+      await t.pump(const Duration(milliseconds: 50));
+      await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+      expect(env.c.pipeline.suspended, isFalse);
+      expect(env.c.pipeline.idleWarm, isTrue);
+      await t.pump(const Duration(milliseconds: 200));
+      await _settle(t);
+      expect(env.c.pipeline.suspended, isTrue);
+      expect(backend.closed, isTrue);
+      expect(env.fp.audio.mic!.closed, isTrue);
+      // The next activation reconnects as before.
+      await t.runAsync(() => env.c.assistantShown());
+      await _settle(t);
+      expect(env.c.pipeline.suspended, isFalse);
+      expect(env.c.pipeline.idleWarm, isFalse);
+      expect(env.c.pipeline.status, SessionStatus.connected);
+      expect(identical(env.c.pipeline.backend, backend), isFalse);
+      expect(env.fp.audio.mic!.closed, isFalse);
+      await env.stop(t);
+    });
+
+    testWidgets('a warm session the server drops is not reconnected while dismissed; the next activation connects', (
+      t,
+    ) async {
+      final env = _Env();
+      await env.start(t, mobile: true);
+      env.c.assistantKeepAliveOverride = const Duration(seconds: 30);
+      await t.runAsync(() => env.c.pipeline.connect());
+      final backend = env.c.pipeline.backend! as ScriptedBackend;
+      env.c.onLifecycle(AppLifecycleState.paused);
+      env.c.assistantDismissed();
+      await _settle(t);
+      backend.emit(const BackendError('Voice connection lost while idle', code: kIdleClosedCode, fatal: true));
+      await _settle(t);
+      expect(env.c.pipeline.status, SessionStatus.disconnected);
+      expect(env.c.pipeline.backend, isNull);
+      expect(backend.closed, isTrue);
+      expect(env.c.pipeline.conversation.messages.where((m) => m.meta['type'] == 'error'), isEmpty);
+      await t.runAsync(() => env.c.assistantShown());
+      await _settle(t);
+      expect(env.c.pipeline.status, SessionStatus.connected);
+      expect(env.c.pipeline.backend, isNotNull);
+      expect(identical(env.c.pipeline.backend, backend), isFalse);
+      expect(env.fp.audio.mic!.closed, isFalse);
+      await env.stop(t);
+    });
+
+    testWidgets('opening the app while warm reopens the mic', (t) async {
+      final env = _Env();
+      await env.start(t, mobile: true);
+      env.c.assistantKeepAliveOverride = const Duration(seconds: 30);
+      await t.runAsync(() => env.c.pipeline.connect());
+      env.c.onLifecycle(AppLifecycleState.paused);
+      env.c.assistantDismissed();
+      await _settle(t);
+      expect(env.fp.audio.mic!.closed, isTrue);
+      env.c.onLifecycle(AppLifecycleState.resumed);
+      await _settle(t);
+      expect(env.c.pipeline.idleWarm, isFalse);
+      expect(env.fp.audio.mic!.closed, isFalse);
+      await env.stop(t);
+    });
+
+    test('the keep-alive setting round-trips and defaults to 2 minutes', () {
+      expect(const AppSettings().assistantKeepAliveSeconds, 120);
+      final s = const AppSettings().copyWith(assistantKeepAliveSeconds: 30);
+      expect(AppSettings.fromJson(s.toJson()).assistantKeepAliveSeconds, 30);
+    });
   });
 }

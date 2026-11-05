@@ -267,5 +267,74 @@ void main() {
       final user = h.conv.messages.where((m) => m.text == 'hello').single;
       expect(user.image, isNotNull);
     });
+    test('two utterances in the flush: the widened start ends after the first, before the second is sent', () async {
+      final mic = h.mic;
+      gate = Completer<void>();
+      unawaited(h.pipeline.connect());
+      await Future<void>.delayed(Duration.zero);
+      const chunk = kVoiceBytesPerSecond ~/ 50; // 20 ms
+      // 400 ms room noise, 1 s speech, 1 s pause, 1 s speech.
+      for (var t = 0; t < 400; t += 20) {
+        mic.push(pcm(20, amplitude: 20));
+      }
+      for (var i = 0; i < 50; i++) {
+        mic.push(tagged(i));
+      }
+      for (var t = 0; t < 1000; t += 20) {
+        mic.push(pcm(20, amplitude: 20));
+      }
+      for (var i = 0; i < 50; i++) {
+        mic.push(tagged(i));
+      }
+      gate!.complete();
+      await waitFor(() => h.pipeline.status == SessionStatus.connected);
+      final b = h.scripted;
+      expect(b.flushes, hasLength(1));
+      expect(b.flushes.single.$1, 3400);
+      expect(b.flushes.single.$2, 400, reason: 'first voiced offset in the flushed audio');
+      expect(b.firstTurnEnds, hasLength(1));
+      final at = b.firstTurnEnds.single;
+      // After the first utterance and the server's 500 ms silence ...
+      expect(at, greaterThanOrEqualTo(chunk * (20 + 50) + kVoiceBytesPerSecond ~/ 2));
+      // ... and before any of the second utterance went out.
+      expect(at, lessThanOrEqualTo(chunk * (20 + 50 + 50)));
+    });
+
+    test('one utterance running to the end of the flush: the widened start lasts until speech_stopped', () async {
+      final mic = h.mic;
+      gate = Completer<void>();
+      unawaited(h.pipeline.connect());
+      await Future<void>.delayed(Duration.zero);
+      for (var i = 0; i < 60; i++) {
+        mic.push(tagged(i));
+      }
+      gate!.complete();
+      await waitFor(() => h.pipeline.status == SessionStatus.connected);
+      expect(h.scripted.flushes.single.$2, 0);
+      expect(h.scripted.firstTurnEnds, isEmpty);
+    });
+
+    test('speech after an assist screenshot does not grab a second, identical screenshot', () async {
+      final mic = h.mic;
+      gate = Completer<void>();
+      unawaited(h.pipeline.connect());
+      await Future<void>.delayed(Duration.zero);
+      await h.pipeline.attachScreenshot(
+        Screenshot(png: tinyPng(72, 144), width: 72, height: 144, originalWidth: 720, originalHeight: 1440),
+        note: 'Assist screenshot.',
+        activation: true,
+      );
+      for (var i = 0; i < 10; i++) {
+        mic.push(tagged(i));
+      }
+      await Future<void>.delayed(Duration.zero);
+      expect(h.fp.screen.captureTimes, isEmpty, reason: 'no pre-roll grab');
+      gate!.complete();
+      await waitFor(() => h.pipeline.status == SessionStatus.connected);
+      h.scripted.emit(const SpeechStarted(itemId: 'u1'));
+      await Future<void>.delayed(h.options.screenshotDelay + const Duration(milliseconds: 150));
+      expect(h.fp.screen.captureTimes, isEmpty, reason: 'no auto-screenshot after speech');
+      expect(h.scripted.images, hasLength(1));
+    });
   });
 }

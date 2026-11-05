@@ -559,6 +559,31 @@ class _SettingsViewState extends State<SettingsView> {
             onChanged: (v) => _apply(_s.copyWith(androidAudioRoute: v)),
           ),
         ),
+        _Item(
+          'Keep connection after closing',
+          'Stays connected after the assistant panel closes, so the next activation answers at once.',
+          detail:
+              'The microphone stops as soon as the panel closes; only the idle connection is kept, '
+              'then it is dropped. Off: dropped a few seconds after closing.',
+          keywords: 'keep alive connection warm session assistant panel close dismiss suspend latency fast',
+          (w) => _choices<int>(
+            w,
+            id: 'assistant-keep-alive',
+            title: 'Keep connection after closing',
+            desc: 'Stays connected after the assistant panel closes, so the next activation answers at once.',
+            options: AppSettings.assistantKeepAliveChoices,
+            value: AppSettings.assistantKeepAliveChoices.contains(_s.assistantKeepAliveSeconds)
+                ? _s.assistantKeepAliveSeconds
+                : 120,
+            label: (v) => switch (v) {
+              0 => 'Off',
+              120 => '2 min (default)',
+              < 60 => '$v s',
+              _ => '${v ~/ 60} min',
+            },
+            onChanged: (v) => _apply(_s.copyWith(assistantKeepAliveSeconds: v)),
+          ),
+        ),
       ]),
     _Group('about', 'Help & about', moreLabel: 'Keyboard shortcuts', [
       _Item('About', 'Runtime details for troubleshooting.', (w) => _about(), full: true),

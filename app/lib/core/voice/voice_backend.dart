@@ -143,6 +143,9 @@ class SpeechStopped extends BackendEvent {
   final String? itemId;
 }
 
+/// [BackendError.code] of an idle session whose connection dropped ([VoiceBackend.setIdle]).
+const String kIdleClosedCode = 'idle_closed';
+
 class BackendError extends BackendEvent {
   const BackendError(this.message, {this.code, this.fatal = false});
   final String message;
@@ -184,7 +187,21 @@ abstract class VoiceBackend {
   /// right away (oldest first). A server-VAD backend widens its turn start
   /// so the first turn reaches back to the start of that audio: on a quiet
   /// mic the VAD fires late, and the first words would be lost.
-  void beginPreConnectFlush(int bufferedMs) {}
+  /// [firstVoicedMs]: where speech starts in that audio; the widened start
+  /// reaches back no further than just before it.
+  void beginPreConnectFlush(int bufferedMs, {int? firstVoicedMs}) {}
+
+  /// The first utterance of the flushed audio is over (a pause the server
+  /// VAD ends a turn on followed it): later turns, even inside the same
+  /// flush, get the normal turn start again, so they cannot reach back into
+  /// the first one.
+  void endPreConnectFirstTurn() {}
+
+  /// While idle (the assistant panel closed, mic off, session kept warm) no
+  /// audio is sent and a dropped connection is not re-established: the
+  /// backend emits a fatal [BackendError] with code [kIdleClosedCode]
+  /// instead, and the next activation connects again.
+  void setIdle(bool idle) {}
 
   void sendText(String text);
 
