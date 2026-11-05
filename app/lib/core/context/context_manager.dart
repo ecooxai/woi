@@ -54,6 +54,16 @@ class ContextCompacted {
   final bool substantial;
 }
 
+/// Raised when a background compaction failed. Automatic compaction retries
+/// after [retryIn] (exponential backoff); [attempt] counts the failures in a
+/// row (1 for the first).
+class ContextCompactionFailed {
+  const ContextCompactionFailed({required this.error, required this.attempt, required this.retryIn});
+  final Object error;
+  final int attempt;
+  final Duration? retryIn;
+}
+
 /// Where the context tokens go, from the same estimator as the meter total.
 class ContextParts {
   const ContextParts({
@@ -142,6 +152,7 @@ class ContextManager extends ChangeNotifier {
     this.keepRecentTurns = kRawRecentTurns,
     this.minGain = 0.25,
     this.minInterval = const Duration(seconds: 10),
+    this.maxBackoff = const Duration(minutes: 5),
   });
 
   final Compressor compressor;
@@ -163,6 +174,46 @@ class ContextManager extends ChangeNotifier {
   /// [overheadTokens]) a compaction must free.
   double minGain;
   Duration minInterval;
+
+  /// Upper bound of the retry delay after failed compactions.
+  Duration maxBackoff;
+
+  /// Failed compactions in a row; 0 after a success.
+  int failures = 0;
+
+  /// When the automatic retry after a failure runs (null: none scheduled).
+  DateTime? nextRetryAt;
+  Timer? _retryTimer;
+  final _failures = StreamController<ContextCompactionFailed>.broadcast();
+
+  /// Failed background compactions (for a non-blocking notice).
+  Stream<ContextCompactionFailed> get compactionFailures => _failures.stream;
+
+  /// minInterval × 2^(failures-1), capped at [maxBackoff].
+  Duration get retryDelay {
+    if (failures <= 0) return minInterval;
+    final ms = minInterval.inMilliseconds * math.pow(2, math.min(failures - 1, 20));
+    return Duration(milliseconds: math.min(ms.toInt(), maxBackoff.inMilliseconds));
+  }
+
+  /// One line for the meter when compaction is failing or cannot help, or
+  /// null when all is well.
+  String? get status {
+    if (_compressing) return null;
+    final e = lastError;
+    if (e != null) {
+      final msg = '$e'.replaceAll(RegExp(r'\s+'), ' ');
+      final short = msg.length > 120 ? '${msg.substring(0, 117)}…' : msg;
+      final at = nextRetryAt;
+      final wait = at?.difference(DateTime.now());
+      final retry = wait == null ? '' : ' Retrying in ${wait.isNegative ? 0 : (wait.inMilliseconds / 1000).ceil()} s.';
+      return 'Compaction failed${failures > 1 ? ' ($failures×)' : ''}: $short.$retry';
+    }
+    if (_conv != null && estimatedTokens > threshold && _compactable().isEmpty) {
+      return 'Over the limit, but only the last $keepRecentTurns turns are left (kept raw).';
+    }
+    return null;
+  }
 
   ContextAccounting _accounting = ContextAccounting.usage;
   int _overhead = 0;
@@ -213,6 +264,11 @@ class ContextManager extends ChangeNotifier {
     _conv = c;
     _baseline = null;
     _lastCompaction = null;
+    _retryTimer?.cancel();
+    _retryTimer = null;
+    failures = 0;
+    nextRetryAt = null;
+    lastError = null;
     notifyListeners();
   }
 
@@ -426,7 +482,8 @@ class ContextManager extends ChangeNotifier {
     final before = estimatedTokens;
     if (!force && before <= threshold) return null;
     final last = _lastCompaction;
-    if (!force && last != null && DateTime.now().difference(last) < minInterval) {
+    if (!force && last != null && DateTime.now().difference(last) < retryDelay) {
+      if (failures > 0) _scheduleRetry();
       return null;
     }
     // The ChatGPT usage limit (429): every attempt before it resets is a
@@ -437,6 +494,8 @@ class ContextManager extends ChangeNotifier {
     if (batch.isEmpty) return null;
     // Not worth a model call (and a session swap) if it barely helps.
     if (!force && _gain(batch) < (before - _overhead - _pinned) * minGain) return null;
+    _retryTimer?.cancel();
+    _retryTimer = null;
     _compressing = true;
     notifyListeners();
     return _run(_conv!, batch);
@@ -465,12 +524,13 @@ class ContextManager extends ChangeNotifier {
           m.compacted = false;
         }
         conv.summary = oldSummary;
-        lastError = StateError('compaction would not shrink the context ($before → $after tokens)');
-        debugPrint('context: $lastError');
+        _failed(StateError('compaction would not shrink the context ($before → $after tokens)'));
         return;
       }
       lastError = null;
       usageLimit = null;
+      failures = 0;
+      nextRetryAt = null;
       final substantial = before - after >= (before - _overhead - _pinned) * minGain / 2;
       if (!substantial) debugPrint('context: compaction only freed ${before - after} of $before tokens');
       _compactions.add(
@@ -486,18 +546,40 @@ class ContextManager extends ChangeNotifier {
     } catch (e) {
       // Responses API 429 usage_limit_reached: no automatic retry until it
       // resets; other errors are retried after minInterval.
-      lastError = e;
       final limit = UsageLimit.parse(e);
       if (limit != null) {
         usageLimit = limit;
         _limitSeen = DateTime.now();
       }
       _lastCompaction = DateTime.now();
-      debugPrint('context: compaction failed: $e');
+      _failed(e, scheduleRetry: limit == null);
     } finally {
       _compressing = false;
       notifyListeners();
     }
+  }
+
+  void _failed(Object e, {bool scheduleRetry = true}) {
+    lastError = e;
+    failures++;
+    final delay = scheduleRetry ? retryDelay : null;
+    nextRetryAt = delay == null ? null : DateTime.now().add(delay);
+    debugPrint('context: compaction failed: $e (attempt $failures, retry in ${delay?.inSeconds ?? '-'} s)');
+    if (scheduleRetry) _scheduleRetry();
+    _failures.add(ContextCompactionFailed(error: e, attempt: failures, retryIn: delay));
+  }
+
+  /// Retries after the backoff even if nothing else changes meanwhile (an
+  /// idle conversation would otherwise stay over the limit, silently).
+  void _scheduleRetry() {
+    if (_retryTimer?.isActive ?? false) return;
+    final last = _lastCompaction ?? DateTime.now();
+    final wait = last.add(retryDelay).difference(DateTime.now());
+    nextRetryAt = DateTime.now().add(wait.isNegative ? Duration.zero : wait);
+    _retryTimer = Timer(wait.isNegative ? Duration.zero : wait, () {
+      _retryTimer = null;
+      maybeCompress();
+    });
   }
 
   /// Plain-text rendering of the messages still in the context (the turns a
@@ -544,7 +626,9 @@ class ContextManager extends ChangeNotifier {
 
   @override
   void dispose() {
+    _retryTimer?.cancel();
     _compactions.close();
+    _failures.close();
     super.dispose();
   }
 }

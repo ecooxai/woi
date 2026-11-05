@@ -29,7 +29,11 @@ class ContextBreakdown {
     this.imagesSaved = 0,
     this.imagesReduced = 0,
     this.imagesDescribed = 0,
+    this.status,
   });
+
+  /// [ContextManager.status]: why compaction failed / cannot help, or null.
+  final String? status;
 
   /// Tokens saved by the screenshot tiers (⅕ size / described).
   final int imagesSaved;
@@ -82,6 +86,7 @@ class ContextBreakdown {
       imagesSaved: p.imagesSaved,
       imagesReduced: p.imagesReduced,
       imagesDescribed: p.imagesDescribed,
+      status: m.status,
     );
   }
 }
@@ -134,7 +139,8 @@ class ContextMeter extends StatelessWidget {
         final label = '${formatTokens(b.total)} / ${formatTokens(b.threshold)}';
         final semantics =
             'Context ${formatTokens(b.total)} of ${formatTokens(b.threshold)} tokens'
-            '${busy ? ', compacting' : ''}';
+            '${busy ? ', compacting' : ''}'
+            '${b.status == null ? '' : '. ${b.status}'}';
 
         final Widget gauge = switch (style) {
           ContextMeterStyle.ring => _Ring(fill: fill, color: color, busy: busy),
@@ -467,6 +473,11 @@ class BreakdownTable extends StatelessWidget {
         ),
         if (b.compactedMessages > 0)
           Text('${b.compactedMessages} older messages summarised', style: body(fs - 0.5, color: WoiColors.textDim)),
+        if (b.status != null && !compressing)
+          SizedBox(
+            width: large ? 250 : 210,
+            child: Text(b.status!, style: body(fs - 0.5, weight: FontWeight.w600, color: WoiColors.amber)),
+          ),
         if (compressing)
           Text(
             'Compacting now…',

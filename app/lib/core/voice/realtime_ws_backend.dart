@@ -7,7 +7,7 @@ import 'package:flutter/foundation.dart';
 import '../audio/playback_tracker.dart';
 import '../auth/auth.dart';
 import '../context/context_manager.dart';
-import '../context/image_tiers.dart' show kRawRecentTurns;
+import '../context/image_tiers.dart' show kAssistNotePrefix, kRawRecentTurns;
 import '../net/realtime_socket.dart';
 import '../notes/pinned_note.dart';
 import 'context_sync.dart';
@@ -1085,16 +1085,28 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
   /// [keepRecentTurns]-th last user turn, never splitting a function call
   /// from its output and keeping a turn's screenshot with it.
   int _cutIndex() {
+    // Same rule as rawTurnsStart (local compaction): an assist activation
+    // screenshot (possibly without speech) starts a turn,
+    // unless the next turn boundary is a user turn it belongs to.
     final turnStarts = <int>[];
-    for (var i = 0; i < _items.length; i++) {
+    var absorb = false;
+    for (var i = _items.length - 1; i >= 0; i--) {
       final it = _items[i];
-      if (it.id != _summaryItemId && it.isUserTurn) turnStarts.add(i);
+      if (it.id == _summaryItemId) continue;
+      if (it.isUserTurn) {
+        turnStarts.add(i);
+        absorb = true;
+      } else if (it.isImageOnly && it.text.contains(kAssistNotePrefix)) {
+        if (absorb) {
+          turnStarts[turnStarts.length - 1] = i;
+          absorb = false;
+        } else {
+          turnStarts.add(i);
+        }
+      }
     }
     if (turnStarts.length <= keepRecentTurns) return 0;
-    var cut = turnStarts[turnStarts.length - keepRecentTurns];
-    while (cut > 0 && _items[cut - 1].isImageOnly) {
-      cut--;
-    }
+    var cut = turnStarts[keepRecentTurns - 1];
     var moved = true;
     while (moved) {
       moved = false;

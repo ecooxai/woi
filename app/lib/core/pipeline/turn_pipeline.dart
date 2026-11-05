@@ -131,6 +131,7 @@ class TurnPipeline extends ChangeNotifier {
        _guard = echoGuard ?? EchoGuard() {
     context.attach(conversation);
     _compactionSub = context.compactions.listen(_onCompacted);
+    _compactionFailSub = context.compactionFailures.listen(_onCompactionFailed);
   }
 
   final VoiceBackend Function() backendFactory;
@@ -181,6 +182,7 @@ class TurnPipeline extends ChangeNotifier {
   VoiceBackend? _backend;
   StreamSubscription<BackendEvent>? _eventSub;
   StreamSubscription<ContextCompacted>? _compactionSub;
+  StreamSubscription<ContextCompactionFailed>? _compactionFailSub;
   MicStream? _mic;
   StreamSubscription<Uint8List>? _micSub;
   PcmPlayer? _player;
@@ -1944,10 +1946,26 @@ class TurnPipeline extends ChangeNotifier {
   /// Saves [shot], attaches it to [to] (or a new system message) and sends
   /// it to the model with [note]. The chat shows [label] when given (the
   /// note may carry long context such as the screen's visible text).
-  Future<void> attachScreenshot(Screenshot shot, {required String note, String? label, Message? to}) async {
+  ///
+  /// [activation]: the screenshot opened an assistant activation (Android
+  /// assist), which counts as a turn for compaction even without speech.
+  Future<void> attachScreenshot(
+    Screenshot shot, {
+    required String note,
+    String? label,
+    Message? to,
+    bool activation = false,
+  }) async {
     onScreenshotCaptured?.call(shot);
     final target =
-        to ?? _addMessage(Message(kind: MessageKind.system, text: label ?? note, meta: {'type': 'screenshot'}));
+        to ??
+        _addMessage(
+          Message(
+            kind: MessageKind.system,
+            text: label ?? note,
+            meta: {'type': 'screenshot', if (activation) kActivationMeta: true},
+          ),
+        );
     final path = await store.saveImage(target.id, shot.png);
     target.image = ImageAttachment(
       path: path,
@@ -2444,6 +2462,16 @@ class TurnPipeline extends ChangeNotifier {
     _applyCompactionToSession(c);
   }
 
+  /// A failed background compaction: one non-blocking note per failure
+  /// streak (the meter keeps the current status and retry countdown).
+  void _onCompactionFailed(ContextCompactionFailed f) {
+    if (_disposed || f.attempt != 1) return;
+    final msg = '${f.error}'.replaceAll(RegExp(r'\s+'), ' ');
+    final short = msg.length > 160 ? '${msg.substring(0, 157)}…' : msg;
+    final retry = f.retryIn == null ? '' : ' Retrying in the background.';
+    _addSystem('Context compaction failed: $short.$retry', meta: {'type': 'error'});
+  }
+
   /// Replaces the compacted turns in the live session too. The backend
   /// defers this to the next moment with no active response, so it never
   /// interrupts playback or a reply.
@@ -2565,6 +2593,7 @@ class TurnPipeline extends ChangeNotifier {
     _phaseTicker = null;
     _screenshotTimer?.cancel();
     await _compactionSub?.cancel();
+    await _compactionFailSub?.cancel();
     await _closeMic();
     await _disconnectBackend();
     await _player?.close();

@@ -49,18 +49,49 @@ const kRawRecentTurns = 3;
 /// in the context; everything from there on is sent raw. 0 when there are no
 /// more than [turns] user turns (nothing is old yet), `messages.length` when
 /// [turns] is 0.
+///
+/// An activation screenshot (the Android "Assist screenshot" every
+/// long-press adds, [isActivationScreenshot]) starts a turn of its own unless
+/// the next turn boundary after it is a user message (then it belongs to that
+/// turn: the user invoked Woi and spoke). Without this, activations without
+/// speech piled screenshots into the "recent" window forever: nothing was
+/// ever old enough to compact and the context grew past 100%.
 int rawTurnsStart(List<Message> messages, [int turns = kRawRecentTurns]) {
   if (turns <= 0) return messages.length;
   var seen = 0;
   int? cut;
+  var absorb = false; // the last boundary seen (newer) was a user message
   for (var i = messages.length - 1; i >= 0; i--) {
     final m = messages[i];
-    if (m.kind != MessageKind.user || m.compacted) continue;
-    if (cut != null) return cut; // an older user turn exists
+    if (m.compacted) continue;
+    final user = m.kind == MessageKind.user;
+    if (!user && !isActivationScreenshot(m)) continue;
+    if (!user && absorb) {
+      absorb = false;
+      if (seen == turns) cut = i; // keep the turn's screenshot with it
+      continue;
+    }
+    if (cut != null) return cut; // an older turn exists
+    absorb = user;
     if (++seen == turns) cut = i;
   }
   return 0;
 }
+
+/// Meta flag of a screenshot that opened an activation (Android assist).
+const kActivationMeta = 'activation';
+
+/// Start of the note the model gets with an assist screenshot; the Realtime
+/// backend recognises activation image items by it.
+const kAssistNotePrefix = 'The user invoked Woi as the phone assistant';
+
+/// A screenshot added by an assist activation, which may never be followed
+/// by speech. Tool screenshots in a turn are not (they belong to it). The
+/// label check covers conversations saved before the meta flag existed.
+bool isActivationScreenshot(Message m) =>
+    m.kind == MessageKind.system &&
+    m.image != null &&
+    (m.meta[kActivationMeta] == true || m.text.startsWith('Assist screenshot'));
 
 /// Newest [fullCount] screenshots stay as sent, the next [reducedCount] are
 /// downscaled, everything older is described in words. Tiers only ever go

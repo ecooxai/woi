@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 import '../../core/app_controller.dart';
+import '../../core/context/image_tiers.dart' show kAssistNotePrefix;
 import '../../core/settings/settings.dart';
 import '../media_viewer.dart';
 import '../screen_capture.dart';
@@ -143,12 +144,13 @@ class AndroidIntegration {
       await controller.pipeline.attachScreenshot(
         shot,
         note: e.overlay
-            ? 'The user invoked Woi as the phone assistant (long-press home) while in $app; this is that screen. '
+            ? '$kAssistNotePrefix (long-press home) while in $app; this is that screen. '
                   'Woi floats as a bottom panel over that app, which is still open: click_screen, type_text and '
                   'send_keys act on it (the panel steps aside). '
-            : 'The user invoked Woi as the phone assistant (long-press home) while in $app; this is that screen. '
+            : '$kAssistNotePrefix (long-press home) while in $app; this is that screen. '
             '${clipped.isEmpty ? '' : 'Visible text: $clipped. '}',
         label: e.app == null || e.app!.isEmpty ? 'Assist screenshot' : 'Assist screenshot from ${e.app}',
+        activation: true,
       );
       if (e.shownAtMs > 0) lastAssistLatencyMs = DateTime.now().millisecondsSinceEpoch - e.shownAtMs;
       debugPrint('assist screenshot attached ${w}x$h from $app, ${lastAssistLatencyMs ?? '?'} ms after the gesture');
