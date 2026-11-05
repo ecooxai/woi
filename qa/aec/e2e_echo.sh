@@ -156,8 +156,17 @@ said = ["Tell me three interesting facts about Mars.",
         "Tell me a long story about a lighthouse keeper. Make it at least one minute long.",
         "Stop", "Hello, how are you?"]
 norm = lambda t: re.sub(r"[^a-z ]", "", (t or "").lower()).strip()
+def fuzzy(t, f):  # same first word, >= 50% of the words shared, or close spelling
+    tw, fw = norm(t).split(), norm(f).split()
+    if not tw:
+        return False
+    if tw[0] == fw[0]:
+        return True
+    if len(set(tw) & set(fw)) >= 0.5 * len(set(tw)):
+        return True
+    return difflib.SequenceMatcher(None, norm(t), norm(f)).ratio() >= 0.7
 def is_ours(t):  # one of the played fixtures (not Woi heard back)
-    return any(difflib.SequenceMatcher(None, norm(t), norm(f)).ratio() >= 0.7 for f in said)
+    return any(fuzzy(t, f) for f in said)
 convs = sorted(glob.glob(f"{out}/data-{name}/woi/conversations/*.json"))
 msgs = []
 for c in convs:
