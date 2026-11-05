@@ -421,7 +421,13 @@ class AppController extends ChangeNotifier {
         // Offline stop-word spotting (not under flutter test: native model).
         stopWordSpotter: Platform.environment.containsKey('FLUTTER_TEST')
             ? null
-            : () => SherpaStopWordSpotter(dataDir: platform.paths.dataDir),
+            : () => SherpaStopWordSpotter(
+                dataDir: platform.paths.dataDir,
+                // QA tuning only (`WOI_QA_KWS_MIC_THRESHOLD`); unset: default.
+                micThreshold:
+                    double.tryParse(Platform.environment['WOI_QA_KWS_MIC_THRESHOLD'] ?? '') ??
+                    SherpaStopWordSpotter.defaultMicThreshold,
+              ),
         // Woi kept hearing itself: pause hands-free (the setting, so the mic
         // control shows it); the pipeline posts the notice.
         onSelfTalk: () => unawaited(setMicMode(MicMode.muted)),

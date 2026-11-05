@@ -111,7 +111,9 @@ Float32List kwsResample24to16(Uint8List pcm16) {
 /// background isolate: one spotter on the mic ([micThreshold]), one on the
 /// reference ([refThreshold], low: it only has to catch Woi's own words).
 class SherpaStopWordSpotter implements StopWordSpotter {
-  SherpaStopWordSpotter({required this.dataDir, this.micThreshold = 0.4, this.refThreshold = 0.1});
+  SherpaStopWordSpotter({required this.dataDir, this.micThreshold = defaultMicThreshold, this.refThreshold = 0.1});
+
+  static const defaultMicThreshold = 0.4;
 
   /// The app data dir; the model is copied to `<dataDir>/kws/` on first use
   /// (Android assets are not plain files).

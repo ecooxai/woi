@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show Platform;
+import 'dart:io' show File, FileMode, IOSink, Platform;
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -859,8 +859,26 @@ class TurnPipeline extends ChangeNotifier {
     _kws!.addReference(pcm16, DateTime.now().add(Duration(milliseconds: max(0, _guard.queuedMs))));
   }
 
+  /// QA only (`WOI_QA_DUMP_AEC_MIC=<path>`, read once at startup): every mic
+  /// chunk the spotter path sees (after the AEC, 24 kHz mono s16, raw) is
+  /// appended to `<path>`, with `<path>.times` holding `<epoch ms> <bytes>`
+  /// per chunk, for `tool/kws_proto.dart`. Unset (the default): no effect.
+  static final String? qaDumpAecMicEnv = Platform.environment['WOI_QA_DUMP_AEC_MIC'];
+  IOSink? _qaDump;
+  IOSink? _qaDumpTimes;
+
+  void _qaDumpMic(Uint8List chunk) {
+    final path = qaDumpAecMicEnv;
+    if (path == null || path.isEmpty || _disposed) return;
+    _qaDump ??= File(path).openWrite(mode: FileMode.append);
+    _qaDumpTimes ??= File('$path.times').openWrite(mode: FileMode.append);
+    _qaDump!.add(chunk);
+    _qaDumpTimes!.writeln('${DateTime.now().millisecondsSinceEpoch} ${chunk.length} ${_kwsActive ? 1 : 0}');
+  }
+
   /// Mic audio (after the AEC) while Woi is audible or paused.
   void _kwsMic(Uint8List chunk) {
+    _qaDumpMic(chunk);
     if (!_kwsActive || _micMode != MicMode.handsFree) return;
     if (!_kwsEnsure()) return;
     _kws!.addMic(chunk, DateTime.now());
@@ -2329,6 +2347,10 @@ class TurnPipeline extends ChangeNotifier {
 
   Future<void> shutdown() async {
     await _kwsStop();
+    await _qaDump?.close();
+    await _qaDumpTimes?.close();
+    _qaDump = null;
+    _qaDumpTimes = null;
     _reconnectTimer?.cancel();
     _reconnecting = false;
     _phaseTicker?.cancel();

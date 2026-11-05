@@ -25,6 +25,7 @@
 #        WOI_QA_IGNORE_SERVER_SPEECH=1 (inherited by the app through
 #        qa_launch_app's env) makes the app ignore server speech starts while
 #        Woi speaks, so barge-ins are decided by the local rules only.
+#        QA_DUMP_AEC_MIC=1: the app writes the AEC'd mic to aec_mic.raw (+ .times).
 #        (QA_OUT, QA_SANDBOX, QA_DISPLAY=:11, ECHO_GAIN=0.3, ECHO_DELAY=0.15)
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -128,7 +129,13 @@ wait_quiet() { # gap max: until Woi was silent for gap s (max s)
 
 qa_make_sandbox || exit 1
 qa_launch_app "$NAME" '{"backendMode":"direct","realtimeModel":"gpt-realtime-2.1"}' \
-  WOI_AUDIO_SINK=qa_e2e_speaker WOI_AUDIO_SOURCE=qa_e2e_mic WOI_MIC_MODE=handsFree || exit 1
+  WOI_AUDIO_SINK=qa_e2e_speaker WOI_AUDIO_SOURCE=qa_e2e_mic WOI_MIC_MODE=handsFree \
+  ${QA_DUMP_AEC_MIC:+WOI_QA_DUMP_AEC_MIC=$QA_OUT/aec_mic.raw} || exit 1
+# Woi's CPU: "<epoch> <utime+stime ticks>" each second (summary: % while speaking / idle).
+( while kill -0 "$APP_PID" 2>/dev/null; do
+    echo "$(date +%s.%N) $(awk '{print $14 + $15}' "/proc/$APP_PID/stat" 2>/dev/null)" >>"$QA_OUT/cpu.txt"; sleep 1
+  done ) &
+qa_track_pid $!
 sleep 8
 
 for f in "$QFIX/12_mars_facts.wav" "$QFIX/11_long_story.wav"; do
@@ -238,6 +245,22 @@ q_answered = False
 for i, m in enumerate(msgs):
     if m.get("kind") == "user" and "how are you" in norm(m.get("text")):
         q_answered = any(x.get("kind") == "assistant" and (x.get("text") or "").strip() for x in msgs[i + 1:])
+def cpu_pct():  # Woi's CPU % of one core while the speaker is active vs silent (1 s samples)
+    try:
+        hz = os.sysconf("SC_CLK_TCK")
+        cs = [(float(l[0]), int(l[1])) for l in lines(f"{out}/cpu.txt") if len(l) == 2]
+        spk = sorted(float(l[0]) for l in lines(f"{out}/spk.active") if l)
+    except (OSError, ValueError):
+        return None
+    import bisect
+    sp, si, tp, ti = 0.0, 0.0, 0.0, 0.0
+    for (a, ua), (b, ub) in zip(cs, cs[1:]):
+        i, j = bisect.bisect_left(spk, a), bisect.bisect_right(spk, b)
+        if j - i >= 0.5 * (b - a) * 100:  # speaker chunks (~10 ms) cover >= half the interval
+            sp += (ub - ua) / hz; tp += b - a
+        elif j == i:
+            si += (ub - ua) / hz; ti += b - a
+    return [round(100 * sp / tp, 1) if tp else None, round(100 * si / ti, 1) if ti else None]
 act = sorted(v for v in fr if v > 30)
 lvl = lambda q: round(20 * math.log10(act[int(q * (len(act) - 1))] / 32768), 1) if act else None
 print(json.dumps({
@@ -270,5 +293,15 @@ print(json.dumps({
     "qa_server_starts_held": log.count("qa: server speech start held"),
     "qa_turns_dropped": log.count("qa: resumed: dropping"),
     "mic_level_dbfs_p50_p90": [lvl(0.5), lvl(0.9)],
+    "kws_armed": "kws: armed" in log,
+    "kws_cuts": len(evts("barge-in: kws ")),
+    "kws_false_cuts": len([t for t in evts("barge-in: kws ") if not by_user(t)]),
+    "kws_cut_after_onset_s": [round(t / 1000 - onsets[k], 3) for t in evts("barge-in: kws ")
+                              for k in onsets if 0 < t / 1000 - onsets[k] < 4],
+    "kws_lags_ms": [int(m.group(1)) for m in re.finditer(r"kws [^\n]*lag (\d+) ms", log)],
+    "kws_ignored": log.count("ignored (Woi not speaking)"),
+    "kws_vetoes": log.count("vetoed by the reference"),
+    "kws_errors": [l for l in log.split("\n") if re.search(r"kws: (isolate error|unavailable)", l)][:3],
+    "cpu_pct_speaking_idle": cpu_pct(),
 }, indent=1))
 EOF
