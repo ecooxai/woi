@@ -135,6 +135,30 @@ void main() {
       expect(decode(o)['screen_xy'], [200, 100]);
     });
 
+    test('take_screenshot uses the screenshot settings; click_screen maps at scale 0.5', () async {
+      // A 1080x2400 phone at 50 % / JPEG 80.
+      settings = const AppSettings().copyWith(screenshotScale: 0.5);
+      final screen = fp.screen
+        ..originalWidth = 1080
+        ..originalHeight = 2400
+        ..scaling = true;
+      final reg = registry;
+      final o = await reg.dispatch('take_screenshot', '{}');
+      expect(decode(o), {'ok': true, 'image': '540x1200', 'screen': '1080x2400'});
+      expect(screen.requests.single, (0.5, 80, null));
+      final c = await reg.dispatch('click_screen', '{"x":270,"y":600}');
+      expect(c.ok, isTrue);
+      expect(fp.input.log.last, 'click 540 1200 left');
+      expect(decode(c)['screen_xy'], [540, 1200]);
+      final edge = await reg.dispatch('click_screen', '{"x":539,"y":1199}');
+      expect(decode(edge)['screen_xy'], [1078, 2398]);
+
+      settings = settings.copyWith(screenshotScale: 0.25, screenshotJpegQuality: 60);
+      await reg.dispatch('take_screenshot', '{}');
+      expect(screen.requests.last, (0.25, 60, null));
+      expect(env.lastScreenshot!.width, 270);
+    });
+
     test('type_text and key_combo drive InputControl', () async {
       await registry.dispatch('type_text', '{"text":"hello"}');
       await registry.dispatch('key_combo', '{"keys":"ctrl+shift+t"}');

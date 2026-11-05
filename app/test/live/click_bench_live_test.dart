@@ -52,7 +52,7 @@ void main() {
       _ => null,
     };
     // The geometry stage A's model saw (the app's 1280-wide capture).
-    final probe = await screen.capture(maxWidth: 1280);
+    final probe = await screen.capture(scale: 1, jpegQuality: null, maxWidth: 1280);
     final shot = Screenshot(
       png: probe.png,
       width: probe.width,

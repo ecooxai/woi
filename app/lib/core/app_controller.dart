@@ -532,6 +532,8 @@ class AppController extends ChangeNotifier {
   PipelineOptions _pipelineOptions() => PipelineOptions(
     autoScreenshot: _settings.autoScreenshot && platform.autoScreenshot(),
     screenshotDelay: Duration(milliseconds: _settings.screenshotDelayMs),
+    screenshotScale: _settings.screenshotScale,
+    screenshotJpegQuality: _settings.screenshotJpegQuality,
     micMode: _settings.micMode,
     thinkingEarcon: _settings.thinkingEarcon,
     cameraReplacesScreenshot: _settings.cameraReplacesScreenshot,

@@ -165,12 +165,13 @@ class WoiSession(ctx: Context) : VoiceInteractionSession(ctx) {
             try {
                 val dir = File(context.cacheDir, "assist").apply { mkdirs() }
                 dir.listFiles()?.forEach { it.delete() }
-                val f = File(dir, "assist-${System.currentTimeMillis()}.png")
-                val r = ScreenshotPng.write(screenshot, 720, f)
+                val quality = ScreenshotEncoder.quality(context)
+                val f = File(dir, "assist-${System.currentTimeMillis()}.${if (quality > 0) "jpg" else "png"}")
+                val r = ScreenshotEncoder.write(screenshot, ScreenshotEncoder.scale(context), quality, f)
                 sw = r.width
                 sh = r.height
                 path = f.absolutePath
-                Log.i(WoiBridge.TAG, "assist screenshot ${w}x$h (${r.source}) -> ${sw}x$sh in ${SystemClock.elapsedRealtime() - t0} ms")
+                Log.i(WoiBridge.TAG, "assist screenshot ${w}x$h (${r.source}) -> ${sw}x$sh (${r.bytes} B) in ${SystemClock.elapsedRealtime() - t0} ms")
             } catch (e: Exception) {
                 Log.w(WoiBridge.TAG, "assist screenshot failed", e)
             }

@@ -17,17 +17,22 @@ void main() {
       ? 'no X display at $display'
       : null;
 
-  test('screenshot via ffmpeg x11grab, downscaled to <= 1280 px', () async {
+  test('screenshot via ffmpeg x11grab: JPEG at the dp width by default, PNG when lossless', () async {
     final sw = Stopwatch()..start();
-    final shot = await LinuxScreenCapture().capture(maxWidth: 1280);
+    final shot = await LinuxScreenCapture().capture();
     sw.stop();
-    expect(shot.width, lessThanOrEqualTo(1280));
-    expect(shot.originalWidth, greaterThanOrEqualTo(shot.width));
-    expect(pngSize(shot.png), (shot.width, shot.height));
+    expect(shot.isJpeg, isTrue);
+    expect((shot.width, shot.height), screenshotSize(shot.originalWidth, shot.originalHeight, kScreenshotScaleDp));
+    expect(imageSize(shot.png), (shot.width, shot.height));
+    final full = await LinuxScreenCapture().capture(scale: 1, jpegQuality: null, maxWidth: 1280);
+    expect(full.isJpeg, isFalse);
+    expect(full.width, lessThanOrEqualTo(1280));
+    expect(pngSize(full.png), (full.width, full.height));
     // ignore: avoid_print
     print(
       'screenshot ${shot.width}x${shot.height} of ${shot.originalWidth}x${shot.originalHeight} '
-      '(${shot.png.length ~/ 1024} KiB) in ${sw.elapsedMilliseconds} ms',
+      '(${shot.png.length ~/ 1024} KiB JPEG) in ${sw.elapsedMilliseconds} ms; '
+      'lossless ${full.width}x${full.height} ${full.png.length ~/ 1024} KiB PNG',
     );
   }, skip: skip ?? (which('ffmpeg') == null && which('import') == null ? 'ffmpeg missing' : null));
 

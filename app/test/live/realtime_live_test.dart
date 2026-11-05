@@ -51,7 +51,11 @@ class _FixtureScreen implements ScreenCapture {
   final png = File('${_fixtures.path}/test_screen.png').readAsBytesSync();
   int captures = 0;
   @override
-  Future<Screenshot> capture({int maxWidth = 1280}) async {
+  Future<Screenshot> capture({
+    double scale = kDefaultScreenshotScale,
+    int? jpegQuality = kDefaultScreenshotJpegQuality,
+    int? maxWidth,
+  }) async {
     captures++;
     return Screenshot(png: png, width: 256, height: 256, originalWidth: _screenW, originalHeight: _screenH);
   }

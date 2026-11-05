@@ -120,6 +120,8 @@ class AppSettings {
     this.delegateModel = 'gpt-6-luna',
     this.screenshotDelayMs = 1200,
     this.autoScreenshot = true,
+    this.screenshotScale = 0.0,
+    this.screenshotJpegQuality = 80,
     this.confirmBeforeBash = true,
     this.runBashInTerminal = false,
     this.micMode = MicMode.handsFree,
@@ -156,6 +158,11 @@ class AppSettings {
   final String delegateModel;
   final int screenshotDelayMs;
   final bool autoScreenshot;
+
+  /// Screenshots sent to the model: fraction of the screen's physical
+  /// pixels (0.25-1, never upscaled) and JPEG quality (50-100).
+  final double screenshotScale;
+  final int screenshotJpegQuality;
   final bool confirmBeforeBash;
 
   /// run_bash runs visibly in the terminal's AI tab (output still returned).
@@ -239,6 +246,8 @@ class AppSettings {
     String? delegateModel,
     int? screenshotDelayMs,
     bool? autoScreenshot,
+    double? screenshotScale,
+    int? screenshotJpegQuality,
     bool? confirmBeforeBash,
     bool? runBashInTerminal,
     MicMode? micMode,
@@ -270,6 +279,8 @@ class AppSettings {
     delegateModel: delegateModel ?? this.delegateModel,
     screenshotDelayMs: screenshotDelayMs ?? this.screenshotDelayMs,
     autoScreenshot: autoScreenshot ?? this.autoScreenshot,
+    screenshotScale: screenshotScale ?? this.screenshotScale,
+    screenshotJpegQuality: screenshotJpegQuality ?? this.screenshotJpegQuality,
     confirmBeforeBash: confirmBeforeBash ?? this.confirmBeforeBash,
     runBashInTerminal: runBashInTerminal ?? this.runBashInTerminal,
     micMode: micMode ?? this.micMode,
@@ -312,6 +323,8 @@ class AppSettings {
     'delegateModel': delegateModel,
     'screenshotDelayMs': screenshotDelayMs,
     'autoScreenshot': autoScreenshot,
+    'screenshotScale': screenshotScale,
+    'screenshotJpegQuality': screenshotJpegQuality,
     'confirmBeforeBash': confirmBeforeBash,
     'runBashInTerminal': runBashInTerminal,
     'micMode': micMode.name,
@@ -357,6 +370,12 @@ class AppSettings {
       delegateModel: s('delegateModel', d.delegateModel),
       screenshotDelayMs: i('screenshotDelayMs', d.screenshotDelayMs).clamp(0, 10000),
       autoScreenshot: b('autoScreenshot', d.autoScreenshot),
+      screenshotScale: switch (j['screenshotScale']) {
+        final num v when v.isFinite && v <= 0 => 0.0,
+        final num v when v.isFinite => v.toDouble().clamp(0.25, 1.0),
+        _ => d.screenshotScale,
+      },
+      screenshotJpegQuality: i('screenshotJpegQuality', d.screenshotJpegQuality).clamp(50, 100),
       confirmBeforeBash: b('confirmBeforeBash', d.confirmBeforeBash),
       runBashInTerminal: b('runBashInTerminal', d.runBashInTerminal),
       micMode: MicMode.values.asNameMap()[j['micMode']] ?? d.micMode,

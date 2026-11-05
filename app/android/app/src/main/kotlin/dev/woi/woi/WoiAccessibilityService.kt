@@ -266,7 +266,10 @@ class WoiAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun screenshot(maxWidth: Int, result: MethodChannel.Result) {
+    private fun screenshot(call: MethodCall, result: MethodChannel.Result) {
+        val scale = call.argument<Double>("scale") ?: ScreenshotEncoder.DEFAULT_SCALE
+        val quality = call.argument<Int>("quality") ?: ScreenshotEncoder.DEFAULT_QUALITY
+        val maxWidth = call.argument<Int>("maxWidth") ?: 0
         if (Build.VERSION.SDK_INT < 30) return result.error("unsupported", "needs Android 11", null)
         takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
             override fun onSuccess(shot: ScreenshotResult) = guarded("screenshot", result) { result ->
@@ -275,9 +278,9 @@ class WoiAccessibilityService : AccessibilityService() {
                 if (hw == null) return@guarded result.error("failed", "no bitmap", null)
                 WoiBridge.io.execute {
                     try {
-                        val sw = hw.copy(Bitmap.Config.ARGB_8888, false)
+                        val sw = hw.copy(Bitmap.Config.ARGB_8888, true)
                         hw.recycle()
-                        val map = WoiScreen.encode(sw, maxWidth)
+                        val map = ScreenshotEncoder.encodeToMap(sw, scale, quality, maxWidth, sw.width, sw.height)
                         sw.recycle()
                         WoiBridge.main.post { safe("screenshot") { result.success(map) } }
                     } catch (e: Throwable) {
@@ -365,9 +368,9 @@ class WoiAccessibilityService : AccessibilityService() {
                 }
                 // The screen of the app the user is working in, not Woi's.
                 "a11yScreenshot" -> if (call.argument<Boolean>("stepAside") != false) {
-                    s.aside(350, result, visual = true) { r -> s.screenshot(call.argument<Int>("maxWidth") ?: 1280, r) }
+                    s.aside(350, result, visual = true) { r -> s.screenshot(call, r) }
                 } else {
-                    s.screenshot(call.argument<Int>("maxWidth") ?: 1280, result)
+                    s.screenshot(call, result)
                 }
                 else -> result.notImplemented()
             }

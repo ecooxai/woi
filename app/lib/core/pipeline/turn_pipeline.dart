@@ -49,7 +49,8 @@ class PipelineOptions {
   const PipelineOptions({
     this.autoScreenshot = true,
     this.screenshotDelay = const Duration(milliseconds: 1200),
-    this.maxScreenshotWidth = 1280,
+    this.screenshotScale = kDefaultScreenshotScale,
+    this.screenshotJpegQuality = kDefaultScreenshotJpegQuality,
     this.micMode = MicMode.handsFree,
     this.thinkingEarcon = false,
     this.localBargeIn = true,
@@ -93,7 +94,12 @@ class PipelineOptions {
   final bool cameraReplacesScreenshot;
   final bool autoScreenshot;
   final Duration screenshotDelay;
-  final int maxScreenshotWidth;
+  /// Screenshots sent to the model: scale of the physical screen, JPEG quality.
+  final double screenshotScale;
+  final int screenshotJpegQuality;
+
+  Future<Screenshot> capture(ScreenCapture screen) =>
+      screen.capture(scale: screenshotScale, jpegQuality: screenshotJpegQuality);
   final MicMode micMode;
 
   /// Play [thinkingEarconPcm] when the user stops speaking and the reply
@@ -1397,7 +1403,7 @@ class TurnPipeline extends ChangeNotifier {
     if (!voiced || _preShot != null) return;
     if (!options().autoScreenshot) return;
     // Speech in the pre-roll: grab the screen now, as a live turn would.
-    _preShot = screen.capture(maxWidth: options().maxScreenshotWidth).then<Screenshot?>((s) => s).catchError((
+    _preShot = options().capture(screen).then<Screenshot?>((s) => s).catchError((
       Object e,
     ) {
       debugPrint('pre-connect screenshot failed: $e');
@@ -1943,7 +1949,7 @@ class TurnPipeline extends ChangeNotifier {
     if (cam != null) attachContextImage(cam, to: replace ? msg : null);
     if (replace || !opts.autoScreenshot) return;
     try {
-      final s = await shot ?? await screen.capture(maxWidth: options().maxScreenshotWidth);
+      final s = await shot ?? await options().capture(screen);
       await attachScreenshot(s, note: 'Screen when the user spoke.', to: msg);
     } catch (e) {
       _addSystem('Screenshot failed: $e', meta: {'type': 'error'});
@@ -1973,7 +1979,7 @@ class TurnPipeline extends ChangeNotifier {
             meta: {'type': 'screenshot', if (activation) kActivationMeta: true},
           ),
         );
-    final path = await store.saveImage(target.id, shot.png);
+    final path = await store.saveImage(target.id, shot.png, ext: shot.ext);
     target.image = ImageAttachment(
       path: path,
       width: shot.width,
