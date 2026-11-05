@@ -414,16 +414,6 @@ class ScriptedBackend extends VoiceBackend {
   @override
   void acceptTurn() => accepts++;
 
-  /// probeSpan clips (an unconfirmed local onset).
-  final probes = <Uint8List>[];
-  bool supportsProbe = true;
-  @override
-  bool probeSpan(Uint8List pcm) {
-    if (!supportsProbe) return false;
-    probes.add(pcm);
-    return true;
-  }
-
   @override
   void setReplyHold(bool hold) => holds.add(hold);
   @override

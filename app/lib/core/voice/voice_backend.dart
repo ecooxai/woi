@@ -143,13 +143,6 @@ class SpeechStopped extends BackendEvent {
   final String? itemId;
 }
 
-/// Transcript of a [VoiceBackend.probeSpan] clip (empty: nothing heard or
-/// transcription failed). Not a user turn: the clip is never answered.
-class ProbeTranscript extends BackendEvent {
-  const ProbeTranscript(this.text);
-  final String text;
-}
-
 class BackendError extends BackendEvent {
   const BackendError(this.message, {this.code, this.fatal = false});
   final String message;
@@ -216,11 +209,6 @@ abstract class VoiceBackend {
   /// and close the tool calls its reply made ([callIds]) without running
   /// them or asking for another reply.
   void dropEchoTurn({String? itemId, List<String> callIds = const []}) => stopAndDrop();
-
-  /// A local onset the server VAD did not confirm (a short "stop" under
-  /// Woi's echo): transcribe [pcm] (the mic around the onset) on its own and
-  /// report it as a [ProbeTranscript]. Returns false if not supported.
-  bool probeSpan(Uint8List pcm) => false;
 
   /// A [SpeechStarted.deferred] turn is the user after all: it gets a reply
   /// once it ends (the caller interrupts Woi with [cancelResponse]).

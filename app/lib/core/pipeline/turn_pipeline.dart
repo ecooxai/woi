@@ -234,6 +234,17 @@ class TurnPipeline extends ChangeNotifier {
     _changed();
   }
 
+  /// No transcript within [deferWindow] and no local onset: no evidence it
+  /// is the user (an echo burst the server VAD took for speech often has an
+  /// empty transcript), so Woi plays on. The turn stays undecided: a later
+  /// local onset or a non-echo transcript interrupts then; an empty or
+  /// echo-like one drops it unanswered ([_checkDeferred]).
+  void _deferTimeout() {
+    _deferTimer = null;
+    if (!_deferPending) return;
+    debugPrint('deferred turn: no transcript yet and no local onset: Woi plays on');
+  }
+
   /// Transcript of a deferred turn: echo → drop it (Woi was never cut);
   /// clearly not echo (or "stop") → interrupt now.
   void _checkDeferred(Message m, {required bool done}) {
@@ -290,17 +301,6 @@ class TurnPipeline extends ChangeNotifier {
   BytesBuilder? _paused;
   Timer? _pauseTimer;
   static const _onsetConfirmWindow = Duration(milliseconds: 900);
-  // An unconfirmed onset stays armed: the mic around it (pre-roll included)
-  // is transcribed on its own ([VoiceBackend.probeSpan]); "stop" in it stops
-  // Woi even though the server VAD missed it under the echo.
-  // Probed only 1.6 s after the onset (0.7 s after resuming): the probe
-  // clears the server's input buffer, which must not cut a turn the server VAD
-  // is about to confirm (it takes up to ~1.1 s).
-  final PcmRing _probeRing = PcmRing(kVoiceBytesPerSecond * 22 ~/ 10); // 2.2 s
-  DateTime? _probeUntil;
-  Timer? _probeTimer;
-  static const _probeDelay = Duration(milliseconds: 700);
-  static const _probeWindow = Duration(seconds: 5);
   // Raw platform mic used only for onset detection when the backend owns the
   // real mic (its stream is a delayed server echo, too late for barge-in).
   MicStream? _onsetMic;
@@ -355,9 +355,6 @@ class TurnPipeline extends ChangeNotifier {
   int autoReconnects = 0;
 
   int onsetsResumed = 0;
-
-  /// Unconfirmed onsets whose probe transcript was a stop phrase.
-  int probeStops = 0;
 
   /// User turns dropped because the transcript was Woi's own reply heard back.
   int echoTurnsDropped = 0;
@@ -752,14 +749,6 @@ class TurnPipeline extends ChangeNotifier {
     if (p == null || _userSpeaking || _disposed) return;
     final pcm = p.takeBytes();
     onsetsResumed++;
-    _probeTimer?.cancel();
-    _probeTimer = Timer(_probeDelay, () {
-      _probeTimer = null;
-      if (_userSpeaking || _disposed) return;
-      final probing = _backend?.probeSpan(_probeRing.drain()) ?? false;
-      _probeUntil = probing ? DateTime.now().add(_probeWindow) : null;
-      if (probing) debugPrint('barge-in: probing the unconfirmed onset');
-    });
     debugPrint('barge-in: onset not confirmed, resuming (${pcm.length * 1000 ~/ kVoiceBytesPerSecond} ms left)');
     if (pcm.isNotEmpty) _play(pcm);
     _changed();
@@ -1015,7 +1004,6 @@ class TurnPipeline extends ChangeNotifier {
   }
 
   void _feedOnset(Uint8List chunk) {
-    _probeRing.add(chunk);
     // The floor is the old detector's mic RMS; the guard's is the excess over
     // the predicted echo.
     _guard.minRms = options().bargeInFloor / 3;
@@ -1110,7 +1098,9 @@ class TurnPipeline extends ChangeNotifier {
   /// server took for speech): no reply, no tool action, no bubble; what the
   /// echo cut off plays on. Repeated echo pauses hands-free listening.
   bool _shortEcho(Message m, String text, List<String> said) {
-    if (_localOnsetTurns.contains(m.id)) return false; // the detector heard the user
+    // The detector heard the user; but while Woi is audible a lone filler or
+    // foreign syllable is far likelier its echo burst that tripped it.
+    if (_localOnsetTurns.contains(m.id) && !_audibleTurns.contains(m.id)) return false;
     final user = <String>[];
     for (final x in _conv.messages.reversed) {
       if (x.kind != MessageKind.user || identical(x, m) || x.text.trim().isEmpty) continue;
@@ -1128,6 +1118,10 @@ class TurnPipeline extends ChangeNotifier {
   /// Turns that began with (or right after) a local near-end onset: never
   /// dropped by the short-transcript rule ([shortEchoReason]).
   final Set<String> _localOnsetTurns = {};
+
+  /// Turns that began while Woi was playing or paused by the onset
+  /// (audible y/p): the short rule applies even with a local onset.
+  final Set<String> _audibleTurns = {};
 
   /// Echo turns dropped by the short foreign/filler transcript rule.
   int shortEchoDrops = 0;
@@ -1235,25 +1229,6 @@ class TurnPipeline extends ChangeNotifier {
     _changed();
   }
 
-  /// The transcript of an unconfirmed onset's clip: a stop phrase stops Woi
-  /// (the server VAD missed a short "stop" under the echo); anything else
-  /// (usually Woi's own words) is ignored.
-  void _onProbeTranscript(String text) {
-    final until = _probeUntil;
-    _probeUntil = null;
-    final live = until != null && DateTime.now().isBefore(until);
-    final stop = isStopPhrase(text) || isStopRequest(text);
-    debugPrint('barge-in: probe "$text"${stop ? ' (stop)' : ''}${live ? '' : ' (expired)'}');
-    if (!live || !stop || _userSpeaking) return;
-    if (!_bargeIn()) return;
-    probeStops++;
-    stopsHandled++;
-    _endHold();
-    _held.clear();
-    debugPrint('barge-in: unconfirmed onset was "$text": stopped');
-    _changed();
-  }
-
   bool get _dropping {
     final u = _dropUntil;
     if (u == null) return false;
@@ -1265,9 +1240,6 @@ class TurnPipeline extends ChangeNotifier {
   }
 
   void _onSpeechStarted({String? itemId, bool deferred = false}) {
-    // The server heard the user after all: no probe (it would clear the turn).
-    _probeTimer?.cancel();
-    _probeTimer = null;
     if (_userSpeaking) return;
     if (_micMode == MicMode.muted) {
       // The mic is off, so this is not the user (gpt-live opens a server
@@ -1330,6 +1302,7 @@ class TurnPipeline extends ChangeNotifier {
     _utterancePcm.add(_preRoll.drain());
     _currentUtterance = msg;
     if (local) _localOnsetTurns.add(msg.id);
+    if (audibleTag == 'y' || audibleTag == 'p') _audibleTurns.add(msg.id);
     _turnInfo[msg.id] =
         'suspect=${echoLikely ? 'y' : 'n'} deferred=${defer ? 'y' : 'n'} local=${local ? 'y' : 'n'} '
         'audible=$audibleTag guard=${_guard.echoExpected ? 'y' : 'n'} '
@@ -1344,7 +1317,7 @@ class TurnPipeline extends ChangeNotifier {
     if (defer) {
       _deferMsg = msg;
       _deferTimer?.cancel();
-      _deferTimer = Timer(deferWindow, () => _confirmDeferred('timeout'));
+      _deferTimer = Timer(deferWindow, _deferTimeout);
     } else if (interrupted || _echoSuspects.containsKey(msg.id) || (_holding && _holdMsg == null)) {
       _beginHold(msg);
     }
@@ -1703,8 +1676,6 @@ class TurnPipeline extends ChangeNotifier {
         _checkDeferred(m, done: false);
         _persistSoon();
         _changedSoon();
-      case ProbeTranscript(:final text):
-        _onProbeTranscript(text);
       case UserTranscriptDone(:final text, :final itemId, :final noSpeech):
         final m = _userForTranscript(itemId);
         if (text.isNotEmpty) m.text = text;

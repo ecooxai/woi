@@ -589,6 +589,59 @@ void main() {
       await h.dispose();
     });
 
+    test('a filler transcript after a local onset while Woi is audible is echo: Woi resumes', () async {
+      final h = await Harness.create(
+        options: const PipelineOptions(autoScreenshot: false),
+        echoGuard: EchoGuard(nowUs: () => 0),
+      );
+      final b = h.scripted;
+      final mic = h.fp.audio.mic!;
+      b.emit(const AssistantTranscriptDelta('Once upon a time there was a lighthouse keeper. '));
+      b.emit(AssistantAudioDelta(voice(4000, amplitude: 8000, f0: 140)));
+      for (var i = 0; i < 40; i++) {
+        mic.push(voice(20, amplitude: 300, f0: 140, phase0: i * 480));
+      }
+      for (var i = 0; i < 10; i++) {
+        mic.push(voice(20, amplitude: 9000, f0: 230, phase0: i * 480));
+      }
+      expect(h.pipeline.localOnsets, 1);
+      b.emit(const SpeechStarted(itemId: 'u1'));
+      expect(h.pipeline.bargeIns, 1);
+      final written = h.player.written.length;
+      b.emit(const SpeechStopped(itemId: 'u1'));
+      b.emit(const UserTranscriptDone('啊', itemId: 'u1'));
+      expect(h.pipeline.shortEchoDrops, 1);
+      expect(h.pipeline.echoTurnsDropped, 1);
+      expect(ofKind(h.conv, MessageKind.user), isEmpty);
+      expect(h.player.written.length, greaterThan(written), reason: 'the cut-off reply resumes');
+      expect(ofKind(h.conv, MessageKind.assistant).single.interrupted, isFalse);
+      await h.dispose();
+    });
+
+    test('a stop phrase after a local onset while Woi is audible still stops', () async {
+      final h = await Harness.create(
+        options: const PipelineOptions(autoScreenshot: false),
+        echoGuard: EchoGuard(nowUs: () => 0),
+      );
+      final b = h.scripted;
+      final mic = h.fp.audio.mic!;
+      b.emit(const AssistantTranscriptDelta('Once upon a time there was a lighthouse keeper. '));
+      b.emit(AssistantAudioDelta(voice(4000, amplitude: 8000, f0: 140)));
+      for (var i = 0; i < 40; i++) {
+        mic.push(voice(20, amplitude: 300, f0: 140, phase0: i * 480));
+      }
+      for (var i = 0; i < 10; i++) {
+        mic.push(voice(20, amplitude: 9000, f0: 230, phase0: i * 480));
+      }
+      b.emit(const SpeechStarted(itemId: 'u1'));
+      b.emit(const SpeechStopped(itemId: 'u1'));
+      b.emit(const UserTranscriptDone('停', itemId: 'u1'));
+      expect(h.pipeline.shortEchoDrops, 0);
+      expect(h.pipeline.echoTurnsDropped, 0);
+      expect(ofKind(h.conv, MessageKind.assistant).single.interrupted, isTrue);
+      await h.dispose();
+    });
+
     test('an onset the server does not confirm resumes playback where it paused', () async {
       final h = await Harness.create(
         options: const PipelineOptions(autoScreenshot: false),
@@ -618,92 +671,6 @@ void main() {
       // queued plus the 0.2 s that arrived while paused.
       expect(resumed, kVoiceBytesPerSecond * 42 ~/ 10);
       expect(ofKind(h.conv, MessageKind.assistant).single.interrupted, isFalse);
-      await h.dispose();
-    });
-
-    Future<Harness> unconfirmedOnset() async {
-      final h = await Harness.create(
-        options: const PipelineOptions(autoScreenshot: false),
-        echoGuard: EchoGuard(nowUs: () => 0),
-      );
-      final b = h.scripted;
-      final mic = h.fp.audio.mic!;
-      b.emit(const AssistantTranscriptDelta('Once upon a time '));
-      b.emit(AssistantAudioDelta(voice(8000, amplitude: 8000, f0: 140)));
-      for (var i = 0; i < 40; i++) {
-        mic.push(voice(20, amplitude: 300, f0: 140, phase0: i * 480));
-      }
-      for (var i = 0; i < 10; i++) {
-        mic.push(voice(20, amplitude: 9000, f0: 230, phase0: i * 480));
-      }
-      expect(h.pipeline.localOnsets, 1);
-      await Future<void>.delayed(const Duration(milliseconds: 1000));
-      expect(h.pipeline.onsetsResumed, 1, reason: 'no speech start from the server');
-      expect(h.scripted.probes, isEmpty, reason: 'not before the server could still confirm it');
-      await Future<void>.delayed(const Duration(milliseconds: 800));
-      return h;
-    }
-
-    test('an unconfirmed onset is probed; "stop" in its transcript stops Woi', () async {
-      final h = await unconfirmedOnset();
-      final b = h.scripted;
-      expect(b.probes, hasLength(1));
-      // The clip covers the mic around the onset (pre-roll included).
-      expect(b.probes.single.length, greaterThanOrEqualTo(kVoiceBytesPerSecond ~/ 2));
-      expect(b.probes.single.length, lessThanOrEqualTo(kVoiceBytesPerSecond * 22 ~/ 10));
-      final stops = h.player.stops;
-      b.emit(const ProbeTranscript('Stop.'));
-      expect(h.pipeline.probeStops, 1);
-      expect(h.pipeline.bargeIns, 1);
-      expect(b.cancels, 1);
-      expect(h.player.stops, stops + 1, reason: 'playback cut');
-      expect(ofKind(h.conv, MessageKind.assistant).single.interrupted, isTrue);
-      await h.dispose();
-    });
-
-    test('an unconfirmed onset whose probe is Woi\'s echo keeps playing', () async {
-      final h = await unconfirmedOnset();
-      final b = h.scripted;
-      final stops = h.player.stops;
-      b.emit(const ProbeTranscript('Once upon a time'));
-      b.emit(const ProbeTranscript(''));
-      expect(h.pipeline.probeStops, 0);
-      expect(b.cancels, 0);
-      expect(h.player.stops, stops);
-      expect(ofKind(h.conv, MessageKind.assistant).single.interrupted, isFalse);
-      await h.dispose();
-    });
-
-    test('a speech start right after resuming cancels the probe (it would clear the turn)', () async {
-      final h = await Harness.create(
-        options: const PipelineOptions(autoScreenshot: false),
-        echoGuard: EchoGuard(nowUs: () => 0),
-      );
-      final b = h.scripted;
-      final mic = h.fp.audio.mic!;
-      b.emit(const AssistantTranscriptDelta('Once upon a time '));
-      b.emit(AssistantAudioDelta(voice(8000, amplitude: 8000, f0: 140)));
-      for (var i = 0; i < 40; i++) {
-        mic.push(voice(20, amplitude: 300, f0: 140, phase0: i * 480));
-      }
-      for (var i = 0; i < 10; i++) {
-        mic.push(voice(20, amplitude: 9000, f0: 230, phase0: i * 480));
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 1000));
-      expect(h.pipeline.onsetsResumed, 1);
-      b.emit(const SpeechStarted(itemId: 'u1'));
-      await Future<void>.delayed(const Duration(milliseconds: 800));
-      expect(b.probes, isEmpty);
-      await h.dispose();
-    });
-
-    test('a late probe transcript (window over) no longer stops', () async {
-      final h = await unconfirmedOnset();
-      final b = h.scripted;
-      b.emit(const ProbeTranscript('Once upon')); // consumes the armed window
-      b.emit(const ProbeTranscript('stop'));
-      expect(h.pipeline.probeStops, 0);
-      expect(b.cancels, 0);
       await h.dispose();
     });
 
@@ -927,13 +894,57 @@ void main() {
         await h.dispose();
       });
 
-      test('no transcript in time: interrupts (cut + accept)', () async {
+      test('no transcript in time and no local onset: Woi plays on; an empty transcript drops it unanswered', () async {
         final h = await deferredTurn();
+        final b = h.scripted;
         await Future<void>.delayed(const Duration(milliseconds: 300));
-        expect(h.pipeline.bargeIns, 1);
-        expect(h.scripted.accepts, 1);
-        expect(h.scripted.cancels, greaterThan(0));
+        expect(h.pipeline.bargeIns, 0, reason: 'no evidence it is the user');
+        expect(b.accepts, 0);
+        expect(b.cancels, 0);
+        final written = h.player.written.length;
+        b.emit(AssistantAudioDelta(voice(200, amplitude: 8000, f0: 140)));
+        expect(h.player.written.length, greaterThan(written), reason: 'the reply keeps playing');
+        b.emit(const SpeechStopped(itemId: 'u1'));
+        b.emit(const UserTranscriptDone('', itemId: 'u1'));
+        expect(h.pipeline.deferredEchoDrops, 1);
+        expect(b.echoDrops.single.$1, 'u1', reason: 'the server item goes; nothing answers it');
+        expect(b.accepts, 0);
+        expect(h.pipeline.bargeIns, 0);
+        expect(ofKind(h.conv, MessageKind.user), isEmpty);
+        expect(ofKind(h.conv, MessageKind.assistant).single.interrupted, isFalse);
         await h.dispose();
+      });
+
+      test('after the timeout a real (non-echo) transcript still interrupts', () async {
+        final h = await deferredTurn();
+        final b = h.scripted;
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+        expect(h.pipeline.bargeIns, 0);
+        b.emit(const SpeechStopped(itemId: 'u1'));
+        b.emit(const UserTranscriptDone('What is the weather in Paris tomorrow?', itemId: 'u1'));
+        expect(h.pipeline.deferredInterrupts, 1);
+        expect(h.pipeline.bargeIns, 1);
+        expect(b.accepts, 1);
+        expect(ofKind(h.conv, MessageKind.user).single.text, 'What is the weather in Paris tomorrow?');
+        await h.dispose();
+      });
+
+      test('after the timeout an echo transcript drops it, a stop phrase stops', () async {
+        final h = await deferredTurn();
+        final b = h.scripted;
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+        b.emit(const SpeechStopped(itemId: 'u1'));
+        b.emit(const UserTranscriptDone('Pointer moved. Now I', itemId: 'u1'));
+        expect(h.pipeline.deferredEchoDrops, 1);
+        expect(h.pipeline.bargeIns, 0);
+        expect(b.accepts, 0);
+        await h.dispose();
+        final h2 = await deferredTurn();
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+        h2.scripted.emit(const UserTranscriptDelta('Stop.', itemId: 'u1'));
+        expect(h2.pipeline.deferredInterrupts, 1);
+        expect(h2.pipeline.bargeIns, 1);
+        await h2.dispose();
       });
     });
 
