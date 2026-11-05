@@ -928,6 +928,83 @@ void main() {
         expect(h.pipeline.onsetsResumed, 1);
         await h.dispose();
       });
+
+      test('a quiet pause with no excess left at firing resumes right after the measurement, no hold', () async {
+        final h = await strongOnset(cut: true, fast: false);
+        h.pipeline.onsetShortCutFireRmsValue = 1.0; // the firing excess counts as "below"
+        final written = h.player.written.length;
+        await Future<void>.delayed(const Duration(milliseconds: 820));
+        expect(h.pipeline.onsetsQuietResumed, 1);
+        expect(h.pipeline.onsetsResumed, 1, reason: 'resumed at ~700 ms, before the 900 ms confirm window');
+        expect(h.pipeline.onsetsHeld, 0);
+        expect(h.pipeline.localCuts, 0);
+        expect(h.player.written.length - written, kVoiceBytesPerSecond * 4, reason: 'resumes where it paused');
+        await h.dispose();
+      });
+
+      test('an ambiguous pause (voiced, but below the cut rule) is still held for the server', () async {
+        final h = await strongOnset(cut: true, fast: false);
+        h.pipeline.onsetShortCutFireRmsValue = 1.0;
+        final mic = h.fp.audio.mic!;
+        await Future<void>.delayed(const Duration(milliseconds: 520));
+        for (var i = 0; i < 2; i++) {
+          mic.push(voice(20, amplitude: 6000, f0: 220, phase0: i * 480)); // 40 ms < 80 ms
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 580));
+        expect(h.pipeline.localCuts, 0);
+        expect(h.pipeline.onsetsQuietResumed, 0);
+        expect(h.pipeline.onsetsHeld, 1);
+        expect(h.pipeline.onsetsResumed, 0, reason: 'held');
+        await Future<void>.delayed(const Duration(milliseconds: 600));
+        expect(h.pipeline.onsetsResumed, 1);
+        await h.dispose();
+      });
+
+      group('WOI_QA_IGNORE_SERVER_SPEECH', () {
+        test('is off unless the env var is set', () {
+          expect(TurnPipeline.qaIgnoreServerSpeechEnv, Platform.environment['WOI_QA_IGNORE_SERVER_SPEECH'] == '1');
+        });
+
+        test('a server speech start in the pause waits for the local rule; after a local cut the turn is processed', () async {
+          final h = await strongOnset(cut: true);
+          h.pipeline.qaIgnoreServerSpeech = true;
+          final b = h.scripted;
+          b.emit(const SpeechStarted(itemId: 'u1', deferred: true));
+          expect(h.pipeline.bargeIns, 0, reason: 'the server does not decide');
+          expect(h.pipeline.qaServerStartsHeld, 1);
+          await Future<void>.delayed(const Duration(milliseconds: 1000));
+          expect(h.pipeline.localCuts, 1);
+          expect(b.accepts, 1, reason: 'the held turn is replayed and accepted');
+          b.emit(const SpeechStopped(itemId: 'u1'));
+          b.emit(const UserTranscriptDone('What time is it in Tokyo?', itemId: 'u1'));
+          b.emit(const ResponseDone(cancelled: true));
+          b.emit(const AssistantTranscriptDelta('It is nine.'));
+          b.emit(AssistantAudioDelta(voice(400, amplitude: 8000, f0: 150)));
+          b.emit(const ResponseDone());
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+          expect(ofKind(h.conv, MessageKind.user).single.text, contains('Tokyo'));
+          expect(ofKind(h.conv, MessageKind.assistant).last.text, 'It is nine.');
+          await h.dispose();
+        });
+
+        test('a server "stop" in a quiet echo pause is ignored: resumed, turn dropped', () async {
+          final h = await strongOnset(cut: true, fast: false);
+          h.pipeline.qaIgnoreServerSpeech = true;
+          h.pipeline.onsetShortCutFireRmsValue = 1.0;
+          final b = h.scripted;
+          b.emit(const SpeechStarted(itemId: 'u1', deferred: true));
+          b.emit(const SpeechStopped(itemId: 'u1'));
+          expect(h.pipeline.bargeIns, 0);
+          await Future<void>.delayed(const Duration(milliseconds: 820));
+          expect(h.pipeline.onsetsResumed, 1);
+          expect(b.echoDrops.single.$1, 'u1');
+          b.emit(const UserTranscriptDone('Stop.', itemId: 'u1'));
+          expect(h.pipeline.stopsHandled, 0);
+          expect(ofKind(h.conv, MessageKind.user), isEmpty);
+          expect(ofKind(h.conv, MessageKind.assistant).single.interrupted, isFalse);
+          await h.dispose();
+        });
+      });
     });
 
     test('half-duplex (Android media route): echo goes out as silence, an onset reopens the mic', () async {

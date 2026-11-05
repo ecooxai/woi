@@ -22,6 +22,9 @@
 # fixtures (Woi stopped by its own echo).
 #
 # usage: QA_BIN=<bundle/woi> qa/aec/e2e_echo.sh <run-name>
+#        WOI_QA_IGNORE_SERVER_SPEECH=1 (inherited by the app through
+#        qa_launch_app's env) makes the app ignore server speech starts while
+#        Woi speaks, so barge-ins are decided by the local rules only.
 #        (QA_OUT, QA_SANDBOX, QA_DISPLAY=:11, ECHO_GAIN=0.3, ECHO_DELAY=0.15)
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -257,6 +260,15 @@ print(json.dumps({
     "local_cuts": len(evts("local cut")),
     "false_local_cuts": len([t for t in evts("local cut") if not by_user(t)]),
     "false_pauses": len([t for t in evts("barge-in: local onset") if not by_user(t)]),
+    "local_cut_rules": [(m.group(1), round(int(m.group(3)) / 1000 - onsets.get(k, 0), 3) if (k := next((k for k, v in onsets.items() if 0 < int(m.group(3)) / 1000 - v < 4), None)) else None, k, m.group(2))
+                        for m in re.finditer(r"local cut \((voice in the pause|short word), ([^\n]*?), no server[^\n]*t=(\d+)", log)],
+    "quiet_resumes": log.count("quiet pause, resuming now"),
+    "holds": log.count("strong onset: holding"),
+    "wrong_interrupts": len([t for t in evts(r"user speech start \(interrupted=true\)") if not by_user(t)])
+                        + len([t for t in evts("local cut") if not by_user(t)]),
+    "qa_ignore_server_speech": os.environ.get("WOI_QA_IGNORE_SERVER_SPEECH") == "1",
+    "qa_server_starts_held": log.count("qa: server speech start held"),
+    "qa_turns_dropped": log.count("qa: resumed: dropping"),
     "mic_level_dbfs_p50_p90": [lvl(0.5), lvl(0.9)],
 }, indent=1))
 EOF

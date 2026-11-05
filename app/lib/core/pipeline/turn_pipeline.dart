@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show Platform;
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -355,9 +356,27 @@ class TurnPipeline extends ChangeNotifier {
   DateTime? _pausedAt;
   int _pauseVoicedMs = 0;
   double _pauseMicPeak = 0;
+  /// QA only (`WOI_QA_IGNORE_SERVER_SPEECH=1`, read once at startup): a
+  /// server speech start that arrives while Woi is speaking (playing or
+  /// paused; a deferred turn) is held back together with that turn's
+  /// stop / transcript events, so the pause is decided by the local rules
+  /// alone ([_pauseDecide]). After a local cut the held events are replayed
+  /// and the turn is processed normally; after a resume the turn is dropped
+  /// ([VoiceBackend.dropEchoTurn]) and its later events ignored; if Woi just
+  /// finishes without an onset they are replayed. Unset (the default) or
+  /// any other value: no effect. Used by `qa/aec/e2e_echo.sh` to exercise
+  /// the local cut paths, which the server's confirmation otherwise preempts.
+  static final bool qaIgnoreServerSpeechEnv = Platform.environment['WOI_QA_IGNORE_SERVER_SPEECH'] == '1';
+  bool qaIgnoreServerSpeech = qaIgnoreServerSpeechEnv;
+  final List<BackendEvent> _qaHeld = [];
+  final Set<String> _qaIgnoredItems = {};
+  Timer? _qaHeldTimer;
+  int qaServerStartsHeld = 0;
+
   // Raw mic RMS floor (tracked while nothing plays and the user is quiet).
   double _micFloorRms = 0;
   int localCuts = 0;
+  int onsetsQuietResumed = 0;
   DateTime? _strongOnsetAt;
   // Raw platform mic used only for onset detection when the backend owns the
   // real mic (its stream is a delayed server echo, too late for barge-in).
@@ -725,6 +744,10 @@ class TurnPipeline extends ChangeNotifier {
     _utterancePcm.clear();
     _awaitingTranscript.clear();
     _userByItem.clear();
+    _qaHeldTimer?.cancel();
+    _qaHeldTimer = null;
+    _qaHeld.clear();
+    _qaIgnoredItems.clear();
     _lastUtteranceId = null;
     _lastUtterancePcm = null;
     _finishAssistant(interrupted: _assistantMsg != null);
@@ -826,6 +849,14 @@ class TurnPipeline extends ChangeNotifier {
     if (peak >= onsetShortCutRmsValue && _onsetFireRms >= onsetShortCutFireRmsValue) {
       return _localCut('short word, $why');
     }
+    if (_pauseVoicedMs == 0 && _onsetFireRms < onsetShortCutFireRmsValue) {
+      // Nothing voiced after the tail and no near-end excess left when it
+      // fired: echo (e29: false pauses at firing 0.000-0.013). Resume now
+      // instead of holding ~2.4 s of silence for the server.
+      onsetsQuietResumed++;
+      debugPrint('barge-in: quiet pause, resuming now ($why)');
+      return _resume();
+    }
     debugPrint('barge-in: quiet pause ($why)');
     final rest = _onsetConfirmWindow - pauseEchoTail - pauseVoiceWindow;
     if (peak >= onsetHoldMinRms) {
@@ -863,6 +894,7 @@ class TurnPipeline extends ChangeNotifier {
     _bargeIn();
     _cutTail = null;
     _awaitingResponse = false;
+    _qaReplayHeld('local cut');
     _changed();
   }
 
@@ -891,6 +923,7 @@ class TurnPipeline extends ChangeNotifier {
     _pauseTimer = null;
     _paused = null;
     if (p == null || _userSpeaking || _disposed) return;
+    _qaDropHeld();
     final pcm = p.takeBytes();
     _backend?.playbackPaused(false);
     onsetsResumed++;
@@ -1808,8 +1841,70 @@ class TurnPipeline extends ChangeNotifier {
     }
   }
 
+  /// [qaIgnoreServerSpeech]: holds back / drops server user-turn events
+  /// while Woi is speaking. Returns whether [e] was consumed.
+  bool _qaFilter(BackendEvent e) {
+    if (!qaIgnoreServerSpeech) return false;
+    final String? id;
+    switch (e) {
+      case SpeechStarted(:final itemId) || SpeechStopped(:final itemId):
+        id = itemId;
+      case UserTranscriptDelta(:final itemId) || UserTranscriptDone(:final itemId):
+        id = itemId;
+      default:
+        return false;
+    }
+    if (id != null && _qaIgnoredItems.contains(id)) {
+      debugPrint('qa: ignoring ${e.runtimeType} of dropped turn $id');
+      return true;
+    }
+    if (_qaHeld.isNotEmpty) {
+      _qaHeld.add(e);
+      return true;
+    }
+    if (e is SpeechStarted && e.deferred && !_userSpeaking && (_playing || _paused != null)) {
+      qaServerStartsHeld++;
+      _qaHeld.add(e);
+      debugPrint(
+        'qa: server speech start held for the local decision (paused=${_paused != null ? 'y' : 'n'}) '
+        't=${DateTime.now().millisecondsSinceEpoch}',
+      );
+      _qaHeldTimer?.cancel();
+      _qaHeldTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
+        if (_paused == null && !_playing && !_assistantAudible) _qaReplayHeld('Woi finished');
+      });
+      return true;
+    }
+    return false;
+  }
+
+  void _qaReplayHeld(String why) {
+    _qaHeldTimer?.cancel();
+    _qaHeldTimer = null;
+    if (_qaHeld.isEmpty) return;
+    final events = List<BackendEvent>.of(_qaHeld);
+    _qaHeld.clear();
+    debugPrint('qa: replaying ${events.length} held server event(s) ($why)');
+    for (final e in events) {
+      _handle(e);
+    }
+  }
+
+  void _qaDropHeld() {
+    _qaHeldTimer?.cancel();
+    _qaHeldTimer = null;
+    if (_qaHeld.isEmpty) return;
+    final start = _qaHeld.first;
+    final id = start is SpeechStarted ? start.itemId : null;
+    _qaHeld.clear();
+    if (id != null) _qaIgnoredItems.add(id);
+    debugPrint('qa: resumed: dropping the held server turn $id');
+    _backend?.dropEchoTurn(itemId: id);
+  }
+
   void _handle(BackendEvent e) {
     _touchTurn();
+    if (_qaFilter(e)) return;
     final assistantSide =
         e is AssistantTranscriptDelta || e is AssistantTranscriptDone || e is AssistantAudioDelta || e is ResponseDone;
     if (assistantSide && !_discardUntilDone) {
@@ -2149,6 +2244,7 @@ class TurnPipeline extends ChangeNotifier {
     await _compactionEvents.close();
     _levelsChanged.dispose();
     _deltaNotify?.cancel();
+    _qaHeldTimer?.cancel();
     _disposed = true;
     dispose();
   }
