@@ -22,6 +22,36 @@ MediaKind mediaKindFor(String? mime, String path) {
   return MediaItem.kindForPath(path);
 }
 
+/// What the Android voice foreground service should be doing.
+enum VoiceService {
+  /// Not running for voice (signed out, muted, or session suspended).
+  off,
+
+  /// Microphone-type service: the mic is (or may be) open.
+  mic,
+
+  /// The session is kept warm with the mic closed (assistant panel
+  /// dismissed): a quiet non-mic service, no mic-in-use notification.
+  warm,
+}
+
+/// The voice service state for the session state. The panel keeps the
+/// microphone service even when muted: it can only be (re)started while Woi
+/// is visible.
+VoiceService voiceServiceFor({
+  required bool needsLogin,
+  required bool muted,
+  required bool overlay,
+  required bool idleWarm,
+  required bool suspended,
+}) {
+  if (needsLogin) return VoiceService.off;
+  if (overlay) return VoiceService.mic;
+  if (muted || suspended) return VoiceService.off;
+  if (idleWarm) return VoiceService.warm;
+  return VoiceService.mic;
+}
+
 /// Turns Android OS events into app actions:
 ///  - assistant invocations attach the assist screenshot to the turn;
 ///  - "open with" / share opens the files in Woi's viewer;
@@ -34,7 +64,8 @@ class AndroidIntegration {
   final AndroidBridge bridge;
   StreamSubscription<AndroidEvent>? _sub;
   final List<AndroidEvent> _early = [];
-  bool _voiceOn = false;
+  VoiceService _voice = VoiceService.off;
+  bool _pipelineHooked = false;
   bool _overlay = false;
   bool _wasLogin = false;
 
@@ -78,13 +109,28 @@ class AndroidIntegration {
       if (o is AndroidUrlOpener) unawaited(o.done());
     }
     _pushScreenshotPrefs();
-    final wantVoice = !controller.needsLogin && controller.settings.micMode != MicMode.muted;
-    // While the panel shows, keep the service even if muted: it can only be
-    // restarted while Woi is visible.
-    if (wantVoice != _voiceOn && (wantVoice || !_overlay || controller.needsLogin)) {
-      _voiceOn = wantVoice;
-      unawaited(bridge.call<bool>('voiceActive', {'on': wantVoice}).catchError((Object e) => false));
+    _syncVoice();
+  }
+
+  void _syncVoice() {
+    if (!controller.ready) return;
+    final p = controller.pipeline;
+    // Warm idle / suspend change on the pipeline, not the controller.
+    if (!_pipelineHooked) {
+      _pipelineHooked = true;
+      p.addListener(_syncVoice);
     }
+    final want = voiceServiceFor(
+      needsLogin: controller.needsLogin,
+      muted: controller.settings.micMode == MicMode.muted,
+      overlay: _overlay,
+      idleWarm: p.idleWarm,
+      suspended: p.suspended,
+    );
+    if (want == _voice) return;
+    _voice = want;
+    final args = {'on': want != VoiceService.off, 'warm': want == VoiceService.warm};
+    unawaited(bridge.call<bool>('voiceActive', args).catchError((Object e) => false));
   }
 
   (double, int)? _shotPrefs;
@@ -109,7 +155,7 @@ class AndroidIntegration {
         // mic without it). The assist event unmutes the mic; only a session
         // that can't listen (signed out) turns it off again.
         _overlay = true;
-        _voiceOn = true;
+        _voice = VoiceService.mic;
         if (controller.ready && controller.needsLogin) _onController();
         if (controller.ready) unawaited(controller.assistantShown());
       } else {
@@ -196,6 +242,7 @@ class AndroidIntegration {
   void dispose() {
     _sub?.cancel();
     controller.removeListener(_onController);
-    if (_voiceOn) unawaited(bridge.call<bool>('voiceActive', {'on': false}).catchError((Object e) => false));
+    if (_pipelineHooked) controller.pipeline.removeListener(_syncVoice);
+    if (_voice != VoiceService.off) unawaited(bridge.call<bool>('voiceActive', {'on': false}).catchError((Object e) => false));
   }
 }

@@ -43,11 +43,11 @@ class WoiForegroundService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_VOICE -> voice = true
+            ACTION_VOICE -> { voice = true; voiceWarm = false }
             ACTION_LOGIN -> login = true
             ACTION_SHARE -> share = true
             ACTION_STOP_ALL -> {
-                voice = false; login = false
+                voice = false; voiceWarm = false; login = false
                 WoiScreen.stop(this)
                 share = false
                 WoiBridge.emit(mapOf("type" to "stopAll"))
@@ -72,7 +72,10 @@ class WoiForegroundService : Service() {
     /** Re-posts the notification with the types in use, or stops. */
     fun refresh(force: Boolean = false): Boolean {
         var type = 0
-        if (voice && hasMic()) type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+        // Warm (session kept, mic closed): no microphone type, so no
+        // mic-in-use notification; dataSync keeps the socket's process from
+        // being frozen until the keep-alive ends.
+        if (micOn() && hasMic()) type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
         if (share) type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
         if (login) type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
         val any = voice || login || share
@@ -96,12 +99,24 @@ class WoiForegroundService : Service() {
         return true
     }
 
+    private fun micOn() = voice && !voiceWarm
+
+    /** Only the warm voice session runs: the quiet (minimised) notification. */
+    private fun quiet() = voice && voiceWarm && !login && !share
+
     private fun hasMic() = WoiBridge.hasPermission(this, android.Manifest.permission.RECORD_AUDIO)
 
     private fun notification(): Notification {
         val nm = getSystemService(NotificationManager::class.java)
         if (nm.getNotificationChannel(CHANNEL) == null) {
             nm.createNotificationChannel(NotificationChannel(CHANNEL, "Woi session", NotificationManager.IMPORTANCE_LOW))
+        }
+        val quiet = quiet()
+        if (quiet && nm.getNotificationChannel(CHANNEL_WARM) == null) {
+            // MIN: no status bar icon, collapsed at the bottom of the shade.
+            nm.createNotificationChannel(
+                NotificationChannel(CHANNEL_WARM, "Woi standby (mic off)", NotificationManager.IMPORTANCE_MIN)
+            )
         }
         val open = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
@@ -113,10 +128,10 @@ class WoiForegroundService : Service() {
         )
         val what = listOfNotNull(
             if (share) "sharing the screen" else null,
-            if (voice) "voice on" else null,
+            if (micOn()) "voice on" else if (voice) "standby · mic off" else null,
             if (login) "waiting for sign-in" else null,
         ).joinToString(" · ")
-        return Notification.Builder(this, CHANNEL)
+        return Notification.Builder(this, if (quiet) CHANNEL_WARM else CHANNEL)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle("Woi")
             .setContentText(what)
@@ -128,6 +143,7 @@ class WoiForegroundService : Service() {
 
     companion object {
         private const val CHANNEL = "woi_session"
+        private const val CHANNEL_WARM = "woi_standby"
         private const val NOTIF_ID = 42
         private const val A11Y_CHECK_MS = 30_000L
         const val ACTION_VOICE = "woi.voice"
@@ -137,6 +153,8 @@ class WoiForegroundService : Service() {
 
         // Process-wide state (one service instance).
         @Volatile var voice = false
+        /** Voice session kept warm with the mic closed (see [warmVoice]). */
+        @Volatile var voiceWarm = false
         @Volatile var login = false
         @Volatile var share = false
 
@@ -159,8 +177,20 @@ class WoiForegroundService : Service() {
             }
         }
 
-        fun startVoice(ctx: Context) { if (!voice || instance == null) send(ctx, ACTION_VOICE) }
-        fun stopVoice(@Suppress("UNUSED_PARAMETER") ctx: Context) = off { voice = false }
+        /**
+         * Microphone-type service. Leaving warm goes through
+         * startForegroundService again so Android re-evaluates the
+         * while-in-use (mic) eligibility now, while Woi is visible.
+         */
+        fun startVoice(ctx: Context) { if (!voice || voiceWarm || instance == null) send(ctx, ACTION_VOICE) }
+        fun stopVoice(@Suppress("UNUSED_PARAMETER") ctx: Context) = off { voice = false; voiceWarm = false }
+
+        /**
+         * The mic closed but the session stays connected (assistant panel
+         * dismissed): drop the microphone type and its notification; a quiet
+         * dataSync one keeps the process alive. [startVoice] goes back.
+         */
+        fun warmVoice(@Suppress("UNUSED_PARAMETER") ctx: Context) = off { if (voice) voiceWarm = true }
         fun startLogin(ctx: Context) = send(ctx, ACTION_LOGIN)
         fun stopLogin(@Suppress("UNUSED_PARAMETER") ctx: Context) = off { login = false }
         fun startShare(ctx: Context, code: Int, data: Intent) = send(ctx, ACTION_SHARE) {

@@ -123,8 +123,14 @@ object WoiBridge {
             "voiceActive" -> {
                 // Keeps the microphone usable while Woi is in the background
                 // (screen share, acting in other apps).
+                // warm: session kept with the mic closed (quiet, non-mic).
                 val on = call.argument<Boolean>("on") ?: false
-                if (on) WoiForegroundService.startVoice(ctx) else WoiForegroundService.stopVoice(ctx)
+                val warm = call.argument<Boolean>("warm") ?: false
+                when {
+                    !on -> WoiForegroundService.stopVoice(ctx)
+                    warm -> WoiForegroundService.warmVoice(ctx)
+                    else -> WoiForegroundService.startVoice(ctx)
+                }
                 result.success(true)
             }
             // --- audio ---
