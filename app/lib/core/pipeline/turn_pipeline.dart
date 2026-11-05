@@ -309,22 +309,54 @@ class TurnPipeline extends ChangeNotifier {
   /// echo). An echo / empty transcript then resumes from where it paused.
   double onsetHoldMinRms = 0.012;
   Duration onsetHoldExtra = const Duration(milliseconds: 1500);
-  bool _onsetHeld = false;
   int onsetsHeld = 0;
 
-  /// Local stop cut: an onset still unconfirmed by the server whose peak
-  /// excess RMS is at least this is the user talking (the server VAD misses
-  /// a short "stop" over Woi's echo, even at threshold 0.3): Woi stops and
-  /// waits instead of resuming. Measured on the PipeWire E2E (echo27):
-  /// real speech (stop / question / barge fixtures) peaked at 0.067-0.141,
-  /// the only echo false onset at 0.018.
+  /// Local stop cut: an unconfirmed onset whose peak excess RMS is at least
+  /// this marks the user (used to keep a cut reply stopped after a filler /
+  /// echo transcript). Measured on the PipeWire E2E (echo27/28): real speech
+  /// (stop / question / barge fixtures) peaked at 0.067-0.141, echo false
+  /// onsets at 0.018 and 0.062. Peak alone never cuts (see [_pauseDecide]).
   static const onsetCutMinRms = 0.04;
-
-  /// A peak this high cuts at the end of [_onsetConfirmWindow] already
-  /// (no extra hold), so "stop" feels fast.
-  static const onsetFastCutRms = 0.06;
   double onsetCutRms = onsetCutMinRms;
-  double onsetFastCutRmsValue = onsetFastCutRms;
+
+  /// Voice in the pause: while Woi is paused nothing plays, so once the echo
+  /// tail has passed any mic energy above the noise floor is the user. The
+  /// E2E echo path is 150 ms delay + a 300 ms room tail (60 ms decay, -8 dB),
+  /// plus ~60 ms output latency; on laptops the platform AEC tail is shorter.
+  static const pauseEchoTail = Duration(milliseconds: 450);
+
+  /// Window after [pauseEchoTail] in which the raw mic level is measured.
+  static const pauseVoiceWindow = Duration(milliseconds: 250);
+
+  /// Voiced mic time in that window that means "the user keeps talking"
+  /// (~1/3 of it: syllable gaps are allowed).
+  static const pauseVoiceMinMs = 80;
+
+  /// A mic chunk is voiced at >= floor + 10 dB (x3.16 RMS) and at least
+  /// this absolute RMS (-50 dBFS; fixture speech reaches the virtual mic at
+  /// -15..-25 dBFS, digital silence in between). Broadband only: the
+  /// guard's per-band noise floor adapts to the user once the pause has no
+  /// reference left, so its bands are no help here.
+  static const pauseVoiceMinRms = 0.003;
+
+  /// Short word ("stop" is ~0.4 s, mostly over before the onset is even
+  /// detected ~0.3-0.4 s in, so the pause is quiet after the tail): cut
+  /// without voice in the pause only when the onset peak is high AND the
+  /// near-end excess was still there at the firing frame. E2E data
+  /// (excess at firing / peak): echo false onsets 0.000 / 0.062 (e28b) and
+  /// 0.013 / 0.018 (e27a); real speech 0.018-0.129 / 0.067-0.141 (stop: 0.024
+  /// / 0.083, 0.029 / 0.067, 0.051 / 0.089). Otherwise the server's speech
+  /// start / transcript decides.
+  static const onsetShortCutRms = 0.06;
+  static const onsetShortCutFireRms = 0.015;
+  double onsetShortCutRmsValue = onsetShortCutRms;
+  double onsetShortCutFireRmsValue = onsetShortCutFireRms;
+  double _onsetFireRms = 0;
+  DateTime? _pausedAt;
+  int _pauseVoicedMs = 0;
+  double _pauseMicPeak = 0;
+  // Raw mic RMS floor (tracked while nothing plays and the user is quiet).
+  double _micFloorRms = 0;
   int localCuts = 0;
   DateTime? _strongOnsetAt;
   // Raw platform mic used only for onset detection when the backend owns the
@@ -746,30 +778,70 @@ class TurnPipeline extends ChangeNotifier {
     _stopOut();
     _paused = b;
     _backend?.playbackPaused(true);
-    _onsetHeld = false;
-    _pauseTimer = Timer(_onsetConfirmWindow, _onsetUnconfirmed);
+    _pausedAt = DateTime.now();
+    _pauseVoicedMs = 0;
+    _pauseMicPeak = 0;
+    _pauseTimer = Timer(pauseEchoTail + pauseVoiceWindow, _pauseDecide);
   }
 
-  /// No server speech start within [_onsetConfirmWindow]: resume, unless
-  /// the onset was strong enough to hold the pause a little longer, or so
-  /// strong that it is the user ([_localCut]).
-  void _onsetUnconfirmed() {
+  /// Raw mic level while paused (after the echo tail) / the noise floor
+  /// while nothing plays.
+  void _trackMicLevel(Uint8List chunk) {
+    final n = chunk.length ~/ 2;
+    if (n == 0) return;
+    final bd = ByteData.sublistView(chunk);
+    var e = 0.0;
+    for (var i = 0; i < n; i++) {
+      final v = bd.getInt16(i * 2, Endian.little) / 32768.0;
+      e += v * v;
+    }
+    final rms = sqrt(e / n);
+    final at = _pausedAt;
+    if (_paused != null && at != null) {
+      final ms = DateTime.now().difference(at);
+      if (ms < pauseEchoTail || ms > pauseEchoTail + pauseVoiceWindow) return;
+      if (rms > _pauseMicPeak) _pauseMicPeak = rms;
+      if (rms >= max(pauseVoiceMinRms, _micFloorRms * 3.16)) {
+        _pauseVoicedMs += n * 1000 ~/ kVoiceSampleRate;
+      }
+      return;
+    }
+    if (_userSpeaking || _playing || _assistantAudible || _guard.echoExpected) return;
+    _micFloorRms = rms < _micFloorRms || _micFloorRms == 0 ? _micFloorRms * 0.8 + rms * 0.2 : _micFloorRms * 0.995 + rms * 0.005;
+  }
+
+  /// [pauseEchoTail] + [pauseVoiceWindow] after the pause with no server
+  /// speech start: the user keeps talking (voice in the quiet pause) or said
+  /// a short word (strong onset, still voiced when it fired) -> [_localCut].
+  /// Otherwise a strong onset is held for the server, a weak one resumes at
+  /// the end of [_onsetConfirmWindow]. Peak alone never cuts.
+  void _pauseDecide() {
     _pauseTimer = null;
     if (_paused == null) return;
     final peak = _guard.onsetPeakRms;
-    if (!_onsetHeld && peak >= onsetFastCutRmsValue) return _localCut(peak);
-    if (!_onsetHeld && peak >= onsetHoldMinRms) {
-      _onsetHeld = true;
+    final why =
+        'peak ${peak.toStringAsFixed(3)}, at firing ${_onsetFireRms.toStringAsFixed(3)}, '
+        'pause voiced $_pauseVoicedMs ms, pause mic peak ${_pauseMicPeak.toStringAsFixed(4)}, floor ${_micFloorRms.toStringAsFixed(4)}';
+    if (_pauseVoicedMs >= pauseVoiceMinMs) return _localCut('voice in the pause, $why');
+    if (peak >= onsetShortCutRmsValue && _onsetFireRms >= onsetShortCutFireRmsValue) {
+      return _localCut('short word, $why');
+    }
+    debugPrint('barge-in: quiet pause ($why)');
+    final rest = _onsetConfirmWindow - pauseEchoTail - pauseVoiceWindow;
+    if (peak >= onsetHoldMinRms) {
       onsetsHeld++;
-      debugPrint(
-        'barge-in: strong onset (peak excess rms ${peak.toStringAsFixed(3)}): '
-        'holding ${onsetHoldExtra.inMilliseconds} ms more',
-      );
-      _pauseTimer = Timer(onsetHoldExtra, _onsetUnconfirmed);
+      debugPrint('barge-in: strong onset: holding ${onsetHoldExtra.inMilliseconds} ms more for the server');
+      _pauseTimer = Timer(rest + onsetHoldExtra, _onsetUnconfirmed);
       return;
     }
-    if (peak >= onsetCutRms) return _localCut(peak);
-    debugPrint('barge-in: onset unconfirmed (peak excess rms ${peak.toStringAsFixed(3)} < ${onsetCutRms.toStringAsFixed(3)})');
+    _pauseTimer = Timer(rest.isNegative ? Duration.zero : rest, _onsetUnconfirmed);
+  }
+
+  /// No server speech start in time: resume where it paused.
+  void _onsetUnconfirmed() {
+    _pauseTimer = null;
+    if (_paused == null) return;
+    debugPrint('barge-in: onset unconfirmed (peak excess rms ${_guard.onsetPeakRms.toStringAsFixed(3)})');
     _resume();
   }
 
@@ -779,13 +851,13 @@ class TurnPipeline extends ChangeNotifier {
   /// response and wait for the user. A late transcript for the span is
   /// handled as usual (stop stays stopped, a request is answered, echo or
   /// filler does nothing: the cut reply is not resumed).
-  void _localCut(double peak) {
+  void _localCut(String why) {
     _pauseTimer?.cancel();
     _pauseTimer = null;
     if (_paused == null || _userSpeaking || _disposed) return;
     localCuts++;
     debugPrint(
-      'barge-in: local cut (peak excess rms ${peak.toStringAsFixed(3)}, no server speech start): '
+      'barge-in: local cut ($why, no server speech start): '
       'stopped, waiting for the user t=${DateTime.now().millisecondsSinceEpoch}',
     );
     _bargeIn();
@@ -1086,6 +1158,8 @@ class TurnPipeline extends ChangeNotifier {
     if (_guard.process(chunk, audible: _assistantAudible && (!_userSpeaking || _deferPending)) &&
         options().localBargeIn) {
       _localOnset();
+    } else {
+      _trackMicLevel(chunk);
     }
   }
 
@@ -1097,6 +1171,7 @@ class TurnPipeline extends ChangeNotifier {
     localOnsets++;
     _lastOnsetAt = DateTime.now();
     if (_guard.onsetPeakRms >= onsetCutRms) _strongOnsetAt = _lastOnsetAt;
+    _onsetFireRms = _guard.lastExcessRms;
     _pause();
     debugPrint(
       'barge-in: local onset (lag ${_guard.lagMs} ms, excess rms ${_guard.lastExcessRms.toStringAsFixed(3)}, '
