@@ -633,3 +633,21 @@ the server (~240–390 ms) and the local pause, not a faster path. CPU: no kws-o
 (software GL) uses ~34–40 % of a core while speaking vs ~19–24 % silent (UI animation + audio + two spotters).
 Known: pause/resume re-writes the unheard audio, so the reference sees it twice (two stamps; the resumed one is the
 right one; extra stamps can only veto, never cut).
+
+### Android: keeping the accessibility service on (MI 8, LineageOS 22.2 / Android 15)
+
+Root cause: Android drops a service from `enabled_accessibility_services` whenever its package is force-stopped
+(AccessibilityManagerService's package monitor), and **every APK install/update force-stops the package**
+(`am_kill … stop dev.woi.woi due to installPackageLI`), so each update turned screen control off; Settings →
+Force stop / `am force-stop` does the same. No Woi crash was in the logs and Woi was not killed by the battery
+manager (it was not on the deviceidle whitelist either). Mechanisms (WoiA11yKeeper.kt):
+- With `WRITE_SECURE_SETTINGS` (granted once: `adb shell pm grant dev.woi.woi android.permission.WRITE_SECURE_SETTINGS`)
+  Woi appends `dev.woi.woi/.WoiAccessibilityService` to the list (never removes or reorders others) and sets
+  `accessibility_enabled=1`: after an update (MY_PACKAGE_REPLACED), on boot, when the system binds the assistant
+  service (also after a force-stop), on app start, on assistant activation, on `accessibilityStatus`, when a screen
+  action finds the service off, and every 30 s while the foreground service runs. Logs `a11y re-enabled (<reason>)`.
+- Every service callback (events, connect, gesture/screenshot callbacks, posted aside blocks, node walks) is wrapped
+  so an exception is logged instead of killing the process; nodes are recycled below API 33.
+- `android:isAccessibilityTool="true"` (Android 12+, ignored before).
+- Settings → Android → Screen control: state, "Accessibility settings", and a one-time battery-optimization
+  exemption prompt.
