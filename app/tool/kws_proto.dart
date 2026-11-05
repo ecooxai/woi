@@ -1,3 +1,4 @@
+// ignore_for_file: avoid_print
 // Offline prototype: keyword spotting + Silero VAD over a mono s16 wav.
 // dart run tool/kws_proto.dart <modelDir> <vad.onnx> <wav> [threshold] [score]
 import 'dart:io';
