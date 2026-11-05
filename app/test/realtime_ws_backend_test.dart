@@ -331,6 +331,49 @@ void main() {
     });
   });
 
+  group('pre-connect flush', () {
+    List<Map> tds(_Rig r) => [
+      for (final u in r.ws.ofType('session.update'))
+        if ((((u['session'] as Map)['audio'] as Map?)?['input'] as Map?)?['turn_detection'] case final Map td) td,
+    ];
+
+    test('the first turn after a flush reaches back over the flushed audio; normal padding after it', () async {
+      final r = _Rig();
+      await r.connect();
+      expect(tds(r).single['prefix_padding_ms'], 300);
+      r.backend.beginPreConnectFlush(3200);
+      expect(tds(r), hasLength(2));
+      expect(tds(r).last['prefix_padding_ms'], 3500);
+      expect(tds(r).last['create_response'], isTrue);
+      expect(tds(r).last['threshold'], 0.5);
+      // The padding update goes out before the flushed audio.
+      r.backend.sendAudio(Uint8List(4800));
+      final types = r.ws.types;
+      expect(types.lastIndexOf('session.update'), lessThan(types.lastIndexOf('input_audio_buffer.append')));
+      r.ws.push({'type': 'input_audio_buffer.speech_started', 'item_id': 'u1', 'audio_start_ms': 0});
+      await _pump();
+      expect(tds(r), hasLength(2), reason: 'not changed mid-turn');
+      r.ws.push({'type': 'input_audio_buffer.speech_stopped', 'item_id': 'u1', 'audio_end_ms': 5000});
+      await _pump();
+      expect(tds(r), hasLength(3));
+      expect(tds(r).last['prefix_padding_ms'], 300);
+      r.ws.push({'type': 'input_audio_buffer.speech_stopped', 'item_id': 'u2'});
+      await _pump();
+      expect(tds(r), hasLength(3), reason: 'reset once');
+      await r.dispose();
+    });
+
+    test('padding is capped; an empty flush changes nothing', () async {
+      final r = _Rig();
+      await r.connect();
+      r.backend.beginPreConnectFlush(0);
+      expect(tds(r), hasLength(1));
+      r.backend.beginPreConnectFlush(60000);
+      expect(tds(r).last['prefix_padding_ms'], 5000, reason: 'the safe maximum');
+      await r.dispose();
+    });
+  });
+
   group('interruption', () {
     test('defer mode: far_field; while Woi speaks the server neither cuts nor answers; the client decides', () async {
       final r = _Rig(defer: true);

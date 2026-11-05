@@ -1406,6 +1406,7 @@ class TurnPipeline extends ChangeNotifier {
     debugPrint('pre-connect: buffer ${_pending.describe()}');
     final frames = _pending.take();
     final clip = BytesBuilder(copy: false);
+    b.beginPreConnectFlush(frames.fold<int>(0, (a, f) => a + f.length) * 1000 ~/ kVoiceBytesPerSecond);
     for (final f in frames) {
       b.sendAudio(f);
       clip.add(f);

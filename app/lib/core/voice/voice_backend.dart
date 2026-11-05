@@ -180,6 +180,12 @@ abstract class VoiceBackend {
   /// Continuous microphone audio, PCM16 24 kHz mono.
   void sendAudio(Uint8List pcm16);
 
+  /// [bufferedMs] of audio captured before the session was ready follow
+  /// right away (oldest first). A server-VAD backend widens its turn start
+  /// so the first turn reaches back to the start of that audio: on a quiet
+  /// mic the VAD fires late, and the first words would be lost.
+  void beginPreConnectFlush(int bufferedMs) {}
+
   void sendText(String text);
 
   /// Adds a screenshot to the model context. Returns the id of the context

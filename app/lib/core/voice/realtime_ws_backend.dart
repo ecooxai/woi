@@ -58,6 +58,7 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
     this.speakingVadThreshold = 0.3,
     this.speakingVadPrefixPaddingMs = 300,
     this.speakingVadSilenceMs = 400,
+    this.maxFlushPrefixPaddingMs = 5000,
     this.noiseReduction = 'far_field',
     this.deferInterrupts = true,
     this.maxReconnectAttempts = 5,
@@ -90,6 +91,12 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
   final double speakingVadThreshold;
   final int speakingVadPrefixPaddingMs;
   final int speakingVadSilenceMs;
+
+  /// Upper bound of the widened prefix padding of the first turn after a
+  /// pre-connect flush ([beginPreConnectFlush]). The API rejects more than
+  /// 10000 ms (`integer above maximum value`), and at 10000 ms gpt-realtime-2.1
+  /// failed with a server error and closed the socket; 5000 ms was fine.
+  final int maxFlushPrefixPaddingMs;
 
   /// `far_field`: laptop speakers + built-in mic (no headset detection yet).
   final String noiseReduction;
@@ -243,11 +250,42 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
   Map<String, Object?> _turnDetection({required bool speaking}) => {
     'type': 'server_vad',
     'threshold': speaking && deferInterrupts ? speakingVadThreshold : vadThreshold,
-    'prefix_padding_ms': speaking && deferInterrupts ? speakingVadPrefixPaddingMs : vadPrefixPaddingMs,
+    'prefix_padding_ms': speaking && deferInterrupts
+        ? speakingVadPrefixPaddingMs
+        : (_flushPaddingMs ?? vadPrefixPaddingMs),
     'silence_duration_ms': speaking && deferInterrupts ? speakingVadSilenceMs : vadSilenceMs,
     'create_response': !speaking,
     'interrupt_response': !speaking,
   };
+
+  /// Prefix padding of the first turn after a pre-connect flush: it reaches
+  /// back to the start of the flushed audio. Null otherwise.
+  int? _flushPaddingMs;
+
+  @override
+  void beginPreConnectFlush(int bufferedMs) {
+    if (!_ready || bufferedMs <= 0) return;
+    _flushPaddingMs = min(maxFlushPrefixPaddingMs, max(vadPrefixPaddingMs, bufferedMs + vadPrefixPaddingMs));
+    _log('pre-connect flush of $bufferedMs ms: first turn prefix padding $_flushPaddingMs ms');
+    _sendTurnDetection();
+  }
+
+  /// The first turn after the flush started: normal padding from now on.
+  void _endFlushPadding() {
+    if (_flushPaddingMs == null) return;
+    _flushPaddingMs = null;
+    if (_ready) _sendTurnDetection();
+  }
+
+  void _sendTurnDetection() => _send({
+    'type': 'session.update',
+    'session': {
+      'type': 'realtime',
+      'audio': {
+        'input': {'turn_detection': _turnDetection(speaking: _deferSent)},
+      },
+    },
+  });
 
   /// What the client asked for last / what the server last confirmed.
   bool _deferSent = false;
@@ -264,15 +302,7 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
     _deferOffTimer = null;
     if (!deferInterrupts || !_ready || on == _deferSent) return;
     _deferSent = on;
-    _send({
-      'type': 'session.update',
-      'session': {
-        'type': 'realtime',
-        'audio': {
-          'input': {'turn_detection': _turnDetection(speaking: on)},
-        },
-      },
-    });
+    _sendTurnDetection();
   }
 
   /// Back to normal turn taking once the reply's audio and its echo tail
@@ -363,6 +393,7 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
     _userSpeaking = false;
     _deferSent = false;
     _deferActive = false;
+    _flushPaddingMs = null;
     _deferOffTimer?.cancel();
     _deferOffTimer = null;
     _deferredTurn = false;
@@ -753,6 +784,7 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
       case 'session.updated':
         final td = (((ev['session'] as Map?)?['audio'] as Map?)?['input'] as Map?)?['turn_detection'];
         if (td is Map && td['interrupt_response'] is bool) _deferActive = td['interrupt_response'] == false;
+        if (td is Map && type == 'session.updated') _log('turn detection: prefix ${td['prefix_padding_ms']} ms, threshold ${td['threshold']}, silence ${td['silence_duration_ms']} ms');
         final hs = _handshake;
         if (hs != null && !hs.isCompleted) hs.complete();
 
@@ -773,6 +805,7 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
         _emit(SpeechStarted(itemId: ev['item_id'] as String?));
       case 'input_audio_buffer.speech_stopped':
         _log('speech_stopped at ${ev['audio_end_ms']} ms of the input stream');
+        _endFlushPadding();
         _userSpeaking = false;
         // Server VAD creates the response, which includes any tool output.
         if (_pendingCalls.isEmpty) _wantResponse = false;
@@ -910,6 +943,7 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
   void _onError(Map<String, Object?> err) {
     final code = err['code'] as String?;
     final message = err['message'] as String? ?? 'unknown realtime error';
+    _log('server error ${code ?? '-'}: ${redactSecrets(message)}');
     final hs = _handshake;
     if (hs != null && !hs.isCompleted) {
       hs.completeError(RealtimeException(redactSecrets(message), code: code));
