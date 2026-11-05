@@ -464,3 +464,18 @@ measures the pause. In both runs the server VAD **never** fired on "stop", even 
 resumed (2.4 s gap) and the stop was not honoured. Peak excess RMS separates the cases cleanly: stop / question /
 fixture onsets were 0.067-0.141, the false onset 0.018. **Next:** treat an unconfirmed held onset with peak ≥ ~0.04 as
 a local stop (cut instead of resume), and make `e2e_echo.sh` check that Woi is still silent 3 s after the stop.
+
+echo28 e28 (2026-11-04). Changes: (1) local stop cut: an onset the server never confirmed whose peak excess RMS is
+≥ 0.04 (`TurnPipeline.onsetCutMinRms`; ≥ 0.06 cuts at the 900 ms confirm window, else after the 1.5 s hold) stops Woi
+like a confirmed barge-in (reply cancelled, truncated at the heard position; the playback tracker now freezes while
+paused) with no new response. Weaker onsets keep hold/resume. (2) An echo/filler transcript after a strong onset no
+longer resumes the cut reply. (3) `e2e_echo.sh` reports `stop_honoured` (no speaker audio 0.25–3 s after the stop),
+`question_answered` / `question_resumed_old`, `local_cuts`, and pauses/cuts outside the user fixtures. E2E:
+`after-e28a` (before (2)): stop 341 ms but **not honoured**. The server did confirm, but the transcript was "어", so the
+short-echo rule resumed the reply (948 ms of audio). Question 367 ms: locally cut at 900 ms (peak 0.123), and the late
+deferred "How are you?" was answered. 5 fixture turns, 0 self-talk, 0 false pauses/cuts. `after-e28b`: stop 396 ms,
+**honoured** (local cut, peak 0.089, 0 ms of audio after it), question 254 ms answered, 5 fixture turns, 0 self-talk,
+but **1 false local cut**: an echo onset with peak 0.062 (excess 0.000 at the firing frame) stopped the story about a
+minute in. Peak alone does not separate echo from the user (false 0.062 vs real 0.067–0.141). **Next:** a sustained
+criterion before cutting, such as frames ≥ 0.04 in the run, or near-end energy while paused (Woi silent, after the
+~450 ms echo tail).
