@@ -1,4 +1,5 @@
-import 'dart:typed_data';
+
+import 'package:flutter/foundation.dart';
 
 import '../../tools/tool_registry.dart';
 import '../responses/responses_client.dart';
@@ -10,14 +11,47 @@ You receive one complex task and complete it yourself, step by step, using the t
 (read/list files, run bash, write or edit files, keyboard/mouse, screenshots).
 File writes and edits are shown to the user as a diff and need their approval; if they reject one, do not retry it.
 Prefer doing the work over describing it. Do not ask questions; make reasonable assumptions.
-When the task asks for a script, program, document or any file to be written or created, save it with write_file
-(a sensible name in the workspace dir unless a path is given) and say where. Only say a file was saved or changed when
+When the task asks for a script, program, document or any file to be written, created or saved, you MUST save it with
+write_file (a sensible name in the workspace dir unless a path is given) and say its absolute path. This holds even if
+the task or context says to just return or explain the text: code cannot be read aloud, so it goes into a file and your
+reply explains it briefly. Only say a file was saved or changed when
 the tool result shows written=true; if the user declined or a tool failed, say so plainly. Never invent results.
 Use only the real paths from the environment below; never guess home directories.
 Your final message is read aloud by the voice assistant, so make it short and speakable:
 at most 80 words, plain sentences, no markdown, no code blocks, no lists; mention any file paths you created
 or changed and the key result.
 ''';
+
+/// Tools that save a file (the "save it" guard looks for one of them).
+const kFileWriteTools = {'write_file', 'edit_file'};
+
+/// Whether [task] asks for a file artifact: a script/program/file to be
+/// written, created or saved. Questions about code ("explain this script")
+/// that do not ask to make one are not.
+bool taskWantsFile(String task) {
+  final t = task.toLowerCase();
+  // "save it", "save the script to my workspace", "store it in a file"
+  if (RegExp(r"\b(save|store)\b[^.!?]{0,40}?\b(it|file|script|program|code|workspace|folder|disk)\b").hasMatch(t)) {
+    return true;
+  }
+  // "write/create a (python) script|program", "make a new file", "write it to a file"
+  if (RegExp(
+    r"\b(write|create|make|build|generate|code up|put together)\b[^.!?]{0,30}?\b(script|program|utility|module)\b",
+  ).hasMatch(t)) {
+    return true;
+  }
+  if (RegExp(r"\b(to|into|in|as)\s+a\s+(new\s+)?file\b").hasMatch(t)) return true;
+  // "write a config file", but not "write a summary of the file"
+  final makesFile = RegExp(r"\b(write|create|make|generate)\b[^.!?]{0,30}?\b(a|an|new)\s+([\w.-]+\s+)?file\b");
+  return makesFile.hasMatch(t) && !RegExp(r"\b(summary|summari[sz]e|explanation|review|description)\b").hasMatch(t);
+}
+
+/// Sent once when a file was asked for but the delegate answered without
+/// calling a file-writing tool.
+const kSaveFileNudge =
+    'You did not save anything. The user asked for a file: save it now with write_file '
+    '(in the workspace dir unless a path was given), then reply in at most 80 speakable words '
+    'with its absolute path and what it does. No code in the reply.';
 
 /// Runs complex tasks with a stronger text model (default gpt-6-luna; gpt-6.1-sol is optional and expensive)
 /// through the Responses API, in a function-calling loop over the app's
@@ -69,6 +103,9 @@ class ResponsesDelegate implements DelegateBackend {
       ]),
     ];
     var tokens = 0;
+    final wantsFile = taskWantsFile(task);
+    var wroteFile = false;
+    var nudged = false;
     for (var step = 0; step < maxSteps; step++) {
       final r = await client.create(
         model: model,
@@ -81,6 +118,14 @@ class ResponsesDelegate implements DelegateBackend {
       input.addAll(r.outputAsInput);
       if (r.functionCalls.isEmpty) {
         final out = r.text.trim();
+        if (wantsFile && !wroteFile && !nudged && step + 1 < maxSteps) {
+          // A file was asked for but none was written (e.g. the script came
+          // back as text): one explicit retry in the same conversation.
+          nudged = true;
+          debugPrint('delegate: task asks for a file but none was written; retrying once');
+          input.add(userMessage([inputText(kSaveFileNudge)]));
+          continue;
+        }
         return DelegateResult(
           output: out.isEmpty ? 'The task finished without a summary.' : out,
           model: model,
@@ -89,6 +134,7 @@ class ResponsesDelegate implements DelegateBackend {
       }
       for (final call in r.functionCalls) {
         onStep?.call(call.name, call.arguments);
+        if (kFileWriteTools.contains(call.name)) wroteFile = true;
         final String output;
         if (excludedTools.contains(call.name)) {
           output = '{"ok":false,"error":"tool not available to the delegate"}';

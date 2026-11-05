@@ -56,6 +56,11 @@ typedef ClickPlan = ({Point<int> point, Map<String, Object?> info});
 Future<ClickPlan> planClick({String target = '', int? x, int? y, Screenshot? shot, ClickLocator? locator}) async {
   final guess = x == null || y == null ? null : (shot?.toScreen(x, y) ?? Point(x, y));
   final t = target.trim();
+  final abs = shot == null ? null : absoluteScreenPoint(t, shot);
+  if (abs != null) {
+    // "the center of the screen": no element to find, skip the ~2 s grounding.
+    return (point: abs, info: const <String, Object?>{'located_by': 'absolute'});
+  }
   if (t.isNotEmpty && locator != null) {
     try {
       final found = await locator.locate(t, hint: guess);
@@ -67,6 +72,27 @@ Future<ClickPlan> planClick({String target = '', int? x, int? y, Screenshot? sho
   }
   if (guess == null) throw ToolFailure(t.isEmpty ? 'give target (what to click) or x/y' : 'give x/y');
   return (point: guess, info: const <String, Object?>{});
+}
+
+final _absTarget = RegExp(
+  r'^(?:the\s+)?(?:exact\s+|very\s+)?(?:(center|centre|middle)|(top|upper|bottom|lower)[\s-]+(left|right)(?:\s+corner)?)'
+  r'(?:\s+(?:of|on)\s+(?:the\s+|my\s+)?(?:whole\s+|entire\s+)?(?:screen|display|desktop|monitor)(?:\s+area)?)?\.?$',
+);
+
+/// A click_screen target that names a position on the screen itself
+/// ("center of the screen", "top left corner"), not an element: its point
+/// on the screen [shot] covers. Null for anything else.
+Point<int>? absoluteScreenPoint(String target, Screenshot shot) {
+  final m = _absTarget.firstMatch(target.trim().toLowerCase().replaceAll(RegExp('["\']'), ''));
+  if (m == null) return null;
+  final w = shot.originalWidth, h = shot.originalHeight;
+  if (w <= 0 || h <= 0) return null;
+  if (m.group(1) != null) return Point(shot.originX + w ~/ 2, shot.originY + h ~/ 2);
+  // Corners: a few pixels in, so the click lands on the screen (not a hot edge).
+  const inset = 5;
+  final top = m.group(2) == 'top' || m.group(2) == 'upper';
+  final left = m.group(3) == 'left';
+  return Point(shot.originX + (left ? inset : w - 1 - inset), shot.originY + (top ? inset : h - 1 - inset));
 }
 
 const _maxDirEntries = 300;
@@ -351,10 +377,16 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
       spec: _spec(
         'delegate_task',
         'Hand a complex multi-step task (coding, analysis, long writing) to a '
-            'stronger text model and get its answer.',
+            'stronger text model that has file and shell tools, and get its spoken summary. '
+            'task: the user\'s request in their words, as an instruction (not your answer). '
+            'Scripts, programs and documents are always saved as files in the workspace by the '
+            'delegate; never tell it to only return or print the text.',
         {
-          'task': {'type': 'string'},
-          'context': {'type': 'string', 'description': 'Relevant details'},
+          'task': {
+            'type': 'string',
+            'description': 'What the user asked for, e.g. "Write a Python script that finds duplicate files and save it"',
+          },
+          'context': {'type': 'string', 'description': 'Relevant details (paths, preferences); no answer text'},
         },
         ['task'],
       ),

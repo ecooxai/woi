@@ -274,6 +274,24 @@ void main() {
       await expectLater(planClick(), throwsA(isA<ToolFailure>()));
       expect((await planClick(target: 'Save', x: 3, y: 4)).point, const Point(3, 4), reason: 'no locator, no shot');
     });
+
+    test('a screen position ("center of the screen") skips the locator', () async {
+      final l = FakeLocator(const Point(7, 8));
+      for (final t in ['center of the screen area', 'the centre of the screen', 'Middle of my screen.', 'center']) {
+        final p = await planClick(target: t, x: 640, y: 360, shot: shot, locator: l);
+        expect(p.point, const Point(1280, 720), reason: t);
+        expect(p.info['located_by'], 'absolute');
+      }
+      expect((await planClick(target: 'top left corner of the screen', shot: shot, locator: l)).point, const Point(5, 5));
+      expect((await planClick(target: 'bottom-right corner', shot: shot, locator: l)).point, const Point(2554, 1434));
+      expect(l.calls, isEmpty);
+      // Elements are still grounded, and an offset capture keeps its origin.
+      for (final t in ['center of the dialog', "'Center' button", 'the middle tab']) {
+        expect(absoluteScreenPoint(t, shot), isNull, reason: t);
+      }
+      final right = Screenshot(png: shot.png, width: 640, height: 360, originalWidth: 1920, originalHeight: 1080, originX: 2560);
+      expect(absoluteScreenPoint('center of the screen', right), const Point(2560 + 960, 540));
+    });
   });
 
   test('click_screen resolves target through the environment locator', () async {

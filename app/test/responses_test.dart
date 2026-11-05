@@ -288,6 +288,94 @@ void main() {
       expect(out['output'], contains('denied'));
     });
 
+    ResponsesDelegate delegateWith(FakePlatform fp, FakeConfirmations confirm) {
+      late ToolRegistry registry;
+      final delegate = ResponsesDelegate(client, tools: () => registry, reasoningEffort: null);
+      registry = ToolRegistry()
+        ..registerAll(
+          builtinTools(
+            ToolEnvironment(
+              platform: fp.services,
+              confirmations: confirm,
+              delegate: delegate,
+              settings: () => const AppSettings(),
+              onScreenshot: (s, n) async {},
+            ),
+          ),
+        );
+      return delegate;
+    }
+
+    test('ResponsesDelegate: a script returned as text is retried once with a save-it nudge', () async {
+      final fp = await FakePlatform.create();
+      addTearDown(fp.dispose);
+      final confirm = FakeConfirmations();
+      final delegate = delegateWith(fp, confirm);
+      server.replies
+        ..add(_textReply('```python\nprint(1)\n```\nIt prints one.'))
+        ..add(_callReply('c1', 'write_file', {'path': '~/find_duplicates.py', 'content': 'print(1)\n'}))
+        ..add(_textReply('Saved find_duplicates.py in your home folder.'));
+      // The 08 fixture: the voice model asked for an explanation and told the
+      // delegate not to modify files.
+      final r = await delegate.runTask(
+        'Write a Python script that finds duplicate files in a folder and explain how it works.',
+        model: 'gpt-6-luna',
+        context: 'No need to modify files here; just return the script text and explanation.',
+      );
+      expect(r.output, 'Saved find_duplicates.py in your home folder.');
+      expect(server.requests, hasLength(3));
+      final nudge = (server.requests[1]['input'] as List).last as Map;
+      expect(nudge['role'], 'user');
+      expect(jsonEncode(nudge), contains('save it now with write_file'));
+      expect(confirm.writeRequests, hasLength(1));
+      expect(File('${fp.root.path}/find_duplicates.py').existsSync(), isTrue);
+      expect(server.requests.first['instructions'], contains('MUST save it'));
+    });
+
+    test('ResponsesDelegate: no nudge when no file was asked for, a write was tried, or after one nudge', () async {
+      final fp = await FakePlatform.create();
+      addTearDown(fp.dispose);
+      final delegate = delegateWith(fp, FakeConfirmations(approveWrites: false));
+      server.replies.add(_textReply('Paris.'));
+      expect((await delegate.runTask('What is the capital of France?', model: 'm')).output, 'Paris.');
+      expect(server.requests, hasLength(1));
+
+      server.requests.clear();
+      server.replies
+        ..add(_callReply('c1', 'write_file', {'path': '~/a.py', 'content': 'x'}))
+        ..add(_textReply('You declined the file.'));
+      expect((await delegate.runTask('Write a script a.py', model: 'm')).output, 'You declined the file.');
+      expect(server.requests, hasLength(2), reason: 'a rejected write is not retried');
+
+      server.requests.clear();
+      server.replies
+        ..add(_textReply('Here is the code.'))
+        ..add(_textReply('Still only text.'));
+      expect((await delegate.runTask('Create a bash script that backs up ~/docs', model: 'm')).output, 'Still only text.');
+      expect(server.requests, hasLength(2), reason: 'one retry only');
+    });
+
+    test('taskWantsFile', () {
+      for (final t in [
+        'Write a Python script that finds duplicate files in a folder and explain it',
+        'This is a complex task: write a Python script that finds duplicate files and save it in my workspace',
+        'create a bash program to rename photos',
+        'make a new config file for nginx',
+        'Put the meeting notes into a file',
+        'save the results to my workspace',
+      ]) {
+        expect(taskWantsFile(t), isTrue, reason: t);
+      }
+      for (final t in [
+        'Explain what this script does',
+        'Write a summary of the file notes.txt',
+        'Find the largest files in my home folder',
+        'What is the capital of France?',
+      ]) {
+        expect(taskWantsFile(t), isFalse, reason: t);
+      }
+    });
+
     test('ResponsesCompressor sends transcript + latest screenshots and returns the summary', () async {
       final dir = await Directory.systemTemp.createTemp('woi_comp_');
       addTearDown(() => dir.delete(recursive: true));
