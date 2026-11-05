@@ -4,6 +4,7 @@
 #   qa/run_e2e.sh                       # default phases
 #   PHASES="live direct" qa/run_e2e.sh  # subset: live full direct barge compact ux media extras
 #   PHASES=hello qa/run_e2e.sh          # smoke: 01_hello on Direct realtime only
+#   PHASES=deleg DELEG_REPEAT=3 qa/run_e2e.sh  # 02 click + 08 delegate, repeated
 #   QA_BIN=/path/to/bundle/woi qa/run_e2e.sh
 #   QA_DISPLAY=:12 qa/run_e2e.sh        # test display (default :11; :0 is refused)
 #   QA_PRIVATE_PW=1 qa/run_e2e.sh       # audio on a private, hardware-free PipeWire
@@ -468,6 +469,32 @@ phase_live() {
 }
 
 # Smoke: Direct realtime, 01_hello only (heard + spoken reply + latency).
+# Repeat the slow/flaky pair: 02_click_center (latency) and 08_complex_task
+# (delegate must save the script). DELEG_REPEAT times (default 3), Direct realtime.
+phase_deleg() {
+  local mode=deleg n=${DELEG_REPEAT:-3} i ok
+  prep_click_target
+  qa_launch_app $mode '{"backendMode":"direct","realtimeModel":"'"$QA_REALTIME_MODEL"'"}' || return 1
+  qa_place_app $APP_X $APP_Y $APP_W $APP_H
+  sleep 8
+  for i in $(seq 1 "$n"); do
+    xdotool windowactivate --sync "$TARGET_WID" 2>/dev/null; park_pointer
+    run_fixture $mode 02_click_center "$FIX/02_click_center.wav"
+    check_click $mode
+    local py0; py0=$(ls "$QA_SANDBOX"/*.py 2>/dev/null | wc -l)
+    WAIT_LOG='edit (applied|rejected)|delegat.*(fail|error)' run_fixture $mode 08_complex_task "$FIX/08_complex_task.wav" approve 12 300
+    local py1; py1=$(ls -t "$QA_SANDBOX"/*.py 2>/dev/null | head -1)
+    local dl; dl=$(recent_tools $mode); local said08; said08=$(last_reply $mode | cut -c1-100)
+    ok=FAIL
+    [[ $dl == *delegate_task* ]] && [ "$(ls "$QA_SANDBOX"/*.py 2>/dev/null | wc -l)" -gt "$py0" ] && [ -n "$said08" ] && ok=PASS
+    result $mode "08_complex_task#$i" "$LAST_LAT" "$LAST_DIALOG" $ok "file=$(basename "${py1:-none}") $(echo "$dl" | grep -oE 'delegate_task.{0,160}' | head -1) reply: $said08"
+    # a fresh sandbox file count per round: move this round's scripts aside
+    mkdir -p "$QA_SANDBOX/.done$i"; mv "$QA_SANDBOX"/*.py "$QA_SANDBOX/.done$i/" 2>/dev/null
+  done
+  transcripts $mode
+  qa_stop_app
+}
+
 phase_hello() {
   local mode=hello
   qa_launch_app $mode '{"backendMode":"direct","realtimeModel":"'"$QA_REALTIME_MODEL"'"}' || return 1
@@ -767,6 +794,7 @@ for ph in $PHASES; do
     extras) phase_extras ;;
     direct) phase_direct ;;
     hello) phase_hello ;;
+    deleg) phase_deleg ;;
     compact) phase_compact ;;
     ux) phase_ux ;;
     media) phase_media ;;
