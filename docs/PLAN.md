@@ -479,3 +479,18 @@ but **1 false local cut**: an echo onset with peak 0.062 (excess 0.000 at the fi
 minute in. Peak alone does not separate echo from the user (false 0.062 vs real 0.067–0.141). **Next:** a sustained
 criterion before cutting, such as frames ≥ 0.04 in the run, or near-end energy while paused (Woi silent, after the
 ~450 ms echo tail).
+
+echo29 e29 (2026-11-04). Changes: peak alone no longer cuts. 450 ms after the pause (`pauseEchoTail`) the raw mic
+RMS is measured for 250 ms. If at least 80 ms of it is ≥ floor + 10 dB (and ≥ -50 dBFS), the user is still talking:
+local cut about 700 ms after the onset. A short word that is already over by then is cut only if the peak is ≥ 0.06
+**and** the near-end excess is still ≥ 0.015 at the firing frame (echo false onsets 0.000/0.062 and 0.013/0.018,
+real speech 0.018–0.129 at firing). Otherwise a strong onset is held for the server and then resumed, and a weak
+one resumes at 900 ms. E2E, two runs alone: `after-e29a`: stop 55 ms, honoured (server confirmed, transcript "嗯。",
+stayed stopped), question answered, 5 fixture turns, 0 self-talk, 2 false pauses (resumed; one echo onset with peak
+**0.095**, higher than any real stop, but 0.000 at firing, so the old rule would have cut it), 0 local cuts,
+0 wrong interrupts. `after-e29b`: stop 355 ms, honoured ("啊。"), question 165 ms answered (the server split it into
+"어" + "How are you?", counted as self-talk), 5 fixture turns, 2 false pauses (resumed; peak 0.063 at firing 0.010),
+0 local cuts, 0 wrong interrupts. The server confirmed both barge-ins in both runs, so the local-cut paths did not
+fire in the E2E (they are unit-tested). **Open:** the firing-excess margin is thin (echo 0.010–0.013 vs speech ≥
+0.018). A false pause still costs about 2.4 s of silence (hold); a quiet pause with firing excess < 0.015 could
+resume at 900 ms.
