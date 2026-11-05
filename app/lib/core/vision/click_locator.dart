@@ -155,7 +155,8 @@ class VisionLocator implements ClickLocator {
   @override
   Future<LocatedTarget> locate(String target, {Point<int>? hint}) async {
     final sw = Stopwatch()..start();
-    final shot = await screen.capture(maxWidth: maxWidth);
+    // Full resolution, lossless: small targets survive (not the chat setting).
+    final shot = await screen.capture(scale: 1, jpegQuality: null, maxWidth: maxWidth);
     lastCapture = sw.elapsed;
     final h = hint == null ? null : shot.fromScreen(hint.x, hint.y);
     final prompt = StringBuffer('Image size: ${shot.width}x${shot.height} pixels. Target: $target');

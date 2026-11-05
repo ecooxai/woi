@@ -14,6 +14,7 @@ import 'package:woi/platform/linux/linux_files.dart';
 import 'package:woi/platform/media_viewer.dart';
 import 'package:woi/platform/platform_services.dart';
 import 'package:woi/platform/screen_capture.dart';
+import 'package:woi/platform/screenshot_encode.dart';
 import 'package:woi/platform/shell.dart';
 import 'package:woi/tools/confirmation.dart';
 
@@ -185,12 +186,41 @@ Uint8List tinyPng(int w, int h) {
 
 class FakeScreen implements ScreenCapture {
   FakeScreen({this.width = 1280, this.height = 720, this.originalWidth = 2560, this.originalHeight = 1440});
-  final int width, height, originalWidth, originalHeight;
+  int width, height, originalWidth, originalHeight;
   final captureTimes = <DateTime>[];
 
+  /// When set, the image size follows the requested scale (like the real
+  /// captures) instead of the fixed [width]x[height].
+  bool scaling = false;
+
+  /// Real JPEG bytes (at the requested quality) instead of a stub PNG.
+  bool jpeg = false;
+
+  /// (scale, jpegQuality, maxWidth) of each capture.
+  final requests = <(double, int?, int?)>[];
+
   @override
-  Future<Screenshot> capture({int maxWidth = 1280}) async {
+  Future<Screenshot> capture({
+    double scale = kDefaultScreenshotScale,
+    int? jpegQuality = kDefaultScreenshotJpegQuality,
+    int? maxWidth,
+  }) async {
     captureTimes.add(DateTime.now());
+    requests.add((scale, jpegQuality, maxWidth));
+    if (scaling) {
+      final (w, h) = screenshotSize(originalWidth, originalHeight, scale, maxWidth: maxWidth);
+      width = w;
+      height = h;
+    }
+    if (jpeg && jpegQuality != null) {
+      return Screenshot(
+        png: encodeRgbJpegSync(Uint8List(width * height * 3), width, height, jpegQuality),
+        width: width,
+        height: height,
+        originalWidth: originalWidth,
+        originalHeight: originalHeight,
+      );
+    }
     return Screenshot(
       png: tinyPng(width, height),
       width: width,

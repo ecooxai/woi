@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/app_controller.dart';
 import '../../platform/audio_io.dart';
+import '../../platform/screen_capture.dart' show kScreenshotScales;
 import '../../platform/android/android_accessibility.dart';
 import '../../core/auth/auth.dart';
 import '../../core/settings/settings.dart';
@@ -299,6 +300,43 @@ class _SettingsViewState extends State<SettingsView> {
           semantic: 'Screenshot delay',
           onChanged: _s.autoScreenshot ? (v) => setState(() => _s = _s.copyWith(screenshotDelayMs: v.round())) : null,
           onChangeEnd: (v) => _apply(_s.copyWith(screenshotDelayMs: v.round())),
+        ),
+      ),
+      _Item(
+        'Screenshot size',
+        'Smaller is cheaper and faster; larger shows small text.',
+        detail:
+            'Screenshots sent to the model (spoken turns, the assistant, screen share, the screenshot tool) '
+            'are scaled to this share of the screen\'s pixels. Never enlarged.',
+        keywords: 'screenshot resolution scale image size downscale vision screen share assist',
+        (w) {
+          final idx = _scaleIndex(_s.screenshotScale);
+          return _slider(
+            value: idx.toDouble(),
+            min: 0,
+            max: kScreenshotScales.length - 1.0,
+            divisions: kScreenshotScales.length - 1,
+            label: _scaleLabel(kScreenshotScales[idx]),
+            semantic: 'Screenshot size',
+            onChanged: (v) => setState(() => _s = _s.copyWith(screenshotScale: kScreenshotScales[v.round()])),
+            onChangeEnd: (v) => _apply(_s.copyWith(screenshotScale: kScreenshotScales[v.round()])),
+          );
+        },
+      ),
+      _Item(
+        'Screenshot JPEG quality',
+        'Lower makes smaller files; higher keeps text crisp.',
+        detail: 'JPEG quality of screenshots sent to the model (50-100). Default 80.',
+        keywords: 'screenshot jpeg jpg quality compression file size image',
+        (w) => _slider(
+          value: _s.screenshotJpegQuality.clamp(50, 100).toDouble(),
+          min: 50,
+          max: 100,
+          divisions: 10,
+          label: '${_s.screenshotJpegQuality}',
+          semantic: 'Screenshot JPEG quality',
+          onChanged: (v) => setState(() => _s = _s.copyWith(screenshotJpegQuality: v.round())),
+          onChangeEnd: (v) => _apply(_s.copyWith(screenshotJpegQuality: v.round())),
         ),
       ),
       _Item(
@@ -1085,6 +1123,17 @@ class _SettingsViewState extends State<SettingsView> {
     );
   }
 }
+
+/// Index of the [kScreenshotScales] entry nearest [scale].
+int _scaleIndex(double scale) {
+  var best = 0;
+  for (var i = 1; i < kScreenshotScales.length; i++) {
+    if ((kScreenshotScales[i] - scale).abs() < (kScreenshotScales[best] - scale).abs()) best = i;
+  }
+  return best;
+}
+
+String _scaleLabel(double scale) => '${(scale * 100).round()} %';
 
 class _Item {
   _Item(

@@ -76,6 +76,7 @@ class AndroidIntegration {
       final o = controller.platform.urlOpener;
       if (o is AndroidUrlOpener) unawaited(o.done());
     }
+    _pushScreenshotPrefs();
     final wantVoice = !controller.needsLogin && controller.settings.micMode != MicMode.muted;
     // While the panel shows, keep the service even if muted: it can only be
     // restarted while Woi is visible.
@@ -83,6 +84,20 @@ class AndroidIntegration {
       _voiceOn = wantVoice;
       unawaited(bridge.call<bool>('voiceActive', {'on': wantVoice}).catchError((Object e) => false));
     }
+  }
+
+  (double, int)? _shotPrefs;
+
+  /// The assist screenshot is encoded natively before Dart runs: keep the
+  /// native copy of the scale / JPEG quality settings current.
+  void _pushScreenshotPrefs() {
+    final st = controller.settings;
+    final next = (st.screenshotScale, st.screenshotJpegQuality);
+    if (next == _shotPrefs) return;
+    _shotPrefs = next;
+    unawaited(
+      bridge.call<bool>('screenshotPrefs', {'scale': next.$1, 'quality': next.$2}).catchError((Object e) => false),
+    );
   }
 
   Future<void> _onEvent(AndroidEvent e) async {
@@ -128,7 +143,7 @@ class AndroidIntegration {
     final app = e.app == null || e.app!.isEmpty ? 'the app they were using' : e.app!;
     if (path != null && File(path).existsSync()) {
       final png = await File(path).readAsBytes();
-      final size = pngSize(png);
+      final size = imageSize(png);
       final w = size?.$1 ?? e.width;
       final h = size?.$2 ?? e.height;
       final shot = Screenshot(

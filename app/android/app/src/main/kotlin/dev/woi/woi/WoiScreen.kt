@@ -14,12 +14,11 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.util.Log
 import android.view.WindowManager
-import java.io.ByteArrayOutputStream
 
 /**
  * Screen share: a MediaProjection mirrored into an ImageReader. Only the
  * newest frame is kept (as the raw Image, no per-frame conversion), so a
- * static screen costs nothing; [frame] converts it to PNG on demand when a
+ * static screen costs nothing; [frame] converts it to a JPEG on demand when a
  * turn starts.
  */
 object WoiScreen {
@@ -93,8 +92,8 @@ object WoiScreen {
         if (notify) WoiBridge.emit(mapOf("type" to "share", "on" to false))
     }
 
-    /** Newest frame as PNG ({png, width, height, originalWidth, originalHeight}). */
-    fun frame(maxWidth: Int): Map<String, Any?>? {
+    /** Newest frame, scaled and JPEG/PNG-encoded ({bytes, width, height, originalWidth, originalHeight}). */
+    fun frame(scale: Double, quality: Int, maxWidth: Int): Map<String, Any?>? {
         val bmp: Bitmap
         synchronized(lock) {
             val img = latest ?: return null
@@ -106,27 +105,8 @@ object WoiScreen {
             full.copyPixelsFromBuffer(plane.buffer)
             bmp = if (rowPadding == 0) full else Bitmap.createBitmap(full, 0, 0, img.width, img.height).also { full.recycle() }
         }
-        val out = encode(bmp, maxWidth, realW, realH)
+        val out = ScreenshotEncoder.encodeToMap(bmp, scale, quality, maxWidth, realW.takeIf { it > 0 } ?: bmp.width, realH.takeIf { it > 0 } ?: bmp.height)
         bmp.recycle()
         return out + mapOf("frames" to frames)
-    }
-
-    /** Scales [src] to width <= maxWidth and PNG-encodes it. */
-    fun encode(src: Bitmap, maxWidth: Int, originalW: Int = src.width, originalH: Int = src.height): Map<String, Any?> {
-        val scaled = if (src.width > maxWidth) {
-            val h = (src.height.toLong() * maxWidth / src.width).toInt()
-            Bitmap.createScaledBitmap(src, maxWidth, h, true)
-        } else src
-        val bos = ByteArrayOutputStream(256 * 1024)
-        scaled.compress(Bitmap.CompressFormat.PNG, 100, bos)
-        val map = mapOf(
-            "png" to bos.toByteArray(),
-            "width" to scaled.width,
-            "height" to scaled.height,
-            "originalWidth" to originalW,
-            "originalHeight" to originalH,
-        )
-        if (scaled !== src) scaled.recycle()
-        return map
     }
 }

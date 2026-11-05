@@ -19,7 +19,7 @@ class AndroidScreenCapture implements ScreenCapture {
   bool get autoCapture => _bridge.sharing.value;
 
   static Screenshot fromMap(Map<Object?, Object?> m) {
-    final png = m['png']! as Uint8List;
+    final png = (m['bytes'] ?? m['png'])! as Uint8List;
     final w = (m['width'] as num).toInt();
     final h = (m['height'] as num).toInt();
     final ow = (m['originalWidth'] as num?)?.toInt() ?? w;
@@ -28,15 +28,21 @@ class AndroidScreenCapture implements ScreenCapture {
   }
 
   @override
-  Future<Screenshot> capture({int maxWidth = 1280}) async {
+  Future<Screenshot> capture({
+    double scale = kDefaultScreenshotScale,
+    int? jpegQuality = kDefaultScreenshotJpegQuality,
+    int? maxWidth,
+  }) async {
+    // Scaled and JPEG/PNG-encoded natively on a background thread.
+    final args = {'scale': scale, 'quality': jpegQuality ?? 0, 'maxWidth': maxWidth ?? 0};
     // Share frames would show the floating panel; the accessibility
     // screenshot hides it while capturing.
     if (_bridge.sharing.value && !_bridge.overlayVisible.value) {
-      final m = await _bridge.call<Map<Object?, Object?>>('shareFrame', {'maxWidth': maxWidth});
+      final m = await _bridge.call<Map<Object?, Object?>>('shareFrame', args);
       if (m != null) return fromMap(m);
     }
     try {
-      final m = await _bridge.call<Map<Object?, Object?>>('a11yScreenshot', {'maxWidth': maxWidth});
+      final m = await _bridge.call<Map<Object?, Object?>>('a11yScreenshot', args);
       if (m != null) return fromMap(m);
     } on PlatformException catch (e) {
       throw StateError(

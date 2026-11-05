@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import '../screen_capture.dart';
+import '../screenshot_encode.dart';
 import 'exec_util.dart';
 
 /// X11 full-screen capture via `ffmpeg -f x11grab` (~0.2 s for 1080p),
@@ -39,11 +40,19 @@ class LinuxScreenCapture implements ScreenCapture {
   }
 
   @override
-  Future<Screenshot> capture({int maxWidth = 1280}) async {
+  Future<Screenshot> capture({
+    double scale = kDefaultScreenshotScale,
+    int? jpegQuality = kDefaultScreenshotJpegQuality,
+    int? maxWidth,
+  }) async {
     final (ow, oh) = await _displayGeometry();
-    Uint8List png;
+    final (w, h) = screenshotSize(ow, oh, scale, maxWidth: maxWidth);
+    final jpeg = jpegQuality != null;
+    Uint8List bytes;
     final ffmpeg = which('ffmpeg');
     if (ffmpeg != null) {
+      // JPEG: ffmpeg scales and hands over raw RGB; the JPEG is encoded at
+      // the exact quality in an isolate (ffmpeg's mjpeg -q:v has no 1-100).
       final r = await runChecked(
         ffmpeg,
         [
@@ -57,35 +66,44 @@ class LinuxScreenCapture implements ScreenCapture {
           '${x11Display()}+0,0',
           '-frames:v',
           '1',
-          '-vf',
-          "scale='min($maxWidth,iw)':-2:flags=bicubic",
-          '-compression_level',
-          '1',
-          '-f',
-          'image2pipe',
-          '-c:v',
-          'png',
-          '-',
+          if (w != ow || h != oh) ...['-vf', 'scale=$w:$h:flags=area'],
+          if (jpeg) ...[
+            '-pix_fmt',
+            'rgb24',
+            '-f',
+            'rawvideo',
+            '-',
+          ] else ...[
+            '-compression_level',
+            '1',
+            '-f',
+            'image2pipe',
+            '-c:v',
+            'png',
+            '-',
+          ],
         ],
         environment: x11Env(),
         binary: true,
       );
-      png = Uint8List.fromList(r.stdout as List<int>);
+      final out = Uint8List.fromList(r.stdout as List<int>);
+      bytes = jpeg ? await jpegFromRgb(out, w, h, jpegQuality) : out;
     } else if (which('import') != null) {
       final r = await runChecked(
         'import',
-        ['-window', 'root', '-resize', '${maxWidth}x>', '-depth', '8', 'png:-'],
+        ['-window', 'root', '-resize', '${w}x$h!', '-depth', '8', 'png:-'],
         environment: x11Env(),
         binary: true,
       );
-      png = Uint8List.fromList(r.stdout as List<int>);
+      final png = Uint8List.fromList(r.stdout as List<int>);
+      bytes = jpeg ? await reencodeJpeg(png, w, h, jpegQuality) : png;
     } else {
       throw MissingTool(['ffmpeg', 'import']);
     }
-    final size = pngSize(png);
+    final size = imageSize(bytes);
     if (size == null) {
-      throw const FileSystemException('Screenshot tool returned invalid PNG');
+      throw const FileSystemException('Screenshot tool returned an invalid image');
     }
-    return Screenshot(png: png, width: size.$1, height: size.$2, originalWidth: ow, originalHeight: oh);
+    return Screenshot(png: bytes, width: size.$1, height: size.$2, originalWidth: ow, originalHeight: oh);
   }
 }

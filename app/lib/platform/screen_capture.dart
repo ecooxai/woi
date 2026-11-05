@@ -1,6 +1,8 @@
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'camera.dart' show jpegSize;
+
 class Screenshot {
   const Screenshot({
     required this.png,
@@ -12,8 +14,14 @@ class Screenshot {
     this.originY = 0,
   });
 
-  /// PNG bytes at [width]x[height] (what the model sees).
+  /// Encoded image at [width]x[height] (what the model sees): JPEG for
+  /// conversation screenshots, PNG for lossless captures (see [isJpeg]).
   final Uint8List png;
+
+  bool get isJpeg => isJpegBytes(png);
+
+  /// File extension for [png].
+  String get ext => isJpeg ? 'jpg' : 'png';
   final int width;
   final int height;
 
@@ -43,10 +51,40 @@ class Screenshot {
   }
 }
 
+/// Defaults for screenshots sent to the model (Settings > Screen & camera).
+const kDefaultScreenshotScale = 0.5;
+const kDefaultScreenshotJpegQuality = 80;
+
+/// Scale choices offered in Settings.
+const kScreenshotScales = [0.25, 1 / 3, 0.5, 0.75, 1.0];
+
 abstract class ScreenCapture {
-  /// Full-screen capture, downscaled so width <= [maxWidth].
-  Future<Screenshot> capture({int maxWidth = 1280});
+  /// Full-screen capture at [scale] x the screen's physical pixels (never
+  /// upscaled, aspect kept), also capped at [maxWidth] when given.
+  /// JPEG at [jpegQuality] (1-100); null: lossless PNG.
+  Future<Screenshot> capture({
+    double scale = kDefaultScreenshotScale,
+    int? jpegQuality = kDefaultScreenshotJpegQuality,
+    int? maxWidth,
+  });
 }
+
+/// Size of a screenshot of a [ow]x[oh] screen at [scale] (and at most
+/// [maxWidth] wide): aspect ratio kept, never larger than the screen, at
+/// least 1x1. The Android side (WoiScreen.scaledSize) uses the same math.
+(int, int) screenshotSize(int ow, int oh, double scale, {int? maxWidth}) {
+  if (ow <= 0 || oh <= 0) return (ow.clamp(1, 1 << 30), oh.clamp(1, 1 << 30));
+  final s = scale.isFinite && scale > 0 ? scale.clamp(0.01, 1.0) : 1.0;
+  var w = (ow * s).round().clamp(1, ow);
+  if (maxWidth != null && maxWidth > 0 && w > maxWidth) w = maxWidth;
+  final h = w == ow ? oh : (oh * w / ow).round().clamp(1, oh);
+  return (w, h);
+}
+
+bool isJpegBytes(Uint8List b) => b.length > 2 && b[0] == 0xFF && b[1] == 0xD8;
+
+/// Width/height of a PNG or JPEG; null if neither (or truncated).
+(int, int)? imageSize(Uint8List b) => pngSize(b) ?? jpegSize(b);
 
 /// Reads width/height from a PNG IHDR chunk; null if not a PNG.
 (int, int)? pngSize(Uint8List png) {

@@ -103,7 +103,8 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
         {},
       ),
       handler: (args, call) async {
-        final shot = await p.screen.capture(maxWidth: 1280);
+        final s = env.settings();
+        final shot = await p.screen.capture(scale: s.screenshotScale, jpegQuality: s.screenshotJpegQuality);
         env.lastScreenshot = shot;
         await env.onScreenshot(shot, 'Screenshot requested by tool');
         return {

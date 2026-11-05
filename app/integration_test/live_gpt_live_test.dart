@@ -89,7 +89,11 @@ class _Screen implements ScreenCapture {
   final Uint8List png;
   int captures = 0;
   @override
-  Future<Screenshot> capture({int maxWidth = 1280}) async {
+  Future<Screenshot> capture({
+    double scale = kDefaultScreenshotScale,
+    int? jpegQuality = kDefaultScreenshotJpegQuality,
+    int? maxWidth,
+  }) async {
     captures++;
     return Screenshot(png: png, width: 1280, height: 720, originalWidth: 1920, originalHeight: 1080);
   }

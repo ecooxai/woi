@@ -310,6 +310,33 @@ void main() {
   });
 
   group('screenshots on speech', () {
+    test('sent as a JPEG at the configured scale; saved as .jpg with both sizes', () async {
+      final h = await Harness.create();
+      h.options = const PipelineOptions(
+        screenshotDelay: Duration(milliseconds: 10),
+        screenshotScale: 0.5,
+        screenshotJpegQuality: 70,
+      );
+      h.fp.screen
+        ..originalWidth = 400
+        ..originalHeight = 200
+        ..scaling = true
+        ..jpeg = true;
+      h.scripted.emit(const SpeechStarted());
+      await waitFor(() => h.scripted.images.isNotEmpty);
+      expect(h.fp.screen.requests.single, (0.5, 70, null));
+      final sent = h.scripted.images.single.$1;
+      expect(sent[0], 0xFF);
+      expect(sent[1], 0xD8);
+      final user = ofKind(h.conv, MessageKind.user).single;
+      await waitFor(() => user.image != null);
+      final im = user.image!;
+      expect((im.width, im.height, im.originalWidth, im.originalHeight), (200, 100, 400, 200));
+      expect(im.path, endsWith('.jpg'));
+      expect(File(im.path).readAsBytesSync().sublist(0, 2), [0xFF, 0xD8]);
+      await h.dispose();
+    });
+
     test('captured ~delay after speechStarted and sent with sendImage', () async {
       final h = await Harness.create();
       final t0 = DateTime.now();

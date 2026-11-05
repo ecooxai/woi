@@ -165,14 +165,24 @@ object WoiBridge {
                 val act = activity ?: return result.success(false)
                 act.requestProjection { ok -> result.success(ok) }
             }
+            "screenshotPrefs" -> {
+                ScreenshotEncoder.savePrefs(
+                    ctx,
+                    call.argument<Double>("scale") ?: ScreenshotEncoder.DEFAULT_SCALE,
+                    call.argument<Int>("quality") ?: ScreenshotEncoder.DEFAULT_QUALITY,
+                )
+                result.success(true)
+            }
             "shareStop" -> {
                 WoiScreen.stop(ctx)
                 result.success(true)
             }
             "shareFrame" -> {
-                val maxW = call.argument<Int>("maxWidth") ?: 1280
+                val scale = call.argument<Double>("scale") ?: ScreenshotEncoder.DEFAULT_SCALE
+                val quality = call.argument<Int>("quality") ?: ScreenshotEncoder.DEFAULT_QUALITY
+                val maxW = call.argument<Int>("maxWidth") ?: 0
                 io.execute {
-                    val f = WoiScreen.frame(maxW)
+                    val f = WoiScreen.frame(scale, quality, maxW)
                     main.post { result.success(f) }
                 }
             }
