@@ -283,6 +283,40 @@ turn), send key events to the current app (esc/back, ctrl+c copy, paste, select 
   line whose fence state matches; keep the other lines' TextSpans) and splitting the editor's text into
   per-block paragraphs so a key lays out / rasters one block, not the whole note.
 
+### Perf (perf26): incremental highlighting, measured
+- Change: `MarkdownEditingController` caches each line's highlight + TextSpan by (line text, fence state before
+  it, trailing newline). A key re-highlights only the line(s) whose key changed (an edit that opens/closes a
+  fence re-highlights the lines up to where the fence state matches again) and reuses every other line's TextSpan
+  instance; AI tint / composing split only the lines they touch. Output is char-for-char identical to
+  `highlightMarkdown` (tests: start/middle/end edits, fence opened/closed by an edit, paste, undo, AI/composing).
+- Method: release, own Xvfb :12 1600x900 + openbox, sandbox HOME (direct backend, push-to-talk idle), a seeded
+  781-word / 80-line note (headings, lists, inline code, a code fence), editor focus checked by screenshot,
+  `xdotool type --delay 100` (10 keys/s) for 30 s, CPU from /proc utime+stime of the woi pid, `WOI_FRAME_STATS=1`.
+  Interleaved base/new; the host was shared (load 7-16), so the noise is large.
+
+| sample | arm | CPU % | load | build ms/frame (10 s windows) | raster ms/frame |
+|---|---|---|---|---|---|
+| 1 | main (fa70143) | 40.4 | 15.7 | 7.6 / 35.4 / 28.3 | 8.1 / 21.2 / 19.9 |
+| 1 | perf26 | 37.5 | 13.3 | 30.5 / 29.5 / 9.3 | 26.2 / 19.8 / 8.0 |
+| 2 | main | 31.6 | 8.4 | 7.9 / 11.1 / 9.9 | 8.4 / 7.8 / 8.6 |
+| 2 | perf26 | 35.3 | 7.3 | 9.2 / 13.6 / 11.6 | 8.7 / 9.1 / 10.1 |
+| 3 | main | 45.6 | 9.6 | 15.8 / 22.3 / 18.1 | 15.8 / 13.6 / 14.1 |
+| 3 | perf26 | 41.4 | 9.1 | 13.0 / 20.7 / 14.1 | 12.9 / 14.0 / 11.9 |
+| avg | main / perf26 | 39.2 / 38.1 | | | |
+
+- Finding: no measurable win (difference well inside the load noise; ~13-16 frames/s in both). Re-highlighting
+  the whole note was not the dominant per-key cost; what remains per key is laying out the whole note as one
+  paragraph (RenderEditable relayouts the full TextPainter whenever any span differs) and re-rasterizing the
+  visible text layer. The change is still correct and removes the O(note) regex pass and span allocation.
+- Raster/caret: the editor already sits in a RepaintBoundary, and RenderEditable's caret / selection painters are
+  their own repaint boundaries (`_RenderEditableCustomPaint.isRepaintBoundary`), so a caret blink or move does not
+  repaint the text picture. No cheap raster fix left: each key changes the single text picture, which software GL
+  re-rasterizes in full.
+- Needed for <15%: split the editor into per-block paragraphs (one RenderParagraph/EditableText-like box per
+  Markdown block or line group, each in its own repaint boundary, with a shared selection/caret/IME layer), so a
+  key lays out and re-rasters one block and unchanged blocks stay raster-cached. That is the block-editor rewrite
+  (custom selection across blocks, IME composing, undo, scroll-to-caret); not done here.
+
 ## Real-room echo (echo15)
 P0: on built-in speakers + mic the PipeWire WebRTC canceller removes only ~15–30 dB in a real room; server VAD
 heard the residual as the user and Woi answered its own words ("Pointer moved…" → user turn "Boiner moot").
