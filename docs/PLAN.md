@@ -421,3 +421,18 @@ confirmed the question, which split it ("iu" + probe "How are you?"): hence the 
 speech start (not yet E2E-verified). **Open:** server-side transcription cannot rescue a word buried in the echo; next
 is a local decision (option c: the guard's voice bands / excess on the paused span decide "do not resume" and cut,
 or a semantic_vad / lower-threshold session while speaking, b), then rerun `e2e_echo.sh`.
+
+echo22 e26 (2026-11-04, after aec25 NS/TS off; `after-nsoff`: stop 361 ms, question 1064 ms, self-talk "" / "啊", 3
+replies interrupted, 2 of them wrongly). Changes: (1) a deferred server turn that has no local onset now keeps Woi
+playing when `deferWindow` runs out. It stays undecided until a local onset or a non-echo transcript interrupts, or
+an empty or echo transcript drops it unanswered. (2) `shortEchoReason` now also applies to local-onset turns that
+start while Woi is audible (y/p), so a lone "啊" resumes the reply. Stop phrases are still never echo. (3) Removed the
+armed probe (`probeSpan`/`ProbeTranscript`). Every live probe got `input_audio_buffer_commit_empty`, even with
+clear/append/commit sent in one tick. Earlier, the clip transcribed as "" at that SNR anyway, and clearing the live
+buffer split a real turn. (4) `e2e_echo.sh` matches fixtures fuzzily (first word, or ≥50% word overlap).
+E2E, two runs alone: `after-e26a`: stop 2660 ms (server speech start came 1.8 s after the onset; transcribed "好。",
+interrupted as a stop request), question 1304 ms, 5 fixture turns + "好。" (the stop), 0 wrong interrupts, 4 resumed
+onsets, the empty deferred turn dropped without a cut. `after-e26b`: **stop lost, 7200 ms** (onset resumed, no server
+speech start at all), question 1252 ms, 5 fixture turns, 0 self-talk, 0 wrong interrupts, 4 resumed onsets.
+False cuts are fixed. Stop is still decided by whether the server VAD fires (361 / 2660 / 7200 ms over three runs).
+**Open:** a local "do not resume" decision on the paused span (option c above).
