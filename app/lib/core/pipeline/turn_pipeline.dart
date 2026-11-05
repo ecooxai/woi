@@ -402,6 +402,11 @@ class TurnPipeline extends ChangeNotifier {
   // real mic (its stream is a delayed server echo, too late for barge-in).
   MicStream? _onsetMic;
   StreamSubscription<Uint8List>? _onsetSub;
+
+  /// The mic before the AEC ([RawMicCapable]), feeding only the stop-word
+  /// spotter; null: the spotter takes the normal mic.
+  MicStream? _kwsRawMic;
+  StreamSubscription<Uint8List>? _kwsRawSub;
   // After an interruption (or a short utterance) the next reply is held until
   // we know the user did not just say "stop".
   bool _holding = false;
@@ -859,16 +864,17 @@ class TurnPipeline extends ChangeNotifier {
     _kws!.addReference(pcm16, DateTime.now().add(Duration(milliseconds: max(0, _guard.queuedMs))));
   }
 
-  /// QA only (`WOI_QA_DUMP_AEC_MIC=<path>`, read once at startup): every mic
-  /// chunk the spotter path sees (after the AEC, 24 kHz mono s16, raw) is
+  /// QA only (`WOI_QA_DUMP_KWS_MIC=<path>`, read once at startup): every mic
+  /// chunk the spotter path sees (the mic before the AEC when the platform
+  /// has one, [RawMicCapable], else the normal mic; 24 kHz mono s16, raw) is
   /// appended to `<path>`, with `<path>.times` holding `<epoch ms> <bytes>`
   /// per chunk, for `tool/kws_proto.dart`. Unset (the default): no effect.
-  static final String? qaDumpAecMicEnv = Platform.environment['WOI_QA_DUMP_AEC_MIC'];
+  static final String? qaDumpKwsMicEnv = Platform.environment['WOI_QA_DUMP_KWS_MIC'];
   IOSink? _qaDump;
   IOSink? _qaDumpTimes;
 
   void _qaDumpMic(Uint8List chunk) {
-    final path = qaDumpAecMicEnv;
+    final path = qaDumpKwsMicEnv;
     if (path == null || path.isEmpty || _disposed) return;
     _qaDump ??= File(path).openWrite(mode: FileMode.append);
     _qaDumpTimes ??= File('$path.times').openWrite(mode: FileMode.append);
@@ -876,7 +882,7 @@ class TurnPipeline extends ChangeNotifier {
     _qaDumpTimes!.writeln('${DateTime.now().millisecondsSinceEpoch} ${chunk.length} ${_kwsActive ? 1 : 0}');
   }
 
-  /// Mic audio (after the AEC) while Woi is audible or paused.
+  /// Mic audio (before the AEC if possible) while Woi is audible or paused.
   void _kwsMic(Uint8List chunk) {
     _qaDumpMic(chunk);
     if (!_kwsActive || _micMode != MicMode.handsFree) return;
@@ -1104,6 +1110,7 @@ class TurnPipeline extends ChangeNotifier {
       _micSub = mic.chunks.listen(_onMicChunk);
       _levelsChanged.value++;
       if (managed != null && options().onsetMicWithManagedAudio) unawaited(_openOnsetMic());
+      if (managed == null) unawaited(_openKwsRawMic());
     } catch (e) {
       _addSystem('Microphone unavailable: $e', meta: {'type': 'error'});
     }
@@ -1129,6 +1136,26 @@ class TurnPipeline extends ChangeNotifier {
     }
   }
 
+  Future<void> _openKwsRawMic() async {
+    final a = audio;
+    if (_kwsRawMic != null || a is! RawMicCapable || !options().stopWordDetection || stopWordSpotter == null) return;
+    try {
+      final m = await (a as RawMicCapable).openRawMic();
+      if (m == null) return;
+      if (_mic == null || _micManaged || _kwsRawMic != null) {
+        await m.close();
+        return;
+      }
+      _kwsRawMic = m;
+      _kwsRawSub = m.chunks.listen((c) {
+        if (_status == SessionStatus.connected && _forwarding) _kwsMic(c);
+      });
+      debugPrint('kws: listening on the mic before the AEC');
+    } catch (e) {
+      debugPrint('kws: raw mic unavailable ($e), using the AEC mic');
+    }
+  }
+
   Future<void> _closeMic() async {
     await _micSub?.cancel();
     _micSub = null;
@@ -1141,6 +1168,11 @@ class TurnPipeline extends ChangeNotifier {
     final o = _onsetMic;
     _onsetMic = null;
     await o?.close();
+    await _kwsRawSub?.cancel();
+    _kwsRawSub = null;
+    final r = _kwsRawMic;
+    _kwsRawMic = null;
+    await r?.close();
     _levelsChanged.value++;
   }
 
@@ -1196,7 +1228,7 @@ class TurnPipeline extends ChangeNotifier {
   void _onMicChunk(Uint8List chunk) {
     final b = _backend;
     if (b == null || _status != SessionStatus.connected || !_forwarding) return;
-    if (!_micManaged) _kwsMic(chunk);
+    if (!_micManaged && _kwsRawMic == null) _kwsMic(chunk);
     // Android media route: half-duplex. While Woi plays (+300 ms) the server
     // gets silence; a local onset opens it with ~160 ms of lead-in.
     final halfDuplex = !_micManaged && options().halfDuplexWhileSpeaking && _micMode == MicMode.handsFree;

@@ -25,7 +25,7 @@
 #        WOI_QA_IGNORE_SERVER_SPEECH=1 (inherited by the app through
 #        qa_launch_app's env) makes the app ignore server speech starts while
 #        Woi speaks, so barge-ins are decided by the local rules only.
-#        QA_DUMP_AEC_MIC=1: the app writes the AEC'd mic to aec_mic.raw (+ .times).
+#        QA_DUMP_KWS_MIC=1: the app writes the spotter's mic to kws_mic.raw (+ .times).
 #        (QA_OUT, QA_SANDBOX, QA_DISPLAY=:11, ECHO_GAIN=0.3, ECHO_DELAY=0.15)
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -130,7 +130,7 @@ wait_quiet() { # gap max: until Woi was silent for gap s (max s)
 qa_make_sandbox || exit 1
 qa_launch_app "$NAME" '{"backendMode":"direct","realtimeModel":"gpt-realtime-2.1"}' \
   WOI_AUDIO_SINK=qa_e2e_speaker WOI_AUDIO_SOURCE=qa_e2e_mic WOI_MIC_MODE=handsFree \
-  ${QA_DUMP_AEC_MIC:+WOI_QA_DUMP_AEC_MIC=$QA_OUT/aec_mic.raw} || exit 1
+  ${QA_DUMP_KWS_MIC:+WOI_QA_DUMP_KWS_MIC=$QA_OUT/kws_mic.raw} || exit 1
 # Woi's CPU: "<epoch> <utime+stime ticks>" each second (summary: % while speaking / idle).
 ( while kill -0 "$APP_PID" 2>/dev/null; do
     echo "$(date +%s.%N) $(awk '{print $14 + $15}' "/proc/$APP_PID/stat" 2>/dev/null)" >>"$QA_OUT/cpu.txt"; sleep 1

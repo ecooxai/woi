@@ -1,6 +1,7 @@
 // ignore_for_file: avoid_print
 // Offline prototype: keyword spotting + Silero VAD over a mono s16 wav.
-// dart run tool/kws_proto.dart <modelDir> <vad.onnx> <wav> [threshold] [score]
+// dart run tool/kws_proto.dart <modelDir> <vad.onnx|-> <wav|raw> [threshold] [score]
+// (raw: s16 mono at $RATE, default 24000, e.g. WOI_QA_DUMP_KWS_MIC; keywords file $KW)
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -11,12 +12,17 @@ void main(List<String> a) {
   final dir = a[0];
   final thr = a.length > 3 ? double.parse(a[3]) : 0.25;
   final score = a.length > 4 ? double.parse(a[4]) : 1.0;
+  // The downloaded model's long file names, or the bundled ones (assets/kws).
+  String f(String part) {
+    final long = '$dir/$part-epoch-12-avg-2-chunk-16-left-64.int8.onnx';
+    return File(long).existsSync() ? long : '$dir/$part.int8.onnx';
+  }
   final kws = so.KeywordSpotter(so.KeywordSpotterConfig(
     model: so.OnlineModelConfig(
       transducer: so.OnlineTransducerModelConfig(
-        encoder: '$dir/encoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx',
-        decoder: '$dir/decoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx',
-        joiner: '$dir/joiner-epoch-12-avg-2-chunk-16-left-64.int8.onnx',
+        encoder: f('encoder'),
+        decoder: f('decoder'),
+        joiner: f('joiner'),
       ),
       tokens: '$dir/tokens.txt',
       numThreads: 1,

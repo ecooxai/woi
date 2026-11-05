@@ -55,6 +55,16 @@ abstract class EchoCancellable {
   Future<void> disposeEchoCancellation();
 }
 
+/// Optional [AudioIO] capability: the microphone before echo cancellation,
+/// for the stop-word spotter (an AEC in double talk eats the onset of a
+/// short word, e.g. the "s" of "stop"; Woi's own words are vetoed against
+/// the reference instead).
+abstract class RawMicCapable {
+  /// A capture of the same source without the canceller; null when the
+  /// normal mic is not echo-cancelled (it is raw already).
+  Future<MicStream?> openRawMic();
+}
+
 /// Optional [AudioIO] capability (Android): the system audio route and a mic
 /// that steps aside while another app records.
 abstract class AudioRouted {

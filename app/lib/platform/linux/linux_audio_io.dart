@@ -17,7 +17,7 @@ import 'pipewire_aec.dart';
 /// app-owned PipeWire WebRTC echo canceller ([PipewireEchoCancel]), whose
 /// reference is the default sink's monitor: everything the speakers play is
 /// removed. Falls back to the plain default mic when that is unavailable.
-class LinuxAudioIO implements AudioIO, EchoCancellable {
+class LinuxAudioIO implements AudioIO, EchoCancellable, RawMicCapable {
   LinuxAudioIO({this.captureLatencyMs = 20, this.playbackLatencyMs = 40, PipewireEchoCancel? echoCanceller})
     : _aec = echoCanceller ?? PipewireEchoCancel(log: (m) => debugPrint('woi aec: $m'));
 
@@ -144,6 +144,14 @@ class LinuxAudioIO implements AudioIO, EchoCancellable {
       if (target != null) _aec.release();
       rethrow;
     }
+  }
+
+  @override
+  Future<MicStream?> openRawMic() async {
+    if (!_echoCancellation) return null;
+    final (exe, args) = _captureCommand(target: _source);
+    final (e, a) = withDefaultSigpipe(exe, args);
+    return _LinuxMic(await Process.start(e, a));
   }
 
   @override
