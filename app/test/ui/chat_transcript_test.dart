@@ -16,9 +16,9 @@ List<Message> _messages(int n, {DateTime? last, Duration step = const Duration(m
 }
 
 class _Host extends StatefulWidget {
-  const _Host({required this.messages, this.conversationId = 'c1'});
+  const _Host({required this.messages});
   final List<Message> messages;
-  final String conversationId;
+  final String conversationId = 'c1';
   @override
   State<_Host> createState() => _HostState();
 }
