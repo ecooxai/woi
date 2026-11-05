@@ -17,12 +17,12 @@ void main() {
       ? 'no X display at $display'
       : null;
 
-  test('screenshot via ffmpeg x11grab: JPEG at 50 % by default, PNG when lossless', () async {
+  test('screenshot via ffmpeg x11grab: JPEG at the dp width by default, PNG when lossless', () async {
     final sw = Stopwatch()..start();
     final shot = await LinuxScreenCapture().capture();
     sw.stop();
     expect(shot.isJpeg, isTrue);
-    expect((shot.width, shot.height), screenshotSize(shot.originalWidth, shot.originalHeight, 0.5));
+    expect((shot.width, shot.height), screenshotSize(shot.originalWidth, shot.originalHeight, kScreenshotScaleDp));
     expect(imageSize(shot.png), (shot.width, shot.height));
     final full = await LinuxScreenCapture().capture(scale: 1, jpegQuality: null, maxWidth: 1280);
     expect(full.isJpeg, isFalse);

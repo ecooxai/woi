@@ -15,7 +15,7 @@ import kotlin.math.roundToInt
 /**
  * Screenshot bitmap -> opaque 8-bit sRGB JPEG (or PNG), scaled to
  * `scale` x the screen's physical pixels (Settings > Screen & camera;
- * defaults 50 % / JPEG 80). Runs on a background thread (callers use
+ * defaults: the screen's dp width / JPEG 80; Dart resolves dp to a scale). Runs on a background thread (callers use
  * WoiBridge.io), never on the UI thread.
  *
  * Screenshots may be HARDWARE bitmaps (GPU buffer; not readable pixel by
@@ -37,8 +37,13 @@ object ScreenshotEncoder {
     data class Result(val width: Int, val height: Int, val source: String, val bytes: Int)
 
     /** Settings pushed from Dart ("screenshotPrefs"): used by the assist screenshot. */
-    fun scale(ctx: Context): Double =
-        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getFloat(KEY_SCALE, DEFAULT_SCALE.toFloat()).toDouble()
+    /** Before Dart pushed any value: the screen's dp width (1 / density), Dart's default. */
+    fun scale(ctx: Context): Double {
+        val p = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (p.contains(KEY_SCALE)) return p.getFloat(KEY_SCALE, DEFAULT_SCALE.toFloat()).toDouble()
+        val d = ctx.resources.displayMetrics.density
+        return if (d > 1f) 1.0 / d else 1.0
+    }
 
     fun quality(ctx: Context): Int =
         ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getInt(KEY_QUALITY, DEFAULT_QUALITY)

@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'dart:ui' show PlatformDispatcher;
 import 'dart:typed_data';
 
 import 'camera.dart' show jpegSize;
@@ -52,11 +53,26 @@ class Screenshot {
 }
 
 /// Defaults for screenshots sent to the model (Settings > Screen & camera).
-const kDefaultScreenshotScale = 0.5;
+/// [ScreenCapture.capture] scale meaning "the screen's width in logical
+/// pixels (dp)": 1 / devicePixelRatio (about 0.36 on a 2.75x phone, the full
+/// width on a 1x desktop). The default.
+const kScreenshotScaleDp = 0.0;
+
+const kDefaultScreenshotScale = kScreenshotScaleDp;
 const kDefaultScreenshotJpegQuality = 80;
 
 /// Scale choices offered in Settings.
-const kScreenshotScales = [0.25, 1 / 3, 0.5, 0.75, 1.0];
+const kScreenshotScales = [kScreenshotScaleDp, 0.25, 1 / 3, 0.5, 0.75, 1.0];
+
+/// The share of physical pixels [scale] stands for: itself, or for
+/// [kScreenshotScaleDp] (or any non-positive value) 1 / the device pixel
+/// ratio of the first view ([devicePixelRatio] overrides it, for tests).
+double resolveScreenshotScale(double scale, {double? devicePixelRatio}) {
+  if (scale.isFinite && scale > 0) return scale.clamp(0.01, 1.0);
+  final views = PlatformDispatcher.instance.views;
+  final dpr = devicePixelRatio ?? (views.isEmpty ? 1.0 : views.first.devicePixelRatio);
+  return dpr.isFinite && dpr > 1 ? 1 / dpr : 1.0;
+}
 
 abstract class ScreenCapture {
   /// Full-screen capture at [scale] x the screen's physical pixels (never
@@ -74,7 +90,7 @@ abstract class ScreenCapture {
 /// least 1x1. The Android side (WoiScreen.scaledSize) uses the same math.
 (int, int) screenshotSize(int ow, int oh, double scale, {int? maxWidth}) {
   if (ow <= 0 || oh <= 0) return (ow.clamp(1, 1 << 30), oh.clamp(1, 1 << 30));
-  final s = scale.isFinite && scale > 0 ? scale.clamp(0.01, 1.0) : 1.0;
+  final s = resolveScreenshotScale(scale);
   var w = (ow * s).round().clamp(1, ow);
   if (maxWidth != null && maxWidth > 0 && w > maxWidth) w = maxWidth;
   final h = w == ow ? oh : (oh * w / ow).round().clamp(1, oh);

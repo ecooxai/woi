@@ -11,17 +11,17 @@ import 'package:woi/platform/screenshot_encode.dart';
 
 void main() {
   group('screenshot settings', () {
-    test('defaults: 50 % and JPEG 80', () {
+    test('defaults: screen dp width and JPEG 80', () {
       const d = AppSettings();
-      expect(d.screenshotScale, 0.5);
+      expect(d.screenshotScale, kScreenshotScaleDp);
       expect(d.screenshotJpegQuality, 80);
-      expect(kDefaultScreenshotScale, 0.5);
+      expect(kDefaultScreenshotScale, kScreenshotScaleDp);
       expect(kDefaultScreenshotJpegQuality, 80);
     });
 
     test('older settings.json without the keys loads the defaults', () {
       final s = AppSettings.fromJson({'autoScreenshot': true, 'screenshotDelayMs': 900});
-      expect(s.screenshotScale, 0.5);
+      expect(s.screenshotScale, kScreenshotScaleDp);
       expect(s.screenshotJpegQuality, 80);
       expect(s.screenshotDelayMs, 900);
     });
@@ -42,9 +42,20 @@ void main() {
       expect(s.screenshotScale, 1.0);
       expect(s.screenshotJpegQuality, 50);
       final t = AppSettings.fromJson({'screenshotScale': 'big', 'screenshotJpegQuality': 120});
-      expect(t.screenshotScale, 0.5);
+      expect(t.screenshotScale, kScreenshotScaleDp);
       expect(t.screenshotJpegQuality, 100);
-      expect(AppSettings.fromJson({'screenshotScale': 0}).screenshotScale, 0.5);
+      expect(AppSettings.fromJson({'screenshotScale': 0}).screenshotScale, kScreenshotScaleDp);
+      expect(AppSettings.fromJson({'screenshotScale': 0.1}).screenshotScale, 0.25);
+    });
+
+    test('dp width: 1 / device pixel ratio, full size at 1x, never enlarged', () {
+      // MI 8: 1080x2248 at 2.75x -> 393 dp wide.
+      expect(resolveScreenshotScale(kScreenshotScaleDp, devicePixelRatio: 2.75), closeTo(1 / 2.75, 1e-9));
+      final s = resolveScreenshotScale(kScreenshotScaleDp, devicePixelRatio: 2.75);
+      expect(screenshotSize(1080, 2248, s), (393, 818));
+      expect(resolveScreenshotScale(kScreenshotScaleDp, devicePixelRatio: 1.0), 1.0);
+      expect(resolveScreenshotScale(kScreenshotScaleDp, devicePixelRatio: 0.8), 1.0);
+      expect(resolveScreenshotScale(0.5, devicePixelRatio: 2.75), 0.5);
     });
   });
 

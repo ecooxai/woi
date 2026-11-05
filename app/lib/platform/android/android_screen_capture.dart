@@ -34,7 +34,7 @@ class AndroidScreenCapture implements ScreenCapture {
     int? maxWidth,
   }) async {
     // Scaled and JPEG/PNG-encoded natively on a background thread.
-    final args = {'scale': scale, 'quality': jpegQuality ?? 0, 'maxWidth': maxWidth ?? 0};
+    final args = {'scale': resolveScreenshotScale(scale), 'quality': jpegQuality ?? 0, 'maxWidth': maxWidth ?? 0};
     // Share frames would show the floating panel; the accessibility
     // screenshot hides it while capturing.
     if (_bridge.sharing.value && !_bridge.overlayVisible.value) {

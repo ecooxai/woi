@@ -92,7 +92,7 @@ class AndroidIntegration {
   /// native copy of the scale / JPEG quality settings current.
   void _pushScreenshotPrefs() {
     final st = controller.settings;
-    final next = (st.screenshotScale, st.screenshotJpegQuality);
+    final next = (resolveScreenshotScale(st.screenshotScale), st.screenshotJpegQuality);
     if (next == _shotPrefs) return;
     _shotPrefs = next;
     unawaited(

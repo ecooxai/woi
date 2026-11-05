@@ -136,7 +136,8 @@ void main() {
     });
 
     test('take_screenshot uses the screenshot settings; click_screen maps at scale 0.5', () async {
-      // A 1080x2400 phone at the default 50 % / JPEG 80.
+      // A 1080x2400 phone at 50 % / JPEG 80.
+      settings = const AppSettings().copyWith(screenshotScale: 0.5);
       final screen = fp.screen
         ..originalWidth = 1080
         ..originalHeight = 2400

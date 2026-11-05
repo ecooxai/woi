@@ -307,8 +307,9 @@ class _SettingsViewState extends State<SettingsView> {
         'Smaller is cheaper and faster; larger shows small text.',
         detail:
             'Screenshots sent to the model (spoken turns, the assistant, screen share, the screenshot tool) '
-            'are scaled to this share of the screen\'s pixels. Never enlarged.',
-        keywords: 'screenshot resolution scale image size downscale vision screen share assist',
+            'are scaled to the screen\'s width in dp (default; about a third of the pixels on a phone, full size '
+            'on a 1x desktop) or to this share of the screen\'s pixels. Never enlarged.',
+        keywords: 'screenshot resolution scale image size downscale dp width vision screen share assist',
         (w) {
           final idx = _scaleIndex(_s.screenshotScale);
           return _slider(
@@ -1133,7 +1134,7 @@ int _scaleIndex(double scale) {
   return best;
 }
 
-String _scaleLabel(double scale) => '${(scale * 100).round()} %';
+String _scaleLabel(double scale) => scale <= 0 ? 'Screen width (dp)' : '${(scale * 100).round()} %';
 
 class _Item {
   _Item(

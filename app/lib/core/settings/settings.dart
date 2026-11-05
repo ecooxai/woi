@@ -120,7 +120,7 @@ class AppSettings {
     this.delegateModel = 'gpt-6-luna',
     this.screenshotDelayMs = 1200,
     this.autoScreenshot = true,
-    this.screenshotScale = 0.5,
+    this.screenshotScale = 0.0,
     this.screenshotJpegQuality = 80,
     this.confirmBeforeBash = true,
     this.runBashInTerminal = false,
@@ -371,7 +371,8 @@ class AppSettings {
       screenshotDelayMs: i('screenshotDelayMs', d.screenshotDelayMs).clamp(0, 10000),
       autoScreenshot: b('autoScreenshot', d.autoScreenshot),
       screenshotScale: switch (j['screenshotScale']) {
-        final num v when v.isFinite && v > 0 => v.toDouble().clamp(0.25, 1.0),
+        final num v when v.isFinite && v <= 0 => 0.0,
+        final num v when v.isFinite => v.toDouble().clamp(0.25, 1.0),
         _ => d.screenshotScale,
       },
       screenshotJpegQuality: i('screenshotJpegQuality', d.screenshotJpegQuality).clamp(50, 100),
