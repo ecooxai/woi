@@ -92,6 +92,7 @@ class WoiTabs extends StatefulWidget {
     this.initialView,
     this.onViewChanged,
     this.headerTrailing = const [],
+    this.menuItems = const [],
     this.wrapHeader,
   });
 
@@ -110,6 +111,10 @@ class WoiTabs extends StatefulWidget {
 
   /// Extra actions at the right end of the tab strip row (narrow layout).
   final List<Widget> headerTrailing;
+
+  /// Narrow layout: when non-empty, the history button becomes a "more"
+  /// menu holding All conversations followed by these entries.
+  final List<WoiMenuItem> menuItems;
 
   /// Wraps the tab strip row (the assist panel makes it a drag handle).
   final Widget Function(Widget header)? wrapHeader;
@@ -674,13 +679,28 @@ class WoiTabsState extends State<WoiTabs> {
             ),
           ),
           if (Platform.isAndroid && !widget.embedded) ScreenShareButton(size: t),
-          if (!wide) _historyButton(t),
+          if (!wide) widget.menuItems.isEmpty ? _historyButton(t) : _moreMenu(t),
           if (!wide) ...widget.headerTrailing,
           SizedBox(width: phone ? 0 : 4),
         ],
       ),
     );
   }
+
+  /// History plus the host's [WoiTabs.menuItems], in one dropdown.
+  Widget _moreMenu(double size) => WoiMenuButton(
+    key: const ValueKey('more-menu'),
+    size: size,
+    items: [
+      WoiMenuItem(
+        key: const ValueKey('open-history'),
+        icon: Icons.history,
+        label: 'All conversations',
+        onTap: _openHistory,
+      ),
+      ...widget.menuItems,
+    ],
+  );
 
   Widget _historyButton(double size) => GlassIconButton(
     key: const ValueKey('open-history'),
@@ -799,4 +819,54 @@ class WoiTabsState extends State<WoiTabs> {
       ),
     );
   }
+}
+
+/// One entry of a [WoiMenuButton] dropdown.
+class WoiMenuItem {
+  const WoiMenuItem({required this.icon, required this.label, required this.onTap, this.key});
+
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+  final Key? key;
+}
+
+/// A "more" (⋮) button that opens a dropdown of [items] below it.
+class WoiMenuButton extends StatelessWidget {
+  const WoiMenuButton({super.key, required this.items, this.size = 36});
+
+  final List<WoiMenuItem> items;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => MenuAnchor(
+    alignmentOffset: const Offset(0, 4),
+    style: MenuStyle(
+      backgroundColor: WidgetStatePropertyAll(WoiColors.bg1),
+      surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+      elevation: const WidgetStatePropertyAll(6),
+      shape: WidgetStatePropertyAll(
+        RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: WoiColors.stroke),
+        ),
+      ),
+    ),
+    menuChildren: [
+      for (final it in items)
+        MenuItemButton(
+          key: it.key,
+          leadingIcon: Icon(it.icon, size: 20, color: WoiColors.textDim),
+          onPressed: it.onTap,
+          style: const ButtonStyle(minimumSize: WidgetStatePropertyAll(Size(200, kTouchTarget))),
+          child: Text(it.label, style: body(14, color: WoiColors.text)),
+        ),
+    ],
+    builder: (context, ctl, _) => GlassIconButton(
+      icon: Icons.more_vert_rounded,
+      tooltip: 'More',
+      onPressed: () => ctl.isOpen ? ctl.close() : ctl.open(),
+      size: size,
+    ),
+  );
 }

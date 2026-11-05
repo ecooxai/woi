@@ -1,11 +1,9 @@
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/app_controller.dart';
 import '../../core/models/message.dart';
-import '../../platform/media_viewer.dart';
 import '../theme.dart';
 import '../screens/history_drawer.dart';
 import '../screens/home_screen.dart';
@@ -193,58 +191,15 @@ class _AssistPanelState extends State<AssistPanel> {
     );
   }
 
-  /// Thumbnail, open full app and close (at the end of the tab strip row).
-  List<Widget> _actions() => [
-    ListenableBuilder(listenable: c.ready ? c.pipeline : c, builder: (context, _) => _thumbnail()),
-    IconButton(
+  /// Window actions in the tab row's dropdown (after All conversations).
+  List<WoiMenuItem> _menuItems() => [
+    WoiMenuItem(
       key: const ValueKey('assist-open-app'),
-      tooltip: 'Open full app',
-      icon: Icon(Icons.open_in_full_rounded, size: 20, color: WoiColors.textDim),
-      onPressed: widget.onOpenApp,
-    ),
-    IconButton(
-      key: const ValueKey('assist-close'),
-      tooltip: 'Close',
-      icon: Icon(Icons.close_rounded, size: 22, color: WoiColors.textDim),
-      onPressed: _dismiss,
+      icon: Icons.open_in_full_rounded,
+      label: 'Open in app',
+      onTap: widget.onOpenApp,
     ),
   ];
-
-  /// The newest screenshot in the conversation (normally the assist one).
-  Widget _thumbnail() {
-    if (!c.ready) return const SizedBox.shrink();
-    final img = latestScreenshot(c.pipeline.conversation.messages);
-    if (img == null) return const SizedBox.shrink();
-    final ratio = img.height > 0 ? img.width / img.height : 0.5;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: Tooltip(
-        message: 'Attached screenshot',
-        child: InkWell(
-          key: const ValueKey('assist-thumbnail'),
-          borderRadius: BorderRadius.circular(6),
-          onTap: () =>
-              c.platform.viewer.show(MediaItem(kind: MediaKind.image, path: img.path, customTitle: 'Screenshot')),
-          child: Container(
-            height: 36,
-            width: (36 * ratio).clamp(16.0, 64.0),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: WoiColors.stroke),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: Image.file(
-              File(img.path),
-              fit: BoxFit.cover,
-              cacheHeight: 108,
-              gaplessPlayback: true,
-              errorBuilder: (_, _, _) => ColoredBox(color: WoiColors.bg2),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 
   /// The main app's tab UI (narrow layout), in its own scaffold for the
   /// history drawer and snack bars.
@@ -266,7 +221,7 @@ class _AssistPanelState extends State<AssistPanel> {
         embedded: true,
         initialView: widget.initialView,
         onViewChanged: widget.onViewChanged,
-        headerTrailing: _actions(),
+        menuItems: _menuItems(),
         wrapHeader: dragArea,
       ),
     );
@@ -284,7 +239,7 @@ class _AssistPanelState extends State<AssistPanel> {
               const SizedBox(width: 16),
               Text('Woi', style: display(17, weight: FontWeight.w700, spacing: -0.4)),
               const Spacer(),
-              ..._actions(),
+              WoiMenuButton(key: const ValueKey('more-menu'), size: kTouchTarget, items: _menuItems()),
             ],
           ),
         ),

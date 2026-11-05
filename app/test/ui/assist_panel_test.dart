@@ -8,6 +8,7 @@ import 'package:woi/core/settings/settings.dart';
 import 'package:woi/platform/android/android_bridge.dart';
 import 'package:woi/platform/platform_services.dart';
 import 'package:woi/ui/assist/assist_panel.dart';
+import 'package:woi/ui/screens/history_drawer.dart';
 import 'package:woi/ui/screens/home_screen.dart';
 import 'package:woi/ui/theme.dart';
 import 'package:woi/ui/widgets/input_bar.dart';
@@ -101,7 +102,12 @@ void main() {
     final rect = t.getRect(find.byKey(const ValueKey('assist-panel')));
     expect(rect.bottom, _screen.height);
     expect(find.byType(InputBar), findsOneWidget);
-    expect(find.byKey(const ValueKey('assist-open-app')), findsOneWidget);
+    // No close button or screenshot thumbnail; history and open-in-app sit
+    // in the dropdown at the right of the tab row.
+    expect(find.byKey(const ValueKey('more-menu')), findsOneWidget);
+    expect(find.byKey(const ValueKey('assist-close')), findsNothing);
+    expect(find.byKey(const ValueKey('assist-thumbnail')), findsNothing);
+    expect(find.byKey(const ValueKey('assist-open-app')), findsNothing);
     // The main app's tab UI, on the Chat tab.
     expect(find.byType(WoiTabs), findsOneWidget);
     expect(find.byKey(const ValueKey('chat-panel')), findsOneWidget);
@@ -181,7 +187,7 @@ void main() {
     );
     await t.pump();
     expect(find.byKey(const ValueKey('note-editor')), findsOneWidget);
-    await t.drag(find.byKey(const ValueKey('assist-close')), const Offset(0, -600));
+    await t.drag(find.byKey(const ValueKey('more-menu')), const Offset(0, -600));
     await t.pumpAndSettle();
     expect(_panelHeight(t), closeTo(_screen.height * kAssistPanelMax, 0.5));
     await env.stop(t);
@@ -282,19 +288,27 @@ void main() {
     await env.stop(t);
   });
 
-  testWidgets('open full app and close buttons', (t) async {
+  testWidgets('dropdown menu: open in app and all conversations', (t) async {
     final env = _Env();
     await env.start(t);
     await env.pump(t);
+    await t.tap(find.byKey(const ValueKey('more-menu')));
+    await t.pumpAndSettle();
+    expect(find.text('All conversations'), findsOneWidget);
     await t.tap(find.byKey(const ValueKey('assist-open-app')));
-    await t.tap(find.byKey(const ValueKey('assist-close')));
-    await t.pump();
+    await t.pumpAndSettle();
     expect(env.opened, [1]);
-    expect(env.dismissed, [1]);
+    expect(env.dismissed, isEmpty);
+    await t.tap(find.byKey(const ValueKey('more-menu')));
+    await t.pumpAndSettle();
+    await t.tap(find.byKey(const ValueKey('open-history')));
+    await t.pump(const Duration(milliseconds: 500));
+    await t.pump(const Duration(milliseconds: 500));
+    expect(find.byType(HistoryDrawer), findsOneWidget);
     await env.stop(t);
   });
 
-  testWidgets('shows the transcript and the attached screenshot thumbnail', (t) async {
+  testWidgets('shows the transcript; latestScreenshot finds the assist image', (t) async {
     final env = _Env();
     await env.start(t);
     final shot = Message(kind: MessageKind.system, text: 'Assist screenshot from com.android.settings')
@@ -310,7 +324,6 @@ void main() {
       ..add(Message(kind: MessageKind.user, text: 'What is on my screen?'))
       ..add(Message(kind: MessageKind.assistant, text: 'The Settings app.'));
     await env.pump(t);
-    expect(find.byKey(const ValueKey('assist-thumbnail')), findsOneWidget);
     expect(find.byKey(const ValueKey('chat-panel')), findsOneWidget);
     expect(find.text('The Settings app.'), findsWidgets);
     expect(latestScreenshot(env.c.pipeline.conversation.messages)?.path, '/nonexistent/assist.png');
