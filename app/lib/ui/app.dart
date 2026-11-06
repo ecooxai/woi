@@ -148,13 +148,15 @@ class _WoiAppState extends State<WoiApp> with WidgetsBindingObserver {
   }
 
   /// Debug hook: `WOI_DEBUG_SHOW=/a.png:/b.txt` opens each file in the media
-  /// viewer shortly after start (used to verify the viewer window).
+  /// viewer shortly after start (used to verify the viewer window);
+  /// `WOI_DEBUG_SHOW_DELAY` sets the delay in seconds (default 2).
   void _debugShowFromEnv() {
     final spec = Platform.environment['WOI_DEBUG_SHOW'] ?? '';
     final paths = spec.split(':').where((s) => s.trim().isNotEmpty).toList();
     if (paths.isEmpty) return;
     unawaited(() async {
-      await Future<void>.delayed(const Duration(seconds: 2));
+      final delay = int.tryParse(Platform.environment['WOI_DEBUG_SHOW_DELAY'] ?? '') ?? 2;
+      await Future<void>.delayed(Duration(seconds: delay));
       for (final path in paths) {
         try {
           final s = await _platform.viewer.show(MediaItem(kind: MediaItem.kindForPath(path), path: path));
