@@ -79,11 +79,22 @@ final _absTarget = RegExp(
   r'(?:\s+(?:of|on)\s+(?:the\s+|my\s+)?(?:whole\s+|entire\s+)?(?:screen|display|desktop|monitor)(?:\s+area)?)?\.?$',
 );
 
+final _elementWord = RegExp(r'\b(button|icon|link|tab|field|menu|dialog|window|box|label|item|image|text|input|bar)s?\b');
+// ", empty background area" / " on the desktop background" after the position.
+final _emptyAreaTail = RegExp(
+  r'[\s,;:–-]+(?:on\s+|in\s+|at\s+)?(?:the\s+)?(?:empty\s+|blank\s+|open\s+)?(?:main\s+)?(?:(?:background|desktop|wallpaper|workspace|space|spot|point|area)\s*)+\.?\s*$',
+);
+
 /// A click_screen target that names a position on the screen itself
 /// ("center of the screen", "top left corner"), not an element: its point
 /// on the screen [shot] covers. Null for anything else.
 Point<int>? absoluteScreenPoint(String target, Screenshot shot) {
-  final m = _absTarget.firstMatch(target.trim().toLowerCase().replaceAll(RegExp('["\']'), ''));
+  var t = target.trim().toLowerCase();
+  // The model often adds a note: "center of the screen (empty background area
+  // in the main workspace)". Drop it unless it names an element.
+  t = t.replaceAllMapped(RegExp(r'\s*\(([^)]*)\)'), (m) => _elementWord.hasMatch(m[1]!) || m[1]!.contains(RegExp('["\']')) ? m[0]! : '');
+  t = t.replaceAll(RegExp('["\']'), '').replaceAll(_emptyAreaTail, '');
+  final m = _absTarget.firstMatch(t.trim());
   if (m == null) return null;
   final w = shot.originalWidth, h = shot.originalHeight;
   if (w <= 0 || h <= 0) return null;
