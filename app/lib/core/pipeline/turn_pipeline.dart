@@ -523,6 +523,14 @@ class TurnPipeline extends ChangeNotifier {
   Stream<ContextCompacted> get compactionEvents => _compactionEvents.stream;
 
   Conversation get conversation => _conv;
+
+  /// Text of the newest user message ('' while its transcript is pending).
+  String get latestUserText {
+    for (final x in _conv.messages.reversed) {
+      if (x.kind == MessageKind.user) return x.text;
+    }
+    return '';
+  }
   SessionStatus get status => _status;
   MicMode get micMode => _micMode;
   bool get pttHeld => _pttHeld;

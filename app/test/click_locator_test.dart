@@ -128,7 +128,13 @@ void main() {
     });
 
     test('round trip stays within one screen pixel per image pixel', () {
-      final s = Screenshot(png: tinyPng(1280, 720), width: 1280, height: 720, originalWidth: 2560, originalHeight: 1440);
+      final s = Screenshot(
+        png: tinyPng(1280, 720),
+        width: 1280,
+        height: 720,
+        originalWidth: 2560,
+        originalHeight: 1440,
+      );
       for (final (x, y) in [(0, 0), (1, 1), (333, 77), (1279, 719)]) {
         final p = s.toScreen(x, y);
         expect(s.fromScreen(p.x, p.y), Point(x, y));
@@ -182,7 +188,10 @@ void main() {
     test('the row of a named cell picks among duplicates', () {
       expect(match('"Edit" button in Alice Martin\'s row of the mail list'), startsWith("button 'Edit' @853,113"));
       expect(match('"Delete" button in Bob Chen\'s row'), startsWith("button 'Delete' @960,146"));
-      expect(match('"Edit" button in the Bob Chen row', hint: const Point(870, 120)), startsWith("button 'Edit' @853,146"));
+      expect(
+        match('"Edit" button in the Bob Chen row', hint: const Point(870, 120)),
+        startsWith("button 'Edit' @853,146"),
+      );
     });
 
     test('a quoted label may be part of the name of the named role', () {
@@ -250,7 +259,13 @@ void main() {
   });
 
   group('planClick', () {
-    final shot = Screenshot(png: tinyPng(1280, 720), width: 1280, height: 720, originalWidth: 2560, originalHeight: 1440);
+    final shot = Screenshot(
+      png: tinyPng(1280, 720),
+      width: 1280,
+      height: 720,
+      originalWidth: 2560,
+      originalHeight: 1440,
+    );
 
     test('x/y only map through the screenshot', () async {
       final p = await planClick(x: 100, y: 50, shot: shot, locator: FakeLocator(const Point(1, 1)));
@@ -277,20 +292,175 @@ void main() {
 
     test('a screen position ("center of the screen") skips the locator', () async {
       final l = FakeLocator(const Point(7, 8));
-      for (final t in ['center of the screen area', 'the centre of the screen', 'Middle of my screen.', 'center', 'center of the screen (empty background area in the main workspace)', 'center of the screen, empty background area', 'the middle of the screen on the desktop background']) {
+      for (final t in [
+        'center of the screen area',
+        'the centre of the screen',
+        'Middle of my screen.',
+        'center',
+        'center of the screen (empty background area in the main workspace)',
+        'center of the screen, empty background area',
+        'the middle of the screen on the desktop background',
+      ]) {
         final p = await planClick(target: t, x: 640, y: 360, shot: shot, locator: l);
         expect(p.point, const Point(1280, 720), reason: t);
         expect(p.info['located_by'], 'absolute');
       }
-      expect((await planClick(target: 'top left corner of the screen', shot: shot, locator: l)).point, const Point(5, 5));
+      expect(
+        (await planClick(target: 'top left corner of the screen', shot: shot, locator: l)).point,
+        const Point(5, 5),
+      );
       expect((await planClick(target: 'bottom-right corner', shot: shot, locator: l)).point, const Point(2554, 1434));
       expect(l.calls, isEmpty);
       // Elements are still grounded, and an offset capture keeps its origin.
-      for (final t in ['center of the dialog', "'Center' button", 'the middle tab', 'center of the screen (the OK button)', 'center of the screen, the Save button']) {
+      for (final t in [
+        'center of the dialog',
+        "'Center' button",
+        'the middle tab',
+        'center of the screen (the OK button)',
+        'center of the screen, the Save button',
+      ]) {
         expect(absoluteScreenPoint(t, shot), isNull, reason: t);
       }
-      final right = Screenshot(png: shot.png, width: 640, height: 360, originalWidth: 1920, originalHeight: 1080, originX: 2560);
+      final right = Screenshot(
+        png: shot.png,
+        width: 640,
+        height: 360,
+        originalWidth: 1920,
+        originalHeight: 1080,
+        originX: 2560,
+      );
       expect(absoluteScreenPoint('center of the screen', right), const Point(2560 + 960, 540));
+    });
+
+    test('verbose screen-position targets from live runs skip the locator', () async {
+      final s = Screenshot(png: tinyPng(1280, 720), width: 1280, height: 720, originalWidth: 1600, originalHeight: 900);
+      final l = FakeLocator(const Point(1100, 450));
+      for (final t in [
+        'center of the screen (empty background area in the main workspace)',
+        'center area of the desktop background (no labeled element), click location in the middle of the screen',
+        'the middle of the display, empty spot',
+        'exact centre of my monitor',
+      ]) {
+        final p = await planClick(target: t, x: 880, y: 360, shot: s, locator: l);
+        expect(p.point, const Point(800, 450), reason: t);
+        expect(p.info['located_by'], 'absolute', reason: t);
+      }
+      expect(absoluteScreenPoint('top-left corner of the desktop background, empty area', s), const Point(5, 5));
+      expect(absoluteScreenPoint('lower right area of the screen near the corner', s), const Point(1594, 894));
+      expect(l.calls, isEmpty);
+      for (final t in [
+        'center of the dialog on the screen',
+        "'Center' text in the middle of the screen",
+        'the middle tab on the screen',
+        'center of the Settings window, desktop',
+        'the OK button in the middle of the screen',
+        'middle of the screen near the top left', // ambiguous
+        'middle of the page', // no screen word
+      ]) {
+        expect(absoluteScreenPoint(t, s), isNull, reason: t);
+      }
+    });
+
+    test('position param resolves from the screenshot geometry', () async {
+      final l = FakeLocator(const Point(1, 1));
+      final s = Screenshot(png: tinyPng(1280, 720), width: 1280, height: 720, originalWidth: 1600, originalHeight: 900);
+      final expected = {
+        'center': const Point(800, 450),
+        'top_left': const Point(5, 5),
+        'top_right': const Point(1594, 5),
+        'bottom_left': const Point(5, 894),
+        'bottom_right': const Point(1594, 894),
+      };
+      for (final e in expected.entries) {
+        final p = await planClick(position: e.key, shot: s, locator: l);
+        expect(p.point, e.value, reason: e.key);
+        expect(p.info['located_by'], 'position');
+        expect(screenPositionPoint(e.key, s), absoluteScreenPoint(e.key.replaceAll('_', ' '), s), reason: e.key);
+      }
+      // A verbose note in target does not stop the position.
+      expect(
+        (await planClick(position: 'center', target: 'empty desktop area', shot: s, locator: l)).point,
+        const Point(800, 450),
+      );
+      expect(
+        (await planClick(position: 'center', target: 'empty area beside the Woi window', shot: s, locator: l)).point,
+        const Point(800, 450),
+      );
+      expect(l.calls, isEmpty);
+      // A target naming an element wins over a stray position.
+      final p = await planClick(
+        position: 'center',
+        target: "'OK' button in the dialog",
+        x: 10,
+        y: 10,
+        shot: s,
+        locator: l,
+      );
+      expect(p.point, const Point(1, 1));
+      expect(l.calls.single.$1, "'OK' button in the dialog");
+      final right = Screenshot(
+        png: s.png,
+        width: 640,
+        height: 360,
+        originalWidth: 1920,
+        originalHeight: 1080,
+        originX: 2560,
+      );
+      expect(screenPositionPoint('center', right), const Point(2560 + 960, 540));
+      expect(screenPositionPoint('nowhere', s), isNull);
+    });
+
+    test("the user's own words pick a screen position when the target is verbose", () async {
+      final s = Screenshot(png: tinyPng(1280, 720), width: 1280, height: 720, originalWidth: 1600, originalHeight: 900);
+      for (final (said, pos) in [
+        ('Click on the center of the screen.', 'center'),
+        ('click the middle of the whole screen', 'center'),
+        ("Okay, now click the top left corner of the screen, it's empty", 'top_left'),
+        ('tap the bottom-right corner of the display', 'bottom_right'),
+      ]) {
+        expect(userScreenPosition(said), pos, reason: said);
+      }
+      for (final said in [
+        'Click the center of the dialog.',
+        'click the OK button in the middle of the screen',
+        'click the center of the screen and then the Save button',
+        'click the middle of the screen, then the top left corner of the screen',
+        'what is in the middle?',
+        '',
+      ]) {
+        expect(userScreenPosition(said), isNull, reason: said);
+      }
+      final l = FakeLocator(const Point(1100, 450));
+      const verbose = 'large empty region beside the assistant panel';
+      final p = await planClick(
+        target: verbose,
+        userText: 'Click on the center of the screen.',
+        x: 880,
+        y: 360,
+        shot: s,
+        locator: l,
+      );
+      expect(p.point, const Point(800, 450));
+      expect(p.info['located_by'], 'utterance');
+      expect(l.calls, isEmpty);
+      // Never over a target that names an element.
+      final b = await planClick(
+        target: "'OK' button",
+        userText: 'Click on the center of the screen.',
+        shot: s,
+        locator: l,
+      );
+      expect(b.point, const Point(1100, 450));
+      expect(l.calls.single.$1, "'OK' button");
+      expect(
+        (await planClick(
+          target: 'gear icon',
+          userText: 'Click on the center of the screen.',
+          shot: s,
+          locator: l,
+        )).point,
+        const Point(1100, 450),
+      );
     });
   });
 
@@ -318,6 +488,41 @@ void main() {
     expect(fp.input.log.last, 'click 20 20 left', reason: 'FakeScreen is 1280x720 of 2560x1440');
     final none = await registry.dispatch('click_screen', '{}');
     expect(none.ok, isFalse);
+  });
+
+  test('click_screen reads position and the user transcript from the environment', () async {
+    final fp = await FakePlatform.create();
+    addTearDown(fp.dispose);
+    var said = 'Click on the center of the screen.';
+    final l = FakeLocator(const Point(3, 3));
+    final env = ToolEnvironment(
+      platform: fp.services,
+      confirmations: FakeConfirmations(),
+      delegate: _NoDelegate(),
+      settings: () => const AppSettings(),
+      onScreenshot: (s, note) async {},
+      locator: l,
+      userText: () => said,
+    );
+    final registry = ToolRegistry()..registerAll(builtinTools(env));
+    final spec = registry.specs.firstWhere((t) => t.name == 'click_screen');
+    expect(((spec.parameters['properties'] as Map)['position'] as Map)['enum'], screenPositions);
+    await registry.dispatch('take_screenshot', '{}');
+    var j = jsonDecode((await registry.dispatch('click_screen', '{"position":"top_right"}')).json) as Map;
+    expect(j['screen_xy'], [2554, 5], reason: 'FakeScreen captures 2560x1440');
+    expect(j['located_by'], 'position');
+    j = jsonDecode(
+      (await registry.dispatch('click_screen', '{"target":"open empty area left of the panel","x":9,"y":9}')).json,
+    ) as Map;
+    expect(j['screen_xy'], [1280, 720]);
+    expect(j['located_by'], 'utterance');
+    said = '';
+    j = jsonDecode(
+      (await registry.dispatch('click_screen', '{"target":"open empty area left of the panel","x":9,"y":9}')).json,
+    ) as Map;
+    expect(j['screen_xy'], [3, 3]);
+    final bad = await registry.dispatch('click_screen', '{"position":"middle"}');
+    expect(bad.ok, isFalse);
   });
 
   test('atspiBitSet packs AT-SPI states/roles into signed int32 words', () {

@@ -61,6 +61,7 @@ Screenshots of the user's screen are attached while they speak; use them to reso
 click_screen: always describe the element in target (its visible label in quotes, kind and place, e.g.
 "'Save' button in the Profile dialog"); Woi locates it precisely. Also pass x/y, your estimate in the pixel
 coordinates of the latest screenshot image. Take a screenshot first if you have none or the screen changed.
+For a spot on the screen itself ("the center of the screen", a corner), set position and leave target empty.
 Tools: click_screen, type_text, send_keys, take_screenshot, run_bash, read_file, list_dir, edit_file,
 write_file, show_file (show a file, image, audio or video to the user inside Woi), read_note, update_note,
 note_control, app_control, delegate_task.
@@ -394,6 +395,7 @@ class AppController extends ChangeNotifier {
         onScreenshot: (shot, note) => p.attachScreenshot(shot, note: note),
         terminalShell: TerminalShell(terminals),
         locator: _clickLocator(),
+        userText: () => p.latestUserText,
       );
       tools = ToolRegistry()
         // send_keys supersedes key_combo (targets the user's app, not Woi).

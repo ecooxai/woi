@@ -25,6 +25,7 @@ class ToolEnvironment {
     required this.onScreenshot,
     this.terminalShell,
     this.locator,
+    this.userText,
   });
 
   final PlatformServices platform;
@@ -44,34 +45,73 @@ class ToolEnvironment {
   /// Finds click_screen `target`s precisely (accessibility tree, then a
   /// vision model on a full-resolution capture); null: x/y only.
   ClickLocator? locator;
+
+  /// The user's latest utterance ('' while its transcript is pending): a
+  /// click_screen whose user asked for "the center of the screen" clicks it
+  /// however the model words the target.
+  String Function()? userText;
 }
 
 /// click_screen: what to click and how it was found.
 typedef ClickPlan = ({Point<int> point, Map<String, Object?> info});
 
-/// Resolves a click_screen call to a real screen point: [target] through
-/// [locator] (the model's x/y as the hint), else x/y mapped from [shot]
-/// (the screenshot the model saw). x/y alone (gpt-live delegation, mock)
-/// skip the locator.
-Future<ClickPlan> planClick({String target = '', int? x, int? y, Screenshot? shot, ClickLocator? locator}) async {
+/// Resolves a click_screen call to a real screen point: [position]
+/// ("center", "top_left", ...) or a [target] naming a screen position (or,
+/// when the target names no element, a [userText] that does) from the [shot]
+/// geometry; else [target] through [locator] (the model's x/y as the hint),
+/// else x/y mapped from [shot] (the screenshot the model saw). x/y alone
+/// (gpt-live delegation, mock) skip the locator.
+Future<ClickPlan> planClick({
+  String target = '',
+  String position = '',
+  String userText = '',
+  int? x,
+  int? y,
+  Screenshot? shot,
+  ClickLocator? locator,
+}) async {
   final guess = x == null || y == null ? null : (shot?.toScreen(x, y) ?? Point(x, y));
   final t = target.trim();
-  final abs = shot == null ? null : absoluteScreenPoint(t, shot);
-  if (abs != null) {
+  if (shot != null) {
     // "the center of the screen": no element to find, skip the ~2 s grounding.
-    return (point: abs, info: const <String, Object?>{'located_by': 'absolute'});
+    final pos = position.trim().isNotEmpty && _mayBeScreenSpot(t) ? screenPositionPoint(position, shot) : null;
+    if (pos != null) return (point: pos, info: const <String, Object?>{'located_by': 'position'});
+    final abs = absoluteScreenPoint(t, shot);
+    if (abs != null) return (point: abs, info: const <String, Object?>{'located_by': 'absolute'});
+    final said = _mayBeScreenSpot(t) ? userScreenPosition(userText) : null;
+    final heard = said == null ? null : screenPositionPoint(said, shot);
+    if (heard != null) return (point: heard, info: const <String, Object?>{'located_by': 'utterance'});
   }
   if (t.isNotEmpty && locator != null) {
     try {
       final found = await locator.locate(t, hint: guess);
       return (point: found.point, info: found.toJson());
     } on LocateFailure catch (e) {
-      if (guess == null) throw ToolFailure('could not find "$t" on screen (${e.reason}); give x/y or describe it differently');
+      if (guess == null) {
+        throw ToolFailure('could not find "$t" on screen (${e.reason}); give x/y or describe it differently');
+      }
       return (point: guess, info: {'located_by': 'model_xy', 'locate_error': e.reason});
     }
   }
-  if (guess == null) throw ToolFailure(t.isEmpty ? 'give target (what to click) or x/y' : 'give x/y');
+  if (guess == null) throw ToolFailure(t.isEmpty ? 'give target (what to click), position or x/y' : 'give x/y');
   return (point: guess, info: const <String, Object?>{});
+}
+
+/// click_screen `position` values.
+const screenPositions = ['center', 'top_left', 'top_right', 'bottom_left', 'bottom_right'];
+
+/// The screen point of a [screenPositions] value on the screen [shot] covers;
+/// null for an unknown value or an empty capture.
+Point<int>? screenPositionPoint(String position, Screenshot shot) {
+  final p = position.trim().toLowerCase().replaceAll(RegExp(r'[\s-]+'), '_');
+  if (!screenPositions.contains(p)) return null;
+  final w = shot.originalWidth, h = shot.originalHeight;
+  if (w <= 0 || h <= 0) return null;
+  if (p == 'center') return Point(shot.originX + w ~/ 2, shot.originY + h ~/ 2);
+  // Corners: a few pixels in, so the click lands on the screen (not a hot edge).
+  const inset = 5;
+  final top = p.startsWith('top'), left = p.endsWith('left');
+  return Point(shot.originX + (left ? inset : w - 1 - inset), shot.originY + (top ? inset : h - 1 - inset));
 }
 
 final _absTarget = RegExp(
@@ -79,11 +119,31 @@ final _absTarget = RegExp(
   r'(?:\s+(?:of|on)\s+(?:the\s+|my\s+)?(?:whole\s+|entire\s+)?(?:screen|display|desktop|monitor)(?:\s+area)?)?\.?$',
 );
 
-final _elementWord = RegExp(r'\b(button|icon|link|tab|field|menu|dialog|window|box|label|item|image|text|input|bar)s?\b');
+final _elementWord = RegExp(
+  r'\b(button|icon|link|tab|field|menu|dialog|window|box|label|item|image|text|input|bar|panel|pane|card|list|row|'
+  r'cell|column|page|form|popup|modal|toolbar|sidebar|checkbox|slider|entry|title|heading|header|footer|file|folder|'
+  r'browser|terminal|editor|document|tile|thumbnail|video|picture|photo|logo|avatar|widget|switch|toggle|option|'
+  r'dropdown|scrollbar|taskbar|dock|notification|message|chat|email|tooltip|badge)(?:s|es)?\b',
+);
+
+/// Whether a click_screen target names (or quotes the label of) an element.
+bool namesElement(String target) {
+  final t = target.toLowerCase();
+  return _elementWord.hasMatch(t) || t.contains(RegExp('["\'‘’“”]'));
+}
+
 // ", empty background area" / " on the desktop background" after the position.
 final _emptyAreaTail = RegExp(
   r'[\s,;:–-]+(?:on\s+|in\s+|at\s+)?(?:the\s+)?(?:empty\s+|blank\s+|open\s+)?(?:main\s+)?(?:(?:background|desktop|wallpaper|workspace|space|spot|point|area)\s*)+\.?\s*$',
 );
+
+final _centerWord = RegExp(r'\b(?:center|centre|middle)\b');
+final _cornerWords = RegExp(r'\b(top|upper|bottom|lower)[\s-]*(left|right)\b');
+final _screenWord = RegExp(r'\b(?:screen|desktop|display|monitor)s?\b');
+
+/// The [screenPositions] value of a centre/corner phrase match.
+String _positionOf(String? vertical, String? horizontal) =>
+    vertical == null ? 'center' : '${vertical == 'top' || vertical == 'upper' ? 'top' : 'bottom'}_$horizontal';
 
 /// A click_screen target that names a position on the screen itself
 /// ("center of the screen", "top left corner"), not an element: its point
@@ -92,18 +152,45 @@ Point<int>? absoluteScreenPoint(String target, Screenshot shot) {
   var t = target.trim().toLowerCase();
   // The model often adds a note: "center of the screen (empty background area
   // in the main workspace)". Drop it unless it names an element.
-  t = t.replaceAllMapped(RegExp(r'\s*\(([^)]*)\)'), (m) => _elementWord.hasMatch(m[1]!) || m[1]!.contains(RegExp('["\']')) ? m[0]! : '');
+  t = t.replaceAllMapped(RegExp(r'\s*\(([^)]*)\)'), (m) => namesElement(m[1]!) ? m[0]! : '');
   t = t.replaceAll(RegExp('["\']'), '').replaceAll(_emptyAreaTail, '');
   final m = _absTarget.firstMatch(t.trim());
-  if (m == null) return null;
-  final w = shot.originalWidth, h = shot.originalHeight;
-  if (w <= 0 || h <= 0) return null;
-  if (m.group(1) != null) return Point(shot.originX + w ~/ 2, shot.originY + h ~/ 2);
-  // Corners: a few pixels in, so the click lands on the screen (not a hot edge).
-  const inset = 5;
-  final top = m.group(2) == 'top' || m.group(2) == 'upper';
-  final left = m.group(3) == 'left';
-  return Point(shot.originX + (left ? inset : w - 1 - inset), shot.originY + (top ? inset : h - 1 - inset));
+  if (m != null) return screenPositionPoint(_positionOf(m.group(2), m.group(3)), shot);
+  // Looser: "center area of the desktop background (no labeled element), click
+  // location in the middle of the screen": a centre or corner word plus a
+  // screen word, and no element anywhere.
+  if (namesElement(target) || !_screenWord.hasMatch(t)) return null;
+  final corners = _cornerWords.allMatches(t).map((c) => _positionOf(c[1], c[2])).toSet();
+  final center = _centerWord.hasMatch(t);
+  if (corners.length + (center ? 1 : 0) != 1) return null; // none, or ambiguous
+  return screenPositionPoint(center ? 'center' : corners.single, shot);
+}
+
+final _saidPosition = RegExp(
+  r'\b(?:(center|centre|middle)|(top|upper|bottom|lower)[\s-]*(left|right)(?:[\s-]+(?:hand\s+)?corner)?)'
+  r'\s+(?:of|on)\s+(?:the\s+|my\s+|this\s+)?(?:whole\s+|entire\s+)?(?:screen|display|desktop|monitor)\b',
+);
+
+final _spotWord = RegExp(r'\b(?:center|centre|middle|corner|empty|blank|background|wallpaper|desktop|screen)\b');
+
+/// Whether a target may describe a screen spot rather than an element: no
+/// quoted label, and any element word comes with a spot word ("empty area
+/// beside the Woi window", not "'OK' button" or "gear icon").
+bool _mayBeScreenSpot(String target) {
+  final t = target.toLowerCase();
+  if (t.contains(RegExp('["\u2018\u201c\u201d]')) || RegExp(r"(^|\s)'").hasMatch(t)) return false;
+  return !_elementWord.hasMatch(t) || _spotWord.hasMatch(t);
+}
+
+/// The screen position the user's own words ask to click ("click on the
+/// center of the screen", "the top left corner of the display"); null when
+/// they name an element anywhere ("the OK button in the middle of the
+/// screen") or ask for more than one position.
+String? userScreenPosition(String utterance) {
+  final u = utterance.toLowerCase();
+  if (u.trim().isEmpty || _elementWord.hasMatch(u)) return null; // apostrophes are fine here
+  final found = _saidPosition.allMatches(u).map((m) => _positionOf(m[2], m[3])).toSet();
+  return found.length == 1 ? found.single : null;
 }
 
 const _maxDirEntries = 300;
@@ -157,9 +244,12 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
         'Click a UI element on screen. Always give target: the element\'s visible label in quotes, its kind and '
             'where it is (e.g. "\'Save\' button in the Profile dialog", "\'Search\' field in the toolbar", '
             '"gear icon at the top right"); Woi then finds it precisely. Also give x/y, your estimate in pixels '
-            'of the latest screenshot (a hint, and the click point if the target cannot be found).',
+            'of the latest screenshot (a hint, and the click point if the target cannot be found). '
+            'For a spot on the screen itself rather than an element (e.g. "the center of the screen"), '
+            'set position and leave target empty.',
         {
           'target': {'type': 'string', 'description': 'What to click: quoted visible label + kind + location'},
+          'position': {'type': 'string', 'enum': screenPositions, 'description': 'A screen spot, not an element'},
           'x': {'type': 'integer', 'description': 'X in screenshot pixels (estimate)'},
           'y': {'type': 'integer', 'description': 'Y in screenshot pixels (estimate)'},
           'button': {
@@ -172,6 +262,8 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
       handler: (args, call) async {
         final plan = await planClick(
           target: args.str('target'),
+          position: args.str('position'),
+          userText: env.userText?.call() ?? '',
           x: args['x'] is num ? args.integer('x', 0) : null,
           y: args['y'] is num ? args.integer('y', 0) : null,
           shot: env.lastScreenshot,
@@ -229,7 +321,10 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
         {
           'command': {'type': 'string'},
           'timeout_s': {'type': 'integer', 'description': 'Default 30, max 300'},
-          'cwd': {'type': 'string', 'description': 'Working directory (default: the workspace dir). ~ and \$HOME expand.'},
+          'cwd': {
+            'type': 'string',
+            'description': 'Working directory (default: the workspace dir). ~ and \$HOME expand.',
+          },
         },
         ['command'],
       ),
@@ -395,7 +490,8 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
         {
           'task': {
             'type': 'string',
-            'description': 'What the user asked for, e.g. "Write a Python script that finds duplicate files and save it"',
+            'description':
+                'What the user asked for, e.g. "Write a Python script that finds duplicate files and save it"',
           },
           'context': {'type': 'string', 'description': 'Relevant details (paths, preferences); no answer text'},
         },
