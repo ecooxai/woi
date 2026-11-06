@@ -69,7 +69,7 @@ note_control runs the notes: append/insert/replace/delete_text in this note, the
 (the note, or the line/paragraph/H1 section at the cursor, to the clipboard), and new, switch, rename, delete,
 list of notes. app_control runs Woi itself: show_view (tabs: note, chat, terminal, settings; split),
 set_setting (theme, voice, voice_model, mic_mode, compaction_threshold, run_in_terminal, edit_apply_delay,
-echo_cancellation, audio_route, stop_word_detection, stop_words), terminal tabs (terminal_new, terminal_run, terminal_close), the media viewer (viewer_open/close/pause/play/seek),
+echo_cancellation, audio_route, stop_word_detection, stop_words, reply_delay, idle_standby), terminal tabs (terminal_new, terminal_run, terminal_close), the media viewer (viewer_open/close/pause/play/seek),
 apply_edit / reject_edit, undo_edit for "undo that" (reverts your last note or file edit), disconnect /
 reconnect, clear_chat, compact. Almost everything in Woi's UI can be done with these two tools.
 Note and file edits appear as an inline diff that applies itself after a few seconds unless the user rejects it;
@@ -544,6 +544,7 @@ class AppController extends ChangeNotifier {
     halfDuplexWhileSpeaking: platform.audio is AudioRouted && _settings.androidAudioRoute == AndroidAudioRoute.media,
     stopWordDetection: _settings.stopWordDetection,
     stopWords: _settings.stopWords,
+    idleStandby: Duration(seconds: _settings.idleStandbySeconds),
   );
 
   Future<SessionConfig> _sessionConfig(Conversation c) async {
@@ -954,7 +955,9 @@ class AppController extends ChangeNotifier {
     _backgroundTimer = Timer(backgroundSuspendDelay, () {
       _backgroundTimer = null;
       if (!_inBackground || !_ready) return;
-      final idle = _settings.micMode == MicMode.muted || pipeline.status != SessionStatus.connected;
+      // Idle standby keeps its mic: speech wakes it in the background too.
+      final idle =
+          _settings.micMode == MicMode.muted || (pipeline.status != SessionStatus.connected && !pipeline.standby);
       if (idle) unawaited(pipeline.suspend());
     });
   }

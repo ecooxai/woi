@@ -9,7 +9,7 @@ import '../theme.dart';
 
 /// What the voice side of Woi is doing. A superset of [AssistantPhase]: it
 /// also covers the connection lifecycle and background context compaction.
-enum VoiceMode { offline, connecting, reconnecting, idle, listening, hearing, thinking, speaking, tool, compacting }
+enum VoiceMode { offline, standby, connecting, reconnecting, idle, listening, hearing, thinking, speaking, tool, compacting }
 
 /// Maps pipeline state to a voice mode. Compaction is shown only while idle
 /// or listening, so it never hides speech, thinking or tool feedback.
@@ -18,7 +18,10 @@ VoiceMode voiceModeFor(
   SessionStatus status = SessionStatus.connected,
   bool compacting = false,
   bool reconnecting = false,
+  bool standby = false,
 }) {
+  // Idle standby: no session, the mic waits for speech.
+  if (standby && status != SessionStatus.connected) return VoiceMode.standby;
   // Automatic reconnect after a drop: shown between attempts too.
   if (reconnecting && status != SessionStatus.connected) return VoiceMode.reconnecting;
   if (status == SessionStatus.connecting) return VoiceMode.connecting;
@@ -39,6 +42,7 @@ VoiceMode voiceModeFor(
 
 String voiceModeLabel(VoiceMode m) => switch (m) {
   VoiceMode.offline => 'Offline',
+  VoiceMode.standby => 'Standby · speak to wake',
   VoiceMode.connecting => 'Connecting…',
   VoiceMode.reconnecting => 'Reconnecting…',
   VoiceMode.idle => 'Mic muted',
@@ -54,6 +58,7 @@ String voiceModeLabel(VoiceMode m) => switch (m) {
 /// also holds the camera, mic-mode and context buttons at 360 px).
 String voiceModeShortLabel(VoiceMode m) => switch (m) {
   VoiceMode.offline => 'Offline',
+  VoiceMode.standby => 'Standby',
   VoiceMode.connecting => 'Connecting…',
   VoiceMode.reconnecting => 'Reconnect…',
   VoiceMode.idle => 'Muted',
@@ -67,6 +72,7 @@ String voiceModeShortLabel(VoiceMode m) => switch (m) {
 
 Color voiceModeColor(VoiceMode m) => switch (m) {
   VoiceMode.offline => WoiColors.textFaint,
+  VoiceMode.standby => WoiColors.textDim,
   VoiceMode.connecting => WoiColors.textDim,
   VoiceMode.reconnecting => WoiColors.amber,
   VoiceMode.idle => WoiColors.textFaint,

@@ -108,6 +108,15 @@ const kChatPaneMaxFraction = 0.6;
 /// Choices for [AppSettings.editApplyDelay] (seconds).
 const kEditApplyDelays = [0, 3, 5, 10, kRequireApproval];
 
+/// [AppSettings.replyDelayMs] default and range.
+const kDefaultReplyDelayMs = 2000;
+const kMinReplyDelayMs = 300;
+const kMaxReplyDelayMs = 5000;
+
+/// [AppSettings.idleStandbySeconds] default and upper bound (0 = off).
+const kDefaultIdleStandbySeconds = 60;
+const kMaxIdleStandbySeconds = 600;
+
 class AppSettings {
   const AppSettings({
     this.backendMode = BackendMode.gptLive,
@@ -143,6 +152,8 @@ class AppSettings {
     this.stopWords = const ['stop'],
     this.usageGuardPercent = 20,
     this.chatPaneFraction = kDefaultChatPaneFraction,
+    this.replyDelayMs = kDefaultReplyDelayMs,
+    this.idleStandbySeconds = kDefaultIdleStandbySeconds,
   });
 
   final BackendMode backendMode;
@@ -226,6 +237,7 @@ class AppSettings {
 
   /// The words [stopWordDetection] listens for (English, default "stop").
   final List<String> stopWords;
+
   /// When either Codex usage window (5 h, week) has less than this many
   /// percent remaining, delegation and compaction use gpt-6-luna even if a
   /// more expensive model is selected. 0 = off.
@@ -233,6 +245,16 @@ class AppSettings {
 
   /// Wide two-pane layout: share of the width taken by the chat pane.
   final double chatPaneFraction;
+
+  /// Direct realtime: silence (ms) that ends the user's spoken turn. Shorter
+  /// pauses stay in the same message, and Woi waits at least this long after
+  /// the user stops before it answers.
+  final int replyDelayMs;
+
+  /// Hands-free: after this many seconds with nothing said the session
+  /// closes, the mic keeps listening, and speech reconnects and sends what
+  /// was said (Realtime backends). 0: stay connected.
+  final int idleStandbySeconds;
 
   /// The voice used by the current backend mode.
   String get activeVoice => backendMode == BackendMode.gptLive ? liveVoice : voice;
@@ -276,6 +298,8 @@ class AppSettings {
     bool? fallbackToDirectOnLimit,
     int? usageGuardPercent,
     double? chatPaneFraction,
+    int? replyDelayMs,
+    int? idleStandbySeconds,
   }) => AppSettings(
     backendMode: backendMode ?? this.backendMode,
     apiKey: apiKey ?? this.apiKey,
@@ -310,6 +334,8 @@ class AppSettings {
     stopWords: stopWords ?? this.stopWords,
     usageGuardPercent: usageGuardPercent ?? this.usageGuardPercent,
     chatPaneFraction: chatPaneFraction ?? this.chatPaneFraction,
+    replyDelayMs: replyDelayMs ?? this.replyDelayMs,
+    idleStandbySeconds: idleStandbySeconds ?? this.idleStandbySeconds,
   );
 
   /// Whether a change requires reconnecting the live session.
@@ -319,7 +345,9 @@ class AppSettings {
       o.voiceModel != voiceModel ||
       o.realtimeModel != realtimeModel ||
       o.voice != voice ||
-      o.liveVoice != liveVoice;
+      o.liveVoice != liveVoice ||
+      // Only the realtime WebSocket backends use it.
+      (backendMode != BackendMode.gptLive && o.replyDelayMs != replyDelayMs);
 
   Map<String, Object?> toJson() => {
     'backendMode': backendMode.name,
@@ -355,6 +383,8 @@ class AppSettings {
     'stopWords': stopWords,
     'usageGuardPercent': usageGuardPercent,
     'chatPaneFraction': chatPaneFraction,
+    'replyDelayMs': replyDelayMs,
+    'idleStandbySeconds': idleStandbySeconds,
   };
 
   factory AppSettings.fromJson(Map<String, Object?> j) {
@@ -417,6 +447,8 @@ class AppSettings {
         kChatPaneMinFraction,
         kChatPaneMaxFraction,
       ),
+      replyDelayMs: i('replyDelayMs', d.replyDelayMs).clamp(kMinReplyDelayMs, kMaxReplyDelayMs),
+      idleStandbySeconds: i('idleStandbySeconds', d.idleStandbySeconds).clamp(0, kMaxIdleStandbySeconds),
     );
   }
 }

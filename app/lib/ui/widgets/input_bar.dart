@@ -83,6 +83,7 @@ class _InputBarState extends State<InputBar> {
         final status = pipeline.status;
         if (status == SessionStatus.connected) _wasConnected = true;
         final connected = status == SessionStatus.connected;
+        final standby = pipeline.standby;
         final ph = pipeline.phase;
         final canStop =
             ph == AssistantPhase.speaking || ph == AssistantPhase.thinking || ph == AssistantPhase.toolRunning;
@@ -93,11 +94,13 @@ class _InputBarState extends State<InputBar> {
           status: status,
           compacting: c.contextManager.compressing,
           reconnecting: pipeline.reconnecting,
+          standby: standby,
         );
 
         final composer = Composer(
           focusNode: widget.focusNode,
-          enabled: connected,
+          // Standby: typing wakes the session (sent once connected).
+          enabled: connected || standby,
           showStop: canStop,
           onStop: pipeline.interrupt,
           onSend: pipeline.sendText,
@@ -112,7 +115,7 @@ class _InputBarState extends State<InputBar> {
             onPttUp: pipeline.pttUp,
             // While connecting too: a press (or hands-free speech) is
             // recorded and sent once the session is ready.
-            enabled: connected || status == SessionStatus.connecting,
+            enabled: connected || standby || status == SessionStatus.connecting,
           ),
         );
 
@@ -142,7 +145,12 @@ class _InputBarState extends State<InputBar> {
           },
         );
         final link = ConnectionStatusChip(
-          state: linkStateFor(status, wasConnected: _wasConnected, reconnecting: pipeline.reconnecting),
+          state: linkStateFor(
+            status,
+            wasConnected: _wasConnected,
+            reconnecting: pipeline.reconnecting,
+            standby: standby,
+          ),
           model: c.activeVoiceModel,
           backend: c.activeBackendMode,
           voice: s.activeVoice,

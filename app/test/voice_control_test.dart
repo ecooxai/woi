@@ -147,6 +147,14 @@ void main() {
     expect(c.settings.autoScreenshot, isFalse);
     expect(await set('screenshot_delay', '1.5'), 'screenshot delay 1.5 s');
     expect(c.settings.screenshotDelayMs, 1500);
+    expect(await set('reply_delay', '2.5 seconds'), 'reply delay 2.5 s');
+    expect(c.settings.replyDelayMs, 2500);
+    expect(await set('reply_delay', '20'), 'reply delay 0.3 s', reason: '20 reads as ms, clamped');
+    expect(await set('idle_standby', '2 min'), 'idle standby after 120 s');
+    expect(c.settings.idleStandbySeconds, 120);
+    expect(await set('idle_standby', 'off'), 'idle standby off');
+    expect(c.settings.idleStandbySeconds, 0);
+    expect(await set('idle_standby', '45'), 'idle standby after 45 s');
     await set('camera_replaces_screenshot', 'on');
     expect(c.settings.cameraReplacesScreenshot, isTrue);
     await set('thinking chime', 'off');

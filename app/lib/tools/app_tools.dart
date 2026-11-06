@@ -127,7 +127,7 @@ ToolDefinition appControlTool(AppActions actions) => ToolDefinition(
         'set_setting (key: theme [light|dark|system], mic_mode [hands_free|push_to_talk|muted], voice, '
         'voice_model, compaction_threshold [tokens], run_in_terminal [on|off], edit_apply_delay [0|3|5|10|approval], '
         'echo_cancellation [on|off], audio_route [phone|media; Android: phone = call path with echo cancellation], stop_word_detection [on|off; offline "stop" cuts Woi], stop_words [comma-separated English words, default stop], usage_guard [percent left below which delegation/compaction use gpt-6-luna; '
-        '0 = off], auto_screenshot, screenshot_delay [s], camera_replaces_screenshot, thinking_chime, '
+        '0 = off], auto_screenshot, screenshot_delay [s], reply_delay [s of silence that ends the user turn, 0.3-5], idle_standby [s without speech before the session closes and the mic waits for speech; 0 = off], camera_replaces_screenshot, thinking_chime, '
         'confirm_commands, fallback_to_direct [on|off], backend [gpt_live|direct|api_key], compression_model / '
         'delegate_model [gpt-6-luna|gpt-6.1-sol], chat_pane [percent of width in split view, 25-60], workspace '
         '[folder]; value); '

@@ -68,6 +68,16 @@ class PreConnectBuffer {
 
   double _maxRms = 0;
 
+  /// Drops the oldest chunks until at most about [bytes] remain (standby
+  /// keeps only the lead-in before a wake).
+  void keepLast(int bytes) {
+    while (_chunks.length > 1 && _bytes - _chunks.first.length >= bytes) {
+      _bytes -= _chunks.removeAt(0).length;
+      _voiced.removeAt(0);
+      _zero.removeAt(0);
+    }
+  }
+
   void clear() {
     _chunks.clear();
     _voiced.clear();

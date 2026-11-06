@@ -451,6 +451,18 @@ class AppActions {
         final ms = (secs * 1000).round().clamp(0, 4000);
         next = s.copyWith(screenshotDelayMs: ms);
         done = 'screenshot delay ${(ms / 1000).toStringAsFixed(1)} s';
+      case 'reply_delay' || 'end_of_turn_silence' || 'turn_silence':
+        final m = RegExp(r'[\d.]+').firstMatch(lv);
+        if (m == null) throw AppActionError('reply delay needs seconds');
+        var secs = double.parse(m[0]!);
+        if (lv.contains('ms') || secs > 10) secs /= 1000;
+        final ms = (secs * 1000).round().clamp(kMinReplyDelayMs, kMaxReplyDelayMs);
+        next = s.copyWith(replyDelayMs: ms);
+        done = 'reply delay ${(ms / 1000).toStringAsFixed(1)} s';
+      case 'idle_standby' || 'standby' || 'idle_disconnect':
+        final secs = _standbySeconds(lv);
+        next = s.copyWith(idleStandbySeconds: secs);
+        done = secs == 0 ? 'idle standby off' : 'idle standby after $secs s';
       case 'camera_replaces_screenshot' || 'camera_replaces':
         final on = _onOff(lv, 'camera_replaces_screenshot');
         next = s.copyWith(cameraReplacesScreenshot: on);
@@ -503,7 +515,7 @@ class AppActions {
       default:
         throw AppActionError(
           'unknown setting "$key" (theme, mic_mode, voice, voice_model, compaction_threshold, run_in_terminal, '
-          'edit_apply_delay, echo_cancellation, audio_route, stop_word_detection, stop_words, usage_guard, auto_screenshot, screenshot_delay, '
+          'edit_apply_delay, echo_cancellation, audio_route, stop_word_detection, stop_words, usage_guard, auto_screenshot, screenshot_delay, reply_delay, idle_standby, '
           'camera_replaces_screenshot, thinking_chime, confirm_commands, fallback_to_direct, backend, '
           'compression_model, delegate_model, chat_pane, workspace)',
         );
@@ -524,6 +536,19 @@ class AppActions {
     if (_on.hasMatch(lv)) return true;
     if (_off.hasMatch(lv)) return false;
     throw AppActionError('$name must be on or off');
+  }
+
+  /// "off" / "on" (the default) / "90" / "2 min" / "90s" -> seconds.
+  static int _standbySeconds(String lv) {
+    if (_off.hasMatch(lv) || lv == 'never') return 0;
+    final m = RegExp(r'[\d.]+').firstMatch(lv);
+    if (m == null) {
+      if (_on.hasMatch(lv)) return kDefaultIdleStandbySeconds;
+      throw AppActionError('idle standby needs seconds or off');
+    }
+    var secs = double.parse(m[0]!);
+    if (RegExp(r'\bmin').hasMatch(lv) || lv.endsWith('m')) secs *= 60;
+    return secs.round().clamp(0, kMaxIdleStandbySeconds);
   }
 
   @visibleForTesting

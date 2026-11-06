@@ -618,7 +618,7 @@ class WoiTabsState extends State<WoiTabs> {
   /// in the chat history like a typed message).
   void _run(String text) {
     final messenger = ScaffoldMessenger.maybeOf(context);
-    if (pipeline.status != SessionStatus.connected) {
+    if (pipeline.status != SessionStatus.connected && !pipeline.standby) {
       messenger?.showSnackBar(const SnackBar(content: Text('Not connected: Run needs a live session.')));
       return;
     }

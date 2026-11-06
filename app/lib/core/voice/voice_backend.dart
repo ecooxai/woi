@@ -237,6 +237,17 @@ abstract class VoiceBackend {
   /// them or asking for another reply.
   void dropEchoTurn({String? itemId, List<String> callIds = const []}) => stopAndDrop();
 
+  /// The input audio of user turn [itemId] exactly as the server took it
+  /// (from its speech start, prefix padding included, to its speech end), or
+  /// null when unknown. The local clip of a turn starts when the server's
+  /// speech start arrives, which can be seconds after the speech began.
+  Uint8List? turnAudio(String? itemId) => null;
+
+  /// How far (ms, smoothed) the server's turn detection runs behind the audio
+  /// sent: a slow uplink queues the audio (and large images block it), so
+  /// every reply comes that much later. Null when unknown.
+  int? get uplinkLagMs => null;
+
   /// A [SpeechStarted.deferred] turn is the user after all: it gets a reply
   /// once it ends (the caller interrupts Woi with [cancelResponse]).
   void acceptTurn() {}

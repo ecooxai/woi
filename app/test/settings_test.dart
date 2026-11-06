@@ -1,7 +1,40 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:woi/core/settings/settings.dart';
 
+import 'package:woi/core/voice/backend_factory.dart';
+import 'package:woi/core/voice/realtime_ws_backend.dart';
+
 void main() {
+  test('reply delay defaults to 2 s, is clamped, and sets the Direct server VAD silence', () async {
+    const d = AppSettings(backendMode: BackendMode.direct);
+    expect(d.replyDelayMs, 2000);
+    expect(AppSettings.fromJson(const {}).replyDelayMs, 2000);
+    expect(AppSettings.fromJson(const {'replyDelayMs': 50}).replyDelayMs, kMinReplyDelayMs);
+    expect(AppSettings.fromJson(const {'replyDelayMs': 99999}).replyDelayMs, kMaxReplyDelayMs);
+    final longer = d.copyWith(replyDelayMs: 3000);
+    expect(AppSettings.fromJson(longer.toJson()).replyDelayMs, 3000);
+    expect(longer.sessionDiffers(d), isTrue, reason: 'Direct reconnects with the new turn detection');
+    expect(
+      const AppSettings(backendMode: BackendMode.gptLive).copyWith(replyDelayMs: 3000).sessionDiffers(
+        const AppSettings(backendMode: BackendMode.gptLive),
+      ),
+      isFalse,
+      reason: 'gpt-live does not use it',
+    );
+    final sel = createVoiceBackend(BackendContext(settings: longer, credentials: () async => null));
+    final b = sel.backend as RealtimeWsBackend;
+    expect(b.vadSilenceMs, 3000);
+    await b.close();
+  });
+
+  test('idle standby defaults to 60 s, 0 is off, and is clamped', () {
+    expect(const AppSettings().idleStandbySeconds, 60);
+    expect(AppSettings.fromJson(const {}).idleStandbySeconds, 60);
+    expect(AppSettings.fromJson(const {'idleStandbySeconds': 0}).idleStandbySeconds, 0);
+    expect(AppSettings.fromJson(const {'idleStandbySeconds': 99999}).idleStandbySeconds, kMaxIdleStandbySeconds);
+    expect(AppSettings.fromJson(const AppSettings(idleStandbySeconds: 90).toJson()).idleStandbySeconds, 90);
+  });
+
   test('thinking earcon is off by default and round-trips through JSON', () {
     const d = AppSettings();
     expect(d.thinkingEarcon, isFalse);

@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:woi/core/pipeline/pre_connect_buffer.dart';
 import 'package:woi/core/pipeline/turn_pipeline.dart';
+import 'package:woi/core/settings/settings.dart';
 import 'package:woi/core/voice/voice_backend.dart';
 import 'package:woi/platform/screen_capture.dart';
 
@@ -337,4 +338,85 @@ void main() {
       expect(h.scripted.images, hasLength(1));
     });
   });
+
+  group('idle standby', () {
+    late Harness h;
+    const opts = PipelineOptions(
+      screenshotDelay: Duration(milliseconds: 200),
+      autoScreenshot: false,
+      idleStandby: Duration(milliseconds: 300),
+    );
+
+    setUp(() async {
+      h = await Harness.create(options: opts);
+    });
+    tearDown(() async => h.dispose());
+
+    Uint8List quiet() {
+      final bd = ByteData(kVoiceBytesPerSecond ~/ 50);
+      for (var k = 0; k < bd.lengthInBytes ~/ 2; k++) {
+        bd.setInt16(k * 2, k.isEven ? 8 : -8, Endian.little);
+      }
+      return bd.buffer.asUint8List();
+    }
+
+    test('PreConnectBuffer.keepLast keeps only the newest audio', () {
+      final buf = PreConnectBuffer();
+      for (var i = 0; i < 10; i++) {
+        buf.add(tagged(i));
+      }
+      buf.keepLast(tagged(0).length * 3);
+      expect(cat(buf.take()), cat([for (var i = 7; i < 10; i++) tagged(i)]));
+    });
+
+    test('closes the session after the idle time, keeps the mic, wakes on speech and sends it from the start', () async {
+      final mic = h.mic;
+      final first = h.scripted;
+      await waitFor(() => h.pipeline.standby, timeout: const Duration(seconds: 3));
+      expect(h.pipeline.status, SessionStatus.disconnected);
+      expect(first.closed, isTrue);
+      expect(identical(h.fp.audio.mic, mic), isTrue, reason: 'the mic stays open in standby');
+      // 3 s of room noise: only the last ~1.5 s is kept as the lead-in.
+      for (var i = 0; i < 150; i++) {
+        mic.push(quiet());
+      }
+      expect(h.pipeline.standby, isTrue, reason: 'noise does not wake it');
+      for (var i = 0; i < 30; i++) {
+        mic.push(tagged(i));
+      }
+      expect(h.pipeline.standby, isFalse);
+      await waitFor(() => h.pipeline.status == SessionStatus.connected && !identical(h.lastBackend, first));
+      final sent = cat(h.scripted.sentAudio);
+      final lead = TurnPipeline.standbyLeadBytes ~/ quiet().length;
+      expect(sent, cat([for (var i = 0; i < lead - 12; i++) quiet(), for (var i = 0; i < 30; i++) tagged(i)]));
+    });
+
+    test('typed text in standby wakes it and is sent once connected', () async {
+      await waitFor(() => h.pipeline.standby, timeout: const Duration(seconds: 3));
+      final first = h.scripted;
+      h.pipeline.sendText('hello again');
+      await waitFor(() => h.pipeline.status == SessionStatus.connected && !identical(h.lastBackend, first));
+      await waitFor(() => h.scripted.texts.isNotEmpty);
+      expect(h.scripted.texts, ['hello again']);
+      expect(h.conv.messages.where((m) => m.text == 'hello again'), hasLength(1));
+    });
+
+    test('activity keeps it connected; off and muted never stand by', () async {
+      final b = h.scripted..busyFlag = true;
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      expect(h.pipeline.standby, isFalse, reason: 'busy backend');
+      b.busyFlag = false;
+      await waitFor(() => h.pipeline.standby, timeout: const Duration(seconds: 3));
+      await h.pipeline.connect();
+      expect(h.pipeline.standby, isFalse);
+      h.options = const PipelineOptions(autoScreenshot: false);
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      expect(h.pipeline.standby, isFalse, reason: 'off');
+      h.options = opts;
+      await h.pipeline.setMicMode(MicMode.muted);
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      expect(h.pipeline.standby, isFalse, reason: 'muted');
+    });
+  });
 }
+

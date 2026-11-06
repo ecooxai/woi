@@ -379,6 +379,11 @@ class ScriptedBackend extends VoiceBackend {
 
   /// What [busy] reports (work in flight).
   bool busyFlag = false;
+
+  /// What [uplinkLagMs] reports.
+  int? uplinkLag;
+  @override
+  int? get uplinkLagMs => uplinkLag;
   @override
   bool get busy => busyFlag;
 

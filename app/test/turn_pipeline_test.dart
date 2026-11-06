@@ -310,6 +310,20 @@ void main() {
   });
 
   group('screenshots on speech', () {
+    test('a lagging uplink sends them at half the configured size and lower quality', () async {
+      final h = await Harness.create();
+      h.options = const PipelineOptions(
+        screenshotDelay: Duration(milliseconds: 10),
+        screenshotScale: 0.5,
+        screenshotJpegQuality: 80,
+      );
+      h.scripted.uplinkLag = 2500;
+      h.scripted.emit(const SpeechStarted());
+      await waitFor(() => h.scripted.images.isNotEmpty);
+      expect(h.fp.screen.requests.single, (0.25, 55, null));
+      await h.dispose();
+    });
+
     test('sent as a JPEG at the configured scale; saved as .jpg with both sizes', () async {
       final h = await Harness.create();
       h.options = const PipelineOptions(

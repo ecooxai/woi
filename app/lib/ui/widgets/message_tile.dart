@@ -4,10 +4,13 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/context/image_tiers.dart';
 import '../../core/models/message.dart';
+import '../../core/audio/clip_loudness.dart';
 import '../../platform/audio_io.dart';
+import '../../platform/downloads.dart';
 import '../../platform/media_viewer.dart';
 import '../theme.dart';
 import 'audio_button.dart';
@@ -229,6 +232,7 @@ class _Bubble extends StatelessWidget {
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               if (m.audio != null) AudioClipButton(clip: m.audio!, audio: audio, color: accent),
+              _MessageActions(message: m, color: accent, isUser: isUser),
               if (m.interrupted)
                 Pill(label: 'interrupted', color: WoiColors.amber, icon: Icons.content_cut, dense: true),
               Text(_time(m.createdAt), style: body(11, color: WoiColors.textFaint)),
@@ -274,6 +278,102 @@ class _Bubble extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Copy and "more" (download audio, ...) controls next to a message's
+/// play button.
+class _MessageActions extends StatelessWidget {
+  const _MessageActions({required this.message, required this.color, required this.isUser});
+
+  final Message message;
+  final Color color;
+  final bool isUser;
+
+  String get _copyText => isSpeechPlaceholder(message.text) ? '' : message.text.trim();
+
+  void _snack(BuildContext context, String text) =>
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text(text)));
+
+  Future<void> _copy(BuildContext context) async {
+    await Clipboard.setData(ClipboardData(text: _copyText));
+    if (context.mounted) _snack(context, 'Copied');
+  }
+
+  Future<void> _download(BuildContext context) async {
+    final clip = message.audio;
+    if (clip == null) return;
+    final t = message.createdAt;
+    String two(int v) => v.toString().padLeft(2, '0');
+    final name =
+        'woi-${isUser ? 'you' : 'reply'}-${t.year}${two(t.month)}${two(t.day)}-'
+        '${two(t.hour)}${two(t.minute)}${two(t.second)}.wav';
+    try {
+      // The same (boosted when quiet) audio the play button plays.
+      final where = await saveToDownloads(await loudPlaybackPath(clip.path), name);
+      if (context.mounted) _snack(context, 'Saved to $where');
+    } catch (e) {
+      if (context.mounted) _snack(context, 'Download failed: $e');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final text = _copyText;
+    final hasAudio = message.audio != null;
+    if (text.isEmpty && !hasAudio) return const SizedBox.shrink();
+    final iconColor = color.withValues(alpha: 0.85);
+    const box = BoxConstraints.tightFor(width: 30, height: 30);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (text.isNotEmpty)
+          IconButton(
+            tooltip: 'Copy text',
+            constraints: box,
+            padding: EdgeInsets.zero,
+            iconSize: 16,
+            color: iconColor,
+            icon: const Icon(Icons.content_copy_rounded),
+            onPressed: () => _copy(context),
+          ),
+        PopupMenuButton<String>(
+          tooltip: 'More',
+          constraints: const BoxConstraints(minWidth: 180),
+          padding: EdgeInsets.zero,
+          iconSize: 18,
+          icon: Icon(Icons.more_horiz_rounded, color: iconColor),
+          style: IconButton.styleFrom(minimumSize: const Size(30, 30), fixedSize: const Size(30, 30)),
+          onSelected: (v) => switch (v) {
+            'download' => _download(context),
+            'copy' => _copy(context),
+            _ => null,
+          },
+          itemBuilder: (_) => [
+            if (hasAudio)
+              const PopupMenuItem(
+                value: 'download',
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.download_rounded),
+                  title: Text('Download audio'),
+                ),
+              ),
+            if (text.isNotEmpty)
+              const PopupMenuItem(
+                value: 'copy',
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.content_copy_rounded),
+                  title: Text('Copy text'),
+                ),
+              ),
+          ],
+        ),
+      ],
     );
   }
 }

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 
@@ -92,6 +93,16 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
   final double speakingVadThreshold;
   final int speakingVadPrefixPaddingMs;
   final int speakingVadSilenceMs;
+
+  /// In-place compaction: how long each server confirmation may take, and
+  /// how often (and how far apart) a failed apply is retried before it waits
+  /// for the next reconnect.
+  Duration applyConfirmTimeout = const Duration(seconds: 15);
+  int maxApplyRetries = 3;
+  Duration applyRetryDelay = const Duration(seconds: 30);
+  String? _deferredSummary;
+  int _applyRetries = 0;
+  Timer? _applyRetryTimer;
 
   /// Upper bound of the widened prefix padding of the first turn after a
   /// pre-connect flush ([beginPreConnectFlush]). The API rejects more than
@@ -445,6 +456,10 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
   void _resetSessionState() {
     _ready = false;
     _audioAppends = 0;
+    // A new session counts its input audio from zero.
+    _tape.clear();
+    _turnStartMs.clear();
+    _turnSpanMs.clear();
     _activeResponseId = null;
     _responseRequested = false;
     _wantResponse = false;
@@ -492,6 +507,15 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
 
   Future<void> _reconnect(String why) async {
     if (_reconnecting || _closed) return;
+    final deferred = _deferredSummary;
+    if (deferred != null && !_panelIdle) {
+      // A compaction that could not be applied in place goes in now.
+      _deferredSummary = null;
+      _applyRetryTimer?.cancel();
+      final cut = _cutIndex();
+      _summary = deferred;
+      return _reconnectWith(why, _restoreContext(fromIndex: cut));
+    }
     if (_panelIdle) {
       // Warm but unused: no reconnect storm in the background; the next
       // activation connects.
@@ -499,8 +523,11 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
       _emit(BackendError('Voice $why while idle', code: kIdleClosedCode, fatal: true));
       return;
     }
+    return _reconnectWith(why, _restoreContext());
+  }
+
+  Future<void> _reconnectWith(String why, String? context) async {
     _reconnecting = true;
-    final context = _restoreContext();
     _emit(BackendError('Voice $why; reconnecting…', code: 'reconnecting'));
     Object? last;
     try {
@@ -529,6 +556,8 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
   Future<void> close() async {
     _closed = true;
     _ready = false;
+    _applyRetryTimer?.cancel();
+    _applyRetryTimer = null;
     _generation++;
     final sub = _wsSub, ws = _ws;
     _wsSub = null;
@@ -575,6 +604,59 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
     // and jsonEncode would scan and copy the whole payload again.
     _ws?.send('{"type":"input_audio_buffer.append","audio":"${base64Encode(pcm16)}"}');
     _audioAppends++;
+    _tape.add(pcm16);
+  }
+
+  // Input audio of this session (the server's audio_start_ms/audio_end_ms
+  // count from its first byte), for the user turns' clips ([turnAudio]).
+  final _InputTape _tape = _InputTape(kVoiceBytesPerSecond * 120);
+  final Map<String, int> _turnStartMs = {};
+  final Map<String, (int, int)> _turnSpanMs = {};
+
+  @override
+  Uint8List? turnAudio(String? itemId) {
+    final span = itemId == null ? null : _turnSpanMs[itemId];
+    if (span == null) return null;
+    const bytesPerMs = kVoiceBytesPerSecond ~/ 1000;
+    // A little of the trailing silence, so the last word is not cut.
+    return _tape.slice(span.$1 * bytesPerMs, (span.$2 + 250) * bytesPerMs);
+  }
+
+  void _noteTurnStart(Map<String, Object?> ev) {
+    final id = ev['item_id'] as String?;
+    final at = (ev['audio_start_ms'] as num?)?.toInt();
+    if (id != null && at != null) _turnStartMs[id] = at;
+  }
+
+  // The silence that ends a turn as the server last confirmed it, and the
+  // smoothed lag of its speech_stopped behind the audio sent.
+  int? _activeSilenceMs;
+  double? _uplinkLagMs;
+
+  @override
+  int? get uplinkLagMs => _uplinkLagMs?.round();
+
+  /// speech_stopped comes [_activeSilenceMs] after the speech ended
+  /// (audio_end_ms); whatever more of the audio was sent by then is still
+  /// queued on the way (or in the server's backlog).
+  void _noteUplinkLag(Map<String, Object?> ev) {
+    final end = (ev['audio_end_ms'] as num?)?.toInt();
+    final silence = _activeSilenceMs ?? vadSilenceMs;
+    if (end == null || _tape.endMs < end) return;
+    final lag = max(0, _tape.endMs - end - silence).toDouble();
+    final prev = _uplinkLagMs;
+    _uplinkLagMs = prev == null ? lag : prev * 0.5 + lag * 0.5;
+  }
+
+  void _noteTurnEnd(Map<String, Object?> ev) {
+    final id = ev['item_id'] as String?;
+    final end = (ev['audio_end_ms'] as num?)?.toInt();
+    final start = id == null ? null : _turnStartMs.remove(id);
+    if (id == null || start == null || end == null || end <= start) return;
+    _turnSpanMs[id] = (start, end);
+    while (_turnSpanMs.length > 64) {
+      _turnSpanMs.remove(_turnSpanMs.keys.first);
+    }
   }
 
   @override
@@ -848,6 +930,7 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
         final td = (((ev['session'] as Map?)?['audio'] as Map?)?['input'] as Map?)?['turn_detection'];
         if (td is Map && td['interrupt_response'] is bool) _deferActive = td['interrupt_response'] == false;
         if (td is Map && type == 'session.updated') _log('turn detection: prefix ${td['prefix_padding_ms']} ms, threshold ${td['threshold']}, silence ${td['silence_duration_ms']} ms');
+        if (td is Map && td['silence_duration_ms'] is num) _activeSilenceMs = (td['silence_duration_ms'] as num).toInt();
         final hs = _handshake;
         if (hs != null && !hs.isCompleted) hs.complete();
         final uw = _updateWatch;
@@ -859,12 +942,14 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
       case 'input_audio_buffer.speech_started' when _deferActive && !_deferredTurn && !_turnAccepted:
         // The server did not cut Woi off: the pipeline decides whether this
         // is the user (local detector / transcript) or Woi's echo.
+        _noteTurnStart(ev);
         _dropResponsesUntil = null;
         _userSpeaking = true;
         _deferredTurn = true;
         _emit(SpeechStarted(itemId: ev['item_id'] as String?, deferred: true));
       case 'input_audio_buffer.speech_started':
-        _log('speech_started at ${ev['audio_start_ms']} ms of the input stream');
+        _log('speech_started at ${ev['audio_start_ms']} ms of the input stream (sent ${_tape.endMs} ms)');
+        _noteTurnStart(ev);
         // Stop local playback first (the pipeline does it on SpeechStarted);
         // the played position is frozen right now.
         _interruptPlayback();
@@ -872,7 +957,12 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
         _userSpeaking = true;
         _emit(SpeechStarted(itemId: ev['item_id'] as String?));
       case 'input_audio_buffer.speech_stopped':
-        _log('speech_stopped at ${ev['audio_end_ms']} ms of the input stream');
+        _noteUplinkLag(ev);
+        _log(
+          'speech_stopped at ${ev['audio_end_ms']} ms of the input stream (sent ${_tape.endMs} ms, '
+          'uplink lag ${_uplinkLagMs?.round()} ms)',
+        );
+        _noteTurnEnd(ev);
         _endFlushPadding();
         _userSpeaking = false;
         // Server VAD creates the response, which includes any tool output.
@@ -1219,7 +1309,7 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
         (e) =>
             (e['type'] == 'conversation.item.added' || e['type'] == 'conversation.item.created') &&
             (e['item'] as Map?)?['id'] == newId,
-        const Duration(seconds: 5),
+        applyConfirmTimeout,
       );
       // Insert the summary right before the first kept item.
       final prevId = cut > 0 ? _items[cut - 1].id : 'root';
@@ -1234,10 +1324,18 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
         throw RealtimeException('summary item not confirmed (${_applyErrors.join('; ')})');
       }
       if (_applyErrors.isNotEmpty) throw RealtimeException(_applyErrors.join('; '));
+      // The summary is in: a retry after a failed deletion replaces it
+      // instead of adding a second one.
+      final oldSummaryId = _summaryItemId;
+      _summary = summary;
+      _summaryItemId = newId;
+      if (oldSummaryId != null && !toDelete.contains(oldSummaryId) && _itemById(oldSummaryId) != null) {
+        toDelete.add(oldSummaryId);
+      }
       final deletions = <Future<Map<String, Object?>>>[];
       for (final id in toDelete) {
         deletions.add(
-          _waitFor((e) => e['type'] == 'conversation.item.deleted' && e['item_id'] == id, const Duration(seconds: 5)),
+          _waitFor((e) => e['type'] == 'conversation.item.deleted' && e['item_id'] == id, applyConfirmTimeout),
         );
         _send({'type': 'conversation.item.delete', 'item_id': id});
       }
@@ -1247,40 +1345,35 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
         throw RealtimeException('item deletion not confirmed (${_applyErrors.join('; ')})');
       }
       if (_applyErrors.isNotEmpty) throw RealtimeException(_applyErrors.join('; '));
-      _summary = summary;
-      _summaryItemId = newId;
+      _deferredSummary = null;
+      _applyRetries = 0;
       _log('compaction applied: summary item added, ${toDelete.length} items deleted');
       return ContextApplyResult(ContextApplyMethod.deletedItems, removedItems: toDelete.length);
     } catch (e) {
       if (_closed) return const ContextApplyResult(ContextApplyMethod.skipped, detail: 'closed');
-      _log('in-place compaction failed ($e); reconnecting with the summary');
-      return _reconnectWithSummary(summary, '$e');
+      // Never cut the conversation for this: the session goes on as it is,
+      // the apply is retried in the background, and any reconnect (network,
+      // idle standby) starts from the summary anyway.
+      _deferredSummary = summary;
+      if (_applyRetries < maxApplyRetries) {
+        _applyRetries++;
+        _log('in-place compaction failed ($e); retry $_applyRetries in ${applyRetryDelay.inSeconds} s');
+        _applyRetryTimer?.cancel();
+        _applyRetryTimer = Timer(applyRetryDelay, () {
+          _applyRetryTimer = null;
+          if (_closed || _deferredSummary != summary || _pendingSummary != null) return;
+          _pendingSummary = summary;
+          _pendingSummaryDone ??= Completer<ContextApplyResult>();
+          _maybeApplySummary();
+        });
+      } else {
+        _log('in-place compaction failed ($e); applied at the next reconnect');
+      }
+      return ContextApplyResult(ContextApplyMethod.skipped, detail: 'deferred: $e');
     } finally {
       _applyingSummary = false;
       _applyErrors.clear();
       _maybeCreateResponse();
-    }
-  }
-
-  Future<ContextApplyResult> _reconnectWithSummary(String summary, String why) async {
-    final cut = _cutIndex();
-    _summary = summary;
-    final context = _restoreContext(fromIndex: cut);
-    final removed = cut;
-    _generation++;
-    final sub = _wsSub, ws = _ws;
-    _wsSub = null;
-    _ws = null;
-    await sub?.cancel();
-    unawaited(ws?.close().catchError((_) {}));
-    _applyingSummary = false;
-    try {
-      await _open(initialContext: context);
-      reconnects++;
-      return ContextApplyResult(ContextApplyMethod.reconnected, removedItems: removed, detail: why);
-    } catch (e) {
-      unawaited(_reconnect('reconnect after compaction failed'));
-      return ContextApplyResult(ContextApplyMethod.skipped, detail: '$e');
     }
   }
 }
@@ -1354,5 +1447,51 @@ class _Item {
         return '$who: ${clip(text, 600)}';
     }
     return null;
+  }
+}
+
+/// The last [capBytes] of a session's input audio, addressed by byte offset
+/// from the session's first byte.
+class _InputTape {
+  _InputTape(this.capBytes);
+
+  final int capBytes;
+  final List<Uint8List> _chunks = [];
+  int _start = 0; // offset of _chunks.first
+  int _end = 0;
+
+  int get endMs => _end * 1000 ~/ kVoiceBytesPerSecond;
+
+  void add(Uint8List pcm) {
+    _chunks.add(pcm);
+    _end += pcm.length;
+    while (_end - _start - _chunks.first.length >= capBytes) {
+      _start += _chunks.removeAt(0).length;
+    }
+  }
+
+  void clear() {
+    _chunks.clear();
+    _start = 0;
+    _end = 0;
+  }
+
+  /// Bytes [from, to) (clamped to what was sent), or null when the start is
+  /// no longer (or not yet) on the tape.
+  Uint8List? slice(int from, int to) {
+    from &= ~1;
+    to = min(to, _end) & ~1;
+    if (from < _start || from >= to) return null;
+    final out = BytesBuilder(copy: false);
+    var off = _start;
+    for (final c in _chunks) {
+      final cEnd = off + c.length;
+      if (cEnd > from && off < to) {
+        out.add(Uint8List.sublistView(c, max(0, from - off), min(c.length, to - off)));
+      }
+      if (cEnd >= to) break;
+      off = cEnd;
+    }
+    return out.takeBytes();
   }
 }

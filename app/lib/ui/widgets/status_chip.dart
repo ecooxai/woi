@@ -5,10 +5,16 @@ import '../../core/settings/settings.dart';
 import '../theme.dart';
 
 /// Connection state as shown to the user.
-enum LinkState { connected, connecting, reconnecting, offline, error }
+enum LinkState { connected, connecting, reconnecting, standby, offline, error }
 
-LinkState linkStateFor(SessionStatus s, {required bool wasConnected, bool reconnecting = false}) => switch (s) {
+LinkState linkStateFor(
+  SessionStatus s, {
+  required bool wasConnected,
+  bool reconnecting = false,
+  bool standby = false,
+}) => switch (s) {
   SessionStatus.connected => LinkState.connected,
+  _ when standby => LinkState.standby,
   _ when reconnecting => LinkState.reconnecting,
   SessionStatus.connecting => wasConnected ? LinkState.reconnecting : LinkState.connecting,
   SessionStatus.disconnected => LinkState.offline,
@@ -19,6 +25,7 @@ String linkLabel(LinkState s) => switch (s) {
   LinkState.connected => 'connected',
   LinkState.connecting => 'connecting…',
   LinkState.reconnecting => 'reconnecting…',
+  LinkState.standby => 'standby (idle; reconnects when you speak)',
   LinkState.offline => 'offline',
   LinkState.error => 'error',
 };
@@ -26,7 +33,7 @@ String linkLabel(LinkState s) => switch (s) {
 Color linkColor(LinkState s) => switch (s) {
   LinkState.connected => WoiColors.mint,
   LinkState.connecting || LinkState.reconnecting => WoiColors.amber,
-  LinkState.offline => WoiColors.textDim,
+  LinkState.standby || LinkState.offline => WoiColors.textDim,
   LinkState.error => WoiColors.red,
 };
 

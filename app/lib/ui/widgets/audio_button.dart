@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../core/audio/clip_loudness.dart';
 import '../../core/models/message.dart';
 import '../../platform/audio_io.dart';
 import '../theme.dart';
@@ -29,7 +30,12 @@ class _AudioClipButtonState extends State<AudioClipButton> with SingleTickerProv
       return;
     }
     try {
-      final pb = await widget.audio.playFile(widget.clip.path);
+      // Quiet microphone recordings are played boosted (the file is kept).
+      final pb = await widget.audio.playFile(await loudPlaybackPath(widget.clip.path));
+      if (!mounted) {
+        unawaited(pb.stop());
+        return;
+      }
       setState(() => _playing = pb);
       _progress.duration = Duration(milliseconds: widget.clip.durationMs.clamp(1, 1 << 30));
       _progress.forward(from: 0);

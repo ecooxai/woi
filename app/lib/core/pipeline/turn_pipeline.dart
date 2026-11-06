@@ -60,7 +60,14 @@ class PipelineOptions {
     this.halfDuplexWhileSpeaking = false,
     this.stopWordDetection = false,
     this.stopWords = const ['stop'],
+    this.idleStandby = Duration.zero,
   });
+
+  /// Hands-free with a platform mic: after this long with nothing said or
+  /// played the session closes ("standby"), the mic keeps listening and
+  /// speech (or typed text) connects again and sends what was said, like
+  /// at launch. Zero: never.
+  final Duration idleStandby;
 
   /// Offline stop-word spotting while Woi speaks or is paused: a hit on the
   /// mic (not in Woi's own audio) pauses and cuts locally (`kws`).
@@ -203,6 +210,10 @@ class TurnPipeline extends ChangeNotifier {
   bool _userSpeaking = false;
   Message? _currentUtterance;
   final PcmBuffer _utterancePcm = PcmBuffer();
+  // The backend item of the utterance being recorded, and whether it resumed
+  // an earlier one (its clip then starts with that one's audio).
+  String? _utteranceItemId;
+  bool _utteranceResumed = false;
   final PcmRing _preRoll = PcmRing(kVoiceBytesPerSecond * 3 ~/ 10); // 300 ms
 
   // ---- pre-connect capture: the platform mic opens together with connect
@@ -592,7 +603,86 @@ class TurnPipeline extends ChangeNotifier {
 
   bool _disposed = false;
 
-  void _touchTurn() => _lastTurnActivity = DateTime.now();
+  void _touchTurn() => _lastTurnActivity = _lastActivity = DateTime.now();
+
+  // ---- standby (see [PipelineOptions.idleStandby])
+
+  /// The session was closed for idleness; the mic listens and speech
+  /// (or typed text) connects again.
+  bool get standby => _standby;
+  bool _standby = false;
+  DateTime _lastActivity = DateTime.now();
+  EnergyVad? _wakeVad;
+  // Typed while in standby or connecting: sent once connected.
+  final List<String> _queuedTexts = [];
+
+  /// Audio kept in standby before the wake onset (the start of the words).
+  static const int standbyLeadBytes = kVoiceBytesPerSecond * 3 ~/ 2;
+
+  /// Standby wake detector: sensitive (quiet desktop mics peak ~0.015), a
+  /// false wake only costs a connect that idles out again.
+  double standbyWakeThreshold = 0.004;
+
+  void _noteActivity() => _lastActivity = DateTime.now();
+
+  void _maybeStandby() {
+    final after = options().idleStandby;
+    if (after <= Duration.zero || _standby || _disposed || _suspended || _idleWarm || _reconnecting) return;
+    final b = _backend;
+    if (_status != SessionStatus.connected || b == null || b is ManagedAudioBackend) return;
+    if (_mic == null || _micManaged || _micMode != MicMode.handsFree) return;
+    if (_userSpeaking ||
+        _toolsRunning > 0 ||
+        _assistantAudible ||
+        _awaitingResponse ||
+        _assistantMsg != null ||
+        _holding ||
+        _paused != null ||
+        b.busy ||
+        cameraImage?.call() != null) {
+      _noteActivity();
+      return;
+    }
+    if (DateTime.now().difference(_lastActivity) < after) return;
+    unawaited(_enterStandby(after));
+  }
+
+  Future<void> _enterStandby(Duration after) async {
+    debugPrint('voice: standby after ${after.inSeconds} s idle (session closed, mic listening)');
+    _standby = true;
+    _wakeVad = EnergyVad(minThreshold: standbyWakeThreshold, startMs: 240, stopMs: 800, calibrationMs: 300);
+    _pending.clear();
+    _preShot = null;
+    await _disconnectBackend(keepMic: true);
+    _changed();
+  }
+
+  /// Standby mic audio: a rolling lead-in, and the wake detector.
+  void _standbyChunk(Uint8List chunk) {
+    _pending.add(chunk);
+    _pending.keepLast(standbyLeadBytes);
+    if (_wakeVad?.process(chunk) == VadEvent.speechStarted) _wake('speech');
+  }
+
+  void _wake(String why) {
+    if (!_standby || _disposed) return;
+    debugPrint('voice: waking from standby ($why)');
+    unawaited(connect().then((_) => _retryIfFailed()));
+  }
+
+  void _leaveStandby() {
+    _standby = false;
+    _wakeVad = null;
+  }
+
+  void _sendQueuedTexts() {
+    if (_queuedTexts.isEmpty) return;
+    final texts = List.of(_queuedTexts);
+    _queuedTexts.clear();
+    for (final t in texts) {
+      sendText(t);
+    }
+  }
 
   /// Ends a "Thinking…" that nothing will end: no tool running, no reply
   /// streaming or audible, the user not talking, no reply held back and the
@@ -680,6 +770,7 @@ class TurnPipeline extends ChangeNotifier {
     if (want && _phaseTicker == null) {
       _phaseTicker = Timer.periodic(const Duration(milliseconds: 120), (_) {
         _settleIfStale();
+        _maybeStandby();
         if (phase != _lastPhase) _changed();
       });
     } else if (!want && _phaseTicker != null) {
@@ -708,6 +799,7 @@ class TurnPipeline extends ChangeNotifier {
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
     _suspended = false;
+    _leaveStandby();
     // A platform mic stays open across the reconnect (its audio is buffered
     // meanwhile); a backend-owned one (WebRTC) goes with its session.
     if (_micManaged) await _closeMic();
@@ -749,6 +841,7 @@ class TurnPipeline extends ChangeNotifier {
       if (!identical(_backend, b)) return;
       _status = SessionStatus.connected;
       usageLimit = null;
+      _noteActivity();
       // Synchronously with the switch to connected: no live chunk can slip
       // in between the buffered audio and the live stream. Images attached
       // while connecting (the assist screenshot) go first: server VAD may
@@ -771,9 +864,14 @@ class TurnPipeline extends ChangeNotifier {
         }
       }
       _levelsChanged.value++;
+      scheduleMicrotask(_sendQueuedTexts);
     } catch (e) {
       if (!identical(_backend, b)) return;
       limit = UsageLimit.parse(e);
+      if (_queuedTexts.isNotEmpty && !_reconnecting) {
+        _addSystem('Not sent (voice session offline): ${_queuedTexts.join(' / ')}', meta: {'type': 'error'});
+        _queuedTexts.clear();
+      }
       usageLimit = limit;
       // A failed session must not keep its media alive (a half-built WebRTC
       // call keeps the audio device module recording). The platform mic
@@ -822,6 +920,7 @@ class TurnPipeline extends ChangeNotifier {
     _reconnectTimer = null;
     _reconnecting = false;
     _reconnectAttempt = 0;
+    _leaveStandby();
     await _disconnectBackend();
     _suspended = true;
     _changed();
@@ -847,6 +946,7 @@ class TurnPipeline extends ChangeNotifier {
     if (_disposed || _idleWarm || _suspended) return Future.value();
     debugPrint('voice: warm idle (mic off, session kept, status ${_status.name})');
     _idleWarm = true;
+    _leaveStandby();
     _backend?.setIdle(true);
     return _syncWarm();
   }
@@ -1222,6 +1322,9 @@ class TurnPipeline extends ChangeNotifier {
         (_status == SessionStatus.connecting && _backend != null && _managed == null)) {
       await _openMic();
       _managed?.setInputEnabled(_forwarding);
+    } else if (_standby) {
+      // Standby keeps listening (or waits for the talk button).
+      await _openMic();
     }
     if (_userSpeaking && !_forwarding) {
       // Switched to push-to-talk mid-utterance: no more audio reaches the
@@ -1418,7 +1521,12 @@ class TurnPipeline extends ChangeNotifier {
       debugPrint('pre-connect: first mic chunk (${_status.name})');
     }
     if (_status != SessionStatus.connected) {
-      if (!_micManaged && _forwarding && !_suspended) _bufferPreConnect(chunk);
+      if (_micManaged || !_forwarding || _suspended) return;
+      if (_standby) {
+        _standbyChunk(chunk);
+      } else {
+        _bufferPreConnect(chunk);
+      }
       return;
     }
     final b = _backend;
@@ -1481,7 +1589,7 @@ class TurnPipeline extends ChangeNotifier {
     if (!voiced || _preShot != null) return;
     if (!options().autoScreenshot || _activationShotFresh) return;
     // Speech in the pre-roll: grab the screen now, as a live turn would.
-    _preShot = options().capture(screen).then<Screenshot?>((s) => s).catchError((
+    _preShot = _captureTurnShot().then<Screenshot?>((s) => s).catchError((
       Object e,
     ) {
       debugPrint('pre-connect screenshot failed: $e');
@@ -1553,6 +1661,7 @@ class TurnPipeline extends ChangeNotifier {
   void pttDown() {
     if (_micMode != MicMode.pushToTalk || _pttHeld) return;
     _pttHeld = true;
+    if (_standby) _wake('push-to-talk');
     _managed?.setInputEnabled(true);
     // Holding the talk button is an explicit interruption.
     _bargeIn();
@@ -1895,6 +2004,8 @@ class TurnPipeline extends ChangeNotifier {
     onTurnStart?.call();
     debugPrint('user speech start (interrupted=$interrupted) t=${DateTime.now().millisecondsSinceEpoch}');
     _utterancePcm.clear();
+    _utteranceItemId = itemId;
+    _utteranceResumed = false;
     // A known item id continues that turn (the backend saw one turn across a
     // pause): keep one message with one clip and one screenshot.
     final resumed = itemId == null ? null : _userByItem[itemId];
@@ -1905,6 +2016,7 @@ class TurnPipeline extends ChangeNotifier {
       msg.streaming = true;
       final prev = _lastUtteranceId == msg.id ? _lastUtterancePcm : null;
       if (prev != null) _utterancePcm.add(prev);
+      _utteranceResumed = true;
       if (!_awaitingTranscript.contains(msg)) _awaitingTranscript.add(msg);
     } else {
       if (itemId != null) _userByItem[itemId] = msg;
@@ -1980,9 +2092,11 @@ class TurnPipeline extends ChangeNotifier {
   /// Number of thinking earcons played (tests/diagnostics).
   int earconsPlayed = 0;
 
-  void _onSpeechStopped() {
+  void _onSpeechStopped({String? itemId}) {
     if (!_userSpeaking) return;
     _userSpeaking = false;
+    final turnItem = itemId ?? _utteranceItemId;
+    _utteranceItemId = null;
     debugPrint('user speech stop t=${DateTime.now().millisecondsSinceEpoch}');
     // The orb switches to "thinking" right here, before any server event
     // (not for a deferred turn: Woi is still talking).
@@ -1998,7 +2112,21 @@ class TurnPipeline extends ChangeNotifier {
       _screenshotTimer = null;
       _captureFor(msg);
     }
-    final pcm = _utterancePcm.takeBytes();
+    final localPcm = _utterancePcm.takeBytes();
+    // The server's own span of the turn: the local clip only starts when the
+    // server's speech start arrives (seconds late at times), so it missed
+    // the first words. It wins whenever there is one: the local clip is
+    // often longer only because it also holds the end-of-turn silence (the
+    // reply delay) that the stop event waits for.
+    final serverPcm = _utteranceResumed ? null : _backend?.turnAudio(turnItem);
+    _utteranceResumed = false;
+    final pcm = serverPcm != null && serverPcm.length >= kVoiceBytesPerSecond ~/ 5 ? serverPcm : localPcm;
+    if (serverPcm != null) {
+      debugPrint(
+        'user clip: server ${serverPcm.length * 1000 ~/ kVoiceBytesPerSecond} ms, '
+        'local ${localPcm.length * 1000 ~/ kVoiceBytesPerSecond} ms -> ${identical(pcm, serverPcm) ? 'server' : 'local'}',
+      );
+    }
     if (msg != null) {
       final ms = pcm.length * 1000 ~/ kVoiceBytesPerSecond;
       if (_holding && identical(_holdMsg, msg)) {
@@ -2050,11 +2178,34 @@ class TurnPipeline extends ChangeNotifier {
       return;
     }
     try {
-      final s = await shot ?? await options().capture(screen);
+      final s = await shot ?? await _captureTurnShot();
       await attachScreenshot(s, note: 'Screen when the user spoke.', to: msg);
     } catch (e) {
       _addSystem('Screenshot failed: $e', meta: {'type': 'error'});
     }
+  }
+
+  /// Uplink lag (ms) above which per-turn screenshots are sent light: on a
+  /// slow link a full-size one (~200-300 KB) holds the audio behind it for
+  /// seconds, and the reply comes that much later.
+  int slowUplinkLagMs = 1000;
+  int? _uplinkLagMs;
+
+  /// The screenshot of a user turn: as configured, or half size at lower
+  /// quality (~4-5x fewer bytes) while the uplink lags.
+  /// Measured on a proxied link: a 1920x1080 q80 shot is ~210 KB (~280 KB
+  /// base64) and put speech_stopped 1-3.5 s behind on top of the reply delay.
+  Future<Screenshot> _captureTurnShot() {
+    final opts = options();
+    final lag = _backend?.uplinkLagMs;
+    if (lag != null) _uplinkLagMs = lag;
+    final slow = (_uplinkLagMs ?? 0) > slowUplinkLagMs;
+    if (!slow) return opts.capture(screen);
+    debugPrint('screenshot: light (uplink lag $_uplinkLagMs ms)');
+    // Half the configured size (a 1080p desktop: 960 px wide; a phone at
+    // its dp width: half of that).
+    final scale = resolveScreenshotScale(opts.screenshotScale) * 0.5;
+    return screen.capture(scale: scale, jpegQuality: min(opts.screenshotJpegQuality, 55));
   }
 
   /// Saves [shot], attaches it to [to] (or a new system message) and sends
@@ -2239,8 +2390,16 @@ class TurnPipeline extends ChangeNotifier {
   /// Typed input (text fallback).
   void sendText(String text) {
     final t = text.trim();
+    if (t.isEmpty) return;
+    if (_standby || (_status == SessionStatus.connecting && _backend != null)) {
+      // Sent once the session is up (standby: it wakes now).
+      _queuedTexts.add(t);
+      if (_standby) _wake('typed text');
+      return;
+    }
     final b = _backend;
-    if (t.isEmpty || b == null || _status != SessionStatus.connected) return;
+    if (b == null || _status != SessionStatus.connected) return;
+    _noteActivity();
     _bargeIn();
     _releaseHold();
     _dropUntil = null;
@@ -2298,6 +2457,7 @@ class TurnPipeline extends ChangeNotifier {
   // ---------------------------------------------------------------- events
 
   void _onEvent(BackendEvent e) {
+    _noteActivity();
     try {
       _handle(e);
     } catch (err, st) {
@@ -2385,8 +2545,8 @@ class TurnPipeline extends ChangeNotifier {
     switch (e) {
       case SpeechStarted(:final itemId, :final deferred):
         _onSpeechStarted(itemId: itemId, deferred: deferred);
-      case SpeechStopped():
-        _onSpeechStopped();
+      case SpeechStopped(:final itemId):
+        _onSpeechStopped(itemId: itemId);
       case UserTranscriptDelta(:final text, :final itemId):
         final m = _userForTranscript(itemId);
         m.text += text;
@@ -2727,6 +2887,7 @@ class TurnPipeline extends ChangeNotifier {
     _screenshotTimer?.cancel();
     await _compactionSub?.cancel();
     await _compactionFailSub?.cancel();
+    _leaveStandby();
     await _closeMic();
     await _disconnectBackend();
     await _player?.close();

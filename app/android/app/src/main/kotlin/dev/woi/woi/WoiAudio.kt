@@ -694,10 +694,17 @@ object WoiAudio {
     fun clipPlay(path: String): Int {
         val id = nextClip++
         val mp = MediaPlayer()
+        // While the voice session holds the call path (phone route,
+        // MODE_IN_COMMUNICATION) a media stream is muted or sent to the
+        // earpiece on many phones: play on the call path like Woi's voice.
+        val call = wantCallTrack()
         mp.setAudioAttributes(
-            AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
+            if (call) WoiAudioRoute.playbackAttributes()
+            else AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
         )
+        mp.setVolume(1f, 1f)
+        Log.i(WoiBridge.TAG, "clip play (${if (call) "call path" else "media"}): $path")
         mp.setDataSource(path)
         mp.setOnCompletionListener { finishClip(id) }
         mp.setOnErrorListener { _, _, _ -> finishClip(id); true }

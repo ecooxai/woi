@@ -149,6 +149,16 @@ object WoiBridge {
                 result.success(null)
             }
             "clipPlay" -> result.success(WoiAudio.clipPlay(call.argument<String>("path")!!))
+            "saveDownload" -> try {
+                result.success(
+                    WoiDownloads.save(
+                        ctx, call.argument<String>("path")!!, call.argument<String>("name")!!,
+                        call.argument<String>("mime") ?: "application/octet-stream",
+                    )
+                )
+            } catch (e: Exception) {
+                result.error("download", e.message ?: e.toString(), null)
+            }
             "clipStop" -> {
                 WoiAudio.clipStop(call.argument<Int>("id")!!)
                 result.success(null)

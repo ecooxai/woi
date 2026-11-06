@@ -218,6 +218,43 @@ class _SettingsViewState extends State<SettingsView> {
           onChanged: (v) => _apply(_s.copyWith(backendMode: v)),
         ),
       ),
+      if (_s.backendMode != BackendMode.gptLive)
+        _Item(
+          'Reply delay',
+          'Pause that ends your turn before Woi answers.',
+          detail:
+              'How long you have to stay silent before your turn ends and Woi replies. Shorter pauses '
+              'stay in the same message. The session reconnects.',
+          (w) => _slider(
+            value: _s.replyDelayMs.toDouble(),
+            min: kMinReplyDelayMs.toDouble(),
+            max: kMaxReplyDelayMs.toDouble(),
+            divisions: (kMaxReplyDelayMs - kMinReplyDelayMs) ~/ 100,
+            label: '${(_s.replyDelayMs / 1000).toStringAsFixed(1)} s',
+            semantic: 'Reply delay',
+            onChanged: (v) => setState(() => _s = _s.copyWith(replyDelayMs: v.round())),
+            onChangeEnd: (v) => _apply(_s.copyWith(replyDelayMs: v.round())),
+          ),
+        ),
+      if (_s.backendMode != BackendMode.gptLive)
+        _Item(
+          'Idle standby',
+          'Disconnect when nobody speaks; the mic keeps listening.',
+          detail:
+              'After this long without speech (hands-free) the voice session closes to save data and power. '
+              'The microphone keeps listening: when you speak (or type) Woi reconnects and sends everything you '
+              'said, from the first word. Off keeps the session open.',
+          (w) => _slider(
+            value: (_s.idleStandbySeconds ~/ 15).toDouble(),
+            min: 0,
+            max: (kMaxIdleStandbySeconds ~/ 15).toDouble(),
+            divisions: kMaxIdleStandbySeconds ~/ 15,
+            label: _standbyLabel(_s.idleStandbySeconds),
+            semantic: 'Idle standby',
+            onChanged: (v) => setState(() => _s = _s.copyWith(idleStandbySeconds: v.round() * 15)),
+            onChangeEnd: (v) => _apply(_s.copyWith(idleStandbySeconds: v.round() * 15)),
+          ),
+        ),
       _Item(
         _s.backendMode == BackendMode.gptLive ? 'Realtime model (fallback)' : 'Realtime model',
         'Used by the WebSocket realtime backends.',
@@ -1203,3 +1240,11 @@ class _SwitchBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) => child;
 }
+
+String _standbyLabel(int s) => s == 0
+    ? 'Off'
+    : s % 60 == 0
+    ? '${s ~/ 60} min'
+    : s < 60
+    ? '$s s'
+    : '${s ~/ 60} min ${s % 60} s';
