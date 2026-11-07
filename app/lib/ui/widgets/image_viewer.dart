@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../theme.dart';
 import 'glass.dart';
 import 'message_tile.dart' show ClickMarker;
+import 'media_metadata_label.dart';
 
 /// Full-window zoomable image (tap a screenshot thumbnail).
 /// [marker] is a fractional (0..1) position drawn as a click target.
@@ -13,6 +14,9 @@ Future<void> showImageLightbox(
   BuildContext context,
   String path, {
   String? caption,
+  int? generationDurationMs,
+  String? generationModel,
+  String? generationQuality,
   Offset? marker,
   VoidCallback? onOpenWindow,
 }) {
@@ -25,16 +29,28 @@ Future<void> showImageLightbox(
     transitionBuilder: (context, a, _, child) => FadeTransition(
       opacity: CurvedAnimation(parent: a, curve: Curves.easeOut),
       child: ScaleTransition(
-        scale: Tween(begin: 0.96, end: 1.0).animate(CurvedAnimation(parent: a, curve: WoiMotion.emphasized)),
+        scale: Tween(
+          begin: 0.96,
+          end: 1.0,
+        ).animate(CurvedAnimation(parent: a, curve: WoiMotion.emphasized)),
         child: child,
       ),
     ),
-    pageBuilder: (context, _, _) => ZoomableImage(
-      file: File(path),
-      caption: caption,
-      marker: marker,
-      onOpenWindow: onOpenWindow,
-      onClose: () => Navigator.of(context).pop(),
+    // General-dialog routes do not inherit the caller's Material text style.
+    // Supply a transparent surface so caption/metadata/control text use the
+    // theme instead of Flutter's yellow, double-underlined fallback style.
+    pageBuilder: (context, _, _) => Material(
+      type: MaterialType.transparency,
+      child: ZoomableImage(
+        file: File(path),
+        caption: caption,
+        generationDurationMs: generationDurationMs,
+        generationModel: generationModel,
+        generationQuality: generationQuality,
+        marker: marker,
+        onOpenWindow: onOpenWindow,
+        onClose: () => Navigator.of(context).pop(),
+      ),
     ),
   );
 }
@@ -46,12 +62,18 @@ class ZoomableImage extends StatefulWidget {
     super.key,
     required this.file,
     this.caption,
+    this.generationDurationMs,
+    this.generationModel,
+    this.generationQuality,
     this.marker,
     this.onOpenWindow,
     this.onClose,
   });
   final File file;
   final String? caption;
+  final int? generationDurationMs;
+  final String? generationModel;
+  final String? generationQuality;
   final Offset? marker;
   final VoidCallback? onOpenWindow;
   final VoidCallback? onClose;
@@ -100,10 +122,12 @@ class _ZoomableImageState extends State<ZoomableImage> {
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.equal): () => _zoomBy(1.4),
-        const SingleActivator(LogicalKeyboardKey.equal, shift: true): () => _zoomBy(1.4),
+        const SingleActivator(LogicalKeyboardKey.equal, shift: true): () =>
+            _zoomBy(1.4),
         const SingleActivator(LogicalKeyboardKey.numpadAdd): () => _zoomBy(1.4),
         const SingleActivator(LogicalKeyboardKey.minus): () => _zoomBy(1 / 1.4),
-        const SingleActivator(LogicalKeyboardKey.numpadSubtract): () => _zoomBy(1 / 1.4),
+        const SingleActivator(LogicalKeyboardKey.numpadSubtract): () =>
+            _zoomBy(1 / 1.4),
         const SingleActivator(LogicalKeyboardKey.digit0): _fit,
         const SingleActivator(LogicalKeyboardKey.escape): ?close,
       },
@@ -124,7 +148,10 @@ class _ZoomableImageState extends State<ZoomableImage> {
                         child: Center(
                           child: Padding(
                             padding: const EdgeInsets.all(24),
-                            child: _ImageWithMarker(file: widget.file, marker: widget.marker),
+                            child: _ImageWithMarker(
+                              file: widget.file,
+                              marker: widget.marker,
+                            ),
                           ),
                         ),
                       ),
@@ -139,17 +166,32 @@ class _ZoomableImageState extends State<ZoomableImage> {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          GlassIconButton(icon: Icons.remove, tooltip: 'Zoom out (−)', onPressed: () => _zoomBy(1 / 1.4)),
+                          GlassIconButton(
+                            icon: Icons.remove,
+                            tooltip: 'Zoom out (−)',
+                            onPressed: () => _zoomBy(1 / 1.4),
+                          ),
                           SizedBox(
                             width: 52,
                             child: Text(
                               '${(_scale * 100).round()}%',
                               textAlign: TextAlign.center,
-                              style: mono(12, color: WoiColors.textDim).copyWith(fontFeatures: kTabular),
+                              style: mono(
+                                12,
+                                color: WoiColors.textDim,
+                              ).copyWith(fontFeatures: kTabular),
                             ),
                           ),
-                          GlassIconButton(icon: Icons.add, tooltip: 'Zoom in (+)', onPressed: () => _zoomBy(1.4)),
-                          GlassIconButton(icon: Icons.fit_screen, tooltip: 'Fit (0)', onPressed: _fit),
+                          GlassIconButton(
+                            icon: Icons.add,
+                            tooltip: 'Zoom in (+)',
+                            onPressed: () => _zoomBy(1.4),
+                          ),
+                          GlassIconButton(
+                            icon: Icons.fit_screen,
+                            tooltip: 'Fit (0)',
+                            onPressed: _fit,
+                          ),
                           if (widget.onOpenWindow != null)
                             GlassIconButton(
                               icon: Icons.open_in_new,
@@ -159,24 +201,49 @@ class _ZoomableImageState extends State<ZoomableImage> {
                                 widget.onOpenWindow!();
                               },
                             ),
-                          if (close != null) GlassIconButton(icon: Icons.close, tooltip: 'Close (Esc)', onPressed: close),
+                          if (close != null)
+                            GlassIconButton(
+                              icon: Icons.close,
+                              tooltip: 'Close (Esc)',
+                              onPressed: close,
+                            ),
                         ],
                       ),
                     ),
                   ),
-                  if (widget.caption != null)
-                    Positioned(
-                      left: 16,
-                      right: 16,
-                      bottom: 16,
-                      child: Center(
-                        child: GlassPanel(
-                          radius: 99,
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-                          child: Text(widget.caption!, style: body(12.5, color: WoiColors.textDim)),
+                  Positioned(
+                    left: 16,
+                    right: 16,
+                    bottom: 16,
+                    child: Center(
+                      child: GlassPanel(
+                        radius: 18,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 9,
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (widget.caption != null)
+                              Text(
+                                widget.caption!,
+                                textAlign: TextAlign.center,
+                                style: body(12.5, color: WoiColors.textDim),
+                              ),
+                            MediaMetadataLabel(
+                              path: widget.file.path,
+                              image: true,
+                              centered: true,
+                              generationDurationMs: widget.generationDurationMs,
+                              generationModel: widget.generationModel,
+                              generationQuality: widget.generationQuality,
+                            ),
+                          ],
                         ),
                       ),
                     ),
+                  ),
                 ],
               );
             },
@@ -198,7 +265,8 @@ class _ImageWithMarker extends StatelessWidget {
       file,
       fit: BoxFit.contain,
       filterQuality: FilterQuality.medium,
-      errorBuilder: (context, e, s) => const Icon(Icons.broken_image_outlined, size: 48),
+      errorBuilder: (context, e, s) =>
+          const Icon(Icons.broken_image_outlined, size: 48),
     );
     final mk = marker;
     if (mk == null) return img;
@@ -207,8 +275,10 @@ class _ImageWithMarker extends StatelessWidget {
         img,
         Positioned.fill(
           child: LayoutBuilder(
-            builder: (context, box) =>
-                ClickMarker(position: Offset(mk.dx * box.maxWidth, mk.dy * box.maxHeight), size: 34),
+            builder: (context, box) => ClickMarker(
+              position: Offset(mk.dx * box.maxWidth, mk.dy * box.maxHeight),
+              size: 34,
+            ),
           ),
         ),
       ],

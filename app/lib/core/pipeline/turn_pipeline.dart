@@ -2876,6 +2876,14 @@ class TurnPipeline extends ChangeNotifier {
     _addSystem(text, meta: {'type': 'notice'});
   }
 
+  /// Refreshes the transcript after a background tool updates this chat. It
+  /// must not affect the active chat after the user switches conversations.
+  void backgroundConversationChanged(Conversation conversation) {
+    if (_disposed || !identical(conversation, _conv)) return;
+    context.onConversationChanged();
+    _changed();
+  }
+
   // ------------------------------------------------------------ helpers
 
   Message _addMessage(Message m) {

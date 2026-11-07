@@ -13,6 +13,10 @@ class ImageAttachment {
     required this.height,
     required this.originalWidth,
     required this.originalHeight,
+    this.byteSize,
+    this.generationDurationMs,
+    this.generationModel,
+    this.generationQuality,
   });
 
   final String path;
@@ -20,8 +24,24 @@ class ImageAttachment {
   final int height;
   final int originalWidth;
   final int originalHeight;
+  final int? byteSize;
+  final int? generationDurationMs;
+  final String? generationModel;
+  final String? generationQuality;
 
-  Map<String, Object?> toJson() => {'path': path, 'w': width, 'h': height, 'ow': originalWidth, 'oh': originalHeight};
+  bool get generated => generationDurationMs != null || generationModel != null;
+
+  Map<String, Object?> toJson() => {
+    'path': path,
+    'w': width,
+    'h': height,
+    'ow': originalWidth,
+    'oh': originalHeight,
+    if (byteSize != null) 'bytes': byteSize,
+    if (generationDurationMs != null) 'generationMs': generationDurationMs,
+    if (generationModel != null) 'generationModel': generationModel,
+    if (generationQuality != null) 'generationQuality': generationQuality,
+  };
 
   factory ImageAttachment.fromJson(Map<String, Object?> j) => ImageAttachment(
     path: j['path'] as String,
@@ -29,6 +49,10 @@ class ImageAttachment {
     height: (j['h'] as num?)?.toInt() ?? 0,
     originalWidth: (j['ow'] as num?)?.toInt() ?? 0,
     originalHeight: (j['oh'] as num?)?.toInt() ?? 0,
+    byteSize: (j['bytes'] as num?)?.toInt(),
+    generationDurationMs: (j['generationMs'] as num?)?.toInt(),
+    generationModel: j['generationModel'] as String?,
+    generationQuality: j['generationQuality'] as String?,
   );
 }
 
@@ -38,8 +62,10 @@ class AudioClip {
   final int durationMs;
 
   Map<String, Object?> toJson() => {'path': path, 'ms': durationMs};
-  factory AudioClip.fromJson(Map<String, Object?> j) =>
-      AudioClip(path: j['path'] as String, durationMs: (j['ms'] as num?)?.toInt() ?? 0);
+  factory AudioClip.fromJson(Map<String, Object?> j) => AudioClip(
+    path: j['path'] as String,
+    durationMs: (j['ms'] as num?)?.toInt() ?? 0,
+  );
 }
 
 class ToolCallInfo {
@@ -146,9 +172,15 @@ class Message {
     id: j['id'] as String?,
     kind: MessageKind.values.asNameMap()[j['kind']] ?? MessageKind.system,
     text: j['text'] as String? ?? '',
-    image: j['image'] is Map ? ImageAttachment.fromJson((j['image'] as Map).cast<String, Object?>()) : null,
-    audio: j['audio'] is Map ? AudioClip.fromJson((j['audio'] as Map).cast<String, Object?>()) : null,
-    tool: j['tool'] is Map ? ToolCallInfo.fromJson((j['tool'] as Map).cast<String, Object?>()) : null,
+    image: j['image'] is Map
+        ? ImageAttachment.fromJson((j['image'] as Map).cast<String, Object?>())
+        : null,
+    audio: j['audio'] is Map
+        ? AudioClip.fromJson((j['audio'] as Map).cast<String, Object?>())
+        : null,
+    tool: j['tool'] is Map
+        ? ToolCallInfo.fromJson((j['tool'] as Map).cast<String, Object?>())
+        : null,
     createdAt: DateTime.tryParse(j['createdAt'] as String? ?? ''),
     interrupted: j['interrupted'] == true,
     compacted: j['compacted'] == true,

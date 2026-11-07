@@ -131,6 +131,9 @@ class AppSettings {
     this.compressionThreshold = 10000,
     this.compressionModel = 'gpt-6-luna',
     this.delegateModel = 'gpt-6-luna',
+    this.imageModel = 'gpt-image-flare-2.1',
+    this.imageQuality = 'low',
+    this.webSearchEnabled = true,
     this.screenshotDelayMs = 1200,
     this.autoScreenshot = true,
     this.screenshotScale = 0.0,
@@ -172,6 +175,15 @@ class AppSettings {
   final int compressionThreshold;
   final String compressionModel;
   final String delegateModel;
+
+  /// The image model ID is sent unchanged to the selected provider.
+  final String imageModel;
+
+  /// Rendering quality for generated images: low, medium, high, or auto.
+  final String imageQuality;
+
+  /// Make current web information available to the assistant.
+  final bool webSearchEnabled;
   final int screenshotDelayMs;
   final bool autoScreenshot;
 
@@ -332,6 +344,9 @@ class AppSettings {
     int? compressionThreshold,
     String? compressionModel,
     String? delegateModel,
+    String? imageModel,
+    String? imageQuality,
+    bool? webSearchEnabled,
     int? screenshotDelayMs,
     bool? autoScreenshot,
     double? screenshotScale,
@@ -368,6 +383,9 @@ class AppSettings {
     compressionThreshold: compressionThreshold ?? this.compressionThreshold,
     compressionModel: compressionModel ?? this.compressionModel,
     delegateModel: delegateModel ?? this.delegateModel,
+    imageModel: imageModel ?? this.imageModel,
+    imageQuality: imageQuality ?? this.imageQuality,
+    webSearchEnabled: webSearchEnabled ?? this.webSearchEnabled,
     screenshotDelayMs: screenshotDelayMs ?? this.screenshotDelayMs,
     autoScreenshot: autoScreenshot ?? this.autoScreenshot,
     screenshotScale: screenshotScale ?? this.screenshotScale,
@@ -400,6 +418,7 @@ class AppSettings {
   /// Whether a change requires reconnecting the live session.
   bool sessionDiffers(AppSettings o) =>
       o.backendMode != backendMode ||
+      o.webSearchEnabled != webSearchEnabled ||
       // Editing a saved API key must not reconnect an active Codex session.
       (authMode == AuthMode.apiKey && o.apiKey != apiKey) ||
       o.voiceModel != voiceModel ||
@@ -418,6 +437,9 @@ class AppSettings {
     'compressionThreshold': compressionThreshold,
     'compressionModel': compressionModel,
     'delegateModel': delegateModel,
+    'imageModel': imageModel,
+    'imageQuality': imageQuality,
+    'webSearchEnabled': webSearchEnabled,
     'screenshotDelayMs': screenshotDelayMs,
     'autoScreenshot': autoScreenshot,
     'screenshotScale': screenshotScale,
@@ -468,6 +490,11 @@ class AppSettings {
       compressionThreshold: i('compressionThreshold', d.compressionThreshold).clamp(1000, 1000000),
       compressionModel: s('compressionModel', d.compressionModel),
       delegateModel: s('delegateModel', d.delegateModel),
+      imageModel: s('imageModel', d.imageModel).trim().isEmpty ? d.imageModel : s('imageModel', d.imageModel).trim(),
+      imageQuality: const ['low', 'medium', 'high', 'xhigh', 'max', 'auto'].contains(j['imageQuality'])
+          ? j['imageQuality'] as String
+          : d.imageQuality,
+      webSearchEnabled: b('webSearchEnabled', d.webSearchEnabled),
       screenshotDelayMs: i('screenshotDelayMs', d.screenshotDelayMs).clamp(0, 10000),
       autoScreenshot: b('autoScreenshot', d.autoScreenshot),
       screenshotScale: switch (j['screenshotScale']) {

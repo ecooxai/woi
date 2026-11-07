@@ -11,6 +11,7 @@ import '../../platform/screen_capture.dart' show kScreenshotScales;
 import '../../platform/android/android_accessibility.dart';
 import '../../core/auth/auth.dart';
 import '../../core/settings/settings.dart';
+import '../../core/images/image_model_catalog.dart';
 import '../../core/voice/backend_factory.dart';
 import '../theme.dart';
 import '../login/login_screen.dart';
@@ -39,6 +40,7 @@ class _SettingsViewState extends State<SettingsView> {
   late final _apiKey = TextEditingController(text: _s.apiKey);
   late final _compressionModel = TextEditingController(text: _s.compressionModel);
   late final _delegateModel = TextEditingController(text: _s.delegateModel);
+  late final _imageModel = TextEditingController(text: _s.imageModel);
   late final _workspace = TextEditingController(text: _s.workspaceDir);
   late final _stopWords = TextEditingController(text: _s.stopWords.join(', '));
 
@@ -51,6 +53,9 @@ class _SettingsViewState extends State<SettingsView> {
   String? _testMessage;
   final _search = TextEditingController();
   String _query = '';
+  ImageModelCatalogResult? _imageCatalog;
+  bool _loadingImageModels = false;
+  int _imageCatalogRequest = 0;
 
   bool _advancedOpen = false;
   final _pending = <String, Object?>{};
@@ -65,12 +70,14 @@ class _SettingsViewState extends State<SettingsView> {
     _observedSettings = c.settings;
     _observedAuth = c.codexAuth;
     c.addListener(_onControllerChanged);
+    unawaited(_refreshImageModels());
   }
 
   Map<String, TextEditingController> get _editors => {
     'apiKey': _apiKey,
     'compressionModel': _compressionModel,
     'delegateModel': _delegateModel,
+    'imageModel': _imageModel,
     'workspaceDir': _workspace,
     'stopWords': _stopWords,
   };
@@ -86,6 +93,9 @@ class _SettingsViewState extends State<SettingsView> {
     final settingsChanged = !identical(_observedSettings, c.settings);
     final authChanged = !identical(_observedAuth, c.codexAuth);
     if (!settingsChanged && !authChanged) return;
+    final connectionChanged =
+        _observedSettings.authMode != c.settings.authMode ||
+        (_observedSettings.apiKey != c.settings.apiKey && c.settings.authMode == AuthMode.apiKey);
     if (settingsChanged) {
       final before = _observedSettings.toJson();
       final after = c.settings.toJson();
@@ -104,6 +114,7 @@ class _SettingsViewState extends State<SettingsView> {
       _s = AppSettings.fromJson({...after, ..._pending});
     }
     _observedAuth = c.codexAuth;
+    if (connectionChanged || authChanged) _resetImageModels();
     if (mounted) setState(() {});
   }
 
@@ -160,6 +171,14 @@ class _SettingsViewState extends State<SettingsView> {
       entry.value.text = _editorValue(entry.key, _s);
     }
     c.addListener(_onControllerChanged);
+    _resetImageModels();
+  }
+
+  void _resetImageModels() {
+    _imageCatalogRequest++;
+    _loadingImageModels = false;
+    _imageCatalog = null;
+    unawaited(_refreshImageModels());
   }
 
   @override
@@ -169,6 +188,7 @@ class _SettingsViewState extends State<SettingsView> {
     _apiKey.dispose();
     _compressionModel.dispose();
     _delegateModel.dispose();
+    _imageModel.dispose();
     _workspace.dispose();
     _stopWords.dispose();
     _search.dispose();
@@ -246,13 +266,6 @@ class _SettingsViewState extends State<SettingsView> {
 
   List<_Group> _mainGroups() => [
     _Group('connection', 'Connection', [
-      _Item('Codex login', '', (w) => _codexStatus(), keywords: 'account chatgpt authentication sign in refresh'),
-      _Item(
-        'API key',
-        'Stored locally. Leave empty to use OPENAI_API_KEY.',
-        (w) => _apiKeyField(),
-        keywords: 'credentials access authentication reveal',
-      ),
       _Item(
         'Backend',
         '',
@@ -266,6 +279,27 @@ class _SettingsViewState extends State<SettingsView> {
         inline: true,
         keywords: 'account connection codex login api key',
       ),
+      if (_s.authMode == AuthMode.codex)
+        _Item(
+          'Codex account',
+          '',
+          (w) => Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _codexStatus(),
+              const SizedBox(height: 12),
+              CodexUsageMeter(controller: c),
+            ],
+          ),
+          keywords: 'account chatgpt authentication sign in refresh usage limits quota reset',
+        )
+      else
+        _Item(
+          'API key',
+          'Stored locally. Leave empty to use OPENAI_API_KEY.',
+          (w) => _apiKeyField(),
+          keywords: 'credentials access authentication reveal',
+        ),
     ]),
     _Group('model', 'Model', [
       _Item(
@@ -298,8 +332,33 @@ class _SettingsViewState extends State<SettingsView> {
         keywords: 'delegation background reasoning usage guard effective ${_s.delegateModel}',
       ),
       _Item('Voice', '', (w) => _voices(), keywords: 'speech sound marin echo ${_s.activeVoice}'),
+      _Item(
+        'Image model',
+        'Generate images in the background and show them in chat.',
+        (w) => _imageModels(),
+        keywords: 'image generation drawing picture photo flare ${_s.imageModel}',
+      ),
+      _Item(
+        'Image quality',
+        'Low uses less time and tokens.',
+        (w) => _quickChoices<String>(
+          id: 'image-quality',
+          options: const ['low', 'medium', 'high', 'xhigh', 'max', 'auto'],
+          value: _s.imageQuality,
+          label: (v) => '${v[0].toUpperCase()}${v.substring(1)}',
+          onChanged: (v) => _apply(_s.copyWith(imageQuality: v)),
+        ),
+        inline: true,
+        keywords: 'image generation render quality fast low medium high xhigh max auto',
+      ),
     ]),
     _Group('preferences', 'Preferences', [
+      _Item(
+        'Web search',
+        'Let the assistant search the internet for current information.',
+        (w) => _switch(w, _s.webSearchEnabled, (v) => _apply(_s.copyWith(webSearchEnabled: v))),
+        keywords: 'search internet web browse online sources tools',
+      ),
       _Item(
         'Theme',
         '',
@@ -616,13 +675,6 @@ class _SettingsViewState extends State<SettingsView> {
         ),
       ]),
     _Group('diagnostics', 'Connection & usage', [
-      _Item(
-        'ChatGPT usage',
-        'Plan limits and model overrides.',
-        (w) => CodexUsageMeter(controller: c),
-        detail: 'Below ${_s.usageGuardPercent}% remaining, delegation and compaction use gpt-6-luna.',
-        keywords: 'codex refresh guard quota 5-hour weekly limit model effective',
-      ),
       _Item(
         'Test connection',
         'Check credentials without starting a session.',
@@ -1168,6 +1220,84 @@ class _SettingsViewState extends State<SettingsView> {
               enableSuggestions: false,
               decoration: InputDecoration(hintText: 'Model ID', helperText: 'Empty uses $fallback.', isDense: true),
               onChanged: (v) => set(v.trim().isEmpty ? fallback : v.trim(), debounce: true),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _refreshImageModels() async {
+    final request = ++_imageCatalogRequest;
+    if (mounted) setState(() => _loadingImageModels = true);
+    ImageModelCatalogResult result;
+    try {
+      result = await ImageModelCatalog(credentials: c.credentials).discover().timeout(const Duration(seconds: 25));
+    } catch (_) {
+      result = const ImageModelCatalogResult(
+        models: kDocumentedImageModels,
+        source: 'Documented models',
+        notice: 'Could not check this account. Refresh to try again; model access is checked when generating.',
+      );
+    }
+    if (!mounted || request != _imageCatalogRequest) return;
+    setState(() {
+      _loadingImageModels = false;
+      _imageCatalog = result;
+    });
+  }
+
+  Widget _imageModels() {
+    final catalog = _imageCatalog;
+    final options = <String>{
+      kDefaultImageModel,
+      ...?catalog?.models,
+      if (catalog == null) ...kDocumentedImageModels,
+    }.toList();
+    final selectedListed = catalog?.models.contains(_s.imageModel) ?? false;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _modelControl(
+          id: 'image-model',
+          options: options,
+          value: _s.imageModel,
+          ctl: _imageModel,
+          fallback: kDefaultImageModel,
+          set: (v, {debounce = false}) => _apply(
+            _s.copyWith(imageModel: v),
+            debounce: debounce,
+            field: 'imageModel',
+          ),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                _loadingImageModels ? 'Checking available image models…' : catalog?.source ?? 'Documented models',
+                key: const ValueKey('image-model-source'),
+                style: body(12, color: WoiColors.textDim),
+              ),
+            ),
+            IconButton(
+              key: const ValueKey('refresh-image-models'),
+              tooltip: 'Refresh image models',
+              onPressed: _loadingImageModels ? null : _refreshImageModels,
+              icon: _loadingImageModels
+                  ? const SizedBox.square(dimension: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.refresh_rounded, size: 18),
+            ),
+          ],
+        ),
+        if (!_loadingImageModels && catalog?.notice != null)
+          Text(catalog!.notice!, style: body(12, color: WoiColors.textDim)),
+        if (!_loadingImageModels && catalog != null && !selectedListed)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              'Availability of this model has not been verified for this account.',
+              key: const ValueKey('unverified-image-model'),
+              style: body(12, color: WoiColors.amber),
             ),
           ),
       ],

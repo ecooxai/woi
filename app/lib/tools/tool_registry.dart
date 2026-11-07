@@ -33,9 +33,11 @@ class ToolInvocation {
 typedef ToolHandler = Future<Map<String, Object?>> Function(Map<String, Object?> args, ToolInvocation call);
 
 class ToolDefinition {
-  const ToolDefinition({required this.spec, required this.handler});
+  const ToolDefinition({required this.spec, required this.handler, this.isEnabled});
   final ToolSpec spec;
   final ToolHandler handler;
+  final bool Function()? isEnabled;
+  bool get enabled => isEnabled?.call() ?? true;
   String get name => spec.name;
 }
 
@@ -67,9 +69,12 @@ class ToolRegistry {
 
   void registerAll(Iterable<ToolDefinition> defs) => defs.forEach(register);
 
-  bool has(String name) => _tools.containsKey(name);
-  Iterable<String> get names => _tools.keys;
-  List<ToolSpec> get specs => [for (final t in _tools.values) t.spec];
+  bool has(String name) => _tools[name]?.enabled ?? false;
+  Iterable<String> get names => _tools.values.where((t) => t.enabled).map((t) => t.name);
+  List<ToolSpec> get specs => [
+    for (final t in _tools.values)
+      if (t.enabled) t.spec,
+  ];
 
   Future<ToolOutcome> dispatch(
     String name,
@@ -78,7 +83,7 @@ class ToolRegistry {
     void Function(ToolStatus status)? onStatus,
   }) async {
     final def = _tools[name];
-    if (def == null) {
+    if (def == null || !def.enabled) {
       return _err(ToolStatus.error, 'unknown tool "$name"');
     }
     Map<String, Object?> args;

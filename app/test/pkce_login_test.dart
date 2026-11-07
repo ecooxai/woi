@@ -12,9 +12,11 @@ String _jwt(Map<String, Object?> claims) {
 
 class _FakeOpener implements PlatformUrlOpener {
   final opened = <Uri>[];
+  final keepAliveRequests = <bool>[];
   @override
-  Future<bool> open(Uri url) async {
+  Future<bool> open(Uri url, {bool keepAlive = false}) async {
     opened.add(url);
+    keepAliveRequests.add(keepAlive);
     return true;
   }
 }
@@ -133,6 +135,7 @@ void main() {
     final f = flow();
     final url = await f.start();
     expect(opener.opened, [url]);
+    expect(opener.keepAliveRequests, [true]);
     expect(url.queryParameters['redirect_uri'], 'http://127.0.0.1:${f.port}/auth/callback');
     expect(url.queryParameters['state'], f.state);
     expect(url.queryParameters['code_challenge'], f.pkce.challenge);

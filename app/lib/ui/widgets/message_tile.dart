@@ -8,6 +8,8 @@ import 'package:flutter/services.dart';
 
 import '../../core/context/image_tiers.dart';
 import '../../core/models/message.dart';
+import '../../core/auth/pkce_login.dart';
+import '../../core/images/media_metadata.dart';
 import '../../core/audio/clip_loudness.dart';
 import '../../platform/audio_io.dart';
 import '../../platform/downloads.dart';
@@ -27,6 +29,7 @@ class MessageTile extends StatelessWidget {
     required this.message,
     required this.audio,
     required this.viewer,
+    this.urlOpener,
     this.maxBubbleWidth = 640,
     this.screenshot,
   });
@@ -34,6 +37,7 @@ class MessageTile extends StatelessWidget {
   final Message message;
   final AudioIO audio;
   final MediaViewer viewer;
+  final PlatformUrlOpener? urlOpener;
   final double maxBubbleWidth;
 
   /// Latest screenshot before this message (click markers on tool cards).
@@ -43,23 +47,59 @@ class MessageTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final m = message;
     final child = switch (m.kind) {
-      MessageKind.user => _Bubble(message: m, audio: audio, viewer: viewer, maxWidth: maxBubbleWidth, isUser: true),
+      MessageKind.user => _Bubble(
+        message: m,
+        audio: audio,
+        viewer: viewer,
+        maxWidth: maxBubbleWidth,
+        urlOpener: urlOpener,
+        isUser: true,
+      ),
       MessageKind.assistant => _Bubble(
         message: m,
         audio: audio,
         viewer: viewer,
         maxWidth: maxBubbleWidth,
+        urlOpener: urlOpener,
         isUser: false,
       ),
-      MessageKind.tool => ToolCallCard(message: m, maxWidth: maxBubbleWidth, screenshot: screenshot, viewer: viewer),
+      MessageKind.tool => ToolCallCard(
+        message: m,
+        maxWidth: maxBubbleWidth,
+        screenshot: screenshot,
+        viewer: viewer,
+      ),
       MessageKind.system => _SystemNote(message: m, viewer: viewer),
     };
     return EntryAnimation(
-      animate: DateTime.now().difference(m.createdAt) < const Duration(seconds: 3),
+      animate:
+          DateTime.now().difference(m.createdAt) < const Duration(seconds: 3),
       fromRight: m.kind == MessageKind.user,
-      child: AnimatedOpacity(duration: WoiMotion.slow, opacity: m.compacted ? 0.45 : 1, child: child),
+      child: AnimatedOpacity(
+        duration: WoiMotion.slow,
+        opacity: m.compacted ? 0.45 : 1,
+        child: child,
+      ),
     );
   }
+}
+
+/// Codex's internal citation handles are not browser links. Search messages keep
+/// their durable source URLs in metadata and show those as accessible buttons.
+String messageDisplayText(Message message) {
+  if (message.meta['type'] == 'image_generation' &&
+      message.meta['status'] == 'pending' &&
+      RegExp(
+        r'^generating image(?:…|\.\.\.)?$',
+        caseSensitive: false,
+      ).hasMatch(message.text.trim())) {
+    // The progress row already speaks and displays this placeholder. Keep
+    // distinct prompt/details text, and never hide a failure explanation.
+    return '';
+  }
+  return message.meta['type'] == 'web_search'
+      ? message.text.replaceAll(RegExp(r'cite[^]*'), '')
+      : message.text;
 }
 
 /// Everything of [m] that a [MessageTile] shows and that can change after
@@ -92,6 +132,7 @@ class LiveMessageTile extends StatelessWidget {
     required this.message,
     required this.audio,
     required this.viewer,
+    this.urlOpener,
     this.maxBubbleWidth = 640,
     this.screenshot,
   });
@@ -100,6 +141,7 @@ class LiveMessageTile extends StatelessWidget {
   final Message message;
   final AudioIO audio;
   final MediaViewer viewer;
+  final PlatformUrlOpener? urlOpener;
   final double maxBubbleWidth;
   final ImageAttachment? screenshot;
 
@@ -113,6 +155,7 @@ class LiveMessageTile extends StatelessWidget {
         audio: audio,
         viewer: viewer,
         maxBubbleWidth: maxBubbleWidth,
+        urlOpener: urlOpener,
         screenshot: screenshot,
       ),
     ),
@@ -121,7 +164,12 @@ class LiveMessageTile extends StatelessWidget {
 
 /// Fade + rise + slight scale on first build (new messages only).
 class EntryAnimation extends StatelessWidget {
-  const EntryAnimation({super.key, required this.child, this.animate = true, this.fromRight = false});
+  const EntryAnimation({
+    super.key,
+    required this.child,
+    this.animate = true,
+    this.fromRight = false,
+  });
   final Widget child;
   final bool animate;
   final bool fromRight;
@@ -176,7 +224,8 @@ class _VoiceLabel extends StatelessWidget {
   }
 }
 
-String _time(DateTime t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+String _time(DateTime t) =>
+    '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
 class _Bubble extends StatelessWidget {
   const _Bubble({
@@ -185,6 +234,7 @@ class _Bubble extends StatelessWidget {
     required this.viewer,
     required this.maxWidth,
     required this.isUser,
+    this.urlOpener,
   });
 
   final Message message;
@@ -192,12 +242,17 @@ class _Bubble extends StatelessWidget {
   final MediaViewer viewer;
   final double maxWidth;
   final bool isUser;
+  final PlatformUrlOpener? urlOpener;
 
   @override
   Widget build(BuildContext context) {
     final m = message;
     final accent = isUser ? WoiColors.cyan : WoiColors.violet;
-    final waiting = m.streaming && m.text.isEmpty;
+    final imageJob = m.meta['type'] == 'image_generation';
+    final imageStatus = imageJob ? m.meta['status'] as String? : null;
+    final generatingImage = imageStatus == 'pending';
+    final visibleText = messageDisplayText(m);
+    final waiting = m.streaming && m.text.isEmpty && !generatingImage;
     const r = Radius.circular(WoiRadii.lg);
     final radius = BorderRadius.only(
       topLeft: r,
@@ -207,29 +262,52 @@ class _Bubble extends StatelessWidget {
     );
 
     final content = Column(
-      crossAxisAlignment: isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      crossAxisAlignment: isUser
+          ? CrossAxisAlignment.end
+          : CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
+        if (imageStatus == 'pending' ||
+            imageStatus == 'failed' ||
+            imageStatus == 'interrupted') ...[
+          _ImageGenerationProgress(status: imageStatus!),
+          if (visibleText.isNotEmpty) const SizedBox(height: 8),
+        ],
         if (m.image != null) ...[
-          ScreenshotThumb(image: m.image!, viewer: viewer, tier: imageTierOf(m), label: imageLabel(m)),
-          if (m.text.isNotEmpty || waiting) const SizedBox(height: 10),
+          ScreenshotThumb(
+            image: m.image!,
+            viewer: viewer,
+            tier: imageTierOf(m),
+            label: m.image!.generated ? 'Generated image' : imageLabel(m),
+          ),
+          if (m.image!.generated) _GeneratedImageInfo(image: m.image!),
+          if (visibleText.isNotEmpty || waiting) const SizedBox(height: 10),
         ],
         if (waiting)
           _TypingDots(color: accent, label: isUser ? 'listening' : null)
-        else if (isSpeechPlaceholder(m.text))
-          _VoiceLabel(text: m.text, color: accent)
-        else if (isUser && m.streaming && m.text.isNotEmpty)
+        else if (isSpeechPlaceholder(visibleText))
+          _VoiceLabel(text: visibleText, color: accent)
+        else if (isUser && m.streaming && visibleText.isNotEmpty)
           // Live partial transcript; finalized when the transcription completes.
           Text(
-            m.text,
-            style: body(15, height: 1.5, color: WoiColors.textDim).copyWith(fontStyle: FontStyle.italic),
+            visibleText,
+            style: body(
+              15,
+              height: 1.5,
+              color: WoiColors.textDim,
+            ).copyWith(fontStyle: FontStyle.italic),
           )
-        else if (m.text.isNotEmpty)
+        else if (visibleText.isNotEmpty)
           // Plain Text: the transcript's SelectionArea makes it selectable
           // (also across messages). A SelectableText per bubble built an
           // editable-text render object, gesture recognizers and a focus
           // node for every message scrolled into view.
-          Text(m.text, style: body(15, height: 1.5, color: WoiColors.text)),
+          Text(
+            visibleText,
+            style: body(15, height: 1.5, color: WoiColors.text),
+          ),
+        if (m.meta['type'] == 'web_search')
+          _SearchSources(sources: m.meta['sources'], opener: urlOpener),
         if (!isUser) ...[
           const SizedBox(height: 6),
           Text(
@@ -245,11 +323,20 @@ class _Bubble extends StatelessWidget {
             runSpacing: 4,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              if (m.audio != null) AudioClipButton(clip: m.audio!, audio: audio, color: accent),
+              if (m.audio != null)
+                AudioClipButton(clip: m.audio!, audio: audio, color: accent),
               _MessageActions(message: m, color: accent, isUser: isUser),
               if (m.interrupted)
-                Pill(label: 'interrupted', color: WoiColors.amber, icon: Icons.content_cut, dense: true),
-              Text(_time(m.createdAt), style: body(11, color: WoiColors.textFaint)),
+                Pill(
+                  label: 'interrupted',
+                  color: WoiColors.amber,
+                  icon: Icons.content_cut,
+                  dense: true,
+                ),
+              Text(
+                _time(m.createdAt),
+                style: body(11, color: WoiColors.textFaint),
+              ),
             ],
           ),
         ],
@@ -261,14 +348,24 @@ class _Bubble extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
       decoration: BoxDecoration(
         borderRadius: radius,
-        color: isUser ? WoiColors.cyan.withValues(alpha: WoiColors.palette.isDark ? 0.16 : 0.08) : WoiColors.bg2,
-        border: Border.all(color: isUser ? WoiColors.cyan.withValues(alpha: 0.16) : WoiColors.stroke),
+        color: isUser
+            ? WoiColors.cyan.withValues(
+                alpha: WoiColors.palette.isDark ? 0.16 : 0.08,
+              )
+            : WoiColors.bg2,
+        border: Border.all(
+          color: isUser
+              ? WoiColors.cyan.withValues(alpha: 0.16)
+              : WoiColors.stroke,
+        ),
       ),
       child: content,
     );
     // Only live (or just finished) messages change size; old ones skip the
     // AnimatedSize render object and its animation controller.
-    final live = m.streaming || DateTime.now().difference(m.createdAt) < const Duration(minutes: 1);
+    final live =
+        m.streaming ||
+        DateTime.now().difference(m.createdAt) < const Duration(minutes: 1);
     final bubble = live
         ? AnimatedSize(
             duration: WoiMotion.medium,
@@ -284,10 +381,15 @@ class _Bubble extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),
         child: Row(
-          mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+          mainAxisAlignment: isUser
+              ? MainAxisAlignment.end
+              : MainAxisAlignment.start,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            if (!isUser) ...[_Avatar(active: m.streaming), const SizedBox(width: 10)],
+            if (!isUser) ...[
+              _Avatar(active: m.streaming),
+              const SizedBox(width: 10),
+            ],
             Flexible(child: bubble),
           ],
         ),
@@ -299,16 +401,23 @@ class _Bubble extends StatelessWidget {
 /// Copy and "more" (download audio, ...) controls next to a message's
 /// play button.
 class _MessageActions extends StatelessWidget {
-  const _MessageActions({required this.message, required this.color, required this.isUser});
+  const _MessageActions({
+    required this.message,
+    required this.color,
+    required this.isUser,
+  });
 
   final Message message;
   final Color color;
   final bool isUser;
 
-  String get _copyText => isSpeechPlaceholder(message.text) ? '' : message.text.trim();
+  String get _copyText => isSpeechPlaceholder(message.text)
+      ? ''
+      : messageDisplayText(message).trim();
 
   void _snack(BuildContext context, String text) =>
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text(text)));
+      ScaffoldMessenger.maybeOf(context)
+          ?.showSnackBar(SnackBar(content: Text(text)));
 
   Future<void> _copy(BuildContext context) async {
     await Clipboard.setData(ClipboardData(text: _copyText));
@@ -325,7 +434,10 @@ class _MessageActions extends StatelessWidget {
         '${two(t.hour)}${two(t.minute)}${two(t.second)}.wav';
     try {
       // The same (boosted when quiet) audio the play button plays.
-      final where = await saveToDownloads(await loudPlaybackPath(clip.path), name);
+      final where = await saveToDownloads(
+        await loudPlaybackPath(clip.path),
+        name,
+      );
       if (context.mounted) _snack(context, 'Saved to $where');
     } catch (e) {
       if (context.mounted) _snack(context, 'Download failed: $e');
@@ -358,7 +470,10 @@ class _MessageActions extends StatelessWidget {
           padding: EdgeInsets.zero,
           iconSize: 18,
           icon: Icon(Icons.more_horiz_rounded, color: iconColor),
-          style: IconButton.styleFrom(minimumSize: const Size(30, 30), fixedSize: const Size(30, 30)),
+          style: IconButton.styleFrom(
+            minimumSize: const Size(30, 30),
+            fixedSize: const Size(30, 30),
+          ),
           onSelected: (v) => switch (v) {
             'download' => _download(context),
             'copy' => _copy(context),
@@ -401,11 +516,149 @@ class _Avatar extends StatelessWidget {
       width: 28,
       height: 28,
       alignment: Alignment.center,
-      decoration: BoxDecoration(shape: BoxShape.circle, color: active ? WoiColors.cyan : WoiColors.text),
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: active ? WoiColors.cyan : WoiColors.text,
+      ),
       child: Text(
         'W',
         style: display(12, weight: FontWeight.w700, color: WoiColors.bg1),
       ),
+    ),
+  );
+}
+
+class _ImageGenerationProgress extends StatelessWidget {
+  const _ImageGenerationProgress({required this.status});
+  final String status;
+  @override
+  Widget build(BuildContext context) => Semantics(
+    liveRegion: true,
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (status == 'pending')
+          const SizedBox.square(
+            dimension: 16,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          )
+        else
+          Icon(
+            Icons.image_not_supported_outlined,
+            size: 18,
+            color: WoiColors.amber,
+          ),
+        const SizedBox(width: 10),
+        Flexible(
+          child: Text(
+            switch (status) {
+              'pending' => 'Generating image…',
+              'interrupted' => 'Image generation interrupted',
+              _ => 'Image generation failed',
+            },
+            key: ValueKey('image-generation-$status'),
+            style: body(14, color: WoiColors.textDim),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _SearchSources extends StatelessWidget {
+  const _SearchSources({required this.sources, this.opener});
+  final Object? sources;
+  final PlatformUrlOpener? opener;
+
+  @override
+  Widget build(BuildContext context) {
+    final links = <Uri, String>{};
+    if (sources is List) {
+      for (final source in sources as List) {
+        if (source is! Map || source['url'] is! String) continue;
+        final url = Uri.tryParse(source['url'] as String);
+        if (url == null ||
+            !const {'http', 'https'}.contains(url.scheme) ||
+            url.host.isEmpty) {
+          continue;
+        }
+        final title = source['title'];
+        links[url] = title is String && title.trim().isNotEmpty
+            ? title
+            : url.host;
+      }
+    }
+    if (links.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Sources',
+            style: body(11, weight: FontWeight.w600, color: WoiColors.textDim),
+          ),
+          const SizedBox(height: 4),
+          for (final source in links.entries)
+            Tooltip(
+              message: source.key.toString(),
+              child: TextButton.icon(
+                key: ValueKey('search-source-${source.key}'),
+                onPressed: () async {
+                  final opened = await (opener ?? defaultUrlOpener()).open(
+                    source.key,
+                    keepAlive: false,
+                  );
+                  if (!opened && context.mounted) {
+                    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Could not open the source in your browser.',
+                        ),
+                      ),
+                    );
+                  }
+                },
+                style: TextButton.styleFrom(
+                  foregroundColor: WoiColors.cyan,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 6,
+                  ),
+                  minimumSize: const Size(0, 36),
+                  alignment: Alignment.centerLeft,
+                ),
+                icon: const Icon(Icons.open_in_new_rounded, size: 14),
+                label: Text(
+                  '${source.value} · ${source.key.host}',
+                  style: body(12),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GeneratedImageInfo extends StatelessWidget {
+  const _GeneratedImageInfo({required this.image});
+  final ImageAttachment image;
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(top: 6),
+    child: Text(
+      [
+        if (image.generationDurationMs != null)
+          'Generated in ${formatGenerationDuration(image.generationDurationMs!)}',
+        if (image.byteSize != null) formatFileBytes(image.byteSize!),
+        if (image.generationQuality != null)
+          '${image.generationQuality} quality',
+      ].join(' · '),
+      key: ValueKey('generated-image-time-${image.path}'),
+      style: body(11.5, color: WoiColors.textDim),
     ),
   );
 }
@@ -446,7 +699,10 @@ class ScreenshotThumb extends StatelessWidget {
     final aspect = known ? image.width / image.height : 16 / 9;
     return LayoutBuilder(
       builder: (context, box) {
-        final w = math.min(maxWidth, box.maxWidth.isFinite ? box.maxWidth : maxWidth);
+        final w = math.min(
+          maxWidth,
+          box.maxWidth.isFinite ? box.maxWidth : maxWidth,
+        );
         final h = math.min(w / aspect, maxHeight);
         // BoxFit.cover with top-center alignment: where the marker lands.
         final scale = known ? math.max(w / image.width, h / image.height) : 1.0;
@@ -457,31 +713,55 @@ class ScreenshotThumb extends StatelessWidget {
           context,
           w,
           h,
-          mk == null || !known ? null : Offset(mk.dx * scale + dx, mk.dy * scale),
+          mk == null || !known
+              ? null
+              : Offset(mk.dx * scale + dx, mk.dy * scale),
           (w * dpr).ceil(),
         );
       },
     );
   }
 
-  Widget _thumb(BuildContext context, double w, double h, Offset? markerAt, int decodeWidth) {
+  Widget _thumb(
+    BuildContext context,
+    double w,
+    double h,
+    Offset? markerAt,
+    int decodeWidth,
+  ) {
     final file = File(image.path);
     final mk = marker;
     return Semantics(
       button: true,
       image: true,
-      label: mk == null ? '$label. Tap to enlarge' : '$label with click at ${mk.dx.round()}, ${mk.dy.round()}',
+      label: mk == null
+          ? '$label. Tap to enlarge'
+          : '$label with click at ${mk.dx.round()}, ${mk.dy.round()}',
       child: MouseRegion(
         cursor: SystemMouseCursors.zoomIn,
         child: GestureDetector(
           onTap: () => showImageLightbox(
             context,
             image.path,
-            caption:
-                '$label · ${image.originalWidth}×${image.originalHeight} (sent ${image.width}×${image.height})'
-                '${mk != null ? ' · click (${mk.dx.round()}, ${mk.dy.round()})' : ''}',
-            marker: mk == null || image.width <= 0 ? null : Offset(mk.dx / image.width, mk.dy / image.height),
-            onOpenWindow: () => viewer.show(MediaItem(kind: MediaKind.image, path: image.path)),
+            caption: image.generated
+                ? 'Generated image'
+                : '$label · sent ${image.width}×${image.height}'
+                      '${mk != null ? ' · click (${mk.dx.round()}, ${mk.dy.round()})' : ''}',
+            generationDurationMs: image.generationDurationMs,
+            generationModel: image.generationModel,
+            generationQuality: image.generationQuality,
+            marker: mk == null || image.width <= 0
+                ? null
+                : Offset(mk.dx / image.width, mk.dy / image.height),
+            onOpenWindow: () => viewer.show(
+              MediaItem(
+                kind: MediaKind.image,
+                path: image.path,
+                generationDurationMs: image.generationDurationMs,
+                generationModel: image.generationModel,
+                generationQuality: image.generationQuality,
+              ),
+            ),
           ),
           child: SizedBox(
             width: w,
@@ -498,7 +778,7 @@ class ScreenshotThumb extends StatelessWidget {
                   children: [
                     Image.file(
                       file,
-                      fit: BoxFit.cover,
+                      fit: image.generated ? BoxFit.contain : BoxFit.cover,
                       alignment: Alignment.topCenter,
                       // Decode at the tile's size, not the image's.
                       cacheWidth: decodeWidth.clamp(64, 1280),
@@ -511,7 +791,8 @@ class ScreenshotThumb extends StatelessWidget {
                         child: const Icon(Icons.broken_image_outlined),
                       ),
                     ),
-                    if (markerAt != null && markerAt.dy <= h) ClickMarker(position: markerAt),
+                    if (markerAt != null && markerAt.dy <= h)
+                      ClickMarker(position: markerAt),
                     if (tier != ImageTier.full)
                       Positioned(
                         left: 6,
@@ -521,11 +802,23 @@ class ScreenshotThumb extends StatelessWidget {
                               ? 'Older ${label.toLowerCase()}: the model now has it at ⅕ size'
                               : 'Old ${label.toLowerCase()}: the model now has a text description',
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(6)),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.black87,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
                             child: Text(
-                              tier == ImageTier.reduced ? 'sent ⅕' : 'described',
-                              style: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w600),
+                              tier == ImageTier.reduced
+                                  ? 'sent ⅕'
+                                  : 'described',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
                         ),
@@ -535,8 +828,15 @@ class ScreenshotThumb extends StatelessWidget {
                       bottom: 6,
                       child: Container(
                         padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(6)),
-                        child: const Icon(Icons.zoom_out_map, size: 14, color: Colors.white),
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Icon(
+                          Icons.zoom_out_map,
+                          size: 14,
+                          color: Colors.white,
+                        ),
                       ),
                     ),
                   ],
@@ -552,7 +852,12 @@ class ScreenshotThumb extends StatelessWidget {
 
 /// Pulsing crosshair target drawn at a click position.
 class ClickMarker extends StatefulWidget {
-  const ClickMarker({super.key, required this.position, this.color, this.size = 26});
+  const ClickMarker({
+    super.key,
+    required this.position,
+    this.color,
+    this.size = 26,
+  });
   final Offset position;
   final Color? color;
   final double size;
@@ -561,10 +866,15 @@ class ClickMarker extends StatefulWidget {
   State<ClickMarker> createState() => _ClickMarkerState();
 }
 
-class _ClickMarkerState extends State<ClickMarker> with SingleTickerProviderStateMixin {
-  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 1500))
-    // A few pulses to draw the eye, then still (no idle frames).
-    ..repeat(count: 3);
+class _ClickMarkerState extends State<ClickMarker>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c =
+      AnimationController(
+          vsync: this,
+          duration: const Duration(milliseconds: 1500),
+        )
+        // A few pulses to draw the eye, then still (no idle frames).
+        ..repeat(count: 3);
 
   @override
   void dispose() {
@@ -575,8 +885,14 @@ class _ClickMarkerState extends State<ClickMarker> with SingleTickerProviderStat
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: _c,
-    builder: (context, _) =>
-        CustomPaint(painter: _MarkerPainter(widget.position, widget.color ?? WoiColors.amber, widget.size, _c.value)),
+    builder: (context, _) => CustomPaint(
+      painter: _MarkerPainter(
+        widget.position,
+        widget.color ?? WoiColors.amber,
+        widget.size,
+        _c.value,
+      ),
+    ),
   );
 }
 
@@ -594,12 +910,25 @@ class _MarkerPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2
       ..color = color;
-    canvas.drawCircle(p, r * (0.6 + 0.9 * t), stroke..color = color.withValues(alpha: 1 - t));
+    canvas.drawCircle(
+      p,
+      r * (0.6 + 0.9 * t),
+      stroke..color = color.withValues(alpha: 1 - t),
+    );
     stroke.color = color;
-    canvas.drawCircle(p, r * 0.55, Paint()..color = Colors.black.withValues(alpha: 0.35));
+    canvas.drawCircle(
+      p,
+      r * 0.55,
+      Paint()..color = Colors.black.withValues(alpha: 0.35),
+    );
     canvas.drawCircle(p, r * 0.55, stroke);
     canvas.drawCircle(p, 2.5, Paint()..color = color);
-    for (final d in const [Offset(1, 0), Offset(-1, 0), Offset(0, 1), Offset(0, -1)]) {
+    for (final d in const [
+      Offset(1, 0),
+      Offset(-1, 0),
+      Offset(0, 1),
+      Offset(0, -1),
+    ]) {
       canvas.drawLine(p + d * r * 0.75, p + d * r * 1.15, stroke);
     }
   }
@@ -654,7 +983,10 @@ class _TypingDotsState extends State<_TypingDots> {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (widget.label != null) ...[
-            Text(widget.label!, style: body(13, color: widget.color.withValues(alpha: 0.85))),
+            Text(
+              widget.label!,
+              style: body(13, color: widget.color.withValues(alpha: 0.85)),
+            ),
             const SizedBox(width: 8),
           ],
           RepaintBoundary(
@@ -664,7 +996,9 @@ class _TypingDotsState extends State<_TypingDots> {
                 children: List.generate(3, (i) {
                   // One bright dot walking left to right (6 steps per cycle).
                   final p = tick < 0 ? -1 : tick % 6;
-                  final a = tick < 0 ? 0.5 : (p == i * 2 || p == i * 2 + 1 ? 1.0 : 0.3);
+                  final a = tick < 0
+                      ? 0.5
+                      : (p == i * 2 || p == i * 2 + 1 ? 1.0 : 0.3);
                   return Container(
                     margin: const EdgeInsets.symmetric(horizontal: 2),
                     width: 6,
@@ -740,21 +1074,41 @@ String toolArgSummary(String name, String argsJson) {
   if (a.containsKey('raw')) return argsJson;
   final s = switch (name) {
     'run_bash' => a['command'],
-    'read_file' || 'list_dir' || 'write_file' || 'edit_file' || 'show_file' => a['path'],
+    'read_file' ||
+    'list_dir' ||
+    'write_file' ||
+    'edit_file' ||
+    'show_file' => a['path'],
     'type_text' => '"${a['text']}"',
     'key_combo' => a['keys'],
-    'send_keys' => [a['keys'] ?? a['action'], if (a['window'] != null) '→ ${a['window']}'].join(' '),
+    'send_keys' => [
+      a['keys'] ?? a['action'],
+      if (a['window'] != null) '→ ${a['window']}',
+    ].join(' '),
     'click_screen' =>
       '(${a['x']}, ${a['y']})${a['double'] == true ? ' ×2' : ''}${a['button'] != null && a['button'] != 'left' ? ' ${a['button']}' : ''}',
     'delegate_task' => a['task'],
     'read_note' => '',
     'note_control' || 'app_control' => [
       '${a['action'] ?? ''}'.replaceAll('_', ' '),
-      for (final k in ['view', 'key', 'value', 'name', 'title', 'command', 'tab', 'path', 'find', 'text', 'seconds'])
+      for (final k in [
+        'view',
+        'key',
+        'value',
+        'name',
+        'title',
+        'command',
+        'tab',
+        'path',
+        'find',
+        'text',
+        'seconds',
+      ])
         if (a[k] != null) '${a[k]}',
     ].join(' '),
     'update_note' => switch (a['mode']) {
-      'check_item' => '${a['checked'] == false ? 'uncheck' : 'check'} "${a['item'] ?? ''}"',
+      'check_item' =>
+        '${a['checked'] == false ? 'uncheck' : 'check'} "${a['item'] ?? ''}"',
       'replace_section' => 'section "${a['heading'] ?? ''}"',
       'replace_all' => 'rewrite note',
       _ => '${a['text'] ?? ''}'.split('\n').first,
@@ -793,7 +1147,11 @@ class _ToolCallCardState extends State<ToolCallCard> {
     final t = widget.message.tool!;
     final (color, label, icon) = switch (t.status) {
       ToolStatus.pending => (WoiColors.textDim, 'queued', Icons.schedule),
-      ToolStatus.awaitingApproval => (WoiColors.amber, 'needs approval', Icons.front_hand_outlined),
+      ToolStatus.awaitingApproval => (
+        WoiColors.amber,
+        'needs approval',
+        Icons.front_hand_outlined,
+      ),
       ToolStatus.running => (WoiColors.cyan, 'running', null),
       ToolStatus.success => (WoiColors.mint, 'done', Icons.check_rounded),
       ToolStatus.error => (WoiColors.red, 'failed', Icons.error_outline),
@@ -801,9 +1159,11 @@ class _ToolCallCardState extends State<ToolCallCard> {
     };
     final summary = toolArgSummary(t.name, t.argsJson);
     final elapsed = t.finishedAt?.difference(t.startedAt);
-    final busy = t.status == ToolStatus.running || t.status == ToolStatus.pending;
+    final busy =
+        t.status == ToolStatus.running || t.status == ToolStatus.pending;
     final args = _decode(t.argsJson);
-    final click = t.name == 'click_screen' && args['x'] is num && args['y'] is num
+    final click =
+        t.name == 'click_screen' && args['x'] is num && args['y'] is num
         ? Offset((args['x'] as num).toDouble(), (args['y'] as num).toDouble())
         : null;
 
@@ -811,11 +1171,20 @@ class _ToolCallCardState extends State<ToolCallCard> {
       duration: WoiMotion.medium,
       transitionBuilder: (c, a) => FadeTransition(
         opacity: a,
-        child: ScaleTransition(scale: Tween(begin: 0.7, end: 1.0).animate(a), child: c),
+        child: ScaleTransition(
+          scale: Tween(begin: 0.7, end: 1.0).animate(a),
+          child: c,
+        ),
       ),
       child: icon == null
           ? LowFpsSpinner(key: const ValueKey('spin'), color: color)
-          : Pill(key: ValueKey(t.status), label: label, color: color, icon: icon, dense: true),
+          : Pill(
+              key: ValueKey(t.status),
+              label: label,
+              color: color,
+              icon: icon,
+              dense: true,
+            ),
     );
 
     return Semantics(
@@ -835,7 +1204,9 @@ class _ToolCallCardState extends State<ToolCallCard> {
               decoration: BoxDecoration(
                 color: WoiColors.bg1,
                 borderRadius: BorderRadius.circular(WoiRadii.md),
-                border: Border.all(color: color.withValues(alpha: busy ? 0.6 : 0.25)),
+                border: Border.all(
+                  color: color.withValues(alpha: busy ? 0.6 : 0.25),
+                ),
               ),
               // Clip only while the progress sweep runs along the bottom
               // edge; the ink splash is shaped by the InkWell's radius.
@@ -860,10 +1231,17 @@ class _ToolCallCardState extends State<ToolCallCard> {
                                 color: color.withValues(alpha: 0.13),
                                 borderRadius: BorderRadius.circular(9),
                               ),
-                              child: Icon(_toolIcons[t.name] ?? Icons.extension, size: 16, color: color),
+                              child: Icon(
+                                _toolIcons[t.name] ?? Icons.extension,
+                                size: 16,
+                                color: color,
+                              ),
                             ),
                             const SizedBox(width: 10),
-                            Text(toolTitle(t.name), style: body(13, weight: FontWeight.w600)),
+                            Text(
+                              toolTitle(t.name),
+                              style: body(13, weight: FontWeight.w600),
+                            ),
                             const SizedBox(width: 10),
                             Expanded(
                               child: Text(
@@ -879,7 +1257,10 @@ class _ToolCallCardState extends State<ToolCallCard> {
                                 padding: const EdgeInsets.only(right: 8),
                                 child: Text(
                                   '${(elapsed.inMilliseconds / 1000).toStringAsFixed(1)}s',
-                                  style: mono(11, color: WoiColors.textFaint).copyWith(fontFeatures: kTabular),
+                                  style: mono(
+                                    11,
+                                    color: WoiColors.textFaint,
+                                  ).copyWith(fontFeatures: kTabular),
                                 ),
                               ),
                             statusBadge,
@@ -899,7 +1280,12 @@ class _ToolCallCardState extends State<ToolCallCard> {
                         alignment: Alignment.topCenter,
                         child: _open
                             ? Padding(
-                                padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                                padding: const EdgeInsets.fromLTRB(
+                                  12,
+                                  0,
+                                  12,
+                                  12,
+                                ),
                                 child: _ToolDetails(
                                   info: t,
                                   args: args,
@@ -942,7 +1328,11 @@ class _ProgressSweepState extends State<_ProgressSweep> {
         child: DecoratedBox(
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [widget.color.withValues(alpha: 0), widget.color, widget.color.withValues(alpha: 0)],
+              colors: [
+                widget.color.withValues(alpha: 0),
+                widget.color,
+                widget.color.withValues(alpha: 0),
+              ],
             ),
           ),
         ),
@@ -973,7 +1363,13 @@ class _ToolDetails extends StatelessWidget {
     final err = result['error'];
     switch (info.name) {
       case 'run_bash':
-        children.add(_Terminal(command: '${args['command'] ?? ''}', result: result, cwd: args['cwd'] as String?));
+        children.add(
+          _Terminal(
+            command: '${args['command'] ?? ''}',
+            result: result,
+            cwd: args['cwd'] as String?,
+          ),
+        );
       case 'click_screen':
         final shot = screenshot;
         if (click != null && shot != null && viewer != null) {
@@ -981,7 +1377,12 @@ class _ToolDetails extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                ScreenshotThumb(image: shot, viewer: viewer!, marker: click, maxWidth: 280),
+                ScreenshotThumb(
+                  image: shot,
+                  viewer: viewer!,
+                  marker: click,
+                  maxWidth: 280,
+                ),
                 const SizedBox(width: 12),
                 Expanded(child: _kvList({...args, ...result})),
               ],
@@ -1016,12 +1417,18 @@ class _ToolDetails extends StatelessWidget {
                   if (e is Map)
                     Pill(
                       label: '${e['name']}${e['t'] == 'd' ? '/' : ''}',
-                      icon: e['t'] == 'd' ? Icons.folder_outlined : Icons.insert_drive_file_outlined,
+                      icon: e['t'] == 'd'
+                          ? Icons.folder_outlined
+                          : Icons.insert_drive_file_outlined,
                       color: e['t'] == 'd' ? WoiColors.cyan : WoiColors.textDim,
                       dense: true,
                     ),
                 if (result['more'] != null)
-                  Pill(label: '+${result['more']} more', color: WoiColors.textFaint, dense: true),
+                  Pill(
+                    label: '+${result['more']} more',
+                    color: WoiColors.textFaint,
+                    dense: true,
+                  ),
               ],
             ),
           );
@@ -1048,14 +1455,22 @@ class _ToolDetails extends StatelessWidget {
         ),
       );
     }
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: children,
+    );
   }
 
   Widget _kvList(Map<String, Object?> m) {
-    final entries = m.entries.where((e) => e.key != 'ok' && e.key != 'raw' && e.value != null).toList();
+    final entries = m.entries
+        .where((e) => e.key != 'ok' && e.key != 'raw' && e.value != null)
+        .toList();
     if (entries.isEmpty) {
       final raw = m['raw'];
-      return Text(raw == null ? 'No details' : '$raw', style: mono(12, color: WoiColors.textDim));
+      return Text(
+        raw == null ? 'No details' : '$raw',
+        style: mono(12, color: WoiColors.textDim),
+      );
     }
     String fmt(Object? v) {
       if (v is String) return v;
@@ -1069,7 +1484,10 @@ class _ToolDetails extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(10),
       constraints: const BoxConstraints(maxHeight: 300),
-      decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.32), borderRadius: BorderRadius.circular(10)),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.32),
+        borderRadius: BorderRadius.circular(10),
+      ),
       child: SingleChildScrollView(
         child: SelectableText.rich(
           TextSpan(
@@ -1102,7 +1520,9 @@ class _Terminal extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final out = result['stdout'] as String? ?? '';
-    final err = (result['stderr'] as String? ?? '') + (result['error'] != null ? '${result['error']}' : '');
+    final err =
+        (result['stderr'] as String? ?? '') +
+        (result['error'] != null ? '${result['error']}' : '');
     final code = result['exit_code'];
     final ms = result['ms'];
     final ok = code == 0;
@@ -1122,12 +1542,19 @@ class _Terminal extends StatelessWidget {
             ),
             child: Row(
               children: [
-                for (final c in const [Color(0xFFFF5F57), Color(0xFFFEBC2E), Color(0xFF28C840)])
+                for (final c in const [
+                  Color(0xFFFF5F57),
+                  Color(0xFFFEBC2E),
+                  Color(0xFF28C840),
+                ])
                   Container(
                     margin: const EdgeInsets.only(right: 5),
                     width: 8,
                     height: 8,
-                    decoration: BoxDecoration(color: c.withValues(alpha: 0.7), shape: BoxShape.circle),
+                    decoration: BoxDecoration(
+                      color: c.withValues(alpha: 0.7),
+                      shape: BoxShape.circle,
+                    ),
                   ),
                 const SizedBox(width: 6),
                 Expanded(
@@ -1137,7 +1564,12 @@ class _Terminal extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                if (code != null) Pill(label: 'exit $code', color: ok ? WoiColors.mint : WoiColors.red, dense: true),
+                if (code != null)
+                  Pill(
+                    label: 'exit $code',
+                    color: ok ? WoiColors.mint : WoiColors.red,
+                    dense: true,
+                  ),
                 if (result['timed_out'] == true) ...[
                   const SizedBox(width: 6),
                   Pill(label: 'timed out', color: WoiColors.amber, dense: true),
@@ -1199,7 +1631,12 @@ class _Terminal extends StatelessWidget {
 
 /// Read-only code preview with line numbers and syntax colours.
 class _CodeBlock extends StatelessWidget {
-  const _CodeBlock({required this.text, required this.path, this.firstLine = 1, this.maxLines = 40});
+  const _CodeBlock({
+    required this.text,
+    required this.path,
+    this.firstLine = 1,
+    this.maxLines = 40,
+  });
   final String text;
   final String path;
   final int firstLine;
@@ -1213,7 +1650,10 @@ class _CodeBlock extends StatelessWidget {
     final gutter = '${firstLine + lines.length}'.length;
     return Container(
       constraints: const BoxConstraints(maxHeight: 320),
-      decoration: BoxDecoration(color: const Color(0xE6050810), borderRadius: BorderRadius.circular(10)),
+      decoration: BoxDecoration(
+        color: const Color(0xE6050810),
+        borderRadius: BorderRadius.circular(10),
+      ),
       child: Scrollbar(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(10),
@@ -1245,8 +1685,10 @@ class _CodeBlock extends StatelessWidget {
 // ----------------------------------------------------------------- system
 
 /// Rewrites raw token counts ("46212 → 44778 tokens") as "46.2k → 44.8k tokens".
-String humanizeTokenCounts(String text) =>
-    text.replaceAllMapped(RegExp(r'\b\d{4,}\b'), (m) => formatTokens(int.parse(m[0]!)));
+String humanizeTokenCounts(String text) => text.replaceAllMapped(
+  RegExp(r'\b\d{4,}\b'),
+  (m) => formatTokens(int.parse(m[0]!)),
+);
 
 class _SystemNote extends StatelessWidget {
   const _SystemNote({required this.message, required this.viewer});
@@ -1274,12 +1716,20 @@ class _SystemNote extends StatelessWidget {
           children: [
             Row(
               children: [
-                Expanded(child: Container(height: 1, color: color.withValues(alpha: 0.12))),
+                Expanded(
+                  child: Container(
+                    height: 1,
+                    color: color.withValues(alpha: 0.12),
+                  ),
+                ),
                 Flexible(
                   flex: 6,
                   child: Container(
                     margin: const EdgeInsets.symmetric(horizontal: 10),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 7,
+                    ),
                     decoration: BoxDecoration(
                       color: color.withValues(alpha: 0.08),
                       // A pill on one line; a rounded box (not an oval) when it wraps on a phone.
@@ -1293,18 +1743,32 @@ class _SystemNote extends StatelessWidget {
                         const SizedBox(width: 8),
                         Flexible(
                           child: Text(
-                            type == 'compaction' ? humanizeTokenCounts(m.text) : m.text,
-                            style: body(12, weight: FontWeight.w500, color: color),
+                            type == 'compaction'
+                                ? humanizeTokenCounts(m.text)
+                                : m.text,
+                            style: body(
+                              12,
+                              weight: FontWeight.w500,
+                              color: color,
+                            ),
                             textAlign: TextAlign.center,
                           ),
                         ),
                         const SizedBox(width: 8),
-                        Text(_time(m.createdAt), style: body(11, color: WoiColors.textFaint)),
+                        Text(
+                          _time(m.createdAt),
+                          style: body(11, color: WoiColors.textFaint),
+                        ),
                       ],
                     ),
                   ),
                 ),
-                Expanded(child: Container(height: 1, color: color.withValues(alpha: 0.12))),
+                Expanded(
+                  child: Container(
+                    height: 1,
+                    color: color.withValues(alpha: 0.12),
+                  ),
+                ),
               ],
             ),
             if (m.image != null) ...[
@@ -1313,9 +1777,10 @@ class _SystemNote extends StatelessWidget {
                 image: m.image!,
                 viewer: viewer,
                 tier: imageTierOf(m),
-                label: imageLabel(m),
+                label: m.image!.generated ? 'Generated image' : imageLabel(m),
                 maxWidth: type == 'camera' ? 200 : 300,
               ),
+              if (m.image!.generated) _GeneratedImageInfo(image: m.image!),
             ],
           ],
         ),

@@ -6,6 +6,24 @@ import 'package:woi/core/voice/backend_factory.dart';
 import 'package:woi/core/voice/realtime_ws_backend.dart';
 
 void main() {
+  test('image defaults and web search migrate without replacing custom model IDs', () {
+    final d = AppSettings.fromJson(const {});
+    expect(d.imageModel, 'gpt-image-flare-2.1');
+    expect(d.imageQuality, 'low');
+    expect(d.webSearchEnabled, isTrue);
+    final changed = d.copyWith(imageModel: 'tenant-image-model', imageQuality: 'high', webSearchEnabled: false);
+    final restored = AppSettings.fromJson(changed.toJson());
+    expect(restored.imageModel, 'tenant-image-model');
+    expect(restored.imageQuality, 'high');
+    expect(restored.webSearchEnabled, isFalse);
+    expect(AppSettings.fromJson(const {'imageQuality': 'invalid'}).imageQuality, 'low');
+    for (final quality in ['low', 'medium', 'high', 'xhigh', 'max', 'auto']) {
+      expect(AppSettings.fromJson(d.copyWith(imageQuality: quality).toJson()).imageQuality, quality);
+    }
+    expect(changed.sessionDiffers(d), isTrue, reason: 'Search tools are refreshed when availability changes');
+    expect(d.copyWith(imageModel: 'tenant-image-model', imageQuality: 'high').sessionDiffers(d), isFalse);
+  });
+
   test('reply delay defaults to 2 s, is clamped, and sets the Direct server VAD silence', () async {
     const d = AppSettings(backendMode: BackendMode.direct);
     expect(d.replyDelayMs, 2000);

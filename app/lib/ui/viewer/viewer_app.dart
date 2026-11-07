@@ -14,6 +14,7 @@ import '../widgets/code_highlight.dart';
 import '../widgets/glass.dart';
 import '../notes/markdown_view.dart';
 import '../widgets/image_viewer.dart';
+import '../widgets/media_metadata_label.dart';
 import 'video_viewer.dart';
 import 'viewer_commands.dart';
 
@@ -73,7 +74,10 @@ class ViewerTitle extends StatelessWidget {
       children: [
         Container(
           padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(10),
+          ),
           child: Icon(icon, color: color, size: 20),
         ),
         const SizedBox(width: 12),
@@ -81,12 +85,24 @@ class ViewerTitle extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(item.title, style: display(16), overflow: TextOverflow.ellipsis),
+              Text(
+                item.title,
+                style: display(16),
+                overflow: TextOverflow.ellipsis,
+              ),
               if (item.path != null)
                 Text(
                   item.path!,
                   style: mono(11, color: WoiColors.textFaint),
                   overflow: TextOverflow.ellipsis,
+                ),
+              if (item.path != null)
+                MediaMetadataLabel(
+                  path: item.path!,
+                  image: item.kind == MediaKind.image,
+                  generationDurationMs: item.generationDurationMs,
+                  generationModel: item.generationModel,
+                  generationQuality: item.generationQuality,
                 ),
             ],
           ),
@@ -105,7 +121,12 @@ class MediaBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => switch (item.kind) {
-    MediaKind.image => ZoomableImage(file: File(item.path ?? '')),
+    MediaKind.image => ZoomableImage(
+      file: File(item.path ?? ''),
+      generationDurationMs: item.generationDurationMs,
+      generationModel: item.generationModel,
+      generationQuality: item.generationQuality,
+    ),
     MediaKind.text => TextViewerBody(item: item),
     MediaKind.audio => AudioViewerBody(path: item.path ?? '', audio: audio),
     MediaKind.video => VideoViewerBody(path: item.path ?? ''),
@@ -163,7 +184,8 @@ class _TextViewerBodyState extends State<TextViewerBody> {
   void _openLink(String target) {
     if (target.startsWith('http://') || target.startsWith('https://')) {
       Clipboard.setData(ClipboardData(text: target));
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text('Link copied: $target')));
+      ScaffoldMessenger.maybeOf(context)
+          ?.showSnackBar(SnackBar(content: Text('Link copied: $target')));
     }
   }
 
@@ -175,7 +197,9 @@ class _TextViewerBodyState extends State<TextViewerBody> {
     try {
       final bytes = await raf.read(len > _maxBytes ? _maxBytes : len);
       final s = String.fromCharCodes(bytes.where((b) => b != 0));
-      return len > _maxBytes ? '$s\n\n… (truncated, ${len ~/ 1024} KiB total)' : s;
+      return len > _maxBytes
+          ? '$s\n\n… (truncated, ${len ~/ 1024} KiB total)'
+          : s;
     } finally {
       await raf.close();
     }
@@ -191,8 +215,12 @@ class _TextViewerBodyState extends State<TextViewerBody> {
   Widget build(BuildContext context) => FutureBuilder<String>(
     future: _text,
     builder: (context, snap) {
-      if (snap.hasError) return _Message(icon: Icons.error_outline, text: '${snap.error}');
-      if (!snap.hasData) return const Center(child: CircularProgressIndicator());
+      if (snap.hasError) {
+        return _Message(icon: Icons.error_outline, text: '${snap.error}');
+      }
+      if (!snap.hasData) {
+        return const Center(child: CircularProgressIndicator());
+      }
       final lines = snap.data!.split('\n');
       final gutter = '${lines.length}'.length;
       final lang = lines.length > 20000 ? CodeLang.plain : _lang;
@@ -204,7 +232,11 @@ class _TextViewerBodyState extends State<TextViewerBody> {
                 text: '${'${i + 1}'.padLeft(gutter)}   ',
                 style: mono(12.5, color: WoiColors.textFaint, height: 1.55),
               ),
-              ...highlightLine(lines[i].replaceAll('\t', '    '), lang, size: 12.5),
+              ...highlightLine(
+                lines[i].replaceAll('\t', '    '),
+                lang,
+                size: 12.5,
+              ),
               const TextSpan(text: '\n'),
             ],
           ],
@@ -222,7 +254,10 @@ class _TextViewerBodyState extends State<TextViewerBody> {
                 padding: const EdgeInsets.fromLTRB(16, 8, 8, 4),
                 child: Row(
                   children: [
-                    Text('${lines.length} lines', style: body(12, color: WoiColors.textFaint)),
+                    Text(
+                      '${lines.length} lines',
+                      style: body(12, color: WoiColors.textFaint),
+                    ),
                     const Spacer(),
                     if (isMarkdown)
                       Padding(
@@ -230,22 +265,32 @@ class _TextViewerBodyState extends State<TextViewerBody> {
                         child: SegmentedButton<bool>(
                           key: const ValueKey('md-mode'),
                           showSelectedIcon: false,
-                          style: SegmentedButton.styleFrom(visualDensity: VisualDensity.compact),
+                          style: SegmentedButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                          ),
                           segments: const [
                             ButtonSegment(
                               value: true,
                               icon: Icon(Icons.auto_stories_outlined, size: 16),
                               label: Text('Preview'),
                             ),
-                            ButtonSegment(value: false, icon: Icon(Icons.code, size: 16), label: Text('Source')),
+                            ButtonSegment(
+                              value: false,
+                              icon: Icon(Icons.code, size: 16),
+                              label: Text('Source'),
+                            ),
                           ],
                           selected: {_rendered},
-                          onSelectionChanged: (v) => setState(() => _rendered = v.first),
+                          onSelectionChanged: (v) =>
+                              setState(() => _rendered = v.first),
                         ),
                       ),
                     if (!_rendered) ...[
                       Text('Wrap', style: body(12, color: WoiColors.textDim)),
-                      Switch(value: _wrap, onChanged: (v) => setState(() => _wrap = v)),
+                      Switch(
+                        value: _wrap,
+                        onChanged: (v) => setState(() => _wrap = v),
+                      ),
                     ],
                   ],
                 ),
@@ -257,7 +302,12 @@ class _TextViewerBodyState extends State<TextViewerBody> {
                     : Scrollbar(
                         child: SingleChildScrollView(
                           padding: const EdgeInsets.all(16),
-                          child: _wrap ? text : SingleChildScrollView(scrollDirection: Axis.horizontal, child: text),
+                          child: _wrap
+                              ? text
+                              : SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  child: text,
+                                ),
                         ),
                       ),
               ),
@@ -273,7 +323,10 @@ class _TextViewerBodyState extends State<TextViewerBody> {
 
 /// Peak envelope of a PCM WAV file (8/16/24/32-bit int, any channels), or
 /// null if it is not a WAV we understand.
-({List<double> peaks, Duration duration})? wavPeaks(Uint8List b, {int buckets = 160}) {
+({List<double> peaks, Duration duration})? wavPeaks(
+  Uint8List b, {
+  int buckets = 160,
+}) {
   if (b.length < 44 ||
       String.fromCharCodes(b.sublist(0, 4)) != 'RIFF' ||
       String.fromCharCodes(b.sublist(8, 12)) != 'WAVE') {
@@ -297,12 +350,22 @@ class _TextViewerBodyState extends State<TextViewerBody> {
     }
     pos = body + len + (len & 1);
   }
-  if (channels == null || rate == null || bits == null || dataStart == null || dataLen == null) return null;
-  if (channels <= 0 || rate <= 0 || bits % 8 != 0 || bits == 0 || bits > 32) return null;
+  if (channels == null ||
+      rate == null ||
+      bits == null ||
+      dataStart == null ||
+      dataLen == null) {
+    return null;
+  }
+  if (channels <= 0 || rate <= 0 || bits % 8 != 0 || bits == 0 || bits > 32) {
+    return null;
+  }
   final bps = bits ~/ 8;
   final frame = bps * channels;
   final frames = dataLen ~/ frame;
-  if (frames == 0) return (peaks: List.filled(buckets, 0.0), duration: Duration.zero);
+  if (frames == 0) {
+    return (peaks: List.filled(buckets, 0.0), duration: Duration.zero);
+  }
   final per = math.max(1, frames ~/ buckets);
   final step = math.max(1, per ~/ 64); // sample ~64 frames per bucket
   final full = math.pow(2, bits - 1).toDouble();
@@ -321,7 +384,10 @@ class _TextViewerBodyState extends State<TextViewerBody> {
         1 => (bd.getUint8(o) - 128).toDouble(),
         2 => bd.getInt16(o, Endian.little).toDouble(),
         3 =>
-          (((bd.getUint8(o + 2) << 24) | (bd.getUint8(o + 1) << 16) | (bd.getUint8(o) << 8)) >> 8)
+          (((bd.getUint8(o + 2) << 24) |
+                      (bd.getUint8(o + 1) << 16) |
+                      (bd.getUint8(o) << 8)) >>
+                  8)
               .toSigned(24)
               .toDouble(),
         _ => bd.getInt32(o, Endian.little).toDouble(),
@@ -333,7 +399,10 @@ class _TextViewerBodyState extends State<TextViewerBody> {
   }
   final top = peaks.fold(0.0, math.max);
   final norm = top > 0.05 ? peaks.map((p) => p / top).toList() : peaks;
-  return (peaks: norm, duration: Duration(microseconds: frames * 1000000 ~/ rate));
+  return (
+    peaks: norm,
+    duration: Duration(microseconds: frames * 1000000 ~/ rate),
+  );
 }
 
 class AudioViewerBody extends StatefulWidget {
@@ -360,7 +429,9 @@ class _AudioViewerBodyState extends State<AudioViewerBody>
   Duration? _duration;
   // Progress repaints at ~15 Hz, not every frame.
   late final Ticker _ticker = createTicker((d) {
-    if (d - _elapsed >= const Duration(milliseconds: 66)) setState(() => _elapsed = d);
+    if (d - _elapsed >= const Duration(milliseconds: 66)) {
+      setState(() => _elapsed = d);
+    }
   });
   Duration _elapsed = Duration.zero;
 
@@ -446,10 +517,16 @@ class _AudioViewerBodyState extends State<AudioViewerBody>
                   height: 120,
                   child: Semantics(
                     label: 'Audio waveform',
-                    value: dur == null ? null : '${_fmt(_elapsed)} of ${_fmt(dur)}',
+                    value: dur == null
+                        ? null
+                        : '${_fmt(_elapsed)} of ${_fmt(dur)}',
                     child: CustomPaint(
                       size: Size.infinite,
-                      painter: _WavePainter(peaks: _peaks, progress: progress, playing: playing),
+                      painter: _WavePainter(
+                        peaks: _peaks,
+                        progress: progress,
+                        playing: playing,
+                      ),
                     ),
                   ),
                 ),
@@ -468,7 +545,11 @@ class _AudioViewerBodyState extends State<AudioViewerBody>
                           foregroundColor: WoiColors.bg0,
                         ),
                         onPressed: _toggle,
-                        icon: Icon(playing ? Icons.stop_rounded : Icons.play_arrow_rounded),
+                        icon: Icon(
+                          playing
+                              ? Icons.stop_rounded
+                              : Icons.play_arrow_rounded,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 18),
@@ -478,7 +559,12 @@ class _AudioViewerBodyState extends State<AudioViewerBody>
                         children: [
                           Text(
                             playing ? 'Playing' : 'Ready',
-                            style: display(15, color: playing ? WoiColors.violet : WoiColors.text),
+                            style: display(
+                              15,
+                              color: playing
+                                  ? WoiColors.violet
+                                  : WoiColors.text,
+                            ),
                           ),
                           const SizedBox(height: 4),
                           Text(
@@ -488,7 +574,9 @@ class _AudioViewerBodyState extends State<AudioViewerBody>
                                     : '${_fmt(_elapsed)} / ${_fmt(dur)}'),
                             style: mono(
                               12.5,
-                              color: _error != null ? WoiColors.red : WoiColors.textDim,
+                              color: _error != null
+                                  ? WoiColors.red
+                                  : WoiColors.textDim,
                             ).copyWith(fontFeatures: kTabular),
                           ),
                         ],
@@ -506,25 +594,36 @@ class _AudioViewerBodyState extends State<AudioViewerBody>
 }
 
 class _WavePainter extends CustomPainter {
-  _WavePainter({required this.peaks, required this.progress, required this.playing});
+  _WavePainter({
+    required this.peaks,
+    required this.progress,
+    required this.playing,
+  });
   final List<double>? peaks;
   final double progress;
   final bool playing;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final p = peaks ?? List.generate(120, (i) => 0.15 + 0.1 * math.sin(i * 0.4).abs());
+    final p =
+        peaks ??
+        List.generate(120, (i) => 0.15 + 0.1 * math.sin(i * 0.4).abs());
     final n = p.length;
     final w = size.width / n;
     final mid = size.height / 2;
     final played = Paint()
-      ..shader = LinearGradient(colors: [WoiColors.cyan, WoiColors.violet, WoiColors.magenta])
-          .createShader(Offset.zero & size);
+      ..shader = LinearGradient(
+        colors: [WoiColors.cyan, WoiColors.violet, WoiColors.magenta],
+      ).createShader(Offset.zero & size);
     final rest = Paint()..color = WoiColors.textFaint.withValues(alpha: 0.45);
     for (var i = 0; i < n; i++) {
       final h = math.max(2.0, p[i] * (size.height - 4));
       final r = RRect.fromRectAndRadius(
-        Rect.fromCenter(center: Offset(i * w + w / 2, mid), width: math.max(1.5, w * 0.6), height: h),
+        Rect.fromCenter(
+          center: Offset(i * w + w / 2, mid),
+          width: math.max(1.5, w * 0.6),
+          height: h,
+        ),
         const Radius.circular(2),
       );
       canvas.drawRRect(r, (i + 0.5) / n <= progress ? played : rest);
@@ -542,11 +641,16 @@ class _WavePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_WavePainter old) => old.progress != progress || old.peaks != peaks || old.playing != playing;
+  bool shouldRepaint(_WavePainter old) =>
+      old.progress != progress || old.peaks != peaks || old.playing != playing;
 }
 
 /// In-app overlay used when no secondary window is available.
-Future<void> showMediaOverlay(BuildContext context, MediaItem item, AudioIO audio) {
+Future<void> showMediaOverlay(
+  BuildContext context,
+  MediaItem item,
+  AudioIO audio,
+) {
   return showDialog<void>(
     context: context,
     builder: (ctx) => ValueListenableBuilder<bool>(
@@ -557,7 +661,9 @@ Future<void> showMediaOverlay(BuildContext context, MediaItem item, AudioIO audi
         return Dialog(
           insetPadding: full ? EdgeInsets.zero : EdgeInsets.all(phone ? 8 : 24),
           shape: full ? const RoundedRectangleBorder() : null,
-          backgroundColor: full ? Colors.black : WoiColors.bg1.withValues(alpha: 0.96),
+          backgroundColor: full
+              ? Colors.black
+              : WoiColors.bg1.withValues(alpha: 0.96),
           child: SizedBox(
             width: size.width * (phone || full ? 1 : 0.85),
             height: size.height * (full ? 1 : (phone ? 0.92 : 0.85)),
@@ -593,7 +699,12 @@ const kMediaRouteName = '/viewer';
 
 /// Phones: the viewer as a full-screen route (no sub-windows on Android).
 /// Opening another file replaces the open viewer route.
-Future<void> showMediaRoute(NavigatorState nav, MediaItem item, AudioIO audio, {Widget? footer}) {
+Future<void> showMediaRoute(
+  NavigatorState nav,
+  MediaItem item,
+  AudioIO audio, {
+  Widget? footer,
+}) {
   final route = MaterialPageRoute<void>(
     settings: const RouteSettings(name: kMediaRouteName),
     fullscreenDialog: true,
@@ -626,7 +737,12 @@ bool sendViewerCommand(ViewerCommand command, double seconds) {
 }
 
 class MediaRoutePage extends StatelessWidget {
-  const MediaRoutePage({super.key, required this.item, required this.audio, this.footer});
+  const MediaRoutePage({
+    super.key,
+    required this.item,
+    required this.audio,
+    this.footer,
+  });
   final MediaItem item;
   final AudioIO audio;
 
@@ -653,14 +769,21 @@ class MediaRoutePage extends StatelessWidget {
                   trailing: IconButton(
                     tooltip: 'Close',
                     iconSize: 26,
-                    constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                    constraints: const BoxConstraints(
+                      minWidth: 48,
+                      minHeight: 48,
+                    ),
                     onPressed: () => Navigator.maybePop(context),
                     icon: const Icon(Icons.close),
                   ),
                 ),
               ),
             Expanded(child: body!),
-            if (!full && footer != null) Padding(padding: const EdgeInsets.fromLTRB(8, 4, 8, 8), child: footer),
+            if (!full && footer != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
+                child: footer,
+              ),
           ],
         ),
       ),

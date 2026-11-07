@@ -158,31 +158,72 @@ class _CameraPreviewTileState extends State<CameraPreviewTile> {
 
 /// Input-bar camera toggle.
 class CameraToggle extends StatelessWidget {
-  const CameraToggle({super.key, required this.on, required this.busy, required this.onPressed, this.size = 28});
+  const CameraToggle({
+    super.key,
+    required this.on,
+    required this.busy,
+    required this.onPressed,
+    this.size = 28,
+    this.visualSize,
+  });
   final bool on;
   final bool busy;
   final VoidCallback onPressed;
   final double size;
+  final double? visualSize;
 
   @override
-  Widget build(BuildContext context) => Tooltip(
-    message: on ? 'Close camera' : 'Open camera (frames go with every turn)',
-    child: InkResponse(
-      key: const ValueKey('camera-toggle'),
-      onTap: busy ? null : onPressed,
-      radius: size * 0.7,
-      child: SizedBox.square(
-        dimension: size,
-        child: Center(
-          child: busy
-              ? const SizedBox.square(dimension: 14, child: CircularProgressIndicator(strokeWidth: 2))
-              : Icon(
-                  on ? Icons.videocam : Icons.videocam_off_outlined,
-                  size: 18,
-                  color: on ? WoiColors.cyan : WoiColors.textDim,
+  Widget build(BuildContext context) {
+    final discSize = visualSize ?? size;
+    final background = on ? const Color(0xFF27824F) : const Color(0xFFDFF3E5);
+    final foreground = on ? Colors.white : const Color(0xFF32704A);
+    return Semantics(
+      button: true,
+      toggled: on,
+      enabled: !busy,
+      label: on ? 'Close camera' : 'Open camera',
+      child: Tooltip(
+        message: on ? 'Close camera' : 'Open camera (frames go with every turn)',
+        child: Material(
+          color: Colors.transparent,
+          shape: const CircleBorder(),
+          clipBehavior: Clip.antiAlias,
+          child: InkResponse(
+            key: const ValueKey('camera-toggle'),
+            onTap: busy ? null : onPressed,
+            radius: size / 2,
+            containedInkWell: true,
+            customBorder: const CircleBorder(),
+            child: SizedBox.square(
+              dimension: size,
+              child: Center(
+                child: AnimatedContainer(
+                  duration: WoiMotion.fast,
+                  width: discSize,
+                  height: discSize,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: background,
+                    border: Border.all(color: foreground.withValues(alpha: on ? 0.0 : 0.16)),
+                  ),
+                  child: Center(
+                    child: busy
+                        ? SizedBox.square(
+                            dimension: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: foreground),
+                          )
+                        : Icon(
+                            on ? Icons.videocam_rounded : Icons.videocam_outlined,
+                            size: discSize * 0.52,
+                            color: foreground,
+                          ),
+                  ),
                 ),
+              ),
+            ),
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }

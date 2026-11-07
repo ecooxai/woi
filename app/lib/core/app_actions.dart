@@ -463,6 +463,20 @@ class AppActions {
         final secs = _standbySeconds(lv);
         next = s.copyWith(idleStandbySeconds: secs);
         done = secs == 0 ? 'idle standby off' : 'idle standby after $secs s';
+      case 'web_search' || 'web_search_enabled':
+        final on = _onOff(lv, 'web_search');
+        next = s.copyWith(webSearchEnabled: on);
+        done = on ? 'web search enabled' : 'web search disabled';
+      case 'image_model':
+        if (value.trim().isEmpty) throw AppActionError('image_model must not be empty');
+        next = s.copyWith(imageModel: value.trim());
+        done = 'image model set to ${value.trim()}';
+      case 'image_quality':
+        if (!{'low', 'medium', 'high', 'xhigh', 'max', 'auto'}.contains(lv)) {
+          throw AppActionError('image_quality must be low, medium, high, xhigh, max or auto');
+        }
+        next = s.copyWith(imageQuality: lv);
+        done = 'image quality set to $lv';
       case 'camera_replaces_screenshot' || 'camera_replaces':
         final on = _onOff(lv, 'camera_replaces_screenshot');
         next = s.copyWith(cameraReplacesScreenshot: on);
@@ -507,7 +521,8 @@ class AppActions {
         done = 'chat pane ${(cl * 100).round()}% of the width';
       case 'workspace' || 'workspace_dir' || 'workspace_folder':
         final dir = RegExp(r'^(default|none|reset|empty)$').hasMatch(lv) ? '' : v;
-        if (dir.isNotEmpty && !Directory(dir.replaceFirst(RegExp(r'^~'), Platform.environment['HOME'] ?? '~')).existsSync()) {
+        if (dir.isNotEmpty &&
+            !Directory(dir.replaceFirst(RegExp(r'^~'), Platform.environment['HOME'] ?? '~')).existsSync()) {
           throw AppActionError('folder not found: $dir');
         }
         next = s.copyWith(workspaceDir: dir);
@@ -516,7 +531,7 @@ class AppActions {
         throw AppActionError(
           'unknown setting "$key" (theme, mic_mode, voice, voice_model, compaction_threshold, run_in_terminal, '
           'edit_apply_delay, echo_cancellation, audio_route, stop_word_detection, stop_words, usage_guard, auto_screenshot, screenshot_delay, reply_delay, idle_standby, '
-          'camera_replaces_screenshot, thinking_chime, confirm_commands, fallback_to_direct, backend, '
+          'web_search, image_model, image_quality, camera_replaces_screenshot, thinking_chime, confirm_commands, fallback_to_direct, backend, '
           'compression_model, delegate_model, chat_pane, workspace)',
         );
     }
@@ -630,7 +645,9 @@ class AppActions {
     } else {
       final shells = terminals.sessions.where((x) => x.kind == TerminalKind.shell);
       s = tab == null || tab.trim().isEmpty
-          ? (terminals.active?.kind == TerminalKind.shell ? terminals.active! : (shells.firstOrNull ?? terminals.newShell()))
+          ? (terminals.active?.kind == TerminalKind.shell
+                ? terminals.active!
+                : (shells.firstOrNull ?? terminals.newShell()))
           : findTab(tab);
     }
     if (s.kind != TerminalKind.shell) throw AppActionError('"${s.title}" is not a shell tab');
@@ -652,9 +669,7 @@ class AppActions {
   Future<void> viewerCommand(ViewerCommand cmd, {double seconds = 0}) async {
     final ok = await c.platform.viewer.control(cmd, seconds: seconds);
     if (!ok) {
-      throw AppActionError(
-        cmd == ViewerCommand.close ? 'no viewer is open' : 'no video is playing in the viewer',
-      );
+      throw AppActionError(cmd == ViewerCommand.close ? 'no viewer is open' : 'no video is playing in the viewer');
     }
   }
 }

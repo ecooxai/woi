@@ -72,16 +72,18 @@ Uri buildAuthorizeUrl({
   return Uri.parse('$issuer/oauth/authorize?$q');
 }
 
-/// Opens a URL in the user's browser. Linux: xdg-open. Android will use a
-/// Custom Tab behind the same interface.
+/// Opens a URL in the user's browser: xdg-open on Linux and a Custom Tab
+/// on Android. Ordinary links do not request a background service.
 abstract class PlatformUrlOpener {
-  Future<bool> open(Uri url);
+  /// [keepAlive] keeps an Android sign-in callback server alive while the
+  /// browser is in front. Only authentication flows should request it.
+  Future<bool> open(Uri url, {bool keepAlive = false});
 }
 
 class XdgUrlOpener implements PlatformUrlOpener {
   const XdgUrlOpener();
   @override
-  Future<bool> open(Uri url) async {
+  Future<bool> open(Uri url, {bool keepAlive = false}) async {
     try {
       await Process.start('xdg-open', [url.toString()], mode: ProcessStartMode.detached);
       return true;
@@ -212,7 +214,7 @@ class PkceLoginFlow {
     _server!.listen(_handle, onError: (Object _) {});
     _timer = Timer(timeout, () => _fail(LoginFailure.timedOut, 'Sign-in timed out after ${timeout.inMinutes} min.'));
     final url = authorizeUrl;
-    if (openBrowser) await opener.open(url);
+    if (openBrowser) await opener.open(url, keepAlive: true);
     return url;
   }
 

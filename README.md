@@ -37,8 +37,9 @@ for old capture owners to release before reusing audio resources.
 
 ## Settings
 
-Connection puts Codex login status and API access together. Backend chooses
-**Codex login** or **API**; audio models are selected separately in **Model**.
+Connection begins with **Codex login** or **API**. Codex shows its sign-in status
+and account usage immediately below the selector; API shows the saved API-key
+field there. Audio models are selected separately in **Model**.
 The audio quick choices are **gpt-realtime-2.1** and **gpt-live-1.1**, with more
 models in a selector. Text model controls delegated reasoning and longer tasks;
 compaction keeps its separate model under Advanced.
@@ -54,6 +55,32 @@ quality, workspace, Android routing and diagnostic controls sit in one
 **Advanced** section at the bottom, collapsed by default. Search reveals matching
 advanced options. Changes persist automatically, including pending text edits
 when leaving the page. Editing a saved inactive API key does not reconnect Codex.
+
+## Images and web search
+
+**Model** includes an image model selector, a custom model ID, account-model
+refresh, and image quality. The requested default is `gpt-image-flare-2.1` with
+`low` quality. The selected ID is forwarded exactly. Account-listed models are
+distinguished from documented candidates; listing a model does not guarantee
+that an account can generate with it. Provider rejection is shown without
+silently substituting another model.
+
+The `generate_image` tool starts an independent background request. Its status
+and completed image appear in the originating conversation. Generation duration,
+file size and pixel dimensions are retained with the image and shown in the
+large viewer. The API-key backend uses the Images API; Codex login uses the
+native image-generation tool through its Responses endpoint. Access depends on
+the selected account and model.
+
+**Web search** is enabled by default under Preferences. The assistant can call
+`web_search` for current information. It runs a dedicated live search with the
+selected text model and keeps the returned source URLs. Turning it off removes
+the tool from the active session and prevents further dispatches. A provider
+response without a completed search is reported as a failure.
+
+The camera control is a green circle beside the microphone and becomes darker
+while enabled. Linux microphone and send circles are slightly smaller while
+retaining full click targets.
 
 ## Computer input and Python
 

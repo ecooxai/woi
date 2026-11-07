@@ -68,10 +68,36 @@ class _Env {
 
   Future<void> stop(WidgetTester t) async {
     await t.pumpWidget(const SizedBox());
+    // An autosave can start during the last fake-time pump. Its file I/O is
+    // real, but its continuation needs another fake-zone pump. Shutdown waits
+    // for that write, so awaiting it entirely inside runAsync would deadlock.
+    var stopped = false;
+    Object? failure;
+    StackTrace? failureStack;
+    late Future<void> stopping;
     await t.runAsync(() async {
-      await c.shutdown();
-      await fp.dispose();
+      stopping = c.shutdown().then<void>(
+        (_) => stopped = true,
+        onError: (Object error, StackTrace stack) {
+          failure = error;
+          failureStack = stack;
+          stopped = true;
+        },
+      );
     });
+    final watch = Stopwatch()..start();
+    while (!stopped) {
+      if (watch.elapsed >= const Duration(seconds: 15)) {
+        fail('Controller shutdown did not finish while draining file I/O and widget callbacks.');
+      }
+      await t.runAsync(() => Future.any<void>([
+        stopping,
+        Future<void>.delayed(const Duration(milliseconds: 15)),
+      ]));
+      await t.pump(const Duration(milliseconds: 20));
+    }
+    if (failure != null) Error.throwWithStackTrace(failure!, failureStack!);
+    await t.runAsync(fp.dispose);
     await t.pump(const Duration(seconds: 5));
   }
 }
@@ -265,12 +291,12 @@ void main() {
       expect(env.c.settings.micMode, MicMode.pushToTalk);
       expect(t.widget<VoiceStatusButton>(find.byType(VoiceStatusButton)).mode, VoiceMode.idle);
       final mic = find.byKey(const ValueKey('mic-button'));
-      expect(find.descendant(of: mic, matching: find.byIcon(Icons.mic_off_rounded)), findsOneWidget);
+      expect(find.descendant(of: mic, matching: find.byIcon(Icons.mic_off_outlined)), findsOneWidget);
       await t.tap(mic);
       await _settle(t);
       expect(env.c.settings.micMode, MicMode.handsFree);
       expect(t.widget<VoiceStatusButton>(find.byType(VoiceStatusButton)).mode, VoiceMode.listening);
-      expect(find.descendant(of: mic, matching: find.byIcon(Icons.mic_rounded)), findsOneWidget);
+      expect(find.descendant(of: mic, matching: find.byIcon(Icons.mic_none_rounded)), findsOneWidget);
       expect(t.takeException(), isNull);
       await env.stop(t);
     });
@@ -561,7 +587,7 @@ void main() {
         ),
       );
       await pumpSettings(t, env, const Size(1000, 1000));
-      expect(find.byKey(const ValueKey('codex-login-status')), findsOneWidget);
+      expect(find.byKey(const ValueKey('codex-login-status')), findsNothing);
       expect(find.byKey(const ValueKey('setting-api-key')), findsOneWidget);
       final live = find.byKey(const ValueKey('radio-audio-model-gpt-live-1.1'));
       await _showInSettings(t, live);
@@ -570,6 +596,9 @@ void main() {
 
       await _tapInSettings(t, find.byKey(const ValueKey('radio-backend-codex')));
       expect(env.c.settings.backendMode, BackendMode.direct);
+      expect(find.byKey(const ValueKey('codex-login-status')), findsOneWidget);
+      expect(find.byKey(const ValueKey('setting-api-key')), findsNothing);
+      expect(find.text('No usage data yet'), findsOneWidget);
       expect(env.c.settings.realtimeModel, 'custom-realtime-id');
       final audio = find.byKey(const ValueKey('select-audio-model'));
       await _showInSettings(t, audio);
@@ -717,22 +746,22 @@ void main() {
       final env = _Env();
       await env.start(
         t,
-        savedSettings: const AppSettings(backendMode: BackendMode.direct, apiKey: 'old-qa-key'),
+        savedSettings: const AppSettings(backendMode: BackendMode.apiKey, apiKey: 'old-qa-key'),
       );
       await pumpSettings(t, env, const Size(1000, 900));
       final field = find.byKey(const ValueKey('setting-api-key'));
       await t.enterText(field, '  new-qa-key  ');
-      await t.runAsync(() => env.c.updateSettings(env.c.settings.copyWith(backendMode: BackendMode.apiKey)));
+      await t.runAsync(() => env.c.updateSettings(env.c.settings.copyWith(backendMode: BackendMode.direct)));
       await t.pump();
-      expect(t.widget<TextField>(field).controller!.text, '  new-qa-key  ');
+      expect(field, findsNothing);
       expect(env.c.settings.apiKey, 'old-qa-key');
       await t.pumpWidget(const SizedBox());
       expect(env.c.settings.apiKey, 'new-qa-key');
-      expect(env.c.settings.backendMode, BackendMode.apiKey);
+      expect(env.c.settings.backendMode, BackendMode.direct);
       await _settle(t);
       final saved = await t.runAsync(() => SettingsStore(env.fp.services.paths.settingsFile).load());
       expect(saved!.apiKey, 'new-qa-key');
-      expect(saved.backendMode, BackendMode.apiKey);
+      expect(saved.backendMode, BackendMode.direct);
       await env.stop(t);
     });
 
@@ -768,7 +797,7 @@ void main() {
       final env = _Env();
       await env.start(
         t,
-        savedSettings: const AppSettings(backendMode: BackendMode.apiKey, realtimeModel: 'saved-audio'),
+        savedSettings: const AppSettings(backendMode: BackendMode.direct, realtimeModel: 'saved-audio'),
       );
       await pumpSettings(t, env, const Size(1000, 900));
       final before = env.c.settings.toJson();

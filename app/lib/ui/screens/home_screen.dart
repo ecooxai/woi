@@ -814,6 +814,7 @@ class WoiTabsState extends State<WoiTabs> {
           message: m,
           audio: c.platform.audio,
           viewer: c.platform.viewer,
+          urlOpener: c.platform.urlOpener,
           maxBubbleWidth: maxBubble,
           screenshot: m.kind == MessageKind.tool ? shots[idx] : null,
         ),

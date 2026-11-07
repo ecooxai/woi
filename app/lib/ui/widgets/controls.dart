@@ -147,6 +147,7 @@ class MicButton extends StatefulWidget {
     this.includesSystemAudio = false,
     this.level,
     this.size = kTouchTarget,
+    this.visualSize,
     this.enabled = true,
   });
 
@@ -159,6 +160,7 @@ class MicButton extends StatefulWidget {
   final bool includesSystemAudio;
   final ValueListenable<double>? level;
   final double size;
+  final double? visualSize;
   final bool enabled;
 
   @override
@@ -238,32 +240,37 @@ class _MicButtonState extends State<MicButton> {
                 _cancel();
                 if (mounted) setState(() {});
               },
-              child: AnimatedContainer(
+              child: SizedBox.square(
                 key: const ValueKey('mic-button'),
-                duration: WoiMotion.fast,
-                width: widget.size,
-                height: widget.size,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: held
-                      ? WoiColors.red
-                      : live
-                      ? WoiColors.cyan
-                      : WoiColors.glass,
-                  border: Border.all(color: live ? WoiColors.cyan : WoiColors.strokeStrong),
-                ),
-                child: Icon(
-                  held
-                      ? Icons.graphic_eq_rounded
-                      : listening
-                      ? Icons.mic_rounded
-                      : Icons.mic_off_rounded,
-                  size: widget.size * 0.46,
-                  color: !widget.enabled
-                      ? WoiColors.textFaint
-                      : live
-                      ? WoiColors.onAccent
-                      : WoiColors.textDim,
+                dimension: widget.size,
+                child: Center(
+                  child: AnimatedContainer(
+                    duration: WoiMotion.fast,
+                    width: (widget.visualSize ?? widget.size),
+                    height: (widget.visualSize ?? widget.size),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: held
+                          ? WoiColors.red
+                          : live
+                          ? WoiColors.cyan
+                          : WoiColors.glass,
+                      border: Border.all(color: live ? WoiColors.cyan : WoiColors.strokeStrong),
+                    ),
+                    child: Icon(
+                      held
+                          ? Icons.graphic_eq_rounded
+                          : listening
+                          ? Icons.mic_none_rounded
+                          : Icons.mic_off_outlined,
+                      size: (widget.visualSize ?? widget.size) * 0.46,
+                      color: !widget.enabled
+                          ? WoiColors.textFaint
+                          : live
+                          ? WoiColors.onAccent
+                          : WoiColors.textDim,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -334,6 +341,7 @@ class Composer extends StatefulWidget {
     this.framed = true,
     this.actionsBelow = false,
     this.actionsLeading,
+    this.actionSize = kTouchTarget,
   });
   final ValueChanged<String> onSend;
   final VoidCallback? onStop;
@@ -354,6 +362,9 @@ class Composer extends StatefulWidget {
   /// A single controls row below the text field, with send at the far right.
   final bool actionsBelow;
   final Widget? actionsLeading;
+
+  /// Smaller desktop controls retain the full phone touch size by default.
+  final double actionSize;
 
   @override
   State<Composer> createState() => _ComposerState();
@@ -453,10 +464,13 @@ class _ComposerState extends State<Composer> {
             style: IconButton.styleFrom(
               backgroundColor: WoiColors.red.withValues(alpha: 0.12),
               foregroundColor: WoiColors.red,
-              minimumSize: const Size(kTouchTarget, kTouchTarget),
+              minimumSize: Size.square(widget.actionSize),
+              fixedSize: Size.square(widget.actionSize),
+              padding: EdgeInsets.zero,
+              tapTargetSize: MaterialTapTargetSize.padded,
             ),
             onPressed: widget.onStop,
-            icon: const Icon(Icons.stop_rounded),
+            icon: Icon(Icons.stop_rounded, size: widget.actionSize * 0.5),
           )
         : IconButton.filled(
             key: const ValueKey('send'),
@@ -464,12 +478,15 @@ class _ComposerState extends State<Composer> {
             style: IconButton.styleFrom(
               backgroundColor: Colors.black,
               foregroundColor: Colors.white,
-              minimumSize: const Size(kTouchTarget, kTouchTarget),
+              minimumSize: Size.square(widget.actionSize),
+              fixedSize: Size.square(widget.actionSize),
+              padding: EdgeInsets.zero,
+              tapTargetSize: MaterialTapTargetSize.padded,
               disabledBackgroundColor: WoiColors.glassStrong,
               disabledForegroundColor: WoiColors.textFaint,
             ),
             onPressed: empty || !widget.enabled ? null : _send,
-            icon: const Icon(Icons.arrow_upward_rounded),
+            icon: Icon(Icons.arrow_upward_rounded, size: widget.actionSize * 0.5),
           );
     final row = widget.actionsBelow
         ? Column(

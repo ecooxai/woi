@@ -7,9 +7,11 @@ import 'package:woi/ui/login/login_screen.dart';
 
 class _FakeOpener implements PlatformUrlOpener {
   final opened = <Uri>[];
+  final keepAliveRequests = <bool>[];
   @override
-  Future<bool> open(Uri url) async {
+  Future<bool> open(Uri url, {bool keepAlive = false}) async {
     opened.add(url);
+    keepAliveRequests.add(keepAlive);
     return true;
   }
 }
@@ -64,6 +66,7 @@ void main() {
     await t.pump();
     expect(find.byKey(const ValueKey('login-waiting')), findsOneWidget);
     expect(opener.opened.single.host, 'auth.openai.com');
+    expect(opener.keepAliveRequests, [true]);
     expect(flow!.port, isNonZero);
 
     await t.runAsync(() async {

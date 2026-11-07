@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 
@@ -93,6 +94,7 @@ class _InputBarState extends State<InputBar> {
             ph == AssistantPhase.speaking || ph == AssistantPhase.thinking || ph == AssistantPhase.toolRunning;
         final s = c.settings;
         final phone = widget.phone;
+        final compactControls = Platform.isLinux;
         final includesSystemAudio = switch (c.platform.audio) {
           final HeldAudioCapture capture => capture.includesSystemAudio,
           _ => false,
@@ -146,6 +148,7 @@ class _InputBarState extends State<InputBar> {
           onSend: pipeline.sendText,
           framed: false,
           actionsBelow: true,
+          actionSize: compactControls ? 40 : kTouchTarget,
           hint: phone ? 'Message Woi' : 'Message Woi…  (Ctrl+K)',
           disabledHint: composerDisabledHint(status),
           actionsLeading: Row(
@@ -163,8 +166,16 @@ class _InputBarState extends State<InputBar> {
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              CameraToggle(on: c.cameraOn, busy: c.cameraBusy, onPressed: c.toggleCamera, size: kTouchTarget),
+              CameraToggle(
+                on: c.cameraOn,
+                busy: c.cameraBusy,
+                onPressed: c.toggleCamera,
+                size: kTouchTarget,
+                visualSize: compactControls ? 44 : kTouchTarget,
+              ),
+              const SizedBox(width: 6),
               MicButton(
+                visualSize: compactControls ? 40 : kTouchTarget,
                 mode: s.micMode,
                 held: c.heldAudio.recording,
                 includesSystemAudio: includesSystemAudio,

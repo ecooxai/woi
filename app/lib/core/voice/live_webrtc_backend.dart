@@ -923,7 +923,8 @@ class LiveWebRtcBackend extends VoiceBackend
     final ex = _executor;
     // Typed text never starts a delegation on gpt-live, so action requests
     // are carried out here and the model only voices the real outcome.
-    if (ex != null && (looksLikeAction(t) || _asksAboutContextImages(t))) {
+    final webLookup = ex != null && ex.tools.any((tool) => tool.name == 'web_search') && needsWebLookup(t);
+    if (ex != null && (looksLikeAction(t) || webLookup || _asksAboutContextImages(t))) {
       _runTypedAction(t, ex);
       return;
     }

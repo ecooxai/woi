@@ -3,7 +3,16 @@ import 'package:path/path.dart' as p;
 enum MediaKind { image, audio, video, text }
 
 class MediaItem {
-  const MediaItem({required this.kind, this.path, this.text, this.customTitle, this.language});
+  const MediaItem({
+    required this.kind,
+    this.path,
+    this.text,
+    this.customTitle,
+    this.language,
+    this.generationDurationMs,
+    this.generationModel,
+    this.generationQuality,
+  });
 
   final MediaKind kind;
   final String? path;
@@ -12,8 +21,12 @@ class MediaItem {
   final String? text;
   final String? language;
   final String? customTitle;
+  final int? generationDurationMs;
+  final String? generationModel;
+  final String? generationQuality;
 
-  String get title => customTitle ?? (path != null ? p.basename(path!) : kind.name);
+  String get title =>
+      customTitle ?? (path != null ? p.basename(path!) : kind.name);
 
   Map<String, Object?> toJson() => {
     'kind': kind.name,
@@ -21,6 +34,10 @@ class MediaItem {
     if (text != null) 'text': text,
     'title': title,
     if (language != null) 'language': language,
+    if (generationDurationMs != null)
+      'generationDurationMs': generationDurationMs,
+    if (generationModel != null) 'generationModel': generationModel,
+    if (generationQuality != null) 'generationQuality': generationQuality,
   };
 
   factory MediaItem.fromJson(Map<String, Object?> j) => MediaItem(
@@ -29,10 +46,21 @@ class MediaItem {
     text: j['text'] as String?,
     customTitle: j['title'] as String?,
     language: j['language'] as String?,
+    generationDurationMs: (j['generationDurationMs'] as num?)?.toInt(),
+    generationModel: j['generationModel'] as String?,
+    generationQuality: j['generationQuality'] as String?,
   );
 
   static const _image = {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'};
-  static const _audio = {'.wav', '.mp3', '.ogg', '.oga', '.flac', '.m4a', '.opus'};
+  static const _audio = {
+    '.wav',
+    '.mp3',
+    '.ogg',
+    '.oga',
+    '.flac',
+    '.m4a',
+    '.opus',
+  };
   static const _video = {'.mp4', '.mkv', '.webm', '.mov', '.avi', '.m4v'};
 
   static MediaKind kindForPath(String path) {
@@ -61,7 +89,8 @@ abstract class MediaViewer {
 
   /// Controls the open viewer ([seconds] for seekBy / seekTo). Returns false
   /// when no viewer is open or it cannot do that (e.g. pause on an image).
-  Future<bool> control(ViewerCommand command, {double seconds = 0}) async => false;
+  Future<bool> control(ViewerCommand command, {double seconds = 0}) async =>
+      false;
 
   /// What the viewer shows right now (null when it is closed), with the
   /// playing position for audio/video. The default knows nothing.
@@ -70,7 +99,12 @@ abstract class MediaViewer {
 
 /// The item open in the viewer and, for audio/video, where playback is.
 class ViewerState {
-  const ViewerState({required this.item, this.position, this.duration, this.playing = false});
+  const ViewerState({
+    required this.item,
+    this.position,
+    this.duration,
+    this.playing = false,
+  });
   final MediaItem item;
   final Duration? position;
   final Duration? duration;
@@ -85,7 +119,8 @@ class ViewerState {
 
   static ViewerState? fromJson(Object? j) {
     if (j is! Map || j['item'] is! Map) return null;
-    Duration? ms(Object? v) => v is num ? Duration(milliseconds: v.toInt()) : null;
+    Duration? ms(Object? v) =>
+        v is num ? Duration(milliseconds: v.toInt()) : null;
     return ViewerState(
       item: MediaItem.fromJson((j['item'] as Map).cast()),
       position: ms(j['positionMs']),
