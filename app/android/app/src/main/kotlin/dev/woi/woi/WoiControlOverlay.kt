@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.PixelFormat
 import android.view.Gravity
 import android.view.MotionEvent
@@ -26,12 +27,14 @@ class WoiControlOverlay(private val service: WoiAccessibilityService) {
         private set
     private var x = 0f
     private var y = 0f
+    private var button = ""
     private var heldPanel = false
 
     fun begin(kind: String, keys: String, targetX: Float?, targetY: Float?): Boolean {
         if (cancelled) return false
         end()
         active = true
+        button = ""  // Each warning begins with the neutral light-blue cursor.
         val metrics = service.resources.displayMetrics
         if (x == 0f && y == 0f) { x = metrics.widthPixels / 2f; y = metrics.heightPixels / 2f }
         // Phones have no system mouse cursor: the marker is the touch target.
@@ -69,10 +72,11 @@ class WoiControlOverlay(private val service: WoiAccessibilityService) {
         return true
     }
 
-    fun update(keys: String?, px: Float?, py: Float?) {
+    fun update(keys: String?, px: Float?, py: Float?, pointerButton: String? = null) {
         if (keys != null) visual?.keys = keys.take(180)
         if (px != null) x = px
         if (py != null) y = py
+        if (pointerButton != null) button = pointerButton
         visual?.invalidate()
     }
 
@@ -89,6 +93,7 @@ class WoiControlOverlay(private val service: WoiAccessibilityService) {
     fun reset() { end(); cancelled = false }
     fun end() {
         active = false
+        button = ""
         injecting = false
         injectionSerial++
         watcher?.let { try { wm.removeView(it) } catch (_: Throwable) {} }
@@ -108,18 +113,36 @@ class WoiControlOverlay(private val service: WoiAccessibilityService) {
     private inner class Indicator(ctx: Context, val kind: String, var keys: String) : View(ctx) {
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         private val density = resources.displayMetrics.density
+        private val cursor = Path().apply {
+            moveTo(0f, 0f); lineTo(0f, 30f); lineTo(8f, 23f)
+            lineTo(15f, 38f); lineTo(22f, 35f); lineTo(14f, 20f); lineTo(27f, 20f)
+            close()
+        }
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
-            paint.style = Paint.Style.FILL
-            paint.color = Color.argb(70, 92, 190, 255)
-            // View.x/y are the view's own offsets, not the requested screen point.
-            canvas.drawCircle(this@WoiControlOverlay.x, this@WoiControlOverlay.y, 20 * density, paint)
+            canvas.save()
+            // The arrow tip, not its center, is the requested screen point.
+            // Qualify these fields: View.x/y are the full-screen view's offsets.
+            canvas.translate(this@WoiControlOverlay.x, this@WoiControlOverlay.y)
+            canvas.scale(density, density)
             paint.style = Paint.Style.STROKE
-            paint.strokeWidth = 2 * density
-            paint.color = Color.rgb(92, 190, 255)
-            canvas.drawCircle(this@WoiControlOverlay.x, this@WoiControlOverlay.y, 20 * density, paint)
+            paint.strokeJoin = Paint.Join.ROUND
+            paint.strokeWidth = 4f
+            paint.color = Color.argb(245, 255, 255, 255)
+            canvas.drawPath(cursor, paint)
             paint.style = Paint.Style.FILL
-            canvas.drawCircle(this@WoiControlOverlay.x, this@WoiControlOverlay.y, 4 * density, paint)
+            paint.color = when (button) {
+                "left" -> Color.rgb(52, 155, 231)
+                "right" -> Color.rgb(255, 166, 166)
+                else -> Color.rgb(92, 190, 255)
+            }
+            canvas.drawPath(cursor, paint)
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = 1.25f
+            paint.color = if (button == "right") Color.rgb(204, 93, 102) else Color.rgb(31, 109, 170)
+            canvas.drawPath(cursor, paint)
+            canvas.restore()
+            paint.style = Paint.Style.FILL
             if (kind != "keyboard") return
             val cx = width / 2f
             val cy = height / 2f

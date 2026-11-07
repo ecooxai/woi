@@ -93,6 +93,11 @@ class _InputBarState extends State<InputBar> {
             ph == AssistantPhase.speaking || ph == AssistantPhase.thinking || ph == AssistantPhase.toolRunning;
         final s = c.settings;
         final phone = widget.phone;
+        final includesSystemAudio = switch (c.platform.audio) {
+          final HeldAudioCapture capture => capture.includesSystemAudio,
+          _ => false,
+        };
+        final recordingSources = includesSystemAudio ? 'microphone and system audio' : 'microphone';
         // A saved legacy PTT mode forwards nothing until Space is held. Treat
         // it as mic-off in the tap/hold UI, while keeping old settings readable.
         final idlePtt = s.micMode == MicMode.pushToTalk && !pipeline.pttHeld && ph == AssistantPhase.listening;
@@ -120,7 +125,7 @@ class _InputBarState extends State<InputBar> {
               if (c.heldAudio.recording)
                 c.heldAudio.limitReached
                     ? 'Recording limit reached. Release to send, or cancel to discard.'
-                    : 'Recording microphone and system audio. Release to send.',
+                    : 'Recording $recordingSources. Release to send.',
               if (c.heldAudio.processing) 'Preparing the recorded audio for your message.',
               if (micPaused?.value != null) micPaused!.value!,
               if (pipeline.capturingWhileConnecting) 'Microphone is recording while the session connects.',
@@ -153,17 +158,23 @@ class _InputBarState extends State<InputBar> {
                 style: ContextMeterStyle.indicator,
                 onCompact: c.compactNow,
               ),
-              CameraToggle(on: c.cameraOn, busy: c.cameraBusy, onPressed: c.toggleCamera, size: kTouchTarget),
             ],
           ),
-          trailing: MicButton(
-            mode: s.micMode,
-            held: c.heldAudio.recording,
-            onModeChanged: c.actions.setMicMode,
-            onPttDown: _startHold,
-            onPttUp: _finishHold,
-            onPttCancel: () => _finishHold(cancelled: true),
-            enabled: !c.heldAudio.processing && (connected || standby || status == SessionStatus.connecting),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CameraToggle(on: c.cameraOn, busy: c.cameraBusy, onPressed: c.toggleCamera, size: kTouchTarget),
+              MicButton(
+                mode: s.micMode,
+                held: c.heldAudio.recording,
+                includesSystemAudio: includesSystemAudio,
+                onModeChanged: c.actions.setMicMode,
+                onPttDown: _startHold,
+                onPttUp: _finishHold,
+                onPttCancel: () => _finishHold(cancelled: true),
+                enabled: !c.heldAudio.processing && (connected || standby || status == SessionStatus.connecting),
+              ),
+            ],
           ),
         );
 

@@ -162,31 +162,40 @@ void main() {
       await h.dispose();
     });
 
-    test('recorded audio keeps its original clip and transcript through reconnect', () async {
-      final gate = Completer<void>();
-      var count = 0;
-      final h = await Harness.create(
-        backend: () {
-          final b = ScriptedBackend();
-          if (++count == 2) b.connectGate = gate;
-          return b;
-        },
-        options: const PipelineOptions(autoScreenshot: false),
-      );
-      final reconnect = h.pipeline.connect();
-      await waitFor(() => count == 2 && h.scripted.connectStarted);
-      await h.pipeline.sendRecordedAudio(pcm(250), 'Describe the sound I recorded.');
-      expect(h.scripted.texts, isEmpty);
-      gate.complete();
-      await reconnect;
-      await waitFor(() => h.scripted.texts.isNotEmpty);
-      expect(h.scripted.texts, ['Describe the sound I recorded.']);
-      final message = ofKind(h.conv, MessageKind.user).single;
-      expect(message.audio!.durationMs, 250);
-      expect(await File(message.audio!.path).exists(), isTrue);
-      expect(message.meta['captureSources'], ['microphone', 'system']);
-      await h.dispose();
-    });
+    for (final includesSystemAudio in [false, true]) {
+      final sources = ['microphone', if (includesSystemAudio) 'system'];
+      test('recorded $sources clip, transcript and source labels survive reconnect', () async {
+        final gate = Completer<void>();
+        var count = 0;
+        final h = await Harness.create(
+          backend: () {
+            final b = ScriptedBackend();
+            if (++count == 2) b.connectGate = gate;
+            return b;
+          },
+          options: const PipelineOptions(autoScreenshot: false),
+        );
+        final reconnect = h.pipeline.connect();
+        await waitFor(() => count == 2 && h.scripted.connectStarted);
+        await h.pipeline.sendRecordedAudio(
+          pcm(250),
+          'Describe the sound I recorded.',
+          includesSystemAudio: includesSystemAudio,
+        );
+        expect(h.scripted.texts, isEmpty);
+        gate.complete();
+        await reconnect;
+        await waitFor(() => h.scripted.texts.isNotEmpty);
+        expect(h.scripted.texts, ['Describe the sound I recorded.']);
+        final message = ofKind(h.conv, MessageKind.user).single;
+        expect(message.audio!.durationMs, 250);
+        expect(await File(message.audio!.path).exists(), isTrue);
+        expect(message.meta['captureSources'], sources);
+        expect(Message.fromJson(message.toJson()).meta['captureSources'], sources);
+        expect(h.fp.screen.requests, isEmpty);
+        await h.dispose();
+      });
+    }
 
     test('assistant reply stores the producing session model with its history', () async {
       final h = await Harness.create(options: const PipelineOptions(autoScreenshot: false));

@@ -12,34 +12,24 @@ class ControlInterrupted implements Exception {
       'Earlier input may already have completed.';
 }
 
-typedef ControlNativeCall = Future<Object?> Function(
-  String method,
-  Map<String, Object?>? arguments,
-);
+typedef ControlNativeCall = Future<Object?> Function(String method, Map<String, Object?>? arguments);
 
 /// Native overlays are deliberately outside Flutter: they remain visible over
 /// the app being controlled, without stealing its keyboard focus.
 class ControlFeedback {
   ControlFeedback(this.call);
   ControlFeedback.linux()
-    : call = ((method, arguments) =>
-          const MethodChannel('woi/control')
-              .invokeMethod<Object?>(method, arguments));
+    : call = ((method, arguments) => const MethodChannel('woi/control').invokeMethod<Object?>(method, arguments));
 
   final ControlNativeCall call;
   Future<void> begin(String kind, {String keys = '', int? x, int? y}) async {
-    final ok = await call('begin', {
-      'kind': kind,
-      'keys': keys,
-      'x': x,
-      'y': y,
-    });
+    final ok = await call('begin', {'kind': kind, 'keys': keys, 'x': x, 'y': y});
     if (ok != true) throw const ControlInterrupted();
   }
 
   Future<bool> interrupted() async => await call('interrupted', null) != false;
-  Future<void> update({String? keys, int? x, int? y}) async {
-    await call('update', {'keys': keys, 'x': x, 'y': y});
+  Future<void> update({String? keys, int? x, int? y, String? button}) async {
+    await call('update', {'keys': keys, 'x': x, 'y': y, 'button': button});
   }
 
   Future<void> end() async {
@@ -92,9 +82,9 @@ class ControlLease {
     await check();
   }
 
-  Future<void> update({String? keys, int? x, int? y}) async {
+  Future<void> update({String? keys, int? x, int? y, String? button}) async {
     await check();
-    await feedback.update(keys: keys, x: x, y: y);
+    await feedback.update(keys: keys, x: x, y: y, button: button);
   }
 
   void dispose() {
@@ -102,14 +92,10 @@ class ControlLease {
   }
 }
 
-/// Serializes visible control: one second of warning, then input, then one
-/// second of feedback. Failed/missing native feedback never permits input.
+/// Serializes visible control: one second of warning, then input, then three
+/// seconds of feedback. Failed/missing native feedback never permits input.
 class ControlGuard {
-  ControlGuard(
-    this.feedback, {
-    this.warning = const Duration(seconds: 1),
-    this.cooldown = const Duration(seconds: 1),
-  });
+  ControlGuard(this.feedback, {this.warning = const Duration(seconds: 1), this.cooldown = const Duration(seconds: 3)});
   final ControlFeedback feedback;
   final Duration warning;
   final Duration cooldown;
@@ -132,13 +118,7 @@ class ControlGuard {
     return _tail;
   }
 
-  Future<T> run<T>(
-    String kind,
-    Future<T> Function(ControlLease lease) action, {
-    String keys = '',
-    int? x,
-    int? y,
-  }) {
+  Future<T> run<T>(String kind, Future<T> Function(ControlLease lease) action, {String keys = '', int? x, int? y}) {
     final generation = _generation;
     final done = Completer<T>();
     _tail = _tail.then((_) async {
@@ -148,17 +128,21 @@ class ControlGuard {
       }
       final lease = ControlLease(feedback);
       _active = lease;
+      Future<void>? trailing;
       try {
         await feedback.begin(kind, keys: keys, x: x, y: y);
         lease.start();
         await lease.pause(warning);
         final result = await action(lease);
-        await lease.pause(cooldown);
+        trailing = Future<void>.delayed(cooldown);
+        await Future.any<void>([trailing, lease.whenCancelled]);
+        await lease.check();
         done.complete(result);
       } catch (error, stack) {
         if (error is ControlInterrupted || lease.cancelled) _interrupted = true;
-        // Keep the stopped indicator visible for the same one-second tail.
-        await Future<void>.delayed(cooldown);
+        // A takeover during the trailing period keeps its original deadline.
+        // Warning/action interruption starts the same three-second stopped tail.
+        await (trailing ?? Future<void>.delayed(cooldown));
         done.completeError(error, stack);
       } finally {
         lease.dispose();

@@ -3,12 +3,15 @@
 #include <X11/Xlib.h>
 #include <X11/extensions/XInput2.h>
 #include <algorithm>
-#include <cmath>
 #include <cstring>
 #include <string>
 #include <unordered_set>
 
 namespace {
+constexpr int kPointerWidth = 40;
+constexpr int kPointerHeight = 52;
+constexpr int kPointerHotspot = 6;
+
 struct ControlOverlay {
   GtkWidget* pointer = nullptr;
   GtkWidget* keyboard = nullptr;
@@ -21,6 +24,7 @@ struct ControlOverlay {
   bool cancelled = false;
   std::string kind;
   std::string text;
+  std::string button;
   std::unordered_set<int> synthetic;
 };
 
@@ -31,16 +35,32 @@ void clear(cairo_t* cr) {
   cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
 }
 
-gboolean draw_pointer(GtkWidget*, cairo_t* cr, gpointer) {
+gboolean draw_pointer(GtkWidget*, cairo_t* cr, gpointer data) {
+  const auto* state = static_cast<ControlOverlay*>(data);
   clear(cr);
-  cairo_set_source_rgba(cr, 0.36, 0.76, 1.0, 0.28);
-  cairo_arc(cr, 24, 24, 19, 0, 2 * M_PI);
+  // The arrow tip is the pointer hotspot. Match this path and palette on Android.
+  cairo_translate(cr, kPointerHotspot, kPointerHotspot);
+  cairo_move_to(cr, 0, 0);
+  cairo_line_to(cr, 0, 30);
+  cairo_line_to(cr, 8, 23);
+  cairo_line_to(cr, 15, 38);
+  cairo_line_to(cr, 22, 35);
+  cairo_line_to(cr, 14, 20);
+  cairo_line_to(cr, 27, 20);
+  cairo_close_path(cr);
+  // A white edge keeps the cursor visible over both light and dark content.
+  cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND);
+  cairo_set_line_width(cr, 4);
+  cairo_set_source_rgba(cr, 1, 1, 1, 0.96);
+  cairo_stroke_preserve(cr);
+  if (state->button == "right") cairo_set_source_rgb(cr, 1, 166.0 / 255, 166.0 / 255);
+  else if (state->button == "left") cairo_set_source_rgb(cr, 52.0 / 255, 155.0 / 255, 231.0 / 255);
+  else cairo_set_source_rgb(cr, 92.0 / 255, 190.0 / 255, 1);
   cairo_fill_preserve(cr);
-  cairo_set_source_rgba(cr, 0.32, 0.72, 1.0, 0.96);
-  cairo_set_line_width(cr, 2.5);
+  if (state->button == "right") cairo_set_source_rgb(cr, 204.0 / 255, 93.0 / 255, 102.0 / 255);
+  else cairo_set_source_rgb(cr, 31.0 / 255, 109.0 / 255, 170.0 / 255);
+  cairo_set_line_width(cr, 1.25);
   cairo_stroke(cr);
-  cairo_arc(cr, 24, 24, 4, 0, 2 * M_PI);
-  cairo_fill(cr);
   return TRUE;
 }
 
@@ -105,7 +125,24 @@ GtkWidget* window(ControlOverlay* state, int width, int height, GCallback draw) 
   cairo_region_t* empty = cairo_region_create();
   gdk_window_input_shape_combine_region(gtk_widget_get_window(widget), empty, 0, 0);
   cairo_region_destroy(empty);
+  if (draw == G_CALLBACK(draw_pointer)) {
+    // Also shape the window to the arrow itself. Without an X compositor,
+    // alpha-only popup backgrounds otherwise become an opaque black box.
+    cairo_surface_t* surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, width, height);
+    cairo_t* cr = cairo_create(surface);
+    draw_pointer(widget, cr, state);
+    cairo_destroy(cr);
+    cairo_region_t* shape = gdk_cairo_region_create_from_surface(surface);
+    gdk_window_shape_combine_region(gtk_widget_get_window(widget), shape, 0, 0);
+    cairo_region_destroy(shape);
+    cairo_surface_destroy(surface);
+  }
   return widget;
+}
+
+void set_pointer_button(ControlOverlay* state, const std::string& button) {
+  state->button = button;
+  if (state->pointer != nullptr) gtk_widget_queue_draw(state->pointer);
 }
 
 void hide(ControlOverlay* state) {
@@ -113,6 +150,7 @@ void hide(ControlOverlay* state) {
   if (state->keyboard) gtk_widget_hide(state->keyboard);
   if (state->keys) gtk_widget_hide(state->keys);
   state->text.clear();
+  state->button.clear();
 }
 
 bool start_input_watch(ControlOverlay* state) {
@@ -167,7 +205,7 @@ gboolean tick(gpointer data) {
   GdkDevice* pointer = gdk_seat_get_pointer(seat);
   gint x = 0, y = 0;
   gdk_device_get_position(pointer, nullptr, &x, &y);
-  gtk_window_move(GTK_WINDOW(state->pointer), x - 24, y - 24);
+  gtk_window_move(GTK_WINDOW(state->pointer), x - kPointerHotspot, y - kPointerHotspot);
   return G_SOURCE_CONTINUE;
 }
 
@@ -190,11 +228,13 @@ void method(FlMethodChannel*, FlMethodCall* call, gpointer data) {
         state->active = true;
         state->kind = string_arg(fl_method_call_get_args(call), "kind");
         state->text = string_arg(fl_method_call_get_args(call), "keys");
-        if (!state->pointer) state->pointer = window(state, 48, 48, G_CALLBACK(draw_pointer));
+        set_pointer_button(state, "");  // Every warning starts with the neutral light-blue arrow.
+        if (!state->pointer) state->pointer = window(state, kPointerWidth, kPointerHeight, G_CALLBACK(draw_pointer));
         if (!state->keyboard) state->keyboard = window(state, 88, 64, G_CALLBACK(draw_keyboard));
         if (!state->keys) state->keys = window(state, 420, 44, G_CALLBACK(draw_keys));
         tick(state);
         gtk_widget_show(state->pointer);
+        gtk_widget_queue_draw(state->pointer);
         if (state->kind == "keyboard") {
           GdkDisplay* gd = gdk_display_get_default();
           GdkMonitor* monitor = gdk_display_get_primary_monitor(gd);
@@ -215,8 +255,13 @@ void method(FlMethodChannel*, FlMethodCall* call, gpointer data) {
     drain_events(state, state->active);
     value = fl_value_new_bool(state->cancelled);
   } else if (strcmp(name, "update") == 0) {
-    const auto keys = string_arg(fl_method_call_get_args(call), "keys");
+    FlValue* args = fl_method_call_get_args(call);
+    const auto keys = string_arg(args, "keys");
     if (!keys.empty()) state->text = keys;
+    FlValue* button = args != nullptr && fl_value_get_type(args) == FL_VALUE_TYPE_MAP ? fl_value_lookup_string(args, "button") : nullptr;
+    if (button != nullptr && fl_value_get_type(button) == FL_VALUE_TYPE_STRING) {
+      set_pointer_button(state, fl_value_get_string(button));
+    }
     if (state->keys != nullptr) gtk_widget_queue_draw(state->keys);
   } else if (strcmp(name, "end") == 0 || strcmp(name, "reset") == 0) {
     drain_events(state, state->active);

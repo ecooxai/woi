@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Host-only preparation and summary for locked Android held-audio QA.
+"""Host-only numeric summary for Android held-microphone QA.
 
-No ADB or phone actions are performed. `prepare` creates a synthetic fixture;
-`summarize LOG` extracts numeric native diagnostics from a restricted log.
+No ADB or phone actions are performed. `summarize LOG` reads native diagnostics.
+`prepare` only reproduces the archived 0.15.0 dual-source media fixture; the
+current microphone-only device harness does not use playback or projection.
 """
 from __future__ import annotations
 
@@ -16,7 +17,7 @@ import sys
 import wave
 
 REPO = Path(__file__).resolve().parents[2]
-OUT = REPO / "qa/out/android-held"
+OUT = REPO / "qa/out/acceptance-0.15.1"
 
 
 def prepare() -> None:
@@ -53,23 +54,25 @@ def summarize(log: Path) -> None:
         text = line.split(marker, 1)[1]
         fields = dict(re.findall(r"([a-z_]+)=([^,{}]+)", text))
         record = {}
-        for name in ("generation", "samples_per_source"):
+        for name in ("generation", "mic_samples", "samples_per_source"):
             if name in fields:
                 record[name] = int(fields[name].strip())
         for name in ("mic_rms", "system_rms"):
             if name in fields:
                 record[name] = float(fields[name].strip())
+        if "sources" in fields:
+            record["sources"] = fields["sources"].strip().strip("[]").split()
         record["released"] = fields.get("released", "").strip() == "true"
         record["error"] = None if fields.get("error", "null").strip() == "null" else fields["error"].strip()
-        record["seconds"] = round(record.get("samples_per_source", 0) / 24000, 3)
+        record["seconds"] = round(record.get("mic_samples", record.get("samples_per_source", 0)) / 24000, 3)
         records.append(record)
     report = {
         "captures": records,
         "all_reported_released": bool(records) and all(r["released"] for r in records),
-        "note": "Zero RMS may be genuine silence or excluded playback; numeric samples alone do not prove speech quality. Match generations to the labelled scenarios and fixture playback windows.",
+        "note": "Android 0.15.1 holds record only the microphone. Zero RMS may be quiet-room noise gating; samples alone do not prove speech quality. Match generations to scenario labels and OS silencing checks. Legacy dual-source fields are preserved only when present in older logs.",
     }
     OUT.mkdir(parents=True, exist_ok=True)
-    (OUT / "native-summary.json").write_text(json.dumps(report, indent=2) + "\n")
+    (OUT / "android-audio-native-summary.json").write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))
 
 

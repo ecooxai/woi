@@ -23,8 +23,8 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 /** Native device proof without network/AI calls or production test hooks.
- * Run the standard test runner with -e group control. The one-second native
- * warning/cooldown holds here complement the Dart ControlGuard timing tests. */
+ * Run the standard test runner with -e group control. The one-second warning
+ * and three-second native trailing holds complement Dart ControlGuard timing tests. */
 class ControlOverlayDeviceCheck(private val host: Instrumentation) {
     private lateinit var ui: UiAutomation
     private lateinit var shotsDir: File
@@ -93,6 +93,7 @@ class ControlOverlayDeviceCheck(private val host: Instrumentation) {
         return if (Build.VERSION.SDK_INT >= 26 && found.isShowingHintText) "" else found.text?.toString() ?: ""
     }
     private fun touches() = text("woi-test-count").substringAfter(": ").toInt()
+    private fun longPresses() = text("woi-test-long-count").substringAfter(": ").toInt()
     private fun buttonRect() = Rect().also { requireNode("woi-test-button").getBoundsInScreen(it) }
 
     private fun setEditor(value: String) {
@@ -166,6 +167,25 @@ class ControlOverlayDeviceCheck(private val host: Instrumentation) {
         }
     }
 
+    private fun cursorAt(bitmap: Bitmap, x: Int, y: Int, expected: Int) {
+        fun matches(px: Int, py: Int): Boolean {
+            val actual = bitmap.getPixel(px, py)
+            return kotlin.math.abs(Color.red(actual) - Color.red(expected)) <= 3 &&
+                kotlin.math.abs(Color.green(actual) - Color.green(expected)) <= 3 &&
+                kotlin.math.abs(Color.blue(actual) - Color.blue(expected)) <= 3
+        }
+        // Match the arrow's triangular head and diagonal stem at the real
+        // hotspot; the old centered ring cannot satisfy these samples.
+        for ((dx, dy) in listOf(4 to 12, 16 to 32)) {
+            check(matches(x + (dx * density).toInt(), y + (dy * density).toInt())) {
+                "Cursor shape/color missing at hotspot $x,$y ($dx,$dy)"
+            }
+        }
+        check(!matches(x - (6 * density).toInt(), y + (12 * density).toInt())) {
+            "Cursor is not anchored at the requested hotspot"
+        }
+    }
+
     private fun verify(name: String, body: () -> Unit) {
         body(); passed++; log.append("PASS ").append(name).append('\n')
     }
@@ -199,27 +219,48 @@ class ControlOverlayDeviceCheck(private val host: Instrumentation) {
                 val x2 = width * 3 / 4; val y2 = height * 4 / 5
                 val before = touches()
                 check(ok("controlBegin", mapOf("kind" to "pointer", "x" to x1, "y" to y1)) == true)
-                screenshot("pointer-before") { check(blueCount(it, region(x1, y1)) > 100) { "Pointer marker missing" } }
+                screenshot("pointer-before") { cursorAt(it, x1, y1, Color.rgb(92, 190, 255)) }
                 check(ok("controlInterrupted") == false)
                 ok("controlUpdate", mapOf("x" to x2, "y" to y2))
                 screenshot("pointer-moved") {
-                    check(blueCount(it, region(x2, y2)) > 100) { "Pointer update missing" }
+                    cursorAt(it, x2, y2, Color.rgb(92, 190, 255))
                     check(blueCount(it, region(x1, y1)) < 50) { "Old pointer marker remained" }
                 }
                 check(touches() == before) { "Moving the virtual pointer unexpectedly tapped" }
+                SystemClock.sleep(3000)
+                check(ok("controlInterrupted") == false)
                 ok("controlEnd")
                 screenshot("pointer-ended") { check(blueCount(it, region(x2, y2)) < 50) { "Pointer did not hide" } }
             }
 
-            verify("AI tap reaches target without cancelling itself") {
+            verify("left tap uses a darker blue cursor without cancelling itself") {
                 ok("controlReset")
                 val box = buttonRect(); val before = touches()
                 check(ok("controlBegin", mapOf("kind" to "pointer", "x" to box.centerX(), "y" to box.centerY())) == true)
+                screenshot("left-warning") { cursorAt(it, box.centerX(), box.centerY(), Color.rgb(92, 190, 255)) }
                 SystemClock.sleep(1000)
-                check(ok("click", mapOf("x" to box.centerX(), "y" to box.centerY())) == true)
+                check(ok("click", mapOf("x" to box.centerX(), "y" to box.centerY(), "button" to "left")) == true)
                 waitFor("AI tap delivery") { touches() == before + 1 }
                 check(ok("controlInterrupted") == false) { "Injected AI tap cancelled itself" }
+                screenshot("left-click") { cursorAt(it, box.centerX(), box.centerY(), Color.rgb(52, 155, 231)) }
+                SystemClock.sleep(3000)
+                ok("controlEnd")
+            }
+
+            verify("right click is a red long press; unsupported buttons emit no tap") {
+                ok("controlReset")
+                val box = buttonRect(); val before = touches(); val longBefore = longPresses()
+                check(ok("controlBegin", mapOf("kind" to "pointer", "x" to box.centerX(), "y" to box.centerY())) == true)
+                screenshot("right-warning") { cursorAt(it, box.centerX(), box.centerY(), Color.rgb(92, 190, 255)) }
                 SystemClock.sleep(1000)
+                check(ok("click", mapOf("x" to box.centerX(), "y" to box.centerY(), "button" to "right")) == true)
+                waitFor("context long press") { longPresses() == longBefore + 1 }
+                check(touches() == before) { "Right long press also emitted a left tap" }
+                check(ok("controlInterrupted") == false) { "Long press cancelled itself" }
+                screenshot("right-click") { cursorAt(it, box.centerX(), box.centerY(), Color.rgb(255, 166, 166)) }
+                check(native("click", mapOf("x" to box.centerX(), "y" to box.centerY(), "button" to "middle")).error?.startsWith("unsupported_button:") == true)
+                check(touches() == before && longPresses() == longBefore + 1)
+                SystemClock.sleep(3000)
                 ok("controlEnd")
             }
 
@@ -237,7 +278,24 @@ class ControlOverlayDeviceCheck(private val host: Instrumentation) {
                 check(ok("controlBegin", mapOf("kind" to "keyboard", "keys" to "blocked")) == false)
                 SystemClock.sleep(250)
                 check(touches() == before + 1 && text("woi-test-input").isEmpty()) { "Input continued after takeover" }
+                SystemClock.sleep(3000)
+                ok("controlEnd")
+            }
+
+            verify("user takeover is still armed in the third trailing second") {
+                ok("controlReset")
+                val box = buttonRect(); val before = touches()
+                check(ok("controlBegin", mapOf("kind" to "pointer", "x" to box.centerX(), "y" to box.centerY())) == true)
                 SystemClock.sleep(1000)
+                check(ok("click", mapOf("x" to box.centerX(), "y" to box.centerY(), "button" to "left")) == true)
+                waitFor("trailing AI tap") { touches() == before + 1 }
+                SystemClock.sleep(2300)
+                screenshot("pointer-third-second") { cursorAt(it, box.centerX(), box.centerY(), Color.rgb(52, 155, 231)) }
+                userTap(box.centerX(), box.centerY())
+                waitFor("trailing user touch") { touches() == before + 2 }
+                waitFor("trailing takeover latch") { ok("controlInterrupted") == true }
+                check(native("click", mapOf("x" to box.centerX(), "y" to box.centerY())).error != null)
+                SystemClock.sleep(700)
                 ok("controlEnd")
             }
 
@@ -256,7 +314,7 @@ class ControlOverlayDeviceCheck(private val host: Instrumentation) {
                 check(ok("controlInterrupted") == false)
                 ok("controlUpdate", mapOf("keys" to "typed: $typed"))
                 screenshot("keyboard-typed") { }
-                SystemClock.sleep(1000)
+                SystemClock.sleep(3000)
                 ok("controlEnd")
                 screenshot("keyboard-ended") {
                     check(blueCount(it, region(width / 2, height / 2, 110, 120), true) < 50) { "Keyboard icon did not hide" }

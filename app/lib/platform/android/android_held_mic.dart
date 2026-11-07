@@ -7,7 +7,8 @@ import '../../core/audio/wav.dart';
 import '../audio_io.dart';
 import 'android_bridge.dart';
 
-/// Separate channel from normal listening, with an explicit readiness event.
+/// Microphone-only held recording, separate from normal listening, with an
+/// explicit native readiness event and an awaited microphone-release handoff.
 class AndroidHeldMic implements MicStream {
   AndroidHeldMic._() {
     _subscription = const EventChannel('woi/android/held_audio')
@@ -72,9 +73,7 @@ class AndroidHeldMic implements MicStream {
   Future<void> _closeNative() async {
     _closed = true;
     try {
-      final released = await AndroidBridge.method.invokeMethod<bool>(
-        'heldAudioStop',
-      );
+      final released = await AndroidBridge.method.invokeMethod<bool>('heldAudioStop');
       if (released != true) {
         throw StateError('Native audio release was not confirmed');
       }
@@ -89,44 +88,5 @@ class AndroidHeldMic implements MicStream {
         _level.dispose();
       }
     }
-  }
-}
-
-/// Consent may complete after the first hold was released. The recorder's
-/// generation check prevents sending that cancelled gesture; the next hold
-/// can use the now-approved projection.
-Future<void> ensureSystemAudioProjection(AndroidBridge bridge) async {
-  if (bridge.sharing.value) return;
-  final ready = Completer<void>();
-  void changed() {
-    if (bridge.sharing.value && !ready.isCompleted) ready.complete();
-  }
-
-  bridge.sharing.addListener(changed);
-  try {
-    final accepted =
-        await bridge
-            .call<bool>('shareStart')
-            .timeout(
-              const Duration(minutes: 2),
-              onTimeout: () => throw StateError(
-                'Screen/audio permission was not completed. Hold again when ready.',
-              ),
-            ) ??
-        false;
-    if (!accepted) {
-      throw StateError(
-        'Open Woi and allow screen/audio capture, then hold the microphone again.',
-      );
-    }
-    changed();
-    await ready.future.timeout(
-      const Duration(seconds: 8),
-      onTimeout: () => throw StateError(
-        'Screen/audio capture did not start. Enable screen sharing and try again.',
-      ),
-    );
-  } finally {
-    bridge.sharing.removeListener(changed);
   }
 }

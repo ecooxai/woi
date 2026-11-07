@@ -18,10 +18,8 @@ import 'android_held_mic.dart';
 /// released ([micPaused]) and resumes when the mic is free. gpt-live does
 /// not use this: flutter_webrtc captures and plays with its own
 /// echo-cancelled audio device module.
-class AndroidAudioIO
-    implements AudioIO, EchoCancellable, AudioRouted, MicSystemCapture {
-  AndroidAudioIO({AndroidBridge? bridge})
-    : _bridge = bridge ?? AndroidBridge.instance;
+class AndroidAudioIO implements AudioIO, EchoCancellable, AudioRouted, HeldAudioCapture {
+  AndroidAudioIO({AndroidBridge? bridge}) : _bridge = bridge ?? AndroidBridge.instance;
 
   final AndroidBridge _bridge;
   bool _echoCancellation = true;
@@ -45,8 +43,7 @@ class AndroidAudioIO
   set echoCancellation(bool on) => _echoCancellation = on;
 
   @override
-  String get echoCancellationStatus =>
-      _echoCancellation ? _aecStatus : 'off (setting)';
+  String get echoCancellationStatus => _echoCancellation ? _aecStatus : 'off (setting)';
 
   @override
   Future<void> disposeEchoCancellation() async {}
@@ -56,9 +53,7 @@ class AndroidAudioIO
       'Android AudioRecord / AudioTrack ($_route route); echo cancellation: $echoCancellationStatus';
 
   Future<void> _ensureMicPermission() async {
-    final ok = await _bridge.requestPermissions([
-      'android.permission.RECORD_AUDIO',
-    ]);
+    final ok = await _bridge.requestPermissions(['android.permission.RECORD_AUDIO']);
     if (!ok) throw StateError('Microphone permission denied');
   }
 
@@ -70,19 +65,17 @@ class AndroidAudioIO
         _micPaused.value = e.paused ? (e.reason ?? 'Mic paused') : null;
       }
     });
-    final mic = _AndroidMic(
-      echoCancellation: _echoCancellation,
-      route: _route,
-      onClose: () => _micPaused.value = null,
-    );
+    final mic = _AndroidMic(echoCancellation: _echoCancellation, route: _route, onClose: () => _micPaused.value = null);
     unawaited(_refreshAecStatus());
     return mic;
   }
 
   @override
-  Future<MicStream> openMicAndSystemAudio() async {
+  bool get includesSystemAudio => false;
+
+  @override
+  Future<MicStream> openHeldAudio() async {
     await _ensureMicPermission();
-    await ensureSystemAudioProjection(_bridge);
     return AndroidHeldMic.open();
   }
 
@@ -108,11 +101,7 @@ class AndroidAudioIO
 }
 
 class _AndroidMic implements MicStream {
-  _AndroidMic({
-    required bool echoCancellation,
-    required String route,
-    required this.onClose,
-  }) {
+  _AndroidMic({required bool echoCancellation, required String route, required this.onClose}) {
     _sub = AndroidBridge.micChannel
         .receiveBroadcastStream({'aec': echoCancellation, 'route': route})
         .listen(
@@ -153,20 +142,14 @@ class _AndroidPlayer implements PcmPlayer {
 
   final AndroidBridge _bridge;
   // AudioTrack buffer (~100 ms) plus the mixer.
-  final PlaybackClock _clock = PlaybackClock(
-    outputLatency: const Duration(milliseconds: 140),
-  );
+  final PlaybackClock _clock = PlaybackClock(outputLatency: const Duration(milliseconds: 140));
   bool _closed = false;
 
   @override
   void write(Uint8List pcm16) {
     if (_closed || pcm16.isEmpty) return;
     _clock.onWrite(pcm16);
-    unawaited(
-      _bridge
-          .call<void>('playerWrite', pcm16)
-          .catchError((Object e) => debugPrint('player write: $e')),
-    );
+    unawaited(_bridge.call<void>('playerWrite', pcm16).catchError((Object e) => debugPrint('player write: $e')));
   }
 
   @override

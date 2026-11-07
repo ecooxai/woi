@@ -9,6 +9,7 @@ import android.graphics.Path
 import android.os.Build
 import android.os.Bundle
 import android.view.Display
+import android.view.ViewConfiguration
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import io.flutter.plugin.common.MethodCall
@@ -106,18 +107,21 @@ class WoiAccessibilityService : AccessibilityService() {
         WoiBridge.main.postDelayed(::poll, 40)
     }
 
-    private fun tap(x: Float, y: Float, count: Int, result: MethodChannel.Result) {
+    private fun tap(x: Float, y: Float, count: Int, button: String, result: MethodChannel.Result) {
         control.check()
-        control.update(null, x, y)
+        // Android touch has no right mouse button; a long press opens its
+        // context action. Set the click color only when this gesture starts.
+        control.update(null, x, y, button)
         control.injecting()
         val path = Path().apply { moveTo(x, y) }
+        val duration = if (button == "right") ViewConfiguration.getLongPressTimeout().toLong() + 100L else 40L
         val builder = GestureDescription.Builder()
-        builder.addStroke(GestureDescription.StrokeDescription(path, 0, 40L))
+        builder.addStroke(GestureDescription.StrokeDescription(path, 0, duration))
         val ok = dispatchGesture(builder.build(), object : GestureResultCallback() {
             override fun onCompleted(g: GestureDescription?) = safe("gesture") {
                 control.gestureFinished()
                 if (count > 1) {
-                    WoiBridge.main.postDelayed({ guarded("double tap", result) { r -> tap(x, y, count - 1, r) } }, 110)
+                    WoiBridge.main.postDelayed({ guarded("double tap", result) { r -> tap(x, y, count - 1, button, r) } }, 110)
                 } else result.success(true)
             }
             override fun onCancelled(g: GestureDescription?) = safe("gesture") { control.gestureFinished(); control.cancel(); result.error("cancelled", "User took control; gesture cancelled", null) }
@@ -351,13 +355,18 @@ class WoiAccessibilityService : AccessibilityService() {
                         call.argument<Number>("x")?.toFloat(), call.argument<Number>("y")?.toFloat()))
                 } }
                 "controlInterrupted" -> result.success(s.control.cancelled)
-                "controlUpdate" -> { s.control.update(call.argument<String>("keys"), call.argument<Number>("x")?.toFloat(), call.argument<Number>("y")?.toFloat()); result.success(null) }
+                "controlUpdate" -> { s.control.update(call.argument<String>("keys"), call.argument<Number>("x")?.toFloat(), call.argument<Number>("y")?.toFloat(), call.argument<String>("button")); result.success(null) }
                 "controlEnd" -> { s.control.end(); result.success(null) }
                 "controlReset" -> { s.control.reset(); result.success(null) }
                 "click", "doubleClick" -> {
+                    val button = call.argument<String>("button") ?: "left"
+                    if (button !in listOf("left", "right") || (call.method == "doubleClick" && button != "left")) {
+                        result.error("unsupported_button", "Android supports a left tap/double tap or a right long press", null)
+                        return
+                    }
                     val x = (call.argument<Number>("x") ?: 0).toFloat()
                     val y = (call.argument<Number>("y") ?: 0).toFloat()
-                    s.aside(350, result) { r -> s.tap(x, y, if (call.method == "doubleClick") 2 else 1, r) }
+                    s.aside(350, result) { r -> s.tap(x, y, if (call.method == "doubleClick") 2 else 1, button, r) }
                 }
                 "typeText" -> s.aside(150, result) { r ->
                     try { r.success(s.typeText(call.argument<String>("text") ?: "")) } catch (e: Exception) {

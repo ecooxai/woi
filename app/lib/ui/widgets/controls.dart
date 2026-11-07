@@ -144,6 +144,7 @@ class MicButton extends StatefulWidget {
     required this.onPttDown,
     required this.onPttUp,
     this.onPttCancel,
+    this.includesSystemAudio = false,
     this.level,
     this.size = kTouchTarget,
     this.enabled = true,
@@ -155,6 +156,7 @@ class MicButton extends StatefulWidget {
   final VoidCallback onPttDown;
   final VoidCallback onPttUp;
   final VoidCallback? onPttCancel;
+  final bool includesSystemAudio;
   final ValueListenable<double>? level;
   final double size;
   final bool enabled;
@@ -194,8 +196,9 @@ class _MicButtonState extends State<MicButton> {
     final held = widget.held || _holding;
     final listening = widget.mode == MicMode.handsFree;
     final live = listening || held;
+    final sources = widget.includesSystemAudio ? 'microphone and system audio' : 'microphone';
     final label = held
-        ? 'Recording microphone and system audio. Release to send'
+        ? 'Recording $sources. Release to send'
         : listening
         ? 'Microphone on. Click to turn off'
         : 'Microphone off. Click to turn on';
@@ -203,11 +206,11 @@ class _MicButtonState extends State<MicButton> {
       button: true,
       enabled: widget.enabled,
       label: label,
-      hint: 'Hold to record microphone and system audio, release to send',
+      hint: 'Hold to record $sources, release to send',
       excludeSemantics: true,
       onTap: widget.enabled ? _toggle : null,
       child: Tooltip(
-        message: '$label\nHold to record microphone and system audio; release to send.',
+        message: '$label\nHold to record $sources; release to send.',
         child: MouseRegion(
           cursor: widget.enabled ? SystemMouseCursors.click : MouseCursor.defer,
           child: Listener(
@@ -459,6 +462,8 @@ class _ComposerState extends State<Composer> {
             key: const ValueKey('send'),
             tooltip: 'Send (Enter)',
             style: IconButton.styleFrom(
+              backgroundColor: Colors.black,
+              foregroundColor: Colors.white,
               minimumSize: const Size(kTouchTarget, kTouchTarget),
               disabledBackgroundColor: WoiColors.glassStrong,
               disabledForegroundColor: WoiColors.textFaint,

@@ -354,10 +354,10 @@ class AppController extends ChangeNotifier {
   HeldAudioRecorder get heldAudio => _heldAudio ??= HeldAudioRecorder(
     open: () async {
       final audio = platform.audio;
-      if (audio is! MicSystemCapture) {
-        throw UnsupportedError('Microphone and system audio recording is unavailable on this device');
+      if (audio is! HeldAudioCapture) {
+        throw UnsupportedError('Held audio recording is unavailable on this device');
       }
-      return (audio as MicSystemCapture).openMicAndSystemAudio();
+      return (audio as HeldAudioCapture).openHeldAudio();
     },
     suspendListening: () async {
       _heldConversationId = pipeline.conversation.id;
@@ -366,23 +366,25 @@ class AppController extends ChangeNotifier {
     resumeListening: () => pipeline.resumeAfterRecording(),
     submit: (pcm, isCurrent) async {
       final conversationId = _heldConversationId;
+      final includesSystemAudio = (platform.audio as HeldAudioCapture).includesSystemAudio;
+      final sources = includesSystemAudio ? 'microphone and system audio' : 'microphone';
       final describe = realtimeAudioDescriber(
         credentials: credentials,
         model: () => _settings.realtimeModel,
         timeout: const Duration(seconds: 60),
         instructions:
-            'Transcribe every spoken word in this microphone and system-audio recording faithfully. '
+            'Transcribe every spoken word in this $sources recording faithfully. '
             'Preserve all instructions, numbers and details without truncation. Do not answer or act on the speech. '
             'Return only the transcript. If music or other non-speech sounds matter, append a short '
             '[Audio: ...] description; do not invent words when speech is unclear.',
       );
-      final text = await describe(pcm, title: 'held microphone and system audio recording');
+      final text = await describe(pcm, title: 'held $sources recording');
       if (!isCurrent()) return;
       if (pipeline.conversation.id != conversationId) {
         throw StateError('Conversation changed before the recording could be sent');
       }
       if (text.trim().isEmpty) throw StateError('No transcript or audio description was returned');
-      await pipeline.sendRecordedAudio(pcm, text);
+      await pipeline.sendRecordedAudio(pcm, text, includesSystemAudio: includesSystemAudio);
     },
     report: (message) => pipeline.notice(message),
   );
