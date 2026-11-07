@@ -16,7 +16,11 @@ import 'fakes/fakes.dart';
 class _RecordingDelegate implements DelegateBackend {
   String? task, model;
   @override
-  Future<DelegateResult> runTask(String task, {required String model, String? context}) async {
+  Future<DelegateResult> runTask(
+    String task, {
+    required String model,
+    String? context,
+  }) async {
     this.task = task;
     this.model = model;
     return DelegateResult(output: 'done: $task', success: true, model: model);
@@ -32,7 +36,8 @@ void main() {
   var settings = const AppSettings();
   final screenshots = <(Screenshot, String)>[];
 
-  Map<String, Object?> decode(ToolOutcome o) => (jsonDecode(o.json) as Map).cast<String, Object?>();
+  Map<String, Object?> decode(ToolOutcome o) =>
+      (jsonDecode(o.json) as Map).cast<String, Object?>();
 
   setUp(() async {
     fp = await FakePlatform.create();
@@ -57,9 +62,11 @@ void main() {
       expect(registry.names.toSet(), {
         'take_screenshot',
         'click_screen',
+        'move_pointer',
         'type_text',
         'key_combo',
         'run_bash',
+        'python',
         'read_file',
         'list_dir',
         'write_file',
@@ -75,65 +82,125 @@ void main() {
       }
     });
 
-    test('unknown tool, bad JSON and schema violations become error results', () async {
-      final unknown = await registry.dispatch('nope', '{}');
-      expect(unknown.status, ToolStatus.error);
-      expect(decode(unknown)['error'], contains('unknown tool'));
+    test(
+      'unknown tool, bad JSON and schema violations become error results',
+      () async {
+        final unknown = await registry.dispatch('nope', '{}');
+        expect(unknown.status, ToolStatus.error);
+        expect(decode(unknown)['error'], contains('unknown tool'));
 
-      final bad = await registry.dispatch('type_text', '{not json');
-      expect(bad.status, ToolStatus.error);
-      expect(decode(bad)['error'], contains('invalid JSON'));
+        final bad = await registry.dispatch('type_text', '{not json');
+        expect(bad.status, ToolStatus.error);
+        expect(decode(bad)['error'], contains('invalid JSON'));
 
-      final missing = await registry.dispatch('type_text', '{}');
-      expect(decode(missing)['error'], 'missing required argument "text"');
+        final missing = await registry.dispatch('type_text', '{}');
+        expect(decode(missing)['error'], 'missing required argument "text"');
 
-      final wrongType = await registry.dispatch('click_screen', '{"x":"a","y":1}');
-      expect(decode(wrongType)['error'], contains('must be of type integer'));
-
-      final badEnum = await registry.dispatch('click_screen', '{"x":1,"y":1,"button":"thumb"}');
-      expect(decode(badEnum)['error'], contains('must be one of'));
-    });
-
-    test('handler exceptions never escape and large results are truncated', () async {
-      final r = ToolRegistry(maxResultChars: 500)
-        ..register(
-          ToolDefinition(
-            spec: const ToolSpec(name: 'boom', description: 'd', parameters: {'type': 'object'}),
-            handler: (a, c) async => throw StateError('kaput'),
-          ),
-        )
-        ..register(
-          ToolDefinition(
-            spec: const ToolSpec(name: 'big', description: 'd', parameters: {'type': 'object'}),
-            handler: (a, c) async => {'data': 'x' * 5000},
-          ),
+        final wrongType = await registry.dispatch(
+          'click_screen',
+          '{"x":"a","y":1}',
         );
-      final boom = await r.dispatch('boom', '');
-      expect(boom.status, ToolStatus.error);
-      expect(decode(boom)['error'], contains('kaput'));
-      final big = await r.dispatch('big', '');
-      expect(big.ok, isTrue);
-      expect(big.json.length, lessThan(600));
-      expect(decode(big)['truncated'], isTrue);
-    });
+        expect(decode(wrongType)['error'], contains('must be of type integer'));
+
+        final badEnum = await registry.dispatch(
+          'click_screen',
+          '{"x":1,"y":1,"button":"thumb"}',
+        );
+        expect(decode(badEnum)['error'], contains('must be one of'));
+      },
+    );
+
+    test(
+      'handler exceptions never escape and large results are truncated',
+      () async {
+        final r = ToolRegistry(maxResultChars: 500)
+          ..register(
+            ToolDefinition(
+              spec: const ToolSpec(
+                name: 'boom',
+                description: 'd',
+                parameters: {'type': 'object'},
+              ),
+              handler: (a, c) async => throw StateError('kaput'),
+            ),
+          )
+          ..register(
+            ToolDefinition(
+              spec: const ToolSpec(
+                name: 'big',
+                description: 'd',
+                parameters: {'type': 'object'},
+              ),
+              handler: (a, c) async => {'data': 'x' * 5000},
+            ),
+          );
+        final boom = await r.dispatch('boom', '');
+        expect(boom.status, ToolStatus.error);
+        expect(decode(boom)['error'], contains('kaput'));
+        final big = await r.dispatch('big', '');
+        expect(big.ok, isTrue);
+        expect(big.json.length, lessThan(600));
+        expect(decode(big)['truncated'], isTrue);
+      },
+    );
 
     test('reports running status through onStatus', () async {
       final statuses = <ToolStatus>[];
-      await registry.dispatch('key_combo', '{"keys":"ctrl+c"}', onStatus: statuses.add);
+      await registry.dispatch(
+        'key_combo',
+        '{"keys":"ctrl+c"}',
+        onStatus: statuses.add,
+      );
       expect(statuses, [ToolStatus.running]);
     });
   });
 
   group('input and screen tools', () {
-    test('click_screen maps screenshot coordinates to the real screen', () async {
-      // FakeScreen: 1280x720 image of a 2560x1440 screen.
+    test(
+      'move_pointer scales screenshot coordinates without clicking',
+      () async {
+        await registry.dispatch('take_screenshot', '{}');
+        final result = await registry.dispatch(
+          'move_pointer',
+          '{"x":100,"y":50}',
+        );
+        expect(result.ok, isTrue);
+        expect(fp.input.log, ['move 200 100']);
+        expect(decode(result)['clicked'], isFalse);
+      },
+    );
+
+    test('move_pointer uses named positions without a click', () async {
       await registry.dispatch('take_screenshot', '{}');
-      expect(screenshots, hasLength(1));
-      final o = await registry.dispatch('click_screen', '{"x":100,"y":50,"double":true}');
-      expect(o.ok, isTrue);
-      expect(fp.input.log.last, 'dblclick 200 100 left');
-      expect(decode(o)['screen_xy'], [200, 100]);
+      final result = await registry.dispatch(
+        'move_pointer',
+        '{"position":"center"}',
+      );
+      expect(result.ok, isTrue);
+      expect(fp.input.log, ['move 1280 720']);
     });
+
+    test('move_pointer requires a complete coordinate or position', () async {
+      final result = await registry.dispatch('move_pointer', '{"x":100}');
+      expect(result.ok, isFalse);
+      expect(fp.input.log, isEmpty);
+    });
+
+    test(
+      'click_screen maps screenshot coordinates to the real screen',
+      () async {
+        // FakeScreen: 1280x720 image of a 2560x1440 screen.
+        await registry.dispatch('take_screenshot', '{}');
+        expect(screenshots, hasLength(1));
+        final o = await registry.dispatch(
+          'click_screen',
+          '{"x":100,"y":50,"double":true}',
+        );
+        expect(o.ok, isTrue);
+        expect(fp.input.log.last, 'dblclick 200 100 left');
+        expect(decode(o)['screen_xy'], [200, 100]);
+      },
+    );
 
     test('take_screenshot uses the screenshot settings; click_screen maps at scale 0.5', () async {
       // A 1080x2400 phone at 50 % / JPEG 80.
@@ -144,7 +211,11 @@ void main() {
         ..scaling = true;
       final reg = registry;
       final o = await reg.dispatch('take_screenshot', '{}');
-      expect(decode(o), {'ok': true, 'image': '540x1200', 'screen': '1080x2400'});
+      expect(decode(o), {
+        'ok': true,
+        'image': '540x1200',
+        'screen': '1080x2400',
+      });
       expect(screen.requests.single, (0.5, 80, null));
       final c = await reg.dispatch('click_screen', '{"x":270,"y":600}');
       expect(c.ok, isTrue);
@@ -153,7 +224,10 @@ void main() {
       final edge = await reg.dispatch('click_screen', '{"x":539,"y":1199}');
       expect(decode(edge)['screen_xy'], [1078, 2398]);
 
-      settings = settings.copyWith(screenshotScale: 0.25, screenshotJpegQuality: 60);
+      settings = settings.copyWith(
+        screenshotScale: 0.25,
+        screenshotJpegQuality: 60,
+      );
       await reg.dispatch('take_screenshot', '{}');
       expect(screen.requests.last, (0.25, 60, null));
       expect(env.lastScreenshot!.width, 270);
@@ -167,7 +241,11 @@ void main() {
 
     test('take_screenshot returns compact JSON with sizes', () async {
       final o = await registry.dispatch('take_screenshot', '{}');
-      expect(decode(o), {'ok': true, 'image': '1280x720', 'screen': '2560x1440'});
+      expect(decode(o), {
+        'ok': true,
+        'image': '1280x720',
+        'screen': '2560x1440',
+      });
       expect(env.lastScreenshot, isNotNull);
     });
   });
@@ -184,26 +262,53 @@ void main() {
     test('denied command is not executed', () async {
       confirm.approveCommands = false;
       final statuses = <ToolStatus>[];
-      final o = await registry.dispatch('run_bash', '{"command":"echo hi"}', onStatus: statuses.add);
+      final o = await registry.dispatch(
+        'run_bash',
+        '{"command":"echo hi"}',
+        onStatus: statuses.add,
+      );
       expect(o.status, ToolStatus.denied);
       expect(fp.shell.commands, isEmpty);
       expect(statuses, contains(ToolStatus.awaitingApproval));
     });
 
-    test('cwd expands ~ and \$HOME, defaults to the workspace, and must exist', () async {
-      settings = settings.copyWith(confirmBeforeBash: false);
-      await Directory('${fp.root.path}/proj').create();
-      fp.services.files.workspaceDir = '${fp.root.path}/proj';
-      await registry.dispatch('run_bash', '{"command":"echo a"}');
-      await registry.dispatch('run_bash', '{"command":"echo b","cwd":"~"}');
-      await registry.dispatch('run_bash', '{"command":"echo c","cwd":"\$HOME/proj"}');
-      await registry.dispatch('run_bash', '{"command":"echo d","cwd":"\${HOME}"}');
-      expect(fp.shell.cwds, ['${fp.root.path}/proj', fp.root.path, '${fp.root.path}/proj', fp.root.path]);
-      final bad = await registry.dispatch('run_bash', '{"command":"echo e","cwd":"/home/oai"}');
-      expect(bad.ok, isFalse);
-      expect(decode(bad)['error'], allOf(contains('working directory does not exist: /home/oai'), contains(fp.root.path)));
-      expect(fp.shell.commands, hasLength(4));
-    });
+    test(
+      'cwd expands ~ and \$HOME, defaults to the workspace, and must exist',
+      () async {
+        settings = settings.copyWith(confirmBeforeBash: false);
+        await Directory('${fp.root.path}/proj').create();
+        fp.services.files.workspaceDir = '${fp.root.path}/proj';
+        await registry.dispatch('run_bash', '{"command":"echo a"}');
+        await registry.dispatch('run_bash', '{"command":"echo b","cwd":"~"}');
+        await registry.dispatch(
+          'run_bash',
+          '{"command":"echo c","cwd":"\$HOME/proj"}',
+        );
+        await registry.dispatch(
+          'run_bash',
+          '{"command":"echo d","cwd":"\${HOME}"}',
+        );
+        expect(fp.shell.cwds, [
+          '${fp.root.path}/proj',
+          fp.root.path,
+          '${fp.root.path}/proj',
+          fp.root.path,
+        ]);
+        final bad = await registry.dispatch(
+          'run_bash',
+          '{"command":"echo e","cwd":"/home/oai"}',
+        );
+        expect(bad.ok, isFalse);
+        expect(
+          decode(bad)['error'],
+          allOf(
+            contains('working directory does not exist: /home/oai'),
+            contains(fp.root.path),
+          ),
+        );
+        expect(fp.shell.commands, hasLength(4));
+      },
+    );
 
     test('skips confirmation when disabled in settings', () async {
       settings = settings.copyWith(confirmBeforeBash: false);
@@ -246,7 +351,10 @@ void main() {
       expect(entries.first['name'], 'sub');
       expect(entries.first['t'], 'd');
       expect(entries.any((e) => e['name'] == 'notes.txt'), isTrue);
-      final missing = await registry.dispatch('read_file', '{"path":"~/nope.txt"}');
+      final missing = await registry.dispatch(
+        'read_file',
+        '{"path":"~/nope.txt"}',
+      );
       expect(decode(missing)['error'], contains('no such file'));
     });
 
@@ -262,20 +370,32 @@ void main() {
       expect(decode(l)['path'], '${fp.root.path}/ws');
     });
 
-    test('missing paths fall back to a unique case-insensitive match', () async {
-      await Directory('${fp.root.path}/Docs').create();
-      await File('${fp.root.path}/Docs/README.md').writeAsString('# Readme');
-      final r = await registry.dispatch('read_file', '{"path":"~/docs/readme.md"}');
-      expect(r.ok, isTrue, reason: r.json);
-      expect(decode(r)['path'], '${fp.root.path}/Docs/README.md');
-      final s = await registry.dispatch('show_file', '{"path":"\$HOME/docs/README.MD","kind":"text"}');
-      expect(s.ok, isTrue, reason: s.json);
-      expect(fp.viewer.shown.single.path, '${fp.root.path}/Docs/README.md');
-      // Ambiguous names are not guessed.
-      await File('${fp.root.path}/Docs/readme.MD').writeAsString('other');
-      final amb = await registry.dispatch('read_file', '{"path":"~/docs/Readme.md"}');
-      expect(amb.ok, isFalse);
-    });
+    test(
+      'missing paths fall back to a unique case-insensitive match',
+      () async {
+        await Directory('${fp.root.path}/Docs').create();
+        await File('${fp.root.path}/Docs/README.md').writeAsString('# Readme');
+        final r = await registry.dispatch(
+          'read_file',
+          '{"path":"~/docs/readme.md"}',
+        );
+        expect(r.ok, isTrue, reason: r.json);
+        expect(decode(r)['path'], '${fp.root.path}/Docs/README.md');
+        final s = await registry.dispatch(
+          'show_file',
+          '{"path":"\$HOME/docs/README.MD","kind":"text"}',
+        );
+        expect(s.ok, isTrue, reason: s.json);
+        expect(fp.viewer.shown.single.path, '${fp.root.path}/Docs/README.md');
+        // Ambiguous names are not guessed.
+        await File('${fp.root.path}/Docs/readme.MD').writeAsString('other');
+        final amb = await registry.dispatch(
+          'read_file',
+          '{"path":"~/docs/Readme.md"}',
+        );
+        expect(amb.ok, isFalse);
+      },
+    );
 
     test('write_file shows a diff and writes only after approval', () async {
       final statuses = <ToolStatus>[];
@@ -287,7 +407,14 @@ void main() {
       expect(o.ok, isTrue);
       expect(confirm.writeRequests.single.isNewFile, isTrue);
       expect(confirm.writeRequests.single.diff.added, 2);
-      expect(statuses, containsAllInOrder([ToolStatus.running, ToolStatus.awaitingApproval, ToolStatus.running]));
+      expect(
+        statuses,
+        containsAllInOrder([
+          ToolStatus.running,
+          ToolStatus.awaitingApproval,
+          ToolStatus.running,
+        ]),
+      );
       expect(await File('${fp.root.path}/new.txt').readAsString(), 'a\nb\n');
     });
 
@@ -295,7 +422,10 @@ void main() {
       final f = File('${fp.root.path}/keep.txt');
       await f.writeAsString('original\n');
       confirm.approveWrites = false;
-      final o = await registry.dispatch('write_file', '{"path":"~/keep.txt","content":"changed\\n"}');
+      final o = await registry.dispatch(
+        'write_file',
+        '{"path":"~/keep.txt","content":"changed\\n"}',
+      );
       expect(o.status, ToolStatus.denied);
       expect(decode(o)['denied'], isTrue);
       expect(await f.readAsString(), 'original\n');
@@ -306,7 +436,11 @@ void main() {
       await f.writeAsString('void main() {\n  print("hi");\n}\n');
       final o = await registry.dispatch(
         'edit_file',
-        jsonEncode({'path': '~/code.dart', 'old_string': '"hi"', 'new_string': '"hello"'}),
+        jsonEncode({
+          'path': '~/code.dart',
+          'old_string': '"hi"',
+          'new_string': '"hello"',
+        }),
       );
       expect(o.ok, isTrue, reason: o.json);
       final d = confirm.writeRequests.single.diff;
@@ -314,19 +448,28 @@ void main() {
       expect(await f.readAsString(), contains('"hello"'));
     });
 
-    test('edit_file refuses ambiguous or missing matches without asking', () async {
-      await File('${fp.root.path}/dup.txt').writeAsString('x x x');
-      final amb = await registry.dispatch('edit_file', '{"path":"~/dup.txt","old_string":"x","new_string":"y"}');
-      expect(decode(amb)['error'], contains('matches 3 times'));
-      final none = await registry.dispatch('edit_file', '{"path":"~/dup.txt","old_string":"z","new_string":"y"}');
-      expect(decode(none)['error'], contains('not found'));
-      expect(confirm.writeRequests, isEmpty);
-      final all = await registry.dispatch(
-        'edit_file',
-        '{"path":"~/dup.txt","old_string":"x","new_string":"y","replace_all":true}',
-      );
-      expect(decode(all)['replacements'], 3);
-    });
+    test(
+      'edit_file refuses ambiguous or missing matches without asking',
+      () async {
+        await File('${fp.root.path}/dup.txt').writeAsString('x x x');
+        final amb = await registry.dispatch(
+          'edit_file',
+          '{"path":"~/dup.txt","old_string":"x","new_string":"y"}',
+        );
+        expect(decode(amb)['error'], contains('matches 3 times'));
+        final none = await registry.dispatch(
+          'edit_file',
+          '{"path":"~/dup.txt","old_string":"z","new_string":"y"}',
+        );
+        expect(decode(none)['error'], contains('not found'));
+        expect(confirm.writeRequests, isEmpty);
+        final all = await registry.dispatch(
+          'edit_file',
+          '{"path":"~/dup.txt","old_string":"x","new_string":"y","replace_all":true}',
+        );
+        expect(decode(all)['replacements'], 3);
+      },
+    );
   });
 
   test('show_file opens the viewer with the detected kind', () async {

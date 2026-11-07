@@ -101,6 +101,7 @@ class PipelineOptions {
   final bool cameraReplacesScreenshot;
   final bool autoScreenshot;
   final Duration screenshotDelay;
+
   /// Screenshots sent to the model: scale of the physical screen, JPEG quality.
   final double screenshotScale;
   final int screenshotJpegQuality;
@@ -148,6 +149,9 @@ class TurnPipeline extends ChangeNotifier {
   }
 
   final VoiceBackend Function() backendFactory;
+
+  /// Model bound to the connected session; persisted on each reply.
+  String? _sessionModel;
 
   /// Creates the offline stop-word spotter (null: none). Started lazily the
   /// first time Woi is audible with [PipelineOptions.stopWordDetection] on.
@@ -319,8 +323,11 @@ class TurnPipeline extends ChangeNotifier {
     final a = _assistantMsg;
     final cur = a == null || a.text.trim().isEmpty
         ? null
-        : (_Spoken(a, DateTime.now(), _stretchBytes <= 0 ? 1.0 : (1 - _unheard().length / _stretchBytes).clamp(0.0, 1.0)))
-              .window();
+        : (_Spoken(
+            a,
+            DateTime.now(),
+            _stretchBytes <= 0 ? 1.0 : (1 - _unheard().length / _stretchBytes).clamp(0.0, 1.0),
+          )).window();
     final prior = _echoSuspects[m.id];
     final said = cur == null ? prior : [...?prior, cur];
     if (text.isEmpty) {
@@ -354,6 +361,7 @@ class TurnPipeline extends ChangeNotifier {
     // Woi's reply was never cut: it plays on.
     _dropUntil = null;
   }
+
   final PcmRing _gatedPcm = PcmRing(kVoiceBytesPerSecond * 4 ~/ 10); // 400 ms
   bool _gating = false;
   // Soft barge-in: a local onset pauses Woi (keeping what was not heard yet
@@ -419,6 +427,7 @@ class TurnPipeline extends ChangeNotifier {
   DateTime? _pausedAt;
   int _pauseVoicedMs = 0;
   double _pauseMicPeak = 0;
+
   /// QA only (`WOI_QA_IGNORE_SERVER_SPEECH=1`, read once at startup): a
   /// server speech start that arrives while Woi is speaking (playing or
   /// paused; a deferred turn) is held back together with that turn's
@@ -542,6 +551,7 @@ class TurnPipeline extends ChangeNotifier {
     }
     return '';
   }
+
   SessionStatus get status => _status;
   MicMode get micMode => _micMode;
   bool get pttHeld => _pttHeld;
@@ -614,7 +624,7 @@ class TurnPipeline extends ChangeNotifier {
   DateTime _lastActivity = DateTime.now();
   EnergyVad? _wakeVad;
   // Typed while in standby or connecting: sent once connected.
-  final List<String> _queuedTexts = [];
+  final List<({String text, AudioClip? audio})> _queuedTexts = [];
 
   /// Audio kept in standby before the wake onset (the start of the words).
   static const int standbyLeadBytes = kVoiceBytesPerSecond * 3 ~/ 2;
@@ -680,7 +690,7 @@ class TurnPipeline extends ChangeNotifier {
     final texts = List.of(_queuedTexts);
     _queuedTexts.clear();
     for (final t in texts) {
-      sendText(t);
+      sendText(t.text, audioClip: t.audio);
     }
   }
 
@@ -834,8 +844,15 @@ class TurnPipeline extends ChangeNotifier {
       debugPrint('pre-connect: connect start');
       final cfgWatch = Stopwatch()..start();
       final cfg = await sessionConfig(_conv);
+      if (!identical(_backend, b)) return;
+      _sessionModel = cfg.model;
       debugPrint('[realtime] connect phase: sessionConfig ${cfgWatch.elapsedMilliseconds} ms');
       context.configure(accounting: b.contextAccounting, overheadTokens: contextOverhead(cfg, b.contextAccounting));
+      if (b is ManagedAudioBackend) {
+        final managed = b as ManagedAudioBackend;
+        managed.setInputEnabled(_forwarding);
+        await managed.setCaptureSuspended(_recordingHold);
+      }
       await b.connect(cfg);
       debugPrint('pre-connect: connect end');
       if (!identical(_backend, b)) return;
@@ -869,7 +886,10 @@ class TurnPipeline extends ChangeNotifier {
       if (!identical(_backend, b)) return;
       limit = UsageLimit.parse(e);
       if (_queuedTexts.isNotEmpty && !_reconnecting) {
-        _addSystem('Not sent (voice session offline): ${_queuedTexts.join(' / ')}', meta: {'type': 'error'});
+        _addSystem(
+          'Not sent (voice session offline): ${_queuedTexts.map((t) => t.text).join(' / ')}',
+          meta: {'type': 'error'},
+        );
         _queuedTexts.clear();
       }
       usageLimit = limit;
@@ -1194,7 +1214,9 @@ class TurnPipeline extends ChangeNotifier {
       return;
     }
     if (_userSpeaking || _playing || _assistantAudible || _guard.echoExpected) return;
-    _micFloorRms = rms < _micFloorRms || _micFloorRms == 0 ? _micFloorRms * 0.8 + rms * 0.2 : _micFloorRms * 0.995 + rms * 0.005;
+    _micFloorRms = rms < _micFloorRms || _micFloorRms == 0
+        ? _micFloorRms * 0.8 + rms * 0.2
+        : _micFloorRms * 0.995 + rms * 0.005;
   }
 
   /// [pauseEchoTail] + [pauseVoiceWindow] after the pause with no server
@@ -1312,6 +1334,58 @@ class TurnPipeline extends ChangeNotifier {
 
   // -------------------------------------------------------------------- mic
 
+  bool _recordingHold = false;
+
+  /// Give a deliberate mic+system recording exclusive capture ownership.
+  /// Kept across a backend reconnect; the regular input must remain silent.
+  Future<void> suspendForRecording() async {
+    _recordingHold = true;
+    interrupt();
+    final managed = _managed;
+    managed?.setInputEnabled(false);
+    // A disabled WebRTC track may keep recording for its normal toggle
+    // grace period. Explicit recording requires the hardware released now.
+    await managed?.setCaptureSuspended(true);
+    await _closeMic();
+    _changed();
+  }
+
+  Future<void> resumeAfterRecording() async {
+    _recordingHold = false;
+    if (!_disposed) {
+      // A failed suspension may leave the logical managed mic open. Restore
+      // its input gate even when _openMic() therefore has nothing to reopen.
+      _managed?.setInputEnabled(_forwarding && !_idleWarm);
+      await _managed?.setCaptureSuspended(false);
+    }
+    if (!_disposed &&
+        _micMode != MicMode.muted &&
+        (_status == SessionStatus.connected || _standby || _status == SessionStatus.connecting)) {
+      await _openMic();
+    }
+    _changed();
+  }
+
+  /// Persist the original clip and send its full transcription/description.
+  /// This also works for WebRTC transports that cannot inject PCM over RTP.
+  Future<void> sendRecordedAudio(Uint8List pcm, String text) async {
+    if (_disposed) return;
+    final conversation = _conv;
+    final clip = await store.saveAudio(newId('recording'), pcm);
+    if (_disposed || !identical(conversation, _conv)) {
+      throw StateError('Conversation changed while the recording was being sent');
+    }
+    if (_status != SessionStatus.connected && _status != SessionStatus.connecting && !_standby) {
+      await connect();
+    }
+    if (_disposed ||
+        !identical(conversation, _conv) ||
+        (_status != SessionStatus.connected && _status != SessionStatus.connecting && !_standby)) {
+      throw StateError('Voice connection unavailable; the audio was saved at ${clip.path}');
+    }
+    sendText(text, audioClip: clip);
+  }
+
   Future<void> setMicMode(MicMode mode) async {
     _micMode = mode;
     _pttHeld = false;
@@ -1369,13 +1443,15 @@ class TurnPipeline extends ChangeNotifier {
   int _micGen = 0;
 
   Future<void> _openMic() {
-    if (_mic != null || _idleWarm) return Future.value();
+    if (_mic != null || _idleWarm || _recordingHold) return Future.value();
     final pending = _micOpening;
     if (pending != null) return pending;
     final f = _micOpening = _doOpenMic();
-    unawaited(f.whenComplete(() {
-      if (identical(_micOpening, f)) _micOpening = null;
-    }));
+    unawaited(
+      f.whenComplete(() {
+        if (identical(_micOpening, f)) _micOpening = null;
+      }),
+    );
     return f;
   }
 
@@ -1464,7 +1540,8 @@ class TurnPipeline extends ChangeNotifier {
     _levelsChanged.value++;
   }
 
-  bool get _forwarding => _micMode == MicMode.handsFree || (_micMode == MicMode.pushToTalk && _pttHeld);
+  bool get _forwarding =>
+      !_recordingHold && (_micMode == MicMode.handsFree || (_micMode == MicMode.pushToTalk && _pttHeld));
 
   // Half-duplex gate (media route): recent real chunks held back while
   // silence went to the server, and the end of the post-playback hangover.
@@ -1589,9 +1666,7 @@ class TurnPipeline extends ChangeNotifier {
     if (!voiced || _preShot != null) return;
     if (!options().autoScreenshot || _activationShotFresh) return;
     // Speech in the pre-roll: grab the screen now, as a live turn would.
-    _preShot = _captureTurnShot().then<Screenshot?>((s) => s).catchError((
-      Object e,
-    ) {
+    _preShot = _captureTurnShot().then<Screenshot?>((s) => s).catchError((Object e) {
       debugPrint('pre-connect screenshot failed: $e');
       return null;
     });
@@ -1982,14 +2057,10 @@ class TurnPipeline extends ChangeNotifier {
     // after the cut, so it said "audible=n" on every interrupting turn).
     final audibleTag = _audibleTag;
     final onset = _lastOnsetAt;
-    final leaked =
-        !echoGate || _micManaged || (onset != null && now.difference(onset) < const Duration(seconds: 5));
+    final leaked = !echoGate || _micManaged || (onset != null && now.difference(onset) < const Duration(seconds: 5));
     final echoLikely =
         _micMode == MicMode.handsFree &&
-        (_paused != null ||
-            _assistantAudible ||
-            _guard.echoExpected ||
-            (now.isBefore(_echoWindowUntil) && leaked));
+        (_paused != null || _assistantAudible || _guard.echoExpected || (now.isBefore(_echoWindowUntil) && leaked));
     // Deferred (the server did not cut Woi off): interrupt now when the
     // local detector heard the user, else wait up to [deferWindow] for the
     // transcript to tell echo from the user; Woi talks on meanwhile.
@@ -2388,12 +2459,12 @@ class TurnPipeline extends ChangeNotifier {
   void _pushScreenMemory() => _backend?.updateScreenMemory(screenMemory());
 
   /// Typed input (text fallback).
-  void sendText(String text) {
+  void sendText(String text, {AudioClip? audioClip}) {
     final t = text.trim();
     if (t.isEmpty) return;
     if (_standby || (_status == SessionStatus.connecting && _backend != null)) {
       // Sent once the session is up (standby: it wakes now).
-      _queuedTexts.add(t);
+      _queuedTexts.add((text: t, audio: audioClip));
       if (_standby) _wake('typed text');
       return;
     }
@@ -2404,7 +2475,16 @@ class TurnPipeline extends ChangeNotifier {
     _releaseHold();
     _dropUntil = null;
     onTurnStart?.call();
-    final m = _addMessage(Message(kind: MessageKind.user, text: t));
+    final m = _addMessage(
+      Message(
+        kind: MessageKind.user,
+        text: t,
+        audio: audioClip,
+        meta: {
+          if (audioClip != null) 'captureSources': ['microphone', 'system'],
+        },
+      ),
+    );
     _conv.touch();
     if (localCommand?.call(t, typed: true) ?? false) {
       _stopHandled.add(m.id);
@@ -2679,7 +2759,9 @@ class TurnPipeline extends ChangeNotifier {
     return false;
   }
 
-  Message _assistant() => _assistantMsg ??= _addMessage(Message(kind: MessageKind.assistant, streaming: true));
+  Message _assistant() => _assistantMsg ??= _addMessage(
+    Message(kind: MessageKind.assistant, streaming: true, meta: {if (_sessionModel != null) 'model': _sessionModel}),
+  );
 
   void _finishAssistant({bool interrupted = false}) {
     final m = _assistantMsg;

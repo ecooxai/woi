@@ -24,6 +24,7 @@ import io.flutter.plugin.common.MethodChannel
  * reaches the app below; the floating assistant panel steps aside instead.
  */
 class WoiAccessibilityService : AccessibilityService() {
+    private val control by lazy { WoiControlOverlay(this) }
     /** Last foreground package that is not Woi (the send_keys target). */
     @Volatile var targetPackage: String? = null
     @Volatile var activePackage: String? = null
@@ -37,11 +38,13 @@ class WoiAccessibilityService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        control.end()
         if (instance === this) instance = null
         super.onDestroy()
     }
 
     override fun onUnbind(intent: android.content.Intent?): Boolean {
+        control.end()
         if (instance === this) instance = null
         return super.onUnbind(intent)
     }
@@ -54,7 +57,7 @@ class WoiAccessibilityService : AccessibilityService() {
         if (pkg != packageName) targetPackage = pkg
     }
 
-    override fun onInterrupt() {}
+    override fun onInterrupt() { control.cancel() }
 
     private fun woiInFront(): Boolean = try {
         val root = rootInActiveWindow?.packageName?.toString()
@@ -104,22 +107,29 @@ class WoiAccessibilityService : AccessibilityService() {
     }
 
     private fun tap(x: Float, y: Float, count: Int, result: MethodChannel.Result) {
+        control.check()
+        control.update(null, x, y)
+        control.injecting()
         val path = Path().apply { moveTo(x, y) }
         val builder = GestureDescription.Builder()
-        for (i in 0 until count) {
-            builder.addStroke(GestureDescription.StrokeDescription(path, i * 150L, 40L))
-        }
+        builder.addStroke(GestureDescription.StrokeDescription(path, 0, 40L))
         val ok = dispatchGesture(builder.build(), object : GestureResultCallback() {
-            override fun onCompleted(g: GestureDescription?) = safe("gesture") { result.success(true) }
-            override fun onCancelled(g: GestureDescription?) = safe("gesture") { result.error("cancelled", "gesture cancelled", null) }
+            override fun onCompleted(g: GestureDescription?) = safe("gesture") {
+                control.gestureFinished()
+                if (count > 1) {
+                    WoiBridge.main.postDelayed({ guarded("double tap", result) { r -> tap(x, y, count - 1, r) } }, 110)
+                } else result.success(true)
+            }
+            override fun onCancelled(g: GestureDescription?) = safe("gesture") { control.gestureFinished(); control.cancel(); result.error("cancelled", "User took control; gesture cancelled", null) }
         }, null)
-        if (!ok) result.error("failed", "dispatchGesture refused", null)
+        if (!ok) { control.gestureFinished(); result.error("failed", "dispatchGesture refused", null) }
     }
 
     private fun focused(): AccessibilityNodeInfo? =
         findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
 
     private fun typeText(text: String): String {
+        control.check()
         val node = focused() ?: throw IllegalStateException("no focused text field in ${activePackage ?: "the app"}")
         if (node.isEditable) {
             val cur = if (node.isShowingHintText) "" else (node.text?.toString() ?: "")
@@ -160,6 +170,7 @@ class WoiAccessibilityService : AccessibilityService() {
     }
 
     private fun nodeAction(name: String): String {
+        control.check()
         val node = focused() ?: throw IllegalStateException("no focused field for $name")
         val ok = when (name) {
             "copy" -> node.performAction(AccessibilityNodeInfo.ACTION_COPY)
@@ -195,12 +206,14 @@ class WoiAccessibilityService : AccessibilityService() {
     /** The app's IME connection comes back a moment after the panel steps
      *  aside: retry Enter through it for up to 600 ms. */
     private fun imeEnterSoon(cause: Exception, r: MethodChannel.Result, start: Long = android.os.SystemClock.uptimeMillis()) {
+        control.check()
         if (imeEnter()) return r.success("enter")
         if (android.os.SystemClock.uptimeMillis() - start > 600) return r.error("failed", cause.message, null)
         WoiBridge.main.postDelayed({ imeEnterSoon(cause, r, start) }, 50)
     }
 
     private fun global(name: String): Boolean {
+        control.check()
         val action = when (name) {
             "back" -> GLOBAL_ACTION_BACK
             "home" -> GLOBAL_ACTION_HOME
@@ -332,6 +345,15 @@ class WoiAccessibilityService : AccessibilityService() {
                 else "Woi's accessibility service is off (Settings > Accessibility > Woi)", null
             )
             when (call.method) {
+                "controlBegin" -> s.leaveWoi(100) { guarded("control begin", result) { r ->
+                    r.success(s.control.begin(call.argument<String>("kind") ?: "pointer",
+                        call.argument<String>("keys") ?: "",
+                        call.argument<Number>("x")?.toFloat(), call.argument<Number>("y")?.toFloat()))
+                } }
+                "controlInterrupted" -> result.success(s.control.cancelled)
+                "controlUpdate" -> { s.control.update(call.argument<String>("keys"), call.argument<Number>("x")?.toFloat(), call.argument<Number>("y")?.toFloat()); result.success(null) }
+                "controlEnd" -> { s.control.end(); result.success(null) }
+                "controlReset" -> { s.control.reset(); result.success(null) }
                 "click", "doubleClick" -> {
                     val x = (call.argument<Number>("x") ?: 0).toFloat()
                     val y = (call.argument<Number>("y") ?: 0).toFloat()

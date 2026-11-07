@@ -18,6 +18,12 @@ abstract class LiveRtcTransport {
   /// called before [createOffer]: the track is then created in that state.
   void setMicEnabled(bool enabled);
 
+  /// Releases native microphone capture immediately for an exclusive held
+  /// recording. Completes only after in-flight capture opens are stopped.
+  /// May be set before [createOffer]; a suspended offer must not open a mic.
+  /// Resuming restores capture only when the microphone is enabled.
+  Future<void> setCaptureSuspended(bool suspended);
+
   /// Mutes / unmutes playback of the assistant's remote audio track
   /// (local barge-in flush and the stop button). May be called before
   /// [createOffer], like [setMicEnabled].

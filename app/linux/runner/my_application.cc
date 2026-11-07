@@ -1,4 +1,5 @@
 #include "my_application.h"
+#include "control_overlay.h"
 
 
 #include <dlfcn.h>
@@ -211,6 +212,7 @@ static FlView* register_window_channel(FlPluginRegistry* registry) {
       FL_METHOD_CODEC(codec));
   fl_method_channel_set_method_call_handler(channel, window_method_cb, view,
                                             nullptr);
+  woi_register_control_overlay(registrar, GTK_WIDGET(view));
   // The channel lives as long as the view.
   g_object_set_data_full(G_OBJECT(view), "woi-window-channel", channel,
                          g_object_unref);

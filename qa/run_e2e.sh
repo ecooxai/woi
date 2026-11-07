@@ -247,7 +247,8 @@ log_has() { grep -qiE "$1" "$QA_OUT/log_$2.txt" 2>/dev/null; }
 # waits like run_fixture (reply audio, then QUIET_S of silence). Sets
 # LAST_LAT (ms from Enter to the first reply audio) and writes log_TAG.txt.
 typed_turn() {
-  local tag=$1 text=$2 quiet=${3:-6} max=${4:-60}
+  local tag=$1 text=$2 quiet=${3:-6} max=${4:-60} action=${5:-none}
+  local handled=0 shown=0
   local lines0; lines0=$(wc -l <"$APP_LOG")
   qa_audio_reassert
   qa_log "type $tag: $text"
@@ -256,6 +257,14 @@ typed_turn() {
   while :; do
     sleep 0.5; waited=$((waited + 1))
     qa_app_alive || { qa_log "APP DIED during $tag"; break; }
+    shown=$(tail -n +$((lines0 + 1)) "$APP_LOG" | grep -c 'approval dialog shown')
+    if [ "$action" = approve ] && [ "$shown" -gt "$handled" ]; then
+      handled=$shown
+      sleep 0.6
+      qa_shot "$APP_WID" "${tag}_dialog$handled" >/dev/null
+      qa_focus_app
+      xdotool key Return
+    fi
     [ $waited -ge $((max * 2)) ] && { qa_log "max wait reached in $tag"; break; }
     if [ "$($LAT first "$SPK" "$t0")" != -1 ] && [ "$($LAT quiet "$SPK" "$t0" "$quiet")" = 1 ] &&
        [ $waited -ge $((quiet * 2)) ]; then break; fi
@@ -454,13 +463,10 @@ phase_live() {
   close_viewers
 
   # typed input through the composer (text fallback)
-  local lines0; lines0=$(wc -l <"$APP_LOG"); local t0; t0=$(date +%s.%N)
-  qa_type_in_app "What is two plus two?"
-  sleep 15
-  local tl; tl=$($LAT first "$SPK" "$t0" 15)
-  qa_shot "$APP_WID" "${mode}_15_typed_text" >/dev/null
-  ok=FAIL; [ "$tl" != -1 ] && ok=PASS
-  result $mode 15_typed_text "$tl" 0 $ok "reply audio after typed message: ${tl}ms"
+  typed_turn "${mode}_15_typed_text" "What is two plus two?" 6 40 approve
+  local typed_tools; typed_tools=$(recent_tools "$mode")
+  ok=FAIL; [ "$LAST_LAT" != -1 ] && [[ "$typed_tools" == *python* ]] && ok=PASS
+  result $mode 15_typed_text "$LAST_LAT" 0 $ok "reply audio after typed calculation; tools: $typed_tools"
   xdotool key Escape
 
   if [[ " $PHASES " == *" barge "* ]]; then barge $mode; fi

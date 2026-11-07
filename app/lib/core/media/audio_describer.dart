@@ -24,6 +24,7 @@ AudioDescriber realtimeAudioDescriber({
   RealtimeConnector? connector,
   Uri? endpoint,
   Duration timeout = const Duration(seconds: 40),
+  String instructions = kAudioDescribeInstructions,
 }) => (pcm, {title, question}) async {
   final creds = await credentials();
   if (creds == null) throw StateError('not signed in');
@@ -53,7 +54,7 @@ AudioDescriber realtimeAudioDescriber({
               'type': 'session.update',
               'session': {
                 'type': 'realtime',
-                'instructions': kAudioDescribeInstructions,
+                'instructions': instructions,
                 'output_modalities': ['text'],
                 'audio': {
                   'input': {

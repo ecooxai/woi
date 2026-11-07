@@ -12,6 +12,11 @@ class FakeLiveTransport implements LiveRtcTransport {
   String? answer;
   bool micEnabled = true;
   bool speakerEnabled = true;
+  bool captureSuspended = false;
+  bool? captureSuspendedAtOffer;
+  Completer<void>? captureSuspendGate;
+  Object? captureSuspendError;
+  final captureSuspensions = <bool>[];
   bool closed = false;
   final micToggles = <bool>[];
 
@@ -23,6 +28,7 @@ class FakeLiveTransport implements LiveRtcTransport {
   @override
   Future<String> createOffer() async {
     micAtOffer = micEnabled;
+    captureSuspendedAtOffer = captureSuspended;
     return 'v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n';
   }
   @override
@@ -31,6 +37,16 @@ class FakeLiveTransport implements LiveRtcTransport {
   void setMicEnabled(bool enabled) {
     micEnabled = enabled;
     micToggles.add(enabled);
+  }
+
+  @override
+  Future<void> setCaptureSuspended(bool suspended) async {
+    captureSuspended = suspended;
+    captureSuspensions.add(suspended);
+    if (suspended) {
+      await captureSuspendGate?.future;
+      if (captureSuspendError != null) throw captureSuspendError!;
+    }
   }
 
   @override

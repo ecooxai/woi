@@ -385,6 +385,35 @@ void main() {
     });
   });
 
+  test('capture suspension waits for active and prepared sessions before a context swap', () async {
+    final r = _Rig();
+    await r.connect();
+    final active = r.rtc;
+    r.server.autoStart = false;
+    final swapping = r.backend.applySummary('Held recording context.');
+    await waitFor(() => r.server.sockets.length == 2);
+    final prepared = r.rtc;
+    active.captureSuspendGate = Completer<void>();
+    prepared.captureSuspendGate = Completer<void>();
+    var released = false;
+    final suspending = r.backend.setCaptureSuspended(true).then((_) => released = true);
+    await _tick();
+    expect(active.captureSuspended, isTrue);
+    expect(prepared.captureSuspended, isTrue);
+    expect(released, isFalse);
+    active.captureSuspendGate!.complete();
+    await _tick();
+    expect(released, isFalse, reason: 'prepared call also owns a native input');
+    prepared.captureSuspendGate!.complete();
+    await suspending;
+    r.ws.push({'type': 'session.started', 'session': <String, Object?>{}});
+    expect((await swapping).method, ContextApplyMethod.reconnected);
+    expect(prepared.captureSuspended, isTrue, reason: 'swap cannot reopen a held microphone');
+    await r.backend.setCaptureSuspended(false);
+    expect(prepared.captureSuspended, isFalse);
+    await r.dispose();
+  });
+
   group('compaction swap (applySummary)', () {
     String instructionsOf(_Rig r, int call) => (r.server.calls[call].$3['session']! as Map)['instructions'] as String;
 

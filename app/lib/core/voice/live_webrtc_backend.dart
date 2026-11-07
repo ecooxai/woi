@@ -147,6 +147,8 @@ class LiveWebRtcBackend extends VoiceBackend
   final _events = StreamController<BackendEvent>.broadcast();
   final _delegations = StreamController<DelegationReport>.broadcast();
   _LiveSession? _session;
+  // Includes prepared and retiring calls until their native capture closes.
+  final _sessions = <_LiveSession>{};
   LiveRtcTransport? get _rtc => _session?.rtc;
   RealtimeSocket? get _ws => _session?.ws;
   SessionConfig? _config;
@@ -195,6 +197,7 @@ class LiveWebRtcBackend extends VoiceBackend
   String? _transcriptKey;
   final Set<_ManagedMic> _mics = {};
   bool _inputEnabled = true;
+  bool _captureSuspended = false;
 
   // ---- images (for delegation) and pending tool calls
   DelegationImage? _latestImage;
@@ -352,7 +355,10 @@ class LiveWebRtcBackend extends VoiceBackend
     final model = kLiveModels.contains(config.model) ? config.model : kLiveModels.first;
     final voice = kLiveVoices.contains(config.voice) ? config.voice : kLiveDefaultVoice;
     final headers = creds.headers(live: true);
+    if (_closed) throw StateError('Live backend is closed');
     final s = _LiveSession(transportFactory(), model, voice);
+    _sessions.add(s);
+    s.onClosed = () => _sessions.remove(s);
     if (activate) {
       _session = s;
       // Muted / push-to-talk: no mic audio leaves while connecting either.
@@ -364,6 +370,9 @@ class LiveWebRtcBackend extends VoiceBackend
         ..setSpeakerEnabled(false);
     }
     try {
+      // A held recording can outlive a network reconnect or context swap.
+      // Apply capture ownership before the new transport opens any device.
+      await s.rtc.setCaptureSuspended(_captureSuspended);
       var sw = Stopwatch()..start();
       final offer = await s.rtc.createOffer();
       if (timed) timings.offer = sw.elapsed;
@@ -1039,7 +1048,15 @@ class LiveWebRtcBackend extends VoiceBackend
     final m = _ManagedMic(this);
     _mics.add(m);
     setInputEnabled(true);
-    return m;
+    try {
+      // Resume may need a new native stream after exclusive held capture.
+      // Do not report an open managed mic before that operation completes.
+      await _rtc?.setCaptureSuspended(_captureSuspended);
+      return m;
+    } catch (_) {
+      await m.close();
+      rethrow;
+    }
   }
 
   @override
@@ -1049,6 +1066,17 @@ class LiveWebRtcBackend extends VoiceBackend
   void setInputEnabled(bool enabled) {
     _inputEnabled = enabled;
     _rtc?.setMicEnabled(enabled);
+  }
+
+  @override
+  Future<void> setCaptureSuspended(bool suspended) async {
+    _captureSuspended = suspended;
+    // Update the desired state synchronously. Sessions created during the
+    // await inherit it before createOffer and cannot reacquire the device.
+    await Future.wait([
+      for (final session in _sessions.toList())
+        session.rtc.setCaptureSuspended(suspended),
+    ]);
   }
 
   void _micClosed(_ManagedMic m) {
@@ -1069,8 +1097,7 @@ class LiveWebRtcBackend extends VoiceBackend
       if (!c.isCompleted) c.complete('{"ok":false,"error":"session closed"}');
     }
     _pendingTools.clear();
-    await _preparing?.close();
-    await _session?.close();
+    await Future.wait([for (final session in _sessions.toList()) session.close()]);
     _delegationModel?.close();
     for (final m in _mics.toList()) {
       await m.close();
@@ -1094,9 +1121,12 @@ class _LiveSession {
   String? callId;
   final started = Completer<void>();
   bool closed = false;
+  void Function()? onClosed;
+  Future<void>? _closing;
 
-  Future<void> close() async {
-    if (closed) return;
+  Future<void> close() => _closing ??= _close();
+
+  Future<void> _close() async {
     closed = true;
     try {
       ws?.send(jsonEncode({'type': 'session.close'}));
@@ -1108,6 +1138,7 @@ class _LiveSession {
     try {
       await rtc.close();
     } catch (_) {}
+    onClosed?.call();
   }
 }
 

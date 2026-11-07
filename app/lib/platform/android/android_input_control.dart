@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/services.dart';
 
 import '../input_control.dart';
+import '../control_feedback.dart';
 import 'android_bridge.dart';
 
 /// What an Android key chord does through the accessibility service.
@@ -38,8 +39,12 @@ AndroidKeyOp? androidOpForChord(KeyChord c) {
         return const NodeKeyOp('select_all');
     }
   }
-  if (m.contains(KeyModifier.alt) && c.key == 'tab') return const GlobalKeyOp('recents');
-  if (m.contains(KeyModifier.alt) && c.key == 'left') return const GlobalKeyOp('back');
+  if (m.contains(KeyModifier.alt) && c.key == 'tab') {
+    return const GlobalKeyOp('recents');
+  }
+  if (m.contains(KeyModifier.alt) && c.key == 'left') {
+    return const GlobalKeyOp('back');
+  }
   if (m.isNotEmpty) return null;
   return switch (c.key) {
     'escape' => const GlobalKeyOp('back'),
@@ -57,60 +62,129 @@ AndroidKeyOp androidOpForAction(KeyAction a) => switch (a) {
   KeyAction.selectAll => const NodeKeyOp('select_all'),
   KeyAction.enter => const NodeKeyOp('enter'),
   KeyAction.escape || KeyAction.back => const GlobalKeyOp('back'),
-  KeyAction.undo || KeyAction.redo => throw UnsupportedError('${a.wire} has no accessibility action on Android'),
+  KeyAction.undo || KeyAction.redo => throw UnsupportedError(
+    '${a.wire} has no accessibility action on Android',
+  ),
 };
 
 /// Spoken names that only make sense on a phone ("recents", "home screen").
-AndroidKeyOp? androidOpForName(String keys) => switch (keys.trim().toLowerCase().replaceAll(RegExp(r'[\s_-]+'), '')) {
-  'back' => const GlobalKeyOp('back'),
-  'home' || 'homescreen' => const GlobalKeyOp('home'),
-  'recents' || 'recentapps' || 'overview' || 'appswitch' => const GlobalKeyOp('recents'),
-  'notifications' => const GlobalKeyOp('notifications'),
-  'quicksettings' => const GlobalKeyOp('quick_settings'),
-  'selectall' => const NodeKeyOp('select_all'),
-  'copy' => const NodeKeyOp('copy'),
-  'paste' => const NodeKeyOp('paste'),
-  'cut' => const NodeKeyOp('cut'),
-  _ => null,
-};
+AndroidKeyOp? androidOpForName(String keys) =>
+    switch (keys.trim().toLowerCase().replaceAll(RegExp(r'[\s_-]+'), '')) {
+      'back' => const GlobalKeyOp('back'),
+      'home' || 'homescreen' => const GlobalKeyOp('home'),
+      'recents' ||
+      'recentapps' ||
+      'overview' ||
+      'appswitch' => const GlobalKeyOp('recents'),
+      'notifications' => const GlobalKeyOp('notifications'),
+      'quicksettings' => const GlobalKeyOp('quick_settings'),
+      'selectall' => const NodeKeyOp('select_all'),
+      'copy' => const NodeKeyOp('copy'),
+      'paste' => const NodeKeyOp('paste'),
+      'cut' => const NodeKeyOp('cut'),
+      _ => null,
+    };
 
 /// click_screen / type_text / send_keys through WoiAccessibilityService.
 /// Coordinates are real screen pixels (screenshots map back with
 /// [Screenshot.toScreen]). If Woi is in front, the service sends it to the
 /// back first so the action lands in the app below.
 class AndroidInputControl implements InputControl {
-  AndroidInputControl({AndroidBridge? bridge}) : _bridge = bridge ?? AndroidBridge.instance;
+  AndroidInputControl({AndroidBridge? bridge, this.control})
+    : _bridge = bridge ?? AndroidBridge.instance;
+
+  final ControlGuard? control;
+  ControlLease? _lease;
+
+  Future<T> _visible<T>(
+    String kind,
+    Future<T> Function() action, {
+    String keys = '',
+    int? x,
+    int? y,
+  }) async {
+    if (control == null) return action();
+    return control!.run(
+      kind,
+      (lease) async {
+        _lease = lease;
+        try {
+          return await action();
+        } finally {
+          _lease = null;
+        }
+      },
+      keys: keys,
+      x: x,
+      y: y,
+    );
+  }
 
   final AndroidBridge _bridge;
   Point<int> _last = const Point(0, 0);
 
   Future<T?> _call<T>(String method, [Map<String, Object?>? args]) async {
     try {
-      return await _bridge.call<T>(method, args);
+      await _lease?.check();
+      final result = await _bridge.call<T>(method, args);
+      await _lease?.check();
+      return result;
     } on PlatformException catch (e) {
       throw StateError(e.message ?? e.code);
     }
   }
 
   @override
-  Future<void> moveMouse(int x, int y) async => _last = Point(x, y);
+  Future<void> moveMouse(int x, int y) => _visible(
+    'pointer',
+    () async {
+      _last = Point(x, y);
+      await _lease?.update(x: x, y: y);
+    },
+    x: x,
+    y: y,
+  );
 
   @override
-  Future<void> click(int x, int y, {MouseButton button = MouseButton.left}) async {
+  Future<void> click(
+    int x,
+    int y, {
+    MouseButton button = MouseButton.left,
+  }) async {
     _last = Point(x, y);
-    await _call<bool>('click', {'x': x, 'y': y});
+    await _visible(
+      'pointer',
+      () async {
+        await _call<bool>('click', {'x': x, 'y': y});
+      },
+      x: x,
+      y: y,
+    );
   }
 
   @override
-  Future<void> doubleClick(int x, int y, {MouseButton button = MouseButton.left}) async {
+  Future<void> doubleClick(
+    int x,
+    int y, {
+    MouseButton button = MouseButton.left,
+  }) async {
     _last = Point(x, y);
-    await _call<bool>('doubleClick', {'x': x, 'y': y});
+    await _visible(
+      'pointer',
+      () async {
+        await _call<bool>('doubleClick', {'x': x, 'y': y});
+      },
+      x: x,
+      y: y,
+    );
   }
 
   @override
   Future<void> typeText(String text) async {
     if (text.isEmpty) return;
-    await _call<String>('typeText', {'text': text});
+    await _visible('keyboard', () async {
+      await _call<String>('typeText', {'text': text});
+    }, keys: text);
   }
 
   Future<void> _run(AndroidKeyOp op) async {
@@ -134,15 +208,23 @@ class AndroidInputControl implements InputControl {
   @override
   Future<void> keyCombo(String combo) async {
     final named = androidOpForName(combo);
-    if (named != null) return _run(named);
-    for (final op in _opsFor(parseKeySequence(combo))) {
-      await _run(op);
-    }
+    final ops = named == null ? _opsFor(parseKeySequence(combo)) : [named];
+    await _visible('keyboard', () async {
+      for (final op in ops) {
+        await _run(op);
+      }
+    }, keys: combo);
   }
 
   @override
-  Future<SendKeysResult> sendKeys({String? keys, KeyAction? action, KeyTarget target = const KeyTarget()}) async {
-    if (keys == null && action == null) throw ArgumentError('keys or action required');
+  Future<SendKeysResult> sendKeys({
+    String? keys,
+    KeyAction? action,
+    KeyTarget target = const KeyTarget(),
+  }) async {
+    if (keys == null && action == null) {
+      throw ArgumentError('keys or action required');
+    }
     final List<AndroidKeyOp> ops;
     final List<KeyChord> chords;
     final named = keys == null ? null : androidOpForName(keys);
@@ -156,18 +238,24 @@ class AndroidInputControl implements InputControl {
       ops = [androidOpForAction(action!)];
       chords = chordsForAction(action);
     }
-    for (final op in ops) {
-      await _run(op);
-    }
+    await _visible('keyboard', () async {
+      for (final op in ops) {
+        await _run(op);
+      }
+    }, keys: keys ?? action?.wire ?? '');
     String? pkg;
     try {
-      pkg = (await _call<Map<Object?, Object?>>('focusTarget'))?['package'] as String?;
+      pkg =
+          (await _call<Map<Object?, Object?>>('focusTarget'))?['package']
+              as String?;
     } catch (_) {}
     return SendKeysResult(chords: chords, windowClass: pkg, windowTitle: pkg);
   }
 
   @override
-  Future<void> rememberTargetWindow() async {}
+  Future<void> rememberTargetWindow() async {
+    await control?.reset();
+  }
 
   @override
   Future<Point<int>> mouseLocation() async => _last;

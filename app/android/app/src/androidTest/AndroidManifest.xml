@@ -1,0 +1,10 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity
+            android:name="dev.woi.woi.ControlOverlayTestActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:label="Woi control test"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+    </application>
+</manifest>

@@ -102,6 +102,9 @@ enum ContextMeterStyle {
   bar,
   ring,
 
+  /// Minimal input control: dark used-context arc; details appear on interaction.
+  indicator,
+
   /// Input-bar status row: a short bar plus "12k / 32k" (or "37%" when
   /// [ContextMeter.dense]).
   compact,
@@ -144,11 +147,24 @@ class ContextMeter extends StatelessWidget {
 
         final Widget gauge = switch (style) {
           ContextMeterStyle.ring => _Ring(fill: fill, color: color, busy: busy),
+          ContextMeterStyle.indicator => SizedBox.square(
+            key: const ValueKey('context-indicator'),
+            dimension: kTouchTarget,
+            child: Center(
+              child: SizedBox.square(
+                dimension: 24,
+                child: CustomPaint(painter: _RingPainter(fill, WoiColors.text, null)),
+              ),
+            ),
+          ),
           ContextMeterStyle.compact => Row(
             key: const ValueKey('context-compact'),
             mainAxisSize: MainAxisSize.min,
             children: [
-              SizedBox(width: dense ? 28 : 40, child: MeterBar(fill: fill, color: color, busy: busy, height: 4)),
+              SizedBox(
+                width: dense ? 28 : 40,
+                child: MeterBar(fill: fill, color: color, busy: busy, height: 4),
+              ),
               const SizedBox(width: 6),
               Text(
                 busy ? 'compacting…' : (dense ? '${(b.fill * 100).round()}%' : label),
@@ -476,7 +492,10 @@ class BreakdownTable extends StatelessWidget {
         if (b.status != null && !compressing)
           SizedBox(
             width: large ? 250 : 210,
-            child: Text(b.status!, style: body(fs - 0.5, weight: FontWeight.w600, color: WoiColors.amber)),
+            child: Text(
+              b.status!,
+              style: body(fs - 0.5, weight: FontWeight.w600, color: WoiColors.amber),
+            ),
           ),
         if (compressing)
           Text(
@@ -553,7 +572,10 @@ Future<void> showContextDetails(
       showDragHandle: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(WoiRadii.xl))),
       builder: (ctx) => SafeArea(
-        child: Padding(padding: const EdgeInsets.fromLTRB(20, 0, 20, 20), child: content(ctx)),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: content(ctx),
+        ),
       ),
     );
   }

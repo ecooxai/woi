@@ -251,6 +251,7 @@ class DelegationExecutor {
       'The request is transcribed speech: "readme dot md" means README.md. Relative paths resolve against the workspace dir given below; use only the real paths given there. '
       'Show, open, view or play a file: show_file. Never change files with run_bash: read_file, then edit_file '
       '(the user approves a diff). '
+      'Always use the python tool whenever a calculation is needed. Print the result and answer from the actual tool output. '
       'click_screen coordinates are pixels of the attached screenshot. '
       'Keys or shortcuts in another app (copy, paste, select all, "press ctrl c", escape): send_keys; it targets the '
       'app the user was using (never Woi), or `window` when the user names one ("in the xterm" -> window "xterm"). '
@@ -274,7 +275,7 @@ class DelegationExecutor {
   }
 
   /// Tools whose result the model must see before it can act or answer.
-  static const observeTools = {'take_screenshot', 'list_dir', 'read_file', 'read_note', 'inspect_media', 'camera'};
+  static const observeTools = {'python', 'take_screenshot', 'list_dir', 'read_file', 'read_note', 'inspect_media', 'camera'};
 
   /// Read-only shell commands (locating / inspecting files).
   static final _lookupCommand = RegExp(

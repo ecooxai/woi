@@ -12,6 +12,7 @@ import 'media_grab.dart';
 import 'media_viewer.dart';
 import 'screen_capture.dart';
 import 'shell.dart';
+import 'python_runner.dart';
 
 bool _always() => true;
 
@@ -24,6 +25,7 @@ class PlatformServices {
     required this.screen,
     required this.input,
     required this.shell,
+    this.pythonRunner,
     required this.files,
     required this.viewer,
     this.urlOpener,
@@ -41,6 +43,8 @@ class PlatformServices {
   final ScreenCapture screen;
   final InputControl input;
   final Shell shell;
+  final PythonRunner? pythonRunner;
+  PythonRunner get python => pythonRunner ?? ShellPythonRunner(shell);
   final Files files;
   final MediaViewer viewer;
 
@@ -77,6 +81,8 @@ class PlatformServices {
   /// `createAndroidPlatform()` (platform/android/android_platform.dart).
   static PlatformServices forCurrentPlatform() {
     if (Platform.isLinux) return createLinuxPlatform();
-    throw UnsupportedError('Woi currently supports Linux only (${Platform.operatingSystem} port pending).');
+    throw UnsupportedError(
+      'Woi currently supports Linux only (${Platform.operatingSystem} port pending).',
+    );
   }
 }

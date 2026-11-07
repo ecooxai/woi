@@ -83,6 +83,12 @@ class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         if (WoiBridge.activity === this) WoiBridge.activity = null
+        val pendingProjection = projectionCallback
+        val pendingPermission = permCallback
+        projectionCallback = null
+        permCallback = null
+        pendingProjection?.invoke(false)
+        pendingPermission?.invoke(false)
         super.onDestroy()
     }
 
@@ -91,6 +97,7 @@ class MainActivity : FlutterActivity() {
     fun requestPerms(perms: Array<String>, cb: (Boolean) -> Unit) {
         val missing = perms.filter { checkSelfPermission(it) != android.content.pm.PackageManager.PERMISSION_GRANTED }
         if (missing.isEmpty()) return cb(true)
+        if (permCallback != null) return cb(false)
         permCallback = cb
         requestPermissions(missing.toTypedArray(), REQ_PERMS)
     }
@@ -108,6 +115,7 @@ class MainActivity : FlutterActivity() {
 
     fun requestProjection(cb: (Boolean) -> Unit) {
         if (WoiScreen.isSharing()) return cb(true)
+        if (projectionCallback != null) return cb(false)
         val mpm = getSystemService(MediaProjectionManager::class.java)
         projectionCallback = cb
         @Suppress("DEPRECATION")

@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:woi/core/app_controller.dart';
@@ -19,6 +18,7 @@ import 'package:woi/ui/widgets/glass.dart';
 import 'package:woi/ui/theme.dart';
 import 'package:woi/ui/widgets/tab_strip.dart';
 import 'package:woi/ui/widgets/voice_status.dart';
+import 'package:woi/ui/widgets/input_bar.dart';
 
 import '../fakes/fakes.dart';
 
@@ -35,9 +35,10 @@ class _Env {
   ScriptedBackend? backend;
   Compressor? compressor;
 
-  Future<void> start(WidgetTester t) async {
+  Future<void> start(WidgetTester t, {AppSettings? savedSettings}) async {
     await t.runAsync(() async {
       fp = await FakePlatform.create();
+      if (savedSettings != null) await SettingsStore(fp.services.paths.settingsFile).save(savedSettings);
       c = AppController(
         platform: fp.services,
         confirmations: FakeConfirmations(),
@@ -185,26 +186,22 @@ void main() {
         'input-bar',
         'composer-field',
         'mic-button',
-        'voice-indicator',
-        'voice-label',
-        'connection-status',
-        'context-compact',
-        'mic-mode-handsFree',
-        'mic-mode-pushToTalk',
-        'mic-mode-muted',
+        'voice-status-button',
+        'context-indicator',
+        'composer-controls',
       ]) {
         expect(find.byKey(ValueKey(k)), findsOneWidget, reason: k);
       }
       // The status lives inside the input bar.
       final bar = find.byKey(const ValueKey('input-bar'));
-      for (final k in ['voice-indicator', 'connection-status', 'context-compact', 'mic-mode-muted']) {
+      for (final k in ['voice-status-button', 'context-indicator', 'mic-button', 'send']) {
         expect(
           find.descendant(of: bar, matching: find.byKey(ValueKey(k))),
           findsOneWidget,
           reason: k,
         );
       }
-      expect(find.textContaining('gpt-live-1.1'), findsOneWidget);
+      expect(find.descendant(of: bar, matching: find.textContaining('gpt-live')), findsNothing);
       // No "Woi" title: the tabs start at the left edge, in order.
       expect(find.text('Woi'), findsNothing);
       // Wide: no Chat tab (the chat is docked on the right).
@@ -225,12 +222,12 @@ void main() {
       }
 
       // Mic mode toggle changes the setting.
-      await t.tap(find.byKey(const ValueKey('mic-mode-muted')));
+      await t.tap(find.byKey(const ValueKey('mic-button')));
       await _settle(t);
       expect(env.c.settings.micMode, MicMode.muted);
 
       // Tapping the meter shows the breakdown.
-      await t.tap(find.byKey(const ValueKey('context-compact')));
+      await t.tap(find.byKey(const ValueKey('context-indicator')));
       await t.pump(const Duration(milliseconds: 500));
       expect(find.textContaining('Compact now'), findsWidgets);
       await t.sendKeyEvent(LogicalKeyboardKey.escape);
@@ -252,36 +249,50 @@ void main() {
       env.c.compactNow();
       await t.pump(const Duration(milliseconds: 100));
       expect(env.c.contextManager.compressing, isTrue);
-      expect(find.text('Compacting memory…'), findsOneWidget);
+      expect(t.widget<VoiceStatusButton>(find.byType(VoiceStatusButton)).mode, VoiceMode.compacting);
       gated.gate.completeError(Exception('Responses API error 429: The usage limit has been reached'));
       await _settle(t);
       expect(env.c.contextManager.compressing, isFalse);
-      expect(find.text('Compacting memory…'), findsNothing);
+      expect(t.widget<VoiceStatusButton>(find.byType(VoiceStatusButton)).mode, isNot(VoiceMode.compacting));
       await env.stop(t);
     });
 
-    testWidgets('phone: 48dp targets and a mic-mode menu', (t) async {
+    testWidgets('saved legacy PTT starts visibly off and one mic tap enables listening', (t) async {
+      final env = _Env();
+      await env.start(t, savedSettings: AppSettings.fromJson({'micMode': 'pushToTalk'}));
+      await _pumpHome(t, env.c, const Size(400, 860));
+      expect(env.c.settings.micMode, MicMode.pushToTalk);
+      expect(t.widget<VoiceStatusButton>(find.byType(VoiceStatusButton)).mode, VoiceMode.idle);
+      final mic = find.byKey(const ValueKey('mic-button'));
+      expect(find.descendant(of: mic, matching: find.byIcon(Icons.mic_off_rounded)), findsOneWidget);
+      await t.tap(mic);
+      await _settle(t);
+      expect(env.c.settings.micMode, MicMode.handsFree);
+      expect(t.widget<VoiceStatusButton>(find.byType(VoiceStatusButton)).mode, VoiceMode.listening);
+      expect(find.descendant(of: mic, matching: find.byIcon(Icons.mic_rounded)), findsOneWidget);
+      expect(t.takeException(), isNull);
+      await env.stop(t);
+    });
+
+    testWidgets('phone: compact controls keep 48dp targets and tap toggles microphone', (t) async {
       final env = _Env();
       await env.start(t);
       await _pumpHome(t, env.c, const Size(400, 860));
-
-      expect(find.byKey(const ValueKey('mic-mode-menu')), findsOneWidget);
+      expect(find.byKey(const ValueKey('mic-mode-menu')), findsNothing);
       expect(find.byKey(const ValueKey('split-toggle')), findsNothing);
-      for (final k in ['mic-mode-menu', 'mic-button', 'note-new', 'note-tab-more', 'context-compact']) {
+      for (final k in ['voice-status-button', 'mic-button', 'note-new', 'note-tab-more', 'context-indicator', 'send']) {
         final f = find.byKey(ValueKey(k));
-        final tappable = find.ancestor(of: f, matching: find.byType(GestureDetector));
-        final s = t.getSize(k == 'context-compact' ? tappable.first : f);
-        expect(s.height, greaterThanOrEqualTo(kTouchTarget), reason: k);
-        expect(s.width, greaterThanOrEqualTo(kTouchTarget), reason: k);
+        final size = t.getSize(f);
+        expect(size.height, greaterThanOrEqualTo(kTouchTarget), reason: k);
+        expect(size.width, greaterThanOrEqualTo(kTouchTarget), reason: k);
       }
-      await t.tap(find.byKey(const ValueKey('mic-mode-menu')));
-      await t.pump();
-      await t.pump(const Duration(milliseconds: 500));
-      await t.tap(find.text('Push-to-talk').last);
+      await t.tap(find.byKey(const ValueKey('mic-button')));
       await _settle(t);
-      expect(env.c.settings.micMode, MicMode.pushToTalk);
+      expect(env.c.settings.micMode, MicMode.muted);
+      await t.tap(find.byKey(const ValueKey('mic-button')));
+      await _settle(t);
+      expect(env.c.settings.micMode, MicMode.handsFree);
       expect(t.takeException(), isNull);
-
       await env.stop(t);
     });
 
@@ -294,23 +305,19 @@ void main() {
         final strip = find.byType(HomeTabs);
         expect(t.getTopLeft(strip).dx, lessThan(8));
         expect(t.getTopRight(strip).dx, lessThanOrEqualTo(size.width - kTouchTarget));
-        // The status row is readable: the voice state is not ellipsized
-        // (it was "Mi…"), and the longest phone label fits too; the
-        // connection is a dot with the model in its tooltip.
-        final label = find.byKey(const ValueKey('voice-label'));
-        expect(t.renderObject<RenderParagraph>(label).didExceedMaxLines, isFalse);
-        // Room for the indicator and an 11-character label in the 12 px
-        // body font (~100 px; the test font's square glyphs are wider).
-        final left = find.ancestor(of: label, matching: find.byType(Expanded)).first;
-        final chip = find.byKey(const ValueKey('connection-status'));
-        expect(t.getSize(left).width - t.getSize(chip).width, greaterThanOrEqualTo(120), reason: '${size.width} px');
-        for (final m in VoiceMode.values) {
-          expect(voiceModeShortLabel(m).length, lessThanOrEqualTo(11), reason: m.name);
-        }
-        expect(find.textContaining('realtime'), findsNothing);
+        // Icons share one bottom row, with send at the far right.
+        final status = find.byKey(const ValueKey('voice-status-button'));
+        final mic = find.byKey(const ValueKey('mic-button'));
+        final send = find.byKey(const ValueKey('send'));
+        final field = find.byKey(const ValueKey('composer-field'));
+        expect(find.byKey(const ValueKey('voice-label')), findsNothing);
+        expect(find.byKey(const ValueKey('connection-status')), findsNothing);
+        expect(t.getCenter(status).dy, closeTo(t.getCenter(send).dy, 1));
+        expect(t.getCenter(mic).dy, closeTo(t.getCenter(send).dy, 1));
+        expect(t.getTopLeft(send).dx, greaterThan(t.getTopLeft(mic).dx));
+        expect(t.getBottomLeft(field).dy, lessThanOrEqualTo(t.getTopLeft(send).dy));
         expect(find.textContaining('gpt-live'), findsNothing);
-        final tip = find.ancestor(of: find.byKey(const ValueKey('connection-status')), matching: find.byType(Tooltip));
-        expect(t.widget<Tooltip>(tip.first).message, contains('Model: '));
+        expect(find.byType(VoiceStatusButton), findsOneWidget);
         // Only the selected tab shows its label.
         expect(find.descendant(of: strip, matching: find.text('Note')), findsOneWidget);
         expect(find.descendant(of: strip, matching: find.text('Chat')), findsNothing);
@@ -548,11 +555,7 @@ void main() {
         expect(find.descendant(of: group, matching: find.byType(DropdownButtonFormField<String>)), findsNothing);
       }
       expect(find.byType(Radio<AppTheme>), findsNWidgets(3));
-      await t.scrollUntilVisible(
-        find.byKey(const ValueKey('choices-backend')),
-        -200,
-        scrollable: _settingsList,
-      );
+      await t.scrollUntilVisible(find.byKey(const ValueKey('choices-backend')), -200, scrollable: _settingsList);
       expect(find.byType(Radio<BackendMode>), findsNWidgets(BackendMode.values.length));
 
       final list = _settingsList;
@@ -669,10 +672,9 @@ void main() {
 }
 
 /// The settings list (the search field above it has a Scrollable too).
-final _settingsList = find.descendant(
-  of: find.byKey(const ValueKey('settings-list')),
-  matching: find.byType(Scrollable),
-).first;
+final _settingsList = find
+    .descendant(of: find.byKey(const ValueKey('settings-list')), matching: find.byType(Scrollable))
+    .first;
 
 Future<void> _tapInSettings(WidgetTester t, Finder f) async {
   await t.scrollUntilVisible(f, 200, scrollable: _settingsList);

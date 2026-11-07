@@ -50,7 +50,13 @@ class MicModeSelector extends StatelessWidget {
             compact
                 ? _Segment(mode: m, selected: m == mode, onTap: () => onChanged(m), compact: true, size: itemSize)
                 : Expanded(
-                    child: _Segment(mode: m, selected: m == mode, onTap: () => onChanged(m), compact: false, size: itemSize),
+                    child: _Segment(
+                      mode: m,
+                      selected: m == mode,
+                      onTap: () => onChanged(m),
+                      compact: false,
+                      size: itemSize,
+                    ),
                   ),
         ],
       ),
@@ -110,7 +116,11 @@ class _Segment extends StatelessWidget {
                             mode.label,
                             softWrap: false,
                             overflow: TextOverflow.fade,
-                            style: body(13, weight: FontWeight.w500, color: selected ? WoiColors.text : WoiColors.textDim),
+                            style: body(
+                              13,
+                              weight: FontWeight.w500,
+                              color: selected ? WoiColors.text : WoiColors.textDim,
+                            ),
                           ),
                         ),
                       ],
@@ -123,9 +133,9 @@ class _Segment extends StatelessWidget {
   }
 }
 
-/// Round mic button. Hands-free/muted: tap toggles the mic. Push-to-talk:
-/// press and hold. Static: the live level is shown by the voice indicator.
-class MicButton extends StatelessWidget {
+/// One microphone control: tap toggles listening, hold records a message.
+/// A cancelled gesture never sends, including route disposal and pointer loss.
+class MicButton extends StatefulWidget {
   const MicButton({
     super.key,
     required this.mode,
@@ -133,6 +143,7 @@ class MicButton extends StatelessWidget {
     required this.onModeChanged,
     required this.onPttDown,
     required this.onPttUp,
+    this.onPttCancel,
     this.level,
     this.size = kTouchTarget,
     this.enabled = true,
@@ -143,62 +154,117 @@ class MicButton extends StatelessWidget {
   final ValueChanged<MicMode> onModeChanged;
   final VoidCallback onPttDown;
   final VoidCallback onPttUp;
-
-  /// Unused (kept for API compatibility).
+  final VoidCallback? onPttCancel;
   final ValueListenable<double>? level;
   final double size;
   final bool enabled;
 
-  bool get _live => mode == MicMode.handsFree || (mode == MicMode.pushToTalk && held);
+  @override
+  State<MicButton> createState() => _MicButtonState();
+}
+
+class _MicButtonState extends State<MicButton> {
+  bool _holding = false;
+
+  void _cancel() {
+    if (!_holding) return;
+    _holding = false;
+    widget.onPttCancel?.call();
+  }
+
+  @override
+  void didUpdateWidget(MicButton old) {
+    super.didUpdateWidget(old);
+    if (!widget.enabled) _cancel();
+  }
+
+  @override
+  void dispose() {
+    _cancel();
+    super.dispose();
+  }
+
+  void _toggle() {
+    if (!widget.enabled) return;
+    widget.onModeChanged(widget.mode == MicMode.handsFree ? MicMode.muted : MicMode.handsFree);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final ptt = mode == MicMode.pushToTalk;
-    final muted = mode == MicMode.muted;
-    final label = switch (mode) {
-      MicMode.handsFree => 'Microphone on. Tap to mute',
-      MicMode.muted => 'Microphone muted. Tap to unmute',
-      MicMode.pushToTalk => held ? 'Listening. Release to send' : 'Hold to talk',
-    };
-    final accent = muted ? WoiColors.textDim : WoiColors.cyan;
-    final face = AnimatedContainer(
-      key: const ValueKey('mic-button'),
-      duration: WoiMotion.fast,
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: _live ? WoiColors.cyan : (ptt ? WoiColors.cyan.withValues(alpha: 0.10) : WoiColors.glass),
-        border: Border.all(color: _live ? WoiColors.cyan : WoiColors.strokeStrong),
-      ),
-      child: Icon(
-        muted ? Icons.mic_off_rounded : (_live ? Icons.mic_rounded : Icons.mic_none_rounded),
-        size: size * 0.46,
-        color: !enabled ? WoiColors.textFaint : (_live ? WoiColors.onAccent : accent),
-      ),
-    );
-
+    final held = widget.held || _holding;
+    final listening = widget.mode == MicMode.handsFree;
+    final live = listening || held;
+    final label = held
+        ? 'Recording microphone and system audio. Release to send'
+        : listening
+        ? 'Microphone on. Click to turn off'
+        : 'Microphone off. Click to turn on';
     return Semantics(
       button: true,
-      enabled: enabled,
+      enabled: widget.enabled,
       label: label,
+      hint: 'Hold to record microphone and system audio, release to send',
       excludeSemantics: true,
-      onTap: ptt ? null : () => onModeChanged(muted ? MicMode.handsFree : MicMode.muted),
+      onTap: widget.enabled ? _toggle : null,
       child: Tooltip(
-        message: ptt ? 'Hold to talk (Space)' : label,
+        message: '$label\nHold to record microphone and system audio; release to send.',
         child: MouseRegion(
-          cursor: enabled ? SystemMouseCursors.click : MouseCursor.defer,
-          child: ptt
-              ? Listener(
-                  onPointerDown: enabled ? (_) => onPttDown() : null,
-                  onPointerUp: enabled ? (_) => onPttUp() : null,
-                  onPointerCancel: enabled ? (_) => onPttUp() : null,
-                  child: face,
-                )
-              : GestureDetector(
-                  onTap: enabled ? () => onModeChanged(muted ? MicMode.handsFree : MicMode.muted) : null,
-                  child: face,
+          cursor: widget.enabled ? SystemMouseCursors.click : MouseCursor.defer,
+          child: Listener(
+            onPointerCancel: (_) {
+              _cancel();
+              if (mounted) setState(() {});
+            },
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: widget.enabled ? _toggle : null,
+              onLongPressStart: !widget.enabled
+                  ? null
+                  : (_) {
+                      setState(() => _holding = true);
+                      widget.onPttDown();
+                    },
+              onLongPressEnd: !widget.enabled
+                  ? null
+                  : (_) {
+                      if (!_holding) return;
+                      setState(() => _holding = false);
+                      widget.onPttUp();
+                    },
+              onLongPressCancel: () {
+                _cancel();
+                if (mounted) setState(() {});
+              },
+              child: AnimatedContainer(
+                key: const ValueKey('mic-button'),
+                duration: WoiMotion.fast,
+                width: widget.size,
+                height: widget.size,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: held
+                      ? WoiColors.red
+                      : live
+                      ? WoiColors.cyan
+                      : WoiColors.glass,
+                  border: Border.all(color: live ? WoiColors.cyan : WoiColors.strokeStrong),
                 ),
+                child: Icon(
+                  held
+                      ? Icons.graphic_eq_rounded
+                      : listening
+                      ? Icons.mic_rounded
+                      : Icons.mic_off_rounded,
+                  size: widget.size * 0.46,
+                  color: !widget.enabled
+                      ? WoiColors.textFaint
+                      : live
+                      ? WoiColors.onAccent
+                      : WoiColors.textDim,
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -232,7 +298,10 @@ class PushToTalkButton extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(held ? Icons.mic_rounded : Icons.mic_none_rounded, color: held ? WoiColors.onAccent : WoiColors.cyan),
+              Icon(
+                held ? Icons.mic_rounded : Icons.mic_none_rounded,
+                color: held ? WoiColors.onAccent : WoiColors.cyan,
+              ),
               const SizedBox(width: 10),
               Text(
                 held ? 'Listening… release to send' : 'Hold to talk  ·  Space',
@@ -260,6 +329,8 @@ class Composer extends StatefulWidget {
     this.disabledHint = 'Connecting…',
     this.trailing,
     this.framed = true,
+    this.actionsBelow = false,
+    this.actionsLeading,
   });
   final ValueChanged<String> onSend;
   final VoidCallback? onStop;
@@ -276,6 +347,10 @@ class Composer extends StatefulWidget {
 
   /// Draws its own bordered field; false inside a surface that already has one.
   final bool framed;
+
+  /// A single controls row below the text field, with send at the far right.
+  final bool actionsBelow;
+  final Widget? actionsLeading;
 
   @override
   State<Composer> createState() => _ComposerState();
@@ -344,62 +419,79 @@ class _ComposerState extends State<Composer> {
   @override
   Widget build(BuildContext context) {
     final empty = _ctrl.text.trim().isEmpty;
-    final row = Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        Expanded(
-          child: TextField(
-            key: const ValueKey('composer-field'),
-            controller: _ctrl,
-            focusNode: _focus,
-            enabled: widget.enabled,
-            minLines: 1,
-            maxLines: 6,
-            style: body(15),
-            textInputAction: TextInputAction.send,
-            keyboardType: TextInputType.multiline,
-            onSubmitted: (_) => _send(),
-            onEditingComplete: () {}, // keep focus after sending
-            onChanged: (_) => setState(() {}),
-            decoration: InputDecoration(
-              hintText: widget.enabled ? (widget.hint ?? 'Type a message…') : widget.disabledHint,
-              filled: false,
-              isDense: true,
-              border: InputBorder.none,
-              enabledBorder: InputBorder.none,
-              focusedBorder: InputBorder.none,
-              disabledBorder: InputBorder.none,
-              contentPadding: const EdgeInsets.fromLTRB(10, 14, 6, 14),
-            ),
-          ),
-        ),
-        const SizedBox(width: 4),
-        widget.showStop && empty
-            ? IconButton.filled(
-                key: const ValueKey('stop'),
-                tooltip: 'Stop (Esc)',
-                style: IconButton.styleFrom(
-                  backgroundColor: WoiColors.red.withValues(alpha: 0.12),
-                  foregroundColor: WoiColors.red,
-                  minimumSize: const Size(kTouchTarget, kTouchTarget),
-                ),
-                onPressed: widget.onStop,
-                icon: const Icon(Icons.stop_rounded),
-              )
-            : IconButton.filled(
-                key: const ValueKey('send'),
-                tooltip: 'Send (Enter)',
-                style: IconButton.styleFrom(
-                  minimumSize: const Size(kTouchTarget, kTouchTarget),
-                  disabledBackgroundColor: WoiColors.glassStrong,
-                  disabledForegroundColor: WoiColors.textFaint,
-                ),
-                onPressed: empty || !widget.enabled ? null : _send,
-                icon: const Icon(Icons.arrow_upward_rounded),
-              ),
-        if (widget.trailing != null) ...[const SizedBox(width: 6), widget.trailing!],
-      ],
+    final field = TextField(
+      key: const ValueKey('composer-field'),
+      controller: _ctrl,
+      focusNode: _focus,
+      enabled: widget.enabled,
+      minLines: 1,
+      maxLines: 6,
+      style: body(15),
+      textInputAction: TextInputAction.send,
+      keyboardType: TextInputType.multiline,
+      onSubmitted: (_) => _send(),
+      onEditingComplete: () {}, // keep focus after sending
+      onChanged: (_) => setState(() {}),
+      decoration: InputDecoration(
+        hintText: widget.enabled ? (widget.hint ?? 'Type a message…') : widget.disabledHint,
+        filled: false,
+        isDense: true,
+        border: InputBorder.none,
+        enabledBorder: InputBorder.none,
+        focusedBorder: InputBorder.none,
+        disabledBorder: InputBorder.none,
+        contentPadding: const EdgeInsets.fromLTRB(10, 14, 6, 14),
+      ),
     );
+    final send = widget.showStop && empty
+        ? IconButton.filled(
+            key: const ValueKey('stop'),
+            tooltip: 'Stop (Esc)',
+            style: IconButton.styleFrom(
+              backgroundColor: WoiColors.red.withValues(alpha: 0.12),
+              foregroundColor: WoiColors.red,
+              minimumSize: const Size(kTouchTarget, kTouchTarget),
+            ),
+            onPressed: widget.onStop,
+            icon: const Icon(Icons.stop_rounded),
+          )
+        : IconButton.filled(
+            key: const ValueKey('send'),
+            tooltip: 'Send (Enter)',
+            style: IconButton.styleFrom(
+              minimumSize: const Size(kTouchTarget, kTouchTarget),
+              disabledBackgroundColor: WoiColors.glassStrong,
+              disabledForegroundColor: WoiColors.textFaint,
+            ),
+            onPressed: empty || !widget.enabled ? null : _send,
+            icon: const Icon(Icons.arrow_upward_rounded),
+          );
+    final row = widget.actionsBelow
+        ? Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              field,
+              Row(
+                key: const ValueKey('composer-controls'),
+                children: [
+                  if (widget.actionsLeading != null) widget.actionsLeading!,
+                  const Spacer(),
+                  if (widget.trailing != null) ...[widget.trailing!, const SizedBox(width: 6)],
+                  send,
+                ],
+              ),
+            ],
+          )
+        : Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(child: field),
+              const SizedBox(width: 4),
+              send,
+              if (widget.trailing != null) ...[const SizedBox(width: 6), widget.trailing!],
+            ],
+          );
     if (!widget.framed) return row;
     return Container(
       padding: const EdgeInsets.all(4),

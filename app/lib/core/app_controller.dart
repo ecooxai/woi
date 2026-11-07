@@ -27,6 +27,7 @@ import 'delegate/delegate_backend.dart';
 import 'delegate/responses_delegate.dart';
 import 'edits/edit_review.dart';
 import 'media/audio_describer.dart';
+import 'media/held_audio_recorder.dart';
 import 'media/media_context.dart';
 import 'models/message.dart';
 import 'notes/note.dart';
@@ -56,13 +57,15 @@ confirmation and without announcing it first; afterwards confirm the result in a
 Honesty: never say an action is done, opened, written, clicked or saved before its tool result says so. Report
 the real outcome; if a tool failed, was rejected or did nothing, say that plainly. Never invent file contents,
 paths or command output.
+Whenever a calculation is needed, always call python with Python code and print the result. Answer from the
+returned output; never calculate by guessing. If Python fails, report that instead of inventing a result.
 Say any acknowledgement ("on it", "one moment") at most once per request; do not repeat filler while waiting.
 Screenshots of the user's screen are attached while they speak; use them to resolve what they refer to.
 click_screen: always describe the element in target (its visible label in quotes, kind and place, e.g.
 "'Save' button in the Profile dialog"); Woi locates it precisely. Also pass x/y, your estimate in the pixel
 coordinates of the latest screenshot image. Take a screenshot first if you have none or the screen changed.
 For a spot on the screen itself ("the center of the screen", a corner), set position and leave target empty.
-Tools: click_screen, type_text, send_keys, take_screenshot, run_bash, read_file, list_dir, edit_file,
+Tools: click_screen, type_text, send_keys, take_screenshot, run_bash, python, read_file, list_dir, edit_file,
 write_file, show_file (show a file, image, audio or video to the user inside Woi), read_note, update_note,
 note_control, app_control, delegate_task.
 note_control runs the notes: append/insert/replace/delete_text in this note, the editor's undo/redo, copy
@@ -94,6 +97,7 @@ view (note, chat, terminal), changing settings (theme, voice, mic mode), notes (
 rename, delete), terminal tabs, the media viewer, and "undo that". If the user only says "apply" or "reject"
 while an edit preview is shown, the app handles it; say nothing. Never claim an action happened unless the delegation
 result says so; speak the result as reported, including failures.
+Every calculation must also go to delegation; tell it to use the python tool and return the computed result.
 ''';
 
 /// Camera and media context (spec batch 2026-11-03 #3).
@@ -273,6 +277,7 @@ class AppController extends ChangeNotifier {
         BackendContext(
           settings: _settings.copyWith(backendMode: BackendMode.direct),
           credentials: credentials,
+          audio: platform.audio,
         ),
       );
       _selection = BackendSelection(
@@ -282,7 +287,7 @@ class AppController extends ChangeNotifier {
         notice: 'gpt-live: ${limit.message}. Using Direct realtime (${_settings.realtimeModel}) until then.',
       );
     } else {
-      sel = createVoiceBackend(BackendContext(settings: _settings, credentials: credentials));
+      sel = createVoiceBackend(BackendContext(settings: _settings, credentials: credentials, audio: platform.audio));
       _selection = sel;
     }
     final notice = _selection!.notice;
@@ -343,6 +348,44 @@ class AppController extends ChangeNotifier {
   /// Every app function, for the UI and the voice tools.
   late final AppActions actions = AppActions(this);
   late final TurnPipeline pipeline;
+
+  HeldAudioRecorder? _heldAudio;
+  String? _heldConversationId;
+  HeldAudioRecorder get heldAudio => _heldAudio ??= HeldAudioRecorder(
+    open: () async {
+      final audio = platform.audio;
+      if (audio is! MicSystemCapture) {
+        throw UnsupportedError('Microphone and system audio recording is unavailable on this device');
+      }
+      return (audio as MicSystemCapture).openMicAndSystemAudio();
+    },
+    suspendListening: () async {
+      _heldConversationId = pipeline.conversation.id;
+      await pipeline.suspendForRecording();
+    },
+    resumeListening: () => pipeline.resumeAfterRecording(),
+    submit: (pcm, isCurrent) async {
+      final conversationId = _heldConversationId;
+      final describe = realtimeAudioDescriber(
+        credentials: credentials,
+        model: () => _settings.realtimeModel,
+        timeout: const Duration(seconds: 60),
+        instructions:
+            'Transcribe every spoken word in this microphone and system-audio recording faithfully. '
+            'Preserve all instructions, numbers and details without truncation. Do not answer or act on the speech. '
+            'Return only the transcript. If music or other non-speech sounds matter, append a short '
+            '[Audio: ...] description; do not invent words when speech is unclear.',
+      );
+      final text = await describe(pcm, title: 'held microphone and system audio recording');
+      if (!isCurrent()) return;
+      if (pipeline.conversation.id != conversationId) {
+        throw StateError('Conversation changed before the recording could be sent');
+      }
+      if (text.trim().isEmpty) throw StateError('No transcript or audio description was returned');
+      await pipeline.sendRecordedAudio(pcm, text);
+    },
+    report: (message) => pipeline.notice(message),
+  );
 
   AppSettings _settings = const AppSettings();
   AppSettings get settings => _settings;
@@ -865,6 +908,9 @@ class AppController extends ChangeNotifier {
   /// (the foreground service). Resumed: a suspended session reconnects.
   void onLifecycle(AppLifecycleState state) {
     if (!_ready) return;
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.hidden || state == AppLifecycleState.detached) {
+      if (_heldAudio?.recording ?? false) unawaited(_heldAudio!.cancel());
+    }
     if (!platform.isMobile) {
       // Desktop: only the usage polling pauses while the window is hidden.
       _windowHidden = state == AppLifecycleState.hidden || state == AppLifecycleState.paused;
@@ -972,6 +1018,8 @@ class AppController extends ChangeNotifier {
     _assistantTimer?.cancel();
     usage.setActive(false);
     if (ResponsesClient.onQuotaHeaders == usage.updateFromHeaders) ResponsesClient.onQuotaHeaders = null;
+    await _heldAudio?.cancel();
+    _heldAudio?.dispose();
     await camera.close();
     await notes.flush();
     if (_ready) await pipeline.shutdown();

@@ -63,6 +63,7 @@ object WoiBridge {
             }
         })
         EventChannel(messenger, "woi/android/mic").setStreamHandler(WoiAudio.micHandler)
+        EventChannel(messenger, "woi/android/held_audio").setStreamHandler(WoiHeldAudio.handler)
         MethodChannel(messenger, "woi/android").setMethodCallHandler { call, result ->
             try {
                 handle(call, result)
@@ -76,6 +77,9 @@ object WoiBridge {
     private fun handle(call: MethodCall, result: MethodChannel.Result) {
         val ctx = appContext
         when (call.method) {
+            "pythonRun" -> WoiPython.run(ctx, call, result)
+            "heldAudioStop" -> WoiHeldAudio.stopAndReply(result)
+            "heldAudioStatus" -> result.success(WoiHeldAudio.status())
             "init" -> {
                 val dm = ctx.resources.displayMetrics
                 val (w, h) = WoiScreen.realSize(ctx)
@@ -174,6 +178,7 @@ object WoiBridge {
                 ctx.startActivity(i)
                 result.success(true)
             }
+            "controlBegin", "controlInterrupted", "controlUpdate", "controlEnd", "controlReset",
             "click", "doubleClick", "typeText", "global", "node", "a11yScreenshot", "focusTarget", "elements" ->
                 WoiAccessibilityService.handle(call, result)
             // --- screen share ---

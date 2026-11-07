@@ -21,6 +21,11 @@
         android:label="Woi"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <service
+            android:name=".WoiPythonService"
+            android:exported="false"
+            android:process=":woi_python"
+            android:stopWithTask="true" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

@@ -1,4 +1,9 @@
 import 'dart:math';
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import '../control_feedback.dart';
 
 import '../input_control.dart';
 import 'exec_util.dart';
@@ -6,7 +11,11 @@ import 'x11_key_target.dart';
 
 /// X11 input injection through xdotool.
 class LinuxInputControl implements InputControl {
-  LinuxInputControl({X11Windows? windows}) : targets = KeyTargetResolver(windows ?? XpropWindows());
+  LinuxInputControl({X11Windows? windows, this.control})
+    : targets = KeyTargetResolver(windows ?? XpropWindows());
+
+  final ControlGuard? control;
+  ControlLease? _lease;
 
   /// Default `send_keys` target selection (active / remembered non-Woi window).
   final KeyTargetResolver targets;
@@ -14,8 +23,64 @@ class LinuxInputControl implements InputControl {
   String get _xdo => which('xdotool') ?? (throw MissingTool(['xdotool']));
 
   Future<String> _run(List<String> args) async {
-    final r = await runChecked(_xdo, args, environment: x11Env());
-    return '${r.stdout}';
+    final lease = _lease;
+    if (lease == null) {
+      final r = await runChecked(_xdo, args, environment: x11Env());
+      return '${r.stdout}';
+    }
+    await lease.check();
+    final process = await Process.start(_xdo, args, environment: x11Env());
+    final stdout = process.stdout.transform(utf8.decoder).join();
+    final stderr = process.stderr.transform(utf8.decoder).join();
+    final exit = process.exitCode;
+    final code = await Future.any<int?>([
+      exit,
+      lease.whenCancelled.then((_) => null),
+    ]);
+    if (code == null || lease.cancelled) {
+      process.kill(ProcessSignal.sigkill);
+      await exit;
+      await Future.wait([stdout, stderr]);
+      // Do not restore user's modifiers after a takeover.
+      try {
+        await runChecked(_xdo, [
+          'keyup',
+          ...typeReleases,
+        ], environment: x11Env());
+      } catch (_) {
+        // Preserve takeover even if the target/display disappeared.
+      }
+      throw const ControlInterrupted();
+    }
+    final output = await stdout;
+    final error = await stderr;
+    if (code != 0) throw CommandFailed('xdotool', code, error);
+    await lease.check();
+    return output;
+  }
+
+  Future<T> _visible<T>(
+    String kind,
+    Future<T> Function() action, {
+    String keys = '',
+    int? x,
+    int? y,
+  }) async {
+    if (control == null) return action();
+    return control!.run(
+      kind,
+      (lease) async {
+        _lease = lease;
+        try {
+          return await action();
+        } finally {
+          _lease = null;
+        }
+      },
+      keys: keys,
+      x: x,
+      y: y,
+    );
   }
 
   static String _button(MouseButton b) => switch (b) {
@@ -25,20 +90,64 @@ class LinuxInputControl implements InputControl {
   };
 
   @override
-  Future<void> moveMouse(int x, int y) => _run(['mousemove', '--sync', '$x', '$y']);
+  Future<void> moveMouse(int x, int y) => _visible(
+    'pointer',
+    () async {
+      await _run(['mousemove', '--sync', '$x', '$y']);
+    },
+    x: x,
+    y: y,
+  );
 
   @override
   Future<void> click(int x, int y, {MouseButton button = MouseButton.left}) =>
-      _run(['mousemove', '--sync', '$x', '$y', 'click', _button(button)]);
+      _visible(
+        'pointer',
+        () async {
+          await _run([
+            'mousemove',
+            '--sync',
+            '$x',
+            '$y',
+            'click',
+            _button(button),
+          ]);
+        },
+        x: x,
+        y: y,
+      );
 
   @override
-  Future<void> doubleClick(int x, int y, {MouseButton button = MouseButton.left}) =>
-      _run(['mousemove', '--sync', '$x', '$y', 'click', '--repeat', '2', '--delay', '80', _button(button)]);
+  Future<void> doubleClick(
+    int x,
+    int y, {
+    MouseButton button = MouseButton.left,
+  }) => _visible(
+    'pointer',
+    () async {
+      await _run([
+        'mousemove',
+        '--sync',
+        '$x',
+        '$y',
+        'click',
+        '--repeat',
+        '2',
+        '--delay',
+        '80',
+        _button(button),
+      ]);
+    },
+    x: x,
+    y: y,
+  );
 
   @override
   Future<void> typeText(String text) async {
     if (text.isEmpty) return;
-    await _run(typeArgs(text));
+    await _visible('keyboard', () async {
+      await _run(typeArgs(text));
+    }, keys: text);
   }
 
   /// Modifier keys released (and not restored) before typing.
@@ -59,24 +168,57 @@ class LinuxInputControl implements InputControl {
   /// around the text (re-pressing them afterwards), which injected stray key
   /// events into the target (QA saw `2⌫Hello, world`) and can leave a button
   /// stuck after a click. Plain key-ups of the modifiers give clean text.
-  static List<String> typeArgs(String text) => ['keyup', ...typeReleases, 'type', '--delay', '12', '--', text];
+  static List<String> typeArgs(String text) => [
+    'keyup',
+    ...typeReleases,
+    'type',
+    '--delay',
+    '12',
+    '--',
+    text,
+  ];
 
   @override
   Future<void> keyCombo(String combo) async {
-    final keys = combo.trim().split(RegExp(r'\s+')).where((s) => s.isNotEmpty).map(normalizeKeyCombo).toList();
+    final keys = combo
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((s) => s.isNotEmpty)
+        .map(normalizeKeyCombo)
+        .toList();
     if (keys.isEmpty) return;
-    await _run(['key', '--clearmodifiers', ...keys]);
+    await _visible('keyboard', () async {
+      await _run(['key', '--clearmodifiers', ...keys]);
+    }, keys: combo);
   }
 
   @override
-  Future<SendKeysResult> sendKeys({String? keys, KeyAction? action, KeyTarget target = const KeyTarget()}) async {
-    if (keys == null && action == null) throw ArgumentError('keys or action required');
+  Future<SendKeysResult> sendKeys({
+    String? keys,
+    KeyAction? action,
+    KeyTarget target = const KeyTarget(),
+  }) async {
+    if (keys == null && action == null) {
+      throw ArgumentError('keys or action required');
+    }
     final List<KeyChord>? parsed = keys == null ? null : parseKeySequence(keys);
     final (win, active) = await targets.resolve(target);
     final chords = parsed ?? chordsForAction(action!, windowClass: win.wmClass);
     final needsFocus = active?.id != win.id;
-    final restore = needsFocus && active != null && targets.isWoi(active) && shouldRestoreFocus(chords);
-    await _run(sendKeysArgs(chords, activate: needsFocus ? win.id : null, restore: restore ? active.id : null));
+    final restore =
+        needsFocus &&
+        active != null &&
+        targets.isWoi(active) &&
+        shouldRestoreFocus(chords);
+    await _visible('keyboard', () async {
+      await _run(
+        sendKeysArgs(
+          chords,
+          activate: needsFocus ? win.id : null,
+          restore: restore ? active.id : null,
+        ),
+      );
+    }, keys: chords.join(' '));
     if (!needsFocus || !restore) targets.remembered = win.id;
     return SendKeysResult(
       chords: chords,
@@ -89,6 +231,7 @@ class LinuxInputControl implements InputControl {
 
   @override
   Future<void> rememberTargetWindow() async {
+    await control?.reset();
     try {
       await targets.remember();
     } catch (_) {

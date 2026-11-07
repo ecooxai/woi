@@ -11,7 +11,11 @@ const int kVoiceBytesPerSecond = kVoiceSampleRate * 2;
 
 /// A function the model may call. [parameters] is a JSON-schema object.
 class ToolSpec {
-  const ToolSpec({required this.name, required this.description, required this.parameters});
+  const ToolSpec({
+    required this.name,
+    required this.description,
+    required this.parameters,
+  });
 
   final String name;
   final String description;
@@ -212,7 +216,11 @@ abstract class VoiceBackend {
   /// Replaces the screenshot item [itemId] with a smaller copy ([png]) or a
   /// text description ([text]), between responses. Returns the new item id,
   /// or null if not supported / the item is gone.
-  Future<String?> replaceImage(String itemId, {Uint8List? png, String? text}) async => null;
+  Future<String?> replaceImage(
+    String itemId, {
+    Uint8List? png,
+    String? text,
+  }) async => null;
 
   /// Descriptions of earlier screenshots that left the context (for
   /// backends whose model context is text only and that delegate actions).
@@ -235,7 +243,8 @@ abstract class VoiceBackend {
   /// like [stopAndDrop], forget the turn ([itemId], the server's user item)
   /// and close the tool calls its reply made ([callIds]) without running
   /// them or asking for another reply.
-  void dropEchoTurn({String? itemId, List<String> callIds = const []}) => stopAndDrop();
+  void dropEchoTurn({String? itemId, List<String> callIds = const []}) =>
+      stopAndDrop();
 
   /// The input audio of user turn [itemId] exactly as the server took it
   /// (from its speech start, prefix padding included, to its speech end), or
@@ -276,4 +285,9 @@ abstract interface class ManagedAudioBackend {
 
   /// Gates the outgoing mic (push-to-talk / mute).
   void setInputEnabled(bool enabled);
+
+  /// Gives the native microphone to an explicit recorder. Unlike input
+  /// muting, this must await capture release, including reconnecting sessions.
+  /// The state persists through all sessions until it is explicitly lifted.
+  Future<void> setCaptureSuspended(bool suspended);
 }

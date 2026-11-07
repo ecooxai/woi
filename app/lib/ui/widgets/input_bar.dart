@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../core/app_controller.dart';
@@ -8,7 +10,6 @@ import '../theme.dart';
 import 'camera_preview.dart';
 import 'context_meter.dart';
 import 'controls.dart';
-import 'status_chip.dart';
 import 'throttled_builder.dart';
 import 'voice_status.dart';
 
@@ -29,7 +30,10 @@ class InputBar extends StatefulWidget {
 }
 
 class _InputBarState extends State<InputBar> {
-  bool _wasConnected = false;
+  void _startHold() => c.heldAudio.start();
+  void _finishHold({bool cancelled = false}) {
+    unawaited(cancelled ? c.heldAudio.cancel() : c.heldAudio.release());
+  }
 
   AppController get c => widget.controller;
   TurnPipeline get pipeline => c.pipeline;
@@ -69,6 +73,7 @@ class _InputBarState extends State<InputBar> {
 
   @override
   void dispose() {
+    if (c.heldAudio.recording) _finishHold(cancelled: true);
     _shown.dispose();
     super.dispose();
   }
@@ -78,10 +83,9 @@ class _InputBarState extends State<InputBar> {
     return ListenableBuilder(
       // The context manager too: "Compacting memory…" (an animation) must
       // end when the compaction does, not at the next pipeline change.
-      listenable: Listenable.merge([c, _shown, c.camera.active, c.contextManager]),
+      listenable: Listenable.merge([c, _shown, c.camera.active, c.contextManager, c.heldAudio]),
       builder: (context, _) {
         final status = pipeline.status;
-        if (status == SessionStatus.connected) _wasConnected = true;
         final connected = status == SessionStatus.connected;
         final standby = pipeline.standby;
         final ph = pipeline.phase;
@@ -89,35 +93,20 @@ class _InputBarState extends State<InputBar> {
             ph == AssistantPhase.speaking || ph == AssistantPhase.thinking || ph == AssistantPhase.toolRunning;
         final s = c.settings;
         final phone = widget.phone;
-        final mode = voiceModeFor(
-          ph,
-          status: status,
-          compacting: c.contextManager.compressing,
-          reconnecting: pipeline.reconnecting,
-          standby: standby,
-        );
-
-        final composer = Composer(
-          focusNode: widget.focusNode,
-          // Standby: typing wakes the session (sent once connected).
-          enabled: connected || standby,
-          showStop: canStop,
-          onStop: pipeline.interrupt,
-          onSend: pipeline.sendText,
-          framed: false,
-          hint: phone ? 'Message Woi' : 'Message Woi…  (Ctrl+K)',
-          disabledHint: composerDisabledHint(status),
-          trailing: MicButton(
-            mode: s.micMode,
-            held: pipeline.pttHeld,
-            onModeChanged: c.actions.setMicMode,
-            onPttDown: pipeline.pttDown,
-            onPttUp: pipeline.pttUp,
-            // While connecting too: a press (or hands-free speech) is
-            // recorded and sent once the session is ready.
-            enabled: connected || standby || status == SessionStatus.connecting,
-          ),
-        );
+        // A saved legacy PTT mode forwards nothing until Space is held. Treat
+        // it as mic-off in the tap/hold UI, while keeping old settings readable.
+        final idlePtt = s.micMode == MicMode.pushToTalk && !pipeline.pttHeld && ph == AssistantPhase.listening;
+        final mode = c.heldAudio.recording
+            ? VoiceMode.hearing
+            : c.heldAudio.processing
+            ? VoiceMode.thinking
+            : voiceModeFor(
+                idlePtt ? AssistantPhase.idle : ph,
+                status: status,
+                compacting: c.contextManager.compressing,
+                reconnecting: pipeline.reconnecting,
+                standby: standby,
+              );
 
         final micPaused = switch (c.platform.audio) {
           final AudioRouted r => r.micPaused,
@@ -125,73 +114,57 @@ class _InputBarState extends State<InputBar> {
         };
         final voiceState = ListenableBuilder(
           listenable: Listenable.merge([pipeline.levelSourcesChanged, ?micPaused]),
-          builder: (context, _) => switch (micPaused?.value) {
-            // Android: another app is recording; Woi's mic waits.
-            final String why => Text(
-                  why,
-                  key: const ValueKey('mic-paused'),
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-            _ => VoiceStatusIndicator(
-              mode: mode,
-              micLevel: pipeline.micLevel,
-              outputLevel: pipeline.outputLevel,
-              // Between reconnect attempts: still (the label says it).
-              animate: mode == VoiceMode.reconnecting ? !pipeline.reconnectWaiting : null,
-              compact: phone,
-              capturing: pipeline.capturingWhileConnecting,
-            ),
-          },
-        );
-        final link = ConnectionStatusChip(
-          state: linkStateFor(
-            status,
-            wasConnected: _wasConnected,
-            reconnecting: pipeline.reconnecting,
-            standby: standby,
+          builder: (context, _) => VoiceStatusButton(
+            mode: mode,
+            detail: [
+              if (c.heldAudio.recording)
+                c.heldAudio.limitReached
+                    ? 'Recording limit reached. Release to send, or cancel to discard.'
+                    : 'Recording microphone and system audio. Release to send.',
+              if (c.heldAudio.processing) 'Preparing the recorded audio for your message.',
+              if (micPaused?.value != null) micPaused!.value!,
+              if (pipeline.capturingWhileConnecting) 'Microphone is recording while the session connects.',
+              if (pipeline.statusDetail?.isNotEmpty ?? false) pipeline.statusDetail!,
+              if (c.platform.audio is EchoCancellable)
+                'Echo cancellation: ${(c.platform.audio as EchoCancellable).echoCancellationStatus}',
+            ].join('\n'),
+            onRetry: status == SessionStatus.error || status == SessionStatus.disconnected
+                ? () => unawaited(pipeline.connect())
+                : null,
           ),
-          model: c.activeVoiceModel,
-          backend: c.activeBackendMode,
-          voice: s.activeVoice,
-          detail: pipeline.statusDetail,
-          onRetry: pipeline.connect,
-          compact: phone,
         );
-        final status_ = Row(
-          children: [
-            // The voice state and the connection get all the room the
-            // buttons on the right leave (a Spacer here took a third of it:
-            // at 360 px the labels were cut to "Mi…" and "real…"). Phones
-            // show short labels and a dot-only connection chip (details in
-            // its tooltip), so every voice state fits; elsewhere the labels
-            // ellipsize rather than overflow.
-            Expanded(
-              child: Row(
-                children: phone
-                    ? [Flexible(child: voiceState), const SizedBox(width: 2), link]
-                    : [Flexible(child: voiceState), _dot(), Flexible(child: link)],
+        final composer = Composer(
+          focusNode: widget.focusNode,
+          enabled: connected || standby,
+          showStop: canStop,
+          onStop: pipeline.interrupt,
+          onSend: pipeline.sendText,
+          framed: false,
+          actionsBelow: true,
+          hint: phone ? 'Message Woi' : 'Message Woi…  (Ctrl+K)',
+          disabledHint: composerDisabledHint(status),
+          actionsLeading: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              voiceState,
+              ContextMeter(
+                manager: c.contextManager,
+                conversation: pipeline.conversation,
+                style: ContextMeterStyle.indicator,
+                onCompact: c.compactNow,
               ),
-            ),
-            CameraToggle(
-              on: c.cameraOn,
-              busy: c.cameraBusy,
-              onPressed: c.toggleCamera,
-              size: phone ? kTouchTarget : 28,
-            ),
-            SizedBox(width: phone ? 0 : 8),
-            phone
-                ? MicModeMenu(mode: s.micMode, onChanged: c.actions.setMicMode)
-                : MicModeSelector(mode: s.micMode, onChanged: c.actions.setMicMode, compact: true, itemSize: 28),
-            SizedBox(width: phone ? 0 : 12),
-            ContextMeter(
-              manager: c.contextManager,
-              conversation: pipeline.conversation,
-              style: ContextMeterStyle.compact,
-              dense: phone,
-              onCompact: c.compactNow,
-            ),
-          ],
+              CameraToggle(on: c.cameraOn, busy: c.cameraBusy, onPressed: c.toggleCamera, size: kTouchTarget),
+            ],
+          ),
+          trailing: MicButton(
+            mode: s.micMode,
+            held: c.heldAudio.recording,
+            onModeChanged: c.actions.setMicMode,
+            onPttDown: _startHold,
+            onPttUp: _finishHold,
+            onPttCancel: () => _finishHold(cancelled: true),
+            enabled: !c.heldAudio.processing && (connected || standby || status == SessionStatus.connecting),
+          ),
         );
 
         return Container(
@@ -211,21 +184,63 @@ class _InputBarState extends State<InputBar> {
                   ),
                 ),
               composer,
-              Padding(
-                padding: EdgeInsets.fromLTRB(phone ? 6 : 8, phone ? 0 : 4, 2, 0),
-                child: Semantics(container: true, label: 'Status', child: status_),
-              ),
             ],
           ),
         );
       },
     );
   }
+}
 
-  Widget _dot() => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 8),
-    child: Text('·', style: body(12, color: WoiColors.textFaint)),
-  );
+/// The compact voice state: details on hover or click, without a model badge.
+class VoiceStatusButton extends StatelessWidget {
+  const VoiceStatusButton({super.key, required this.mode, this.detail = '', this.onRetry});
+  final VoiceMode mode;
+  final String detail;
+  final VoidCallback? onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = voiceModeLabel(mode);
+    final description = '$label${detail.isEmpty ? '' : '\n$detail'}';
+    final icon = switch (mode) {
+      VoiceMode.offline => Icons.cloud_off_outlined,
+      VoiceMode.standby => Icons.bedtime_outlined,
+      VoiceMode.connecting || VoiceMode.reconnecting => Icons.sync_rounded,
+      VoiceMode.idle => Icons.mic_off_outlined,
+      VoiceMode.listening => Icons.hearing_rounded,
+      VoiceMode.hearing => Icons.graphic_eq_rounded,
+      VoiceMode.thinking => Icons.more_horiz_rounded,
+      VoiceMode.speaking => Icons.volume_up_outlined,
+      VoiceMode.tool => Icons.build_outlined,
+      VoiceMode.compacting => Icons.compress_rounded,
+    };
+    return Semantics(
+      button: true,
+      label: 'Voice status: $label. Show details',
+      child: PopupMenuButton<String>(
+        key: const ValueKey('voice-status-button'),
+        tooltip: description,
+        onSelected: (action) {
+          if (action == 'retry') onRetry?.call();
+        },
+        itemBuilder: (_) => [
+          PopupMenuItem<String>(
+            enabled: false,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 320),
+              child: Text(description, style: body(13)),
+            ),
+          ),
+          if (onRetry != null) const PopupMenuItem(value: 'retry', child: Text('Reconnect')),
+        ],
+        child: SizedBox.square(
+          dimension: kTouchTarget,
+          child: Icon(icon, size: 20, color: voiceModeColor(mode)),
+        ),
+      ),
+    );
+  }
 }
 
 /// Phone mic-mode button: the current mode's icon, a menu with all three.

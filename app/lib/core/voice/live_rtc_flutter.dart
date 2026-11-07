@@ -3,16 +3,28 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
+import '../../platform/audio_io.dart';
 import 'live_rtc_transport.dart';
 
 /// [LiveRtcTransport] on flutter_webrtc (native libwebrtc on Linux desktop).
 ///
 /// libwebrtc's audio device module captures the microphone and plays the
 /// remote track itself (PulseAudio API, served by pipewire-pulse), with
-/// WebRTC AEC/NS/AGC applied. The app therefore must not run its own
-/// pw-record / pw-play for this backend.
+/// WebRTC AEC/NS/AGC applied. Linux leases a separate system-monitor AEC
+/// source so all speaker audio is cancelled; native AEC is then disabled
+/// to avoid cascading filters. The transport still owns capture/playback.
 class FlutterLiveRtcTransport implements LiveRtcTransport {
-  FlutterLiveRtcTransport({this.options = const LiveRtcOptions()});
+  FlutterLiveRtcTransport({
+    this.options = const LiveRtcOptions(),
+    this.captureDeviceProvider,
+  });
+
+  final Future<EchoCaptureLease?> Function()? captureDeviceProvider;
+  EchoCaptureLease? _captureLease;
+  bool _closed = false;
+  Future<void>? _closing;
+  bool _captureSuspended = false;
+  bool _mediaReady = false;
 
   final LiveRtcOptions options;
 
@@ -24,7 +36,7 @@ class FlutterLiveRtcTransport implements LiveRtcTransport {
   // sending audio stream libwebrtc stops the audio device module's
   // recording (a disabled track still records and encodes silence: ~7% CPU
   // on a phone). Re-attached on unmute.
-  bool _micAttached = true;
+  bool _micAttached = false;
   Timer? _detachTimer;
   Future<void> _micOp = Future.value();
   RTCDataChannel? _dc;
@@ -46,7 +58,9 @@ class FlutterLiveRtcTransport implements LiveRtcTransport {
     final devices = await navigator.mediaDevices.enumerateDevices();
     final m = match.toLowerCase();
     for (final d in devices) {
-      if (d.kind == kind && d.label.toLowerCase().contains(m)) return d.deviceId;
+      if (d.kind == kind && d.label.toLowerCase().contains(m)) {
+        return d.deviceId;
+      }
     }
     throw StateError(
       'no $kind device matching "$match" (have: '
@@ -56,24 +70,76 @@ class FlutterLiveRtcTransport implements LiveRtcTransport {
 
   @override
   Future<String> createOffer() async {
-    final inputId = await _findDevice('audioinput', options.inputDeviceMatch);
-    final outputId = await _findDevice('audiooutput', options.outputDeviceMatch);
-    debugPrint('webrtc devices: in=$inputId out=$outputId');
+    if (_closed) throw StateError('WebRTC transport is closed');
+    try {
+      return await _createOffer();
+    } catch (_) {
+      await close();
+      rethrow;
+    }
+  }
+
+  Future<String?> _leasedInput() async {
+    final lease = _captureLease;
+    if (lease == null) {
+      return _findDevice('audioinput', options.inputDeviceMatch);
+    }
+    // PipeWire publishes the native node before pipewire-pulse/libwebrtc's
+    // device cache sees it. Retry enumeration instead of selecting raw input.
+    for (var attempt = 0; attempt < 30; attempt++) {
+      if (_closed) throw StateError('WebRTC transport is closed');
+      if (_captureSuspended) return null;
+      final devices = await navigator.mediaDevices.enumerateDevices();
+      for (final d in devices) {
+        if (d.kind == 'audioinput' &&
+            (d.deviceId == lease.deviceName || d.label == lease.deviceLabel)) {
+          return d.deviceId;
+        }
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+    throw StateError(
+      'Echo-cancelled microphone ${lease.deviceLabel} is not available to WebRTC',
+    );
+  }
+
+  Future<String> _createOffer() async {
+    final outputId = await _findDevice(
+      'audiooutput',
+      options.outputDeviceMatch,
+    );
+    debugPrint('webrtc output: $outputId');
     _outputId = outputId;
     if (outputId != null) await Helper.selectAudioOutput(outputId);
 
     // No STUN/TURN: the server is a public ICE endpoint and host candidates
     // suffice; any ICE server adds ~6 s of gathering (§3.1, §6.4).
-    final pc = await createPeerConnection({'iceServers': <Object>[], 'sdpSemantics': 'unified-plan'});
+    final pc = await createPeerConnection({
+      'iceServers': <Object>[],
+      'sdpSemantics': 'unified-plan',
+    });
+    if (_closed) {
+      await pc.close();
+      await pc.dispose();
+      throw StateError('WebRTC transport closed while creating the connection');
+    }
     _pc = pc;
     pc.onConnectionState = (s) {
       final out = _outputId;
-      if (s == RTCPeerConnectionState.RTCPeerConnectionStateConnected && out != null) {
+      if (s == RTCPeerConnectionState.RTCPeerConnectionStateConnected &&
+          out != null) {
         // libwebrtc's pulse ADM ignores the playout device until playout is
         // initialized (first remote audio); select it again now.
-        unawaited(Helper.selectAudioOutput(out).catchError((Object e) => debugPrint('webrtc output: $e')));
+        unawaited(
+          Helper.selectAudioOutput(out)
+              .catchError((Object e) => debugPrint('webrtc output: $e')),
+        );
       }
-      if (!_states.isClosed) _states.add(s.name.replaceFirst('RTCPeerConnectionState', '').toLowerCase());
+      if (!_states.isClosed) {
+        _states.add(
+          s.name.replaceFirst('RTCPeerConnectionState', '').toLowerCase(),
+        );
+      }
     };
     pc.onTrack = (e) {
       if (e.track.kind == 'audio') {
@@ -87,38 +153,30 @@ class FlutterLiveRtcTransport implements LiveRtcTransport {
           for (final ms in const [300, 1500]) {
             Timer(Duration(milliseconds: ms), () {
               if (_pc == null) return;
-              Helper.selectAudioOutput(out).catchError((Object e) => debugPrint('webrtc output: $e'));
+              Helper.selectAudioOutput(out)
+                  .catchError((Object e) => debugPrint('webrtc output: $e'));
             });
           }
         }
       }
     };
 
-    final mic = await navigator.mediaDevices.getUserMedia({
-      'audio': {
-        'echoCancellation': options.echoCancellation,
-        'noiseSuppression': options.noiseSuppression,
-        'autoGainControl': options.autoGainControl,
-        if (inputId != null)
-          'optional': [
-            {'sourceId': inputId},
-          ],
-      },
-      'video': false,
+    await _queueMic(() async {
+      if (!_captureSuspended) await _openNativeCapture();
+      if (_closed) throw StateError('WebRTC transport is closed');
+      if (_micSender == null) {
+        // Preserve an audio m-line while held capture owns the microphone.
+        // Resuming replaces this sender's null track without renegotiation.
+        final transceiver = await pc.addTransceiver(
+          kind: RTCRtpMediaType.RTCRtpMediaTypeAudio,
+          init: RTCRtpTransceiverInit(direction: TransceiverDirection.SendRecv),
+        );
+        _micSender = transceiver.sender;
+        _micAttached = false;
+      }
+      _mediaReady = true;
     });
-    _mic = mic;
-    for (final t in mic.getAudioTracks()) {
-      // setMicEnabled() may have run before the track existed (a call that is
-      // prepared muted, or Muted mode): the track must never start enabled.
-      t.enabled = _micEnabled;
-      _micSender = await pc.addTrack(t, mic);
-      _micTrack = t;
-      _micAttached = true;
-    }
-    if (!_micEnabled) _scheduleDetach();
-    _description =
-        'flutter_webrtc (in: ${options.inputDeviceMatch ?? 'default'}, '
-        'out: ${options.outputDeviceMatch ?? 'default'}, aec: ${options.echoCancellation})';
+    _updateDescription();
 
     // Carries the same JSON events as the sideband minus audio; we use the
     // sideband, but the server expects the channel to exist.
@@ -126,18 +184,27 @@ class FlutterLiveRtcTransport implements LiveRtcTransport {
 
     final gathered = Completer<void>();
     pc.onIceGatheringState = (s) {
-      if (s == RTCIceGatheringState.RTCIceGatheringStateComplete && !gathered.isCompleted) gathered.complete();
+      if (s == RTCIceGatheringState.RTCIceGatheringStateComplete &&
+          !gathered.isCompleted) {
+        gathered.complete();
+      }
     };
     final offer = await pc.createOffer({
       'mandatory': {'OfferToReceiveAudio': true, 'OfferToReceiveVideo': false},
     });
     await pc.setLocalDescription(offer);
-    if (pc.iceGatheringState != RTCIceGatheringState.RTCIceGatheringStateComplete) {
-      await gathered.future.timeout(const Duration(seconds: 2), onTimeout: () {});
+    if (pc.iceGatheringState !=
+        RTCIceGatheringState.RTCIceGatheringStateComplete) {
+      await gathered.future.timeout(
+        const Duration(seconds: 2),
+        onTimeout: () {},
+      );
     }
     final local = await pc.getLocalDescription();
     final sdp = local?.sdp ?? offer.sdp;
-    if (sdp == null || sdp.isEmpty) throw StateError('WebRTC produced an empty offer');
+    if (sdp == null || sdp.isEmpty) {
+      throw StateError('WebRTC produced an empty offer');
+    }
     return sdp;
   }
 
@@ -154,40 +221,180 @@ class FlutterLiveRtcTransport implements LiveRtcTransport {
   @override
   void setMicEnabled(bool enabled) {
     _micEnabled = enabled;
-    for (final t in _mic?.getAudioTracks() ?? const <MediaStreamTrack>[]) {
-      t.enabled = enabled;
+    for (final track in _mic?.getAudioTracks() ?? const <MediaStreamTrack>[]) {
+      track.enabled = enabled && !_captureSuspended;
     }
     if (enabled) {
       _detachTimer?.cancel();
       _detachTimer = null;
-      if (!_micAttached) _setAttached(true);
+      if (_mediaReady && !_captureSuspended) _requestAttached(true);
     } else {
       _scheduleDetach();
     }
   }
 
-  void _scheduleDetach() {
+  @override
+  Future<void> setCaptureSuspended(bool suspended) {
+    _captureSuspended = suspended;
     _detachTimer?.cancel();
-    _detachTimer = Timer(detachAfter, () {
-      _detachTimer = null;
-      if (!_micEnabled && _micAttached) _setAttached(false);
+    _detachTimer = null;
+    if (suspended) {
+      for (final track
+          in _mic?.getAudioTracks() ?? const <MediaStreamTrack>[]) {
+        track.enabled = false;
+      }
+    }
+    return _queueMic(() async {
+      if (suspended) {
+        await _releaseNativeCapture();
+      } else if (!_captureSuspended && !_closed && _mediaReady && _micEnabled) {
+        await _openNativeCapture();
+      }
+      _updateDescription();
     });
   }
 
-  void _setAttached(bool attached) {
-    _micAttached = attached;
-    // Serialized: a quick off/on must not apply out of order.
-    _micOp = _micOp.then((_) async {
-      final sender = _micSender;
-      final track = _micTrack;
-      if (sender == null || track == null || _pc == null) return;
-      try {
-        await sender.replaceTrack(attached ? track : null);
-        debugPrint('webrtc mic ${attached ? 'attached' : 'detached (recording stopped)'}');
-      } catch (e) {
-        debugPrint('webrtc mic ${attached ? 'attach' : 'detach'}: $e');
+  /// All device opens, sender changes, and releases share a barrier. A hold
+  /// waits for any late getUserMedia result to be stopped before it proceeds.
+  Future<void> _queueMic(Future<void> Function() operation) {
+    final next = _micOp.then((_) => operation());
+    // Keep the queue usable after an operation fails, while its caller still
+    // receives that failure (exclusive capture must never assume success).
+    _micOp = next.then<void>(
+      (_) {},
+      onError: (Object error, StackTrace stack) {},
+    );
+    return next;
+  }
+
+  Future<void> _openNativeCapture() async {
+    final pc = _pc;
+    if (_closed || _captureSuspended || pc == null) return;
+    try {
+      if (_mic == null) {
+        _captureLease = await captureDeviceProvider?.call();
+        if (_closed || _captureSuspended) {
+          await _releaseNativeCapture();
+          return;
+        }
+        final inputId = await _leasedInput();
+        if (_closed || _captureSuspended) {
+          await _releaseNativeCapture();
+          return;
+        }
+        debugPrint('webrtc input: $inputId');
+        _mic = await navigator.mediaDevices.getUserMedia({
+          'audio': {
+            'echoCancellation':
+                _captureLease == null && options.echoCancellation,
+            'noiseSuppression': options.noiseSuppression,
+            'autoGainControl': options.autoGainControl,
+            if (inputId != null)
+              'optional': [
+                {'sourceId': inputId},
+              ],
+          },
+          'video': false,
+        });
+        if (_closed || _captureSuspended) {
+          await _releaseNativeCapture();
+          return;
+        }
+        final tracks = _mic!.getAudioTracks();
+        if (tracks.length != 1) {
+          throw StateError('Expected one native microphone track');
+        }
+        _micTrack = tracks.single;
       }
+      final track = _micTrack!;
+      track.enabled = _micEnabled && !_captureSuspended;
+      if (_micSender == null) {
+        _micSender = await pc.addTrack(track, _mic!);
+        _micAttached = true;
+      } else if (!_micAttached) {
+        await _micSender!.replaceTrack(track);
+        _micAttached = true;
+      }
+      if (_closed || _captureSuspended) {
+        await _releaseNativeCapture();
+        return;
+      }
+      if (!_micEnabled) _scheduleDetach();
+      _updateDescription();
+    } catch (_) {
+      // Resume failures need the same cleanup as first-offer failures.
+      try {
+        await _releaseNativeCapture();
+      } catch (error) {
+        debugPrint('webrtc failed capture cleanup: $error');
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> _releaseNativeCapture() async {
+    _detachTimer?.cancel();
+    _detachTimer = null;
+    final mic = _mic;
+    final lease = _captureLease;
+    final attached = _micAttached;
+    _mic = null;
+    _micTrack = null;
+    _captureLease = null;
+    _micAttached = false;
+    Object? failure;
+    StackTrace? trace;
+    Future<void> attempt(Future<void> Function() release) async {
+      try {
+        await release();
+      } catch (error, stack) {
+        failure ??= error;
+        trace ??= stack;
+      }
+    }
+
+    if (attached && _micSender != null) {
+      await attempt(() => _micSender!.replaceTrack(null));
+    }
+    for (final track in mic?.getTracks() ?? const <MediaStreamTrack>[]) {
+      await attempt(track.stop);
+    }
+    if (mic != null) await attempt(mic.dispose);
+    if (lease != null) await attempt(lease.release);
+    if (failure != null) Error.throwWithStackTrace(failure!, trace!);
+  }
+
+  void _scheduleDetach() {
+    _detachTimer?.cancel();
+    _detachTimer = null;
+    if (_closed || _captureSuspended) return;
+    _detachTimer = Timer(detachAfter, () {
+      _detachTimer = null;
+      if (!_micEnabled && _micAttached) _requestAttached(false);
     });
+  }
+
+  void _requestAttached(bool attached) {
+    unawaited(
+      _queueMic(() async {
+        if (_closed || _captureSuspended || attached != _micEnabled) return;
+        if (attached) {
+          await _openNativeCapture();
+        } else if (_micAttached && _micSender != null) {
+          await _micSender!.replaceTrack(null);
+          _micAttached = false;
+          debugPrint('webrtc mic detached (recording stopped)');
+        }
+      }).catchError((Object error) {
+        debugPrint('webrtc mic ${attached ? 'attach' : 'detach'}: $error');
+      }),
+    );
+  }
+
+  void _updateDescription() {
+    _description =
+        'flutter_webrtc (in: ${_captureSuspended ? 'suspended for recording' : _captureLease?.deviceLabel ?? options.inputDeviceMatch ?? 'default'}, '
+        'out: ${options.outputDeviceMatch ?? 'default'}, aec: ${_captureLease != null ? 'system monitor' : options.echoCancellation})';
   }
 
   @override
@@ -199,31 +406,30 @@ class FlutterLiveRtcTransport implements LiveRtcTransport {
   }
 
   @override
-  Future<void> close() async {
+  Future<void> close() => _closing ??= _close();
+
+  Future<void> _close() async {
+    _closed = true;
     _detachTimer?.cancel();
     _detachTimer = null;
+    try {
+      await _queueMic(_releaseNativeCapture);
+    } catch (error) {
+      debugPrint('webrtc capture close: $error');
+    }
     final pc = _pc;
     _pc = null;
+    _mediaReady = false;
     _micSender = null;
-    _micTrack = null;
     try {
       await _dc?.close();
     } catch (_) {}
-    for (final t in _mic?.getTracks() ?? const <MediaStreamTrack>[]) {
-      try {
-        await t.stop();
-      } catch (_) {}
-    }
-    try {
-      await _mic?.dispose();
-    } catch (_) {}
-    _mic = null;
     if (pc != null) {
       try {
         await pc.close();
         await pc.dispose();
-      } catch (e) {
-        debugPrint('webrtc close: $e');
+      } catch (error) {
+        debugPrint('webrtc close: $error');
       }
     }
     _remoteAudio.clear();

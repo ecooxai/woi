@@ -37,6 +37,8 @@ class WoiForegroundService : Service() {
 
     override fun onDestroy() {
         WoiBridge.main.removeCallbacks(keepA11y)
+        heldAudioForegroundReady = false
+        if (heldAudio) WoiHeldAudio.cancel("Recording service stopped")
         if (instance === this) instance = null
         super.onDestroy()
     }
@@ -46,8 +48,10 @@ class WoiForegroundService : Service() {
             ACTION_VOICE -> { voice = true; voiceWarm = false }
             ACTION_LOGIN -> login = true
             ACTION_SHARE -> share = true
+            ACTION_HELD_AUDIO -> heldAudio = WoiHeldAudio.isRequested()
             ACTION_STOP_ALL -> {
-                voice = false; voiceWarm = false; login = false
+                voice = false; voiceWarm = false; login = false; heldAudio = false
+                WoiHeldAudio.cancel("Recording stopped")
                 WoiScreen.stop(this)
                 share = false
                 WoiBridge.emit(mapOf("type" to "stopAll"))
@@ -78,20 +82,27 @@ class WoiForegroundService : Service() {
         if (micOn() && hasMic()) type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
         if (share) type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
         if (login) type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-        val any = voice || login || share
+        val any = voice || login || share || heldAudio
         if (type == 0 && (any || force)) type = ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
         if (type != 0) {
             try {
                 startForeground(NOTIF_ID, notification(), type)
+                heldAudioForegroundReady = heldAudio && (type and ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE) != 0
+                if (heldAudioForegroundReady) heldAudioForegroundError = null
             } catch (e: Exception) {
                 Log.w(WoiBridge.TAG, "startForeground($type) failed", e)
+                heldAudioForegroundReady = false
+                if (heldAudio) {
+                    heldAudioForegroundError = e.message ?: e.javaClass.simpleName
+                    WoiHeldAudio.cancel("Microphone foreground service was refused")
+                }
                 if (share) {
                     share = false
                     WoiBridge.emit(mapOf("type" to "share", "on" to false, "error" to (e.message ?: "$e")))
                 }
             }
         }
-        if (!(voice || login || share)) {
+        if (!(voice || login || share || heldAudio)) {
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return false
@@ -99,10 +110,10 @@ class WoiForegroundService : Service() {
         return true
     }
 
-    private fun micOn() = voice && !voiceWarm
+    private fun micOn() = heldAudio || (voice && !voiceWarm)
 
     /** Only the warm voice session runs: the quiet (minimised) notification. */
-    private fun quiet() = voice && voiceWarm && !login && !share
+    private fun quiet() = voice && voiceWarm && !login && !share && !heldAudio
 
     private fun hasMic() = WoiBridge.hasPermission(this, android.Manifest.permission.RECORD_AUDIO)
 
@@ -128,6 +139,7 @@ class WoiForegroundService : Service() {
         )
         val what = listOfNotNull(
             if (share) "sharing the screen" else null,
+            if (heldAudio) "recording microphone and system audio" else null,
             if (micOn()) "voice on" else if (voice) "standby · mic off" else null,
             if (login) "waiting for sign-in" else null,
         ).joinToString(" · ")
@@ -149,6 +161,7 @@ class WoiForegroundService : Service() {
         const val ACTION_VOICE = "woi.voice"
         const val ACTION_LOGIN = "woi.login"
         const val ACTION_SHARE = "woi.share"
+        const val ACTION_HELD_AUDIO = "woi.held_audio"
         const val ACTION_STOP_ALL = "woi.stop_all"
 
         // Process-wide state (one service instance).
@@ -157,6 +170,9 @@ class WoiForegroundService : Service() {
         @Volatile var voiceWarm = false
         @Volatile var login = false
         @Volatile var share = false
+        @Volatile var heldAudio = false
+        @Volatile var heldAudioForegroundReady = false
+        @Volatile var heldAudioForegroundError: String? = null
 
         private fun send(ctx: Context, action: String, extra: (Intent) -> Unit = {}) {
             val i = Intent(ctx, WoiForegroundService::class.java).setAction(action)
@@ -165,6 +181,11 @@ class WoiForegroundService : Service() {
                 ctx.startForegroundService(i)
             } catch (e: Exception) {
                 Log.w(WoiBridge.TAG, "foreground service $action refused", e)
+                if (action == ACTION_HELD_AUDIO) {
+                    heldAudioForegroundError = e.message ?: e.javaClass.simpleName
+                    heldAudioForegroundReady = false
+                    WoiHeldAudio.cancel("Microphone foreground service could not start")
+                }
             }
         }
 
@@ -191,6 +212,20 @@ class WoiForegroundService : Service() {
          * dataSync one keeps the process alive. [startVoice] goes back.
          */
         fun warmVoice(@Suppress("UNUSED_PARAMETER") ctx: Context) = off { if (voice) voiceWarm = true }
+        fun startHeldAudio(ctx: Context) {
+            heldAudioForegroundReady = false
+            heldAudioForegroundError = null
+            send(ctx, ACTION_HELD_AUDIO)
+        }
+        fun stopHeldAudio() {
+            heldAudio = WoiHeldAudio.isRequested()
+            if (!heldAudio) heldAudioForegroundReady = false
+            off {
+                heldAudio = WoiHeldAudio.isRequested()
+                if (!heldAudio) heldAudioForegroundReady = false
+            }
+        }
+
         fun startLogin(ctx: Context) = send(ctx, ACTION_LOGIN)
         fun stopLogin(@Suppress("UNUSED_PARAMETER") ctx: Context) = off { login = false }
         fun startShare(ctx: Context, code: Int, data: Intent) = send(ctx, ACTION_SHARE) {
@@ -198,6 +233,10 @@ class WoiForegroundService : Service() {
             it.putExtra("data", data)
         }
 
-        fun shareStopped(@Suppress("UNUSED_PARAMETER") ctx: Context) = off { share = false }
+        fun shareStopped(@Suppress("UNUSED_PARAMETER") ctx: Context) = off {
+            // A previous projection may finish stopping after its replacement
+            // starts. Derive the service type from the current owner.
+            share = WoiScreen.isSharing()
+        }
     }
 }

@@ -166,7 +166,10 @@ class _VoiceLabel extends StatelessWidget {
         children: [
           Icon(Icons.graphic_eq_rounded, size: 18, color: color),
           const SizedBox(width: 8),
-          Text('Voice message', style: body(14, weight: FontWeight.w500, color: WoiColors.textDim)),
+          Text(
+            'Voice message',
+            style: body(14, weight: FontWeight.w500, color: WoiColors.textDim),
+          ),
         ],
       ),
     );
@@ -217,13 +220,24 @@ class _Bubble extends StatelessWidget {
           _VoiceLabel(text: m.text, color: accent)
         else if (isUser && m.streaming && m.text.isNotEmpty)
           // Live partial transcript; finalized when the transcription completes.
-          Text(m.text, style: body(15, height: 1.5, color: WoiColors.textDim).copyWith(fontStyle: FontStyle.italic))
+          Text(
+            m.text,
+            style: body(15, height: 1.5, color: WoiColors.textDim).copyWith(fontStyle: FontStyle.italic),
+          )
         else if (m.text.isNotEmpty)
           // Plain Text: the transcript's SelectionArea makes it selectable
           // (also across messages). A SelectableText per bubble built an
           // editable-text render object, gesture recognizers and a focus
           // node for every message scrolled into view.
           Text(m.text, style: body(15, height: 1.5, color: WoiColors.text)),
+        if (!isUser) ...[
+          const SizedBox(height: 6),
+          Text(
+            m.meta['model'] as String? ?? 'Model not recorded',
+            key: ValueKey('reply-model-${m.id}'),
+            style: body(11, color: WoiColors.textDim),
+          ),
+        ],
         if (m.audio != null || m.interrupted || !m.streaming) ...[
           const SizedBox(height: 8),
           Wrap(
@@ -387,11 +401,11 @@ class _Avatar extends StatelessWidget {
       width: 28,
       height: 28,
       alignment: Alignment.center,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: active ? WoiColors.cyan : WoiColors.text,
+      decoration: BoxDecoration(shape: BoxShape.circle, color: active ? WoiColors.cyan : WoiColors.text),
+      child: Text(
+        'W',
+        style: display(12, weight: FontWeight.w700, color: WoiColors.bg1),
       ),
-      child: Text('W', style: display(12, weight: FontWeight.w700, color: WoiColors.bg1)),
     ),
   );
 }
@@ -439,7 +453,13 @@ class ScreenshotThumb extends StatelessWidget {
         final dx = known ? (w - image.width * scale) / 2 : 0.0;
         final mk = marker;
         final dpr = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1.0;
-        return _thumb(context, w, h, mk == null || !known ? null : Offset(mk.dx * scale + dx, mk.dy * scale), (w * dpr).ceil());
+        return _thumb(
+          context,
+          w,
+          h,
+          mk == null || !known ? null : Offset(mk.dx * scale + dx, mk.dy * scale),
+          (w * dpr).ceil(),
+        );
       },
     );
   }
@@ -467,62 +487,62 @@ class ScreenshotThumb extends StatelessWidget {
             width: w,
             height: h,
             child: Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: WoiColors.strokeStrong),
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(11),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      Image.file(
-                        file,
-                        fit: BoxFit.cover,
-                        alignment: Alignment.topCenter,
-                        // Decode at the tile's size, not the image's.
-                        cacheWidth: decodeWidth.clamp(64, 1280),
-                        // Decoded at about the tile size: bilinear is enough
-                        // (medium builds mipmaps, costly on software GL).
-                        filterQuality: FilterQuality.low,
-                        errorBuilder: (context, e, s) => Container(
-                          color: WoiColors.glass,
-                          alignment: Alignment.center,
-                          child: const Icon(Icons.broken_image_outlined),
-                        ),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: WoiColors.strokeStrong),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(11),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Image.file(
+                      file,
+                      fit: BoxFit.cover,
+                      alignment: Alignment.topCenter,
+                      // Decode at the tile's size, not the image's.
+                      cacheWidth: decodeWidth.clamp(64, 1280),
+                      // Decoded at about the tile size: bilinear is enough
+                      // (medium builds mipmaps, costly on software GL).
+                      filterQuality: FilterQuality.low,
+                      errorBuilder: (context, e, s) => Container(
+                        color: WoiColors.glass,
+                        alignment: Alignment.center,
+                        child: const Icon(Icons.broken_image_outlined),
                       ),
-                      if (markerAt != null && markerAt.dy <= h) ClickMarker(position: markerAt),
-                      if (tier != ImageTier.full)
-                        Positioned(
-                          left: 6,
-                          bottom: 6,
-                          child: Tooltip(
-                            message: tier == ImageTier.reduced
-                                ? 'Older ${label.toLowerCase()}: the model now has it at ⅕ size'
-                                : 'Old ${label.toLowerCase()}: the model now has a text description',
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(6)),
-                              child: Text(
-                                tier == ImageTier.reduced ? 'sent ⅕' : 'described',
-                                style: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w600),
-                              ),
+                    ),
+                    if (markerAt != null && markerAt.dy <= h) ClickMarker(position: markerAt),
+                    if (tier != ImageTier.full)
+                      Positioned(
+                        left: 6,
+                        bottom: 6,
+                        child: Tooltip(
+                          message: tier == ImageTier.reduced
+                              ? 'Older ${label.toLowerCase()}: the model now has it at ⅕ size'
+                              : 'Old ${label.toLowerCase()}: the model now has a text description',
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(6)),
+                            child: Text(
+                              tier == ImageTier.reduced ? 'sent ⅕' : 'described',
+                              style: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w600),
                             ),
                           ),
                         ),
-                      Positioned(
-                        right: 6,
-                        bottom: 6,
-                        child: Container(
-                          padding: const EdgeInsets.all(4),
-                          decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(6)),
-                          child: const Icon(Icons.zoom_out_map, size: 14, color: Colors.white),
-                        ),
                       ),
-                    ],
-                  ),
+                    Positioned(
+                      right: 6,
+                      bottom: 6,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(6)),
+                        child: const Icon(Icons.zoom_out_map, size: 14, color: Colors.white),
+                      ),
+                    ),
+                  ],
                 ),
               ),
+            ),
           ),
         ),
       ),
@@ -555,7 +575,8 @@ class _ClickMarkerState extends State<ClickMarker> with SingleTickerProviderStat
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: _c,
-    builder: (context, _) => CustomPaint(painter: _MarkerPainter(widget.position, widget.color ?? WoiColors.amber, widget.size, _c.value)),
+    builder: (context, _) =>
+        CustomPaint(painter: _MarkerPainter(widget.position, widget.color ?? WoiColors.amber, widget.size, _c.value)),
   );
 }
 
@@ -920,7 +941,9 @@ class _ProgressSweepState extends State<_ProgressSweep> {
         widthFactor: 0.4,
         child: DecoratedBox(
           decoration: BoxDecoration(
-            gradient: LinearGradient(colors: [widget.color.withValues(alpha: 0), widget.color, widget.color.withValues(alpha: 0)]),
+            gradient: LinearGradient(
+              colors: [widget.color.withValues(alpha: 0), widget.color, widget.color.withValues(alpha: 0)],
+            ),
           ),
         ),
       ),
@@ -997,7 +1020,8 @@ class _ToolDetails extends StatelessWidget {
                       color: e['t'] == 'd' ? WoiColors.cyan : WoiColors.textDim,
                       dense: true,
                     ),
-                if (result['more'] != null) Pill(label: '+${result['more']} more', color: WoiColors.textFaint, dense: true),
+                if (result['more'] != null)
+                  Pill(label: '+${result['more']} more', color: WoiColors.textFaint, dense: true),
               ],
             ),
           );
@@ -1051,8 +1075,14 @@ class _ToolDetails extends StatelessWidget {
           TextSpan(
             children: [
               for (final e in entries) ...[
-                TextSpan(text: '${e.key.padRight(10)} ', style: mono(12, color: WoiColors.textFaint)),
-                TextSpan(text: '${fmt(e.value)}\n', style: mono(12, color: WoiColors.text)),
+                TextSpan(
+                  text: '${e.key.padRight(10)} ',
+                  style: mono(12, color: WoiColors.textFaint),
+                ),
+                TextSpan(
+                  text: '${fmt(e.value)}\n',
+                  style: mono(12, color: WoiColors.text),
+                ),
               ],
             ],
           ),
@@ -1087,7 +1117,9 @@ class _Terminal extends StatelessWidget {
         children: [
           Container(
             padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
-            decoration: BoxDecoration(border: Border(bottom: BorderSide(color: WoiColors.stroke))),
+            decoration: BoxDecoration(
+              border: Border(bottom: BorderSide(color: WoiColors.stroke)),
+            ),
             child: Row(
               children: [
                 for (final c in const [Color(0xFFFF5F57), Color(0xFFFEBC2E), Color(0xFF28C840)])
@@ -1099,14 +1131,13 @@ class _Terminal extends StatelessWidget {
                   ),
                 const SizedBox(width: 6),
                 Expanded(
-                  child: Text(cwd ?? 'bash', style: mono(11, color: WoiColors.textFaint), overflow: TextOverflow.ellipsis),
-                ),
-                if (code != null)
-                  Pill(
-                    label: 'exit $code',
-                    color: ok ? WoiColors.mint : WoiColors.red,
-                    dense: true,
+                  child: Text(
+                    cwd ?? 'bash',
+                    style: mono(11, color: WoiColors.textFaint),
+                    overflow: TextOverflow.ellipsis,
                   ),
+                ),
+                if (code != null) Pill(label: 'exit $code', color: ok ? WoiColors.mint : WoiColors.red, dense: true),
                 if (result['timed_out'] == true) ...[
                   const SizedBox(width: 6),
                   Pill(label: 'timed out', color: WoiColors.amber, dense: true),
@@ -1126,14 +1157,34 @@ class _Terminal extends StatelessWidget {
                 child: SelectableText.rich(
                   TextSpan(
                     children: [
-                      TextSpan(text: r'$ ', style: mono(12.5, color: WoiColors.mint)),
-                      TextSpan(text: '$command\n', style: mono(12.5, color: const Color(0xFFE8EEF8))),
-                      if (out.isNotEmpty) TextSpan(text: out.endsWith('\n') ? out : '$out\n', style: mono(12, color: const Color(0xFFC9D6EA))),
-                      if (err.isNotEmpty) TextSpan(text: err, style: mono(12, color: WoiColors.red)),
+                      TextSpan(
+                        text: r'$ ',
+                        style: mono(12.5, color: WoiColors.mint),
+                      ),
+                      TextSpan(
+                        text: '$command\n',
+                        style: mono(12.5, color: const Color(0xFFE8EEF8)),
+                      ),
+                      if (out.isNotEmpty)
+                        TextSpan(
+                          text: out.endsWith('\n') ? out : '$out\n',
+                          style: mono(12, color: const Color(0xFFC9D6EA)),
+                        ),
+                      if (err.isNotEmpty)
+                        TextSpan(
+                          text: err,
+                          style: mono(12, color: WoiColors.red),
+                        ),
                       if (out.isEmpty && err.isEmpty && code != null)
-                        TextSpan(text: '(no output)', style: mono(12, color: WoiColors.textFaint)),
+                        TextSpan(
+                          text: '(no output)',
+                          style: mono(12, color: WoiColors.textFaint),
+                        ),
                       if (result['truncated'] == true)
-                        TextSpan(text: '\n… output truncated', style: mono(12, color: WoiColors.amber)),
+                        TextSpan(
+                          text: '\n… output truncated',
+                          style: mono(12, color: WoiColors.amber),
+                        ),
                     ],
                   ),
                 ),
@@ -1170,12 +1221,18 @@ class _CodeBlock extends StatelessWidget {
             TextSpan(
               children: [
                 for (var i = 0; i < lines.length; i++) ...[
-                  TextSpan(text: '${'${firstLine + i}'.padLeft(gutter)}  ', style: mono(12, color: WoiColors.textFaint)),
+                  TextSpan(
+                    text: '${'${firstLine + i}'.padLeft(gutter)}  ',
+                    style: mono(12, color: WoiColors.textFaint),
+                  ),
                   ...highlightLine(lines[i], lang, size: 12),
                   const TextSpan(text: '\n'),
                 ],
                 if (all.length > maxLines)
-                  TextSpan(text: '… ${all.length - maxLines} more lines', style: mono(12, color: WoiColors.textFaint)),
+                  TextSpan(
+                    text: '… ${all.length - maxLines} more lines',
+                    style: mono(12, color: WoiColors.textFaint),
+                  ),
               ],
             ),
           ),

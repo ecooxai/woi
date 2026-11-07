@@ -127,8 +127,7 @@ class FakeStopWordSpotter implements StopWordSpotter {
   final refPlayAt = <DateTime>[];
   bool disposed = false;
 
-  void hit([String keyword = 'STOP']) =>
-      _hits.add(KwsHit(keyword: keyword, micTime: DateTime.now(), threshold: 0.4));
+  void hit([String keyword = 'STOP']) => _hits.add(KwsHit(keyword: keyword, micTime: DateTime.now(), threshold: 0.4));
 
   @override
   Stream<KwsHit> get hits => _hits.stream;
@@ -148,6 +147,57 @@ class FakeStopWordSpotter implements StopWordSpotter {
 Iterable<Message> ofKind(Conversation c, MessageKind k) => c.messages.where((m) => m.kind == k);
 
 void main() {
+  group('held recording integration', () {
+    test('suspends regular capture across reconnect and resumes afterward', () async {
+      final h = await Harness.create(options: const PipelineOptions(autoScreenshot: false));
+      final firstMic = h.mic;
+      final opens = h.fp.audio.micOpens.length;
+      await h.pipeline.suspendForRecording();
+      expect(firstMic.closed, isTrue);
+      await h.pipeline.connect();
+      expect(h.fp.audio.micOpens.length, opens, reason: 'no normal mic during the held capture');
+      await h.pipeline.resumeAfterRecording();
+      expect(h.fp.audio.micOpens.length, opens + 1);
+      expect(h.mic.closed, isFalse);
+      await h.dispose();
+    });
+
+    test('recorded audio keeps its original clip and transcript through reconnect', () async {
+      final gate = Completer<void>();
+      var count = 0;
+      final h = await Harness.create(
+        backend: () {
+          final b = ScriptedBackend();
+          if (++count == 2) b.connectGate = gate;
+          return b;
+        },
+        options: const PipelineOptions(autoScreenshot: false),
+      );
+      final reconnect = h.pipeline.connect();
+      await waitFor(() => count == 2 && h.scripted.connectStarted);
+      await h.pipeline.sendRecordedAudio(pcm(250), 'Describe the sound I recorded.');
+      expect(h.scripted.texts, isEmpty);
+      gate.complete();
+      await reconnect;
+      await waitFor(() => h.scripted.texts.isNotEmpty);
+      expect(h.scripted.texts, ['Describe the sound I recorded.']);
+      final message = ofKind(h.conv, MessageKind.user).single;
+      expect(message.audio!.durationMs, 250);
+      expect(await File(message.audio!.path).exists(), isTrue);
+      expect(message.meta['captureSources'], ['microphone', 'system']);
+      await h.dispose();
+    });
+
+    test('assistant reply stores the producing session model with its history', () async {
+      final h = await Harness.create(options: const PipelineOptions(autoScreenshot: false));
+      h.scripted.emit(const AssistantTranscriptDelta('Hello there.'));
+      final reply = ofKind(h.conv, MessageKind.assistant).single;
+      expect(reply.meta['model'], 'gpt-live-1.1');
+      expect(Message.fromJson(reply.toJson()).meta['model'], 'gpt-live-1.1');
+      await h.dispose();
+    });
+  });
+
   group('stop word spotting (kws)', () {
     Future<(Harness, FakeStopWordSpotter?, List<int>)> speaking({bool on = true, int audioMs = 4000}) async {
       FakeStopWordSpotter? kws;
@@ -721,7 +771,11 @@ void main() {
       expect(h.pipeline.localOnsets, 1);
       expect(h.player.stops, stops + 1, reason: 'paused at once');
       expect(b.cancels, 0, reason: 'not cut before the server confirms');
-      expect(b.audioSent.skip(sent).any((c) => c.any((v) => v != 0)), isTrue, reason: 'gate open: the user reaches the server');
+      expect(
+        b.audioSent.skip(sent).any((c) => c.any((v) => v != 0)),
+        isTrue,
+        reason: 'gate open: the user reaches the server',
+      );
       // Server VAD confirms: that is the barge-in.
       b.emit(const SpeechStarted(itemId: 'u1'));
       expect(h.pipeline.bargeIns, 1);
@@ -896,24 +950,27 @@ void main() {
         await h.dispose();
       });
 
-      test('a short word (strong peak, still voiced at firing) is cut after the tail window: stopped, never resumed', () async {
-        final h = await strongOnset(cut: true);
-        final b = h.scripted;
-        expect(h.pipeline.onsetCutRms, TurnPipeline.onsetCutMinRms);
-        final written = h.player.written.length;
-        await Future<void>.delayed(const Duration(milliseconds: 1000));
-        expect(h.pipeline.localCuts, 1);
-        expect(h.pipeline.onsetsHeld, 0, reason: 'cut without the extra hold');
-        expect(h.pipeline.bargeIns, 1);
-        expect(b.cancels, 1, reason: 'reply cancelled / truncated like a barge-in');
-        expect(ofKind(h.conv, MessageKind.assistant).single.interrupted, isTrue);
-        expect(h.pipeline.phase, AssistantPhase.listening);
-        await Future<void>.delayed(const Duration(milliseconds: 1500));
-        expect(h.pipeline.onsetsResumed, 0);
-        expect(h.player.written.length, written, reason: 'Woi stays silent');
-        expect(b.texts, isEmpty, reason: 'no response created');
-        await h.dispose();
-      });
+      test(
+        'a short word (strong peak, still voiced at firing) is cut after the tail window: stopped, never resumed',
+        () async {
+          final h = await strongOnset(cut: true);
+          final b = h.scripted;
+          expect(h.pipeline.onsetCutRms, TurnPipeline.onsetCutMinRms);
+          final written = h.player.written.length;
+          await Future<void>.delayed(const Duration(milliseconds: 1000));
+          expect(h.pipeline.localCuts, 1);
+          expect(h.pipeline.onsetsHeld, 0, reason: 'cut without the extra hold');
+          expect(h.pipeline.bargeIns, 1);
+          expect(b.cancels, 1, reason: 'reply cancelled / truncated like a barge-in');
+          expect(ofKind(h.conv, MessageKind.assistant).single.interrupted, isTrue);
+          expect(h.pipeline.phase, AssistantPhase.listening);
+          await Future<void>.delayed(const Duration(milliseconds: 1500));
+          expect(h.pipeline.onsetsResumed, 0);
+          expect(h.player.written.length, written, reason: 'Woi stays silent');
+          expect(b.texts, isEmpty, reason: 'no response created');
+          await h.dispose();
+        },
+      );
 
       test('echo onset (strong peak, not voiced at firing) with a silent pause: held, then resumed', () async {
         // e28b: echo peak 0.062 with excess 0.000 at the firing frame, the
@@ -949,29 +1006,32 @@ void main() {
         await h.dispose();
       });
 
-      test('short stop word (quiet pause, not a short-word cut) + server transcript "stop": cut, stays stopped', () async {
-        final h = await strongOnset(cut: true, fast: false);
-        final b = h.scripted;
-        await Future<void>.delayed(const Duration(milliseconds: 1100));
-        expect(h.pipeline.localCuts, 0);
-        expect(h.pipeline.onsetsHeld, 1);
-        b.emit(const SpeechStarted(itemId: 'u1', deferred: true));
-        expect(h.pipeline.bargeIns, 1);
-        expect(b.cancels, 1);
-        b.emit(const SpeechStopped(itemId: 'u1'));
-        b.emit(const UserTranscriptDone('Stop.', itemId: 'u1'));
-        b.emit(const ResponseDone(cancelled: true));
-        final written = h.player.written.length;
-        b.emit(const AssistantTranscriptDelta('Okay.'));
-        b.emit(AssistantAudioDelta(voice(400, amplitude: 8000, f0: 150)));
-        b.emit(const ResponseDone());
-        await Future<void>.delayed(const Duration(milliseconds: 1000));
-        expect(h.pipeline.stopsHandled, 1);
-        expect(h.pipeline.onsetsResumed, 0);
-        expect(h.player.written.length, written, reason: 'stays stopped');
-        expect(ofKind(h.conv, MessageKind.assistant).first.interrupted, isTrue);
-        await h.dispose();
-      });
+      test(
+        'short stop word (quiet pause, not a short-word cut) + server transcript "stop": cut, stays stopped',
+        () async {
+          final h = await strongOnset(cut: true, fast: false);
+          final b = h.scripted;
+          await Future<void>.delayed(const Duration(milliseconds: 1100));
+          expect(h.pipeline.localCuts, 0);
+          expect(h.pipeline.onsetsHeld, 1);
+          b.emit(const SpeechStarted(itemId: 'u1', deferred: true));
+          expect(h.pipeline.bargeIns, 1);
+          expect(b.cancels, 1);
+          b.emit(const SpeechStopped(itemId: 'u1'));
+          b.emit(const UserTranscriptDone('Stop.', itemId: 'u1'));
+          b.emit(const ResponseDone(cancelled: true));
+          final written = h.player.written.length;
+          b.emit(const AssistantTranscriptDelta('Okay.'));
+          b.emit(AssistantAudioDelta(voice(400, amplitude: 8000, f0: 150)));
+          b.emit(const ResponseDone());
+          await Future<void>.delayed(const Duration(milliseconds: 1000));
+          expect(h.pipeline.stopsHandled, 1);
+          expect(h.pipeline.onsetsResumed, 0);
+          expect(h.player.written.length, written, reason: 'stays stopped');
+          expect(ofKind(h.conv, MessageKind.assistant).first.interrupted, isTrue);
+          await h.dispose();
+        },
+      );
 
       test('after a local cut, a late echo transcript keeps Woi stopped (no reply, no resume)', () async {
         final h = await strongOnset(cut: true);
@@ -1118,27 +1178,30 @@ void main() {
           expect(TurnPipeline.qaIgnoreServerSpeechEnv, Platform.environment['WOI_QA_IGNORE_SERVER_SPEECH'] == '1');
         });
 
-        test('a server speech start in the pause waits for the local rule; after a local cut the turn is processed', () async {
-          final h = await strongOnset(cut: true);
-          h.pipeline.qaIgnoreServerSpeech = true;
-          final b = h.scripted;
-          b.emit(const SpeechStarted(itemId: 'u1', deferred: true));
-          expect(h.pipeline.bargeIns, 0, reason: 'the server does not decide');
-          expect(h.pipeline.qaServerStartsHeld, 1);
-          await Future<void>.delayed(const Duration(milliseconds: 1000));
-          expect(h.pipeline.localCuts, 1);
-          expect(b.accepts, 1, reason: 'the held turn is replayed and accepted');
-          b.emit(const SpeechStopped(itemId: 'u1'));
-          b.emit(const UserTranscriptDone('What time is it in Tokyo?', itemId: 'u1'));
-          b.emit(const ResponseDone(cancelled: true));
-          b.emit(const AssistantTranscriptDelta('It is nine.'));
-          b.emit(AssistantAudioDelta(voice(400, amplitude: 8000, f0: 150)));
-          b.emit(const ResponseDone());
-          await Future<void>.delayed(const Duration(milliseconds: 100));
-          expect(ofKind(h.conv, MessageKind.user).single.text, contains('Tokyo'));
-          expect(ofKind(h.conv, MessageKind.assistant).last.text, 'It is nine.');
-          await h.dispose();
-        });
+        test(
+          'a server speech start in the pause waits for the local rule; after a local cut the turn is processed',
+          () async {
+            final h = await strongOnset(cut: true);
+            h.pipeline.qaIgnoreServerSpeech = true;
+            final b = h.scripted;
+            b.emit(const SpeechStarted(itemId: 'u1', deferred: true));
+            expect(h.pipeline.bargeIns, 0, reason: 'the server does not decide');
+            expect(h.pipeline.qaServerStartsHeld, 1);
+            await Future<void>.delayed(const Duration(milliseconds: 1000));
+            expect(h.pipeline.localCuts, 1);
+            expect(b.accepts, 1, reason: 'the held turn is replayed and accepted');
+            b.emit(const SpeechStopped(itemId: 'u1'));
+            b.emit(const UserTranscriptDone('What time is it in Tokyo?', itemId: 'u1'));
+            b.emit(const ResponseDone(cancelled: true));
+            b.emit(const AssistantTranscriptDelta('It is nine.'));
+            b.emit(AssistantAudioDelta(voice(400, amplitude: 8000, f0: 150)));
+            b.emit(const ResponseDone());
+            await Future<void>.delayed(const Duration(milliseconds: 100));
+            expect(ofKind(h.conv, MessageKind.user).single.text, contains('Tokyo'));
+            expect(ofKind(h.conv, MessageKind.assistant).last.text, 'It is nine.');
+            await h.dispose();
+          },
+        );
 
         test('a server "stop" in a quiet echo pause is ignored: resumed, turn dropped', () async {
           final h = await strongOnset(cut: true, fast: false);
@@ -1297,7 +1360,10 @@ void main() {
   group('echo turns (transcript guard)', () {
     /// Woi is replying (audible); the server hears its echo as a user turn
     /// and replies to it with a tool call.
-    Future<Harness> echoTurn(String heard, {String said = 'Pointer moved. Now I will open the settings for you.'}) async {
+    Future<Harness> echoTurn(
+      String heard, {
+      String said = 'Pointer moved. Now I will open the settings for you.',
+    }) async {
       final h = await Harness.create(
         options: const PipelineOptions(autoScreenshot: false),
         echoGuard: EchoGuard(nowUs: () => 0),
@@ -1319,23 +1385,26 @@ void main() {
       return h;
     }
 
-    test('Woi heard back ("Boiner moot." for "Pointer moved."): no reply, no tool, no bubble; the reply plays on', () async {
-      final h = await echoTurn('Boiner moot.');
-      final b = h.scripted;
-      expect(h.pipeline.echoTurnsDropped, 1);
-      expect(b.echoDrops.single.$1, 'u1');
-      expect(b.echoDrops.single.$2, ['c1']);
-      expect(ofKind(h.conv, MessageKind.user), isEmpty);
-      expect(ofKind(h.conv, MessageKind.tool), isEmpty);
-      expect(h.fp.input.log, isEmpty);
-      final replies = ofKind(h.conv, MessageKind.assistant);
-      expect(replies.map((m) => m.text), ['Pointer moved. Now I will open the settings for you.']);
-      expect(replies.single.interrupted, isFalse);
-      // The unheard rest of the cut reply (all 3 s: the guard clock stands
-      // still) is played again; the reply to the echo never is.
-      expect(h.player.written.length, kVoiceBytesPerSecond * 6);
-      await h.dispose();
-    });
+    test(
+      'Woi heard back ("Boiner moot." for "Pointer moved."): no reply, no tool, no bubble; the reply plays on',
+      () async {
+        final h = await echoTurn('Boiner moot.');
+        final b = h.scripted;
+        expect(h.pipeline.echoTurnsDropped, 1);
+        expect(b.echoDrops.single.$1, 'u1');
+        expect(b.echoDrops.single.$2, ['c1']);
+        expect(ofKind(h.conv, MessageKind.user), isEmpty);
+        expect(ofKind(h.conv, MessageKind.tool), isEmpty);
+        expect(h.fp.input.log, isEmpty);
+        final replies = ofKind(h.conv, MessageKind.assistant);
+        expect(replies.map((m) => m.text), ['Pointer moved. Now I will open the settings for you.']);
+        expect(replies.single.interrupted, isFalse);
+        // The unheard rest of the cut reply (all 3 s: the guard clock stands
+        // still) is played again; the reply to the echo never is.
+        expect(h.player.written.length, kVoiceBytesPerSecond * 6);
+        await h.dispose();
+      },
+    );
 
     test('the user talking over Woi: the held reply and its tool call go ahead', () async {
       final h = await echoTurn('Open the browser please.');

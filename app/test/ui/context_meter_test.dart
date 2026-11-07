@@ -107,6 +107,27 @@ void main() {
     expect(find.text('compacting…'), findsNothing);
   });
 
+  for (final size in const [Size(360, 740), Size(400, 860)]) {
+    testWidgets('phone $size context sheet scrolls to a usable Compact now action', (tester) async {
+      var compacted = 0;
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(host(ContextMeterStyle.indicator, onCompact: () => compacted++));
+      await tester.tap(find.byType(ContextMeter));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      await tester.drag(find.byType(BottomSheet), const Offset(0, -400));
+      await tester.pumpAndSettle();
+      final action = find.text('Compact now').hitTestable();
+      expect(action, findsOneWidget);
+      await tester.tap(action);
+      await tester.pumpAndSettle();
+      expect(compacted, 1);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('tap opens details with breakdown and Compact now', (tester) async {
     var compacted = 0;
     tester.view.physicalSize = const Size(1400, 900);

@@ -11,6 +11,16 @@ abstract class MicStream {
   Future<void> close();
 }
 
+/// Native capture ownership was not confirmed released. A new microphone
+/// must not be opened until cleanup succeeds or the voice session restarts.
+class AudioCaptureReleaseFailure implements Exception {
+  AudioCaptureReleaseFailure(this.cause);
+  final Object cause;
+
+  @override
+  String toString() => 'Audio capture release was not confirmed: $cause';
+}
+
 /// Streaming PCM16 24 kHz mono output with instant stop (barge-in).
 abstract class PcmPlayer {
   void write(Uint8List pcm16);
@@ -74,4 +84,38 @@ abstract class AudioRouted {
 
   /// Non-null while the mic is paused for another app (status-row text).
   ValueListenable<String?> get micPaused;
+}
+
+/// A leased, already echo-cancelled input for transports which own capture
+/// themselves (WebRTC). Keep the lease until their native track is stopped.
+class EchoCaptureLease {
+  EchoCaptureLease({
+    required this.deviceName,
+    required this.deviceLabel,
+    required Future<void> Function() release,
+    // Keep the public named argument while hiding the callback itself.
+    // ignore: prefer_initializing_formals
+  }) : _release = release;
+
+  final String deviceName;
+  final String deviceLabel;
+  final Future<void> Function() _release;
+  bool _released = false;
+
+  Future<void> release() async {
+    if (_released) return;
+    _released = true;
+    await _release();
+  }
+}
+
+/// Optional platform capture source shared by PCM and WebRTC consumers.
+abstract interface class ExternalEchoCapture {
+  Future<EchoCaptureLease?> acquireEchoCapture();
+}
+
+/// Explicit recording of microphone and system output. Normal listening
+/// stays on the echo-cancelled microphone; only a held recording uses this.
+abstract interface class MicSystemCapture {
+  Future<MicStream> openMicAndSystemAudio();
 }

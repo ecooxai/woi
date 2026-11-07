@@ -7,3 +7,4 @@ research/out/
 research/__pycache__/
 research/.venv/
 **/__pycache__/
+qa/out/
