@@ -55,7 +55,7 @@ class _Rig {
 
   FakeSideband get ws => server.socket;
 
-  Future<void> connect({String model = 'gpt-live-1.1', String voice = 'marin', Credentials? creds = _creds}) => backend
+  Future<void> connect({String model = 'gpt-live-1.1', String voice = 'cove', Credentials? creds = _creds}) => backend
       .connect(SessionConfig(model: model, voice: voice, instructions: 'Be brief.', tools: _tools, credentials: creds));
 
   List<T> of<T>() => events.whereType<T>().toList();
@@ -72,7 +72,7 @@ void main() {
   group('connect', () {
     test('creates the call with a valid session and opens the sideband', () async {
       final r = _Rig();
-      await r.connect(voice: 'marin', model: 'gpt-realtime-1.5');
+      await r.connect(voice: 'cove', model: 'gpt-live-1.1');
       final (uri, headers, body) = r.server.calls.single;
       expect(uri.path, '/backend-api/codex/realtime/calls');
       expect(uri.queryParameters, {'intent': 'quicksilver', 'architecture': 'avas'});
@@ -81,7 +81,7 @@ void main() {
       expect(headers['chatgpt-account-id'], 'acct_1');
       expect(body['sdp'], startsWith('v=0'));
       final session = body['session']! as Map;
-      // Realtime voices / models kill the call silently: mapped to valid ones.
+      // The selected valid model and voice reach the request unchanged.
       expect(session['model'], 'gpt-live-1.1');
       expect((session['audio'] as Map)['output'], {'voice': 'cove'});
       expect(session['delegation'], {'type': 'client'});
@@ -97,6 +97,77 @@ void main() {
       expect(r.ws.ofType('session.close'), hasLength(1));
       expect(r.rtc.closed, isTrue);
       expect(r.model.closed, isTrue);
+    });
+
+    test('forwards an explicit custom live model without replacing it', () async {
+      final r = _Rig();
+      await r.connect(model: 'tenant-audio-current', voice: 'juniper');
+      final session = r.server.calls.single.$3['session']! as Map;
+      expect(session['model'], 'tenant-audio-current');
+      expect((session['audio'] as Map)['output'], {'voice': 'juniper'});
+      expect(r._made, 1);
+      await r.dispose();
+    });
+
+    test('unsupported voices fail before transport or microphone creation', () async {
+      for (final voice in ['marin', 'echo', 'unlisted-voice', ' ']) {
+        final r = _Rig();
+        await expectLater(
+          r.connect(voice: voice),
+          throwsA(isA<StateError>().having((e) => e.message, 'message', contains('voice'))),
+        );
+        expect(r._made, 0, reason: voice);
+        expect(r.server.calls, isEmpty);
+        expect(r.rtc.micAtOffer, isNull);
+        expect(r.rtc.captureSuspensions, isEmpty);
+        await r.dispose();
+        await r.rtc.close(); // This test intentionally never hands the fixture to the backend.
+      }
+    });
+
+    test('empty or known-realtime models fail before opening the live transport', () async {
+      for (final model in ['', '  ', 'gpt-realtime-2.1']) {
+        final r = _Rig();
+        await expectLater(
+          r.connect(model: model),
+          throwsA(isA<StateError>().having((e) => e.message, 'message', contains('audio model'))),
+        );
+        expect(r._made, 0, reason: model);
+        expect(r.server.calls, isEmpty);
+        expect(r.rtc.micAtOffer, isNull);
+        await r.dispose();
+        await r.rtc.close();
+      }
+    });
+
+    test('provider rejection of a custom model stays visible without a fallback request', () async {
+      final requests = <Map<String, Object?>>[];
+      final rtc = FakeLiveTransport();
+      var transports = 0;
+      final backend = LiveWebRtcBackend(
+        transportFactory: () {
+          transports++;
+          return rtc;
+        },
+        createCall: (uri, headers, body) async {
+          requests.add(body);
+          throw LiveCallException('requested model is unavailable', status: 404);
+        },
+      );
+      await expectLater(
+        backend.connect(
+          const SessionConfig(model: 'tenant-audio-unavailable', voice: 'cove', instructions: '', credentials: _creds),
+        ),
+        throwsA(
+          isA<LiveCallException>()
+              .having((e) => e.status, 'status', 404)
+              .having((e) => e.message, 'message', contains('requested model')),
+        ),
+      );
+      expect((requests.single['session']! as Map)['model'], 'tenant-audio-unavailable');
+      expect(transports, 1);
+      await backend.close();
+      expect(rtc.closed, isTrue);
     });
 
     test('keeps a valid v3 voice; rejects API-key credentials and a silent session', () async {
@@ -339,8 +410,14 @@ void main() {
     });
 
     test('looksLikeAction', () {
-      for (final t in ['Open the file notes.txt', 'please run ls', 'Can you click the OK button?', 'type hello world',
-        'Show me README.md', 'take a screenshot']) {
+      for (final t in [
+        'Open the file notes.txt',
+        'please run ls',
+        'Can you click the OK button?',
+        'type hello world',
+        'Show me README.md',
+        'take a screenshot',
+      ]) {
         expect(looksLikeAction(t), isTrue, reason: t);
       }
       for (final t in ['What is two plus two?', 'Hello, how are you?', 'Tell me a joke', 'Why is the sky blue?']) {
@@ -511,22 +588,25 @@ void main() {
   });
 
   group('iter6: settle and drops', () {
-    test('a result the model never voices settles the turn (ResponseDone); a voiced one does not double-settle', () async {
-      final r = _Rig();
-      r.backend.settleAfterResult = const Duration(milliseconds: 80);
-      await r.connect();
-      r.backend.sendText('thanks');
-      expect(r.backend.busy, isTrue, reason: 'waiting for the model to answer');
-      await waitFor(() => r.of<ResponseDone>().isNotEmpty, timeout: const Duration(seconds: 1));
-      expect(r.backend.busy, isFalse);
-      // Voiced: the assistant turn opens in time, so the timer does nothing extra.
-      final before = r.of<ResponseDone>().length;
-      r.backend.sendText('and again');
-      r.ws.outputWords('Sure.', 0);
-      await _tick(200);
-      expect(r.of<ResponseDone>().length, lessThanOrEqualTo(before + 1));
-      await r.dispose();
-    });
+    test(
+      'a result the model never voices settles the turn (ResponseDone); a voiced one does not double-settle',
+      () async {
+        final r = _Rig();
+        r.backend.settleAfterResult = const Duration(milliseconds: 80);
+        await r.connect();
+        r.backend.sendText('thanks');
+        expect(r.backend.busy, isTrue, reason: 'waiting for the model to answer');
+        await waitFor(() => r.of<ResponseDone>().isNotEmpty, timeout: const Duration(seconds: 1));
+        expect(r.backend.busy, isFalse);
+        // Voiced: the assistant turn opens in time, so the timer does nothing extra.
+        final before = r.of<ResponseDone>().length;
+        r.backend.sendText('and again');
+        r.ws.outputWords('Sure.', 0);
+        await _tick(200);
+        expect(r.of<ResponseDone>().length, lessThanOrEqualTo(before + 1));
+        await r.dispose();
+      },
+    );
 
     test('an unexpected sideband close (1006) is a reconnectable connection_lost', () async {
       final r = _Rig();

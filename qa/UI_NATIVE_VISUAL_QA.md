@@ -22,3 +22,42 @@ The launcher uses Xvfb and Openbox on `:74`, a private network namespace, a mask
 10. `python3 qa/ui_native_visual.py stop` terminates only this script's recorded private processes. It leaves the user's desktop, audio, root's E2E display, and production app alone.
 
 Use `python3 qa/ui_native_visual.py shot --name <descriptive-name>` after each interaction. All UI actions must explicitly target `DISPLAY=:74` and the recorded window; choose coordinates from the latest screenshot. The widget suite separately verifies taps, hold cancellation, 48dp targets, live model attribution persistence, and old PTT activation behavior, which cannot be exercised as live network behavior in this offline profile.
+
+## Settings follow-up
+
+Use the same private offline fixture after the settings build is ready. Keep
+its evidence in `qa/out/acceptance-0.16.0/ui/`. The launcher writes to
+`qa/out/ui-native` and replaces its logs and initial screenshot: archive that
+directory before starting this phase, then copy the new captures and logs into
+the phase-specific evidence directory before another start.
+Open Settings with Ctrl+, and choose coordinates only from a fresh screenshot.
+
+- Inspect desktop and narrow layouts in light and dark themes. Confirm clear
+  Connection, Model, Preferences and bottom Advanced sections without clipped
+  controls or oversized repeated descriptions.
+- Codex login status precedes API access. Backend offers Codex login or API;
+  transport/model names belong in Model.
+- Audio exposes the two requested quick choices and a More selector. Check the
+  selected state and long/custom values; realtime and live choices must retain
+  their explicit family. Text model remains independent of compaction.
+- Voice offers Marin/Echo plus More. In a live configuration, incompatible
+  realtime voices are unavailable with a concise explanation and the current
+  supported live voice remains visible.
+- Changing models in this synthetic profile must preserve authentication, while
+  API makes live choices unavailable. Do not enter real credentials or invoke a
+  real login flow. Core tests verify persistence and provider request contents.
+- Advanced starts collapsed. Expand it, reach all internal groups, search for a
+  buried option such as stop words or workspace, clear the search, and verify
+  the intended expansion state returns. Check narrow dropdown/popup placement.
+- Check saved edits and custom fields through the widget interaction regressions;
+  controller notifications must not overwrite an unfinished local edit.
+- Read the private app log for overflow/exception patterns, record observed
+  outcomes and the binary hash, and stop only this launcher's recorded processes.
+
+On the actual phone, inspect the installed Settings view and Android-only
+controls without changing authentication, models, audio preferences or other
+user settings. Wait for inertial scrolling and reconnection-driven layout
+changes to settle, then inspect a fresh screenshot before choosing a tap target,
+especially near sliders. Expanding/collapsing sections and scrolling are transient. Return
+to the user's previous view and hide the keyboard afterward. Do not publish
+account identifiers, credentials or conversation contents in screenshots.

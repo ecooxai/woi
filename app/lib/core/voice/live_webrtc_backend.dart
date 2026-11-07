@@ -14,7 +14,7 @@ import '../media/media_context.dart' show isMediaQuestion, isScreenQuestion, cam
 import '../net/realtime_socket.dart';
 import '../notes/pinned_note.dart';
 import '../pipeline/vad.dart';
-import '../settings/settings.dart' show kLiveVoices, kLiveDefaultVoice;
+import '../settings/settings.dart' show kLiveVoices, kRealtimeModels, kVoiceModels;
 import 'context_images.dart';
 import 'context_sync.dart';
 import 'delegation_executor.dart';
@@ -22,7 +22,7 @@ import 'live_rtc_transport.dart';
 import 'pinned_context.dart';
 import 'voice_backend.dart';
 
-const kLiveModels = ['gpt-live-1.1', 'gpt-live-1', 'gpt-live-1-codex'];
+const kLiveModels = kVoiceModels;
 
 // ------------------------------------------------------------- call creation
 
@@ -352,8 +352,17 @@ class LiveWebRtcBackend extends VoiceBackend
     bool timed = false,
   }) async {
     final creds = config.credentials!;
-    final model = kLiveModels.contains(config.model) ? config.model : kLiveModels.first;
-    final voice = kLiveVoices.contains(config.voice) ? config.voice : kLiveDefaultVoice;
+    final model = config.model.trim();
+    final voice = config.voice.trim();
+    if (model.isEmpty) throw StateError('Choose a nonempty gpt-live audio model in Settings.');
+    if (kRealtimeModels.contains(model)) {
+      throw StateError('"$model" is a realtime audio model. Select its realtime option in Settings.');
+    }
+    if (!kLiveVoices.contains(voice)) {
+      throw StateError('gpt-live does not support the voice "$voice". Choose a supported live voice in Settings.');
+    }
+    // Forward explicit custom model IDs. The provider can reject them visibly;
+    // silently using another model would misrepresent the user's selection.
     final headers = creds.headers(live: true);
     if (_closed) throw StateError('Live backend is closed');
     final s = _LiveSession(transportFactory(), model, voice);
@@ -1073,10 +1082,7 @@ class LiveWebRtcBackend extends VoiceBackend
     _captureSuspended = suspended;
     // Update the desired state synchronously. Sessions created during the
     // await inherit it before createOffer and cannot reacquire the device.
-    await Future.wait([
-      for (final session in _sessions.toList())
-        session.rtc.setCaptureSuspended(suspended),
-    ]);
+    await Future.wait([for (final session in _sessions.toList()) session.rtc.setCaptureSuspended(suspended)]);
   }
 
   void _micClosed(_ManagedMic m) {

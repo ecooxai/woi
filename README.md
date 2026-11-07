@@ -1,6 +1,7 @@
 # Woi — voice-first AI assistant (Linux first)
 
-Stack: Flutter (Dart), Linux and Android. Realtime voice via gpt-live (Codex ChatGPT auth or OpenAI API key).
+Stack: Flutter (Dart), Linux and Android. Audio models use gpt-live or realtime;
+connect with Codex login or an OpenAI API key. In this app, gpt-live uses Codex login.
 See docs/PLAN.md.
 
 ## Build
@@ -33,6 +34,26 @@ immediately left of the microphone, and the black send button is at the far righ
 On Linux, the native WebRTC microphone uses the PipeWire echo-cancelled source
 when echo cancellation is enabled. Reconnecting rebuilds missing nodes and waits
 for old capture owners to release before reusing audio resources.
+
+## Settings
+
+Connection puts Codex login status and API access together. Backend chooses
+**Codex login** or **API**; audio models are selected separately in **Model**.
+The audio quick choices are **gpt-realtime-2.1** and **gpt-live-1.1**, with more
+models in a selector. Text model controls delegated reasoning and longer tasks;
+compaction keeps its separate model under Advanced.
+
+Voice offers **Marin** and **Echo** as quick choices and more voices in a selector.
+Realtime and gpt-live have distinct supported voice sets. Incompatible choices
+are explained instead of silently switching the login, model, or voice. Saved
+custom model IDs are retained, and explicit custom live IDs reach the provider
+unchanged; unsupported selections return a visible error.
+
+Everyday preferences are grouped together. Timing, compaction tuning, screenshot
+quality, workspace, Android routing and diagnostic controls sit in one
+**Advanced** section at the bottom, collapsed by default. Search reveals matching
+advanced options. Changes persist automatically, including pending text edits
+when leaving the page. Editing a saved inactive API key does not reconnect Codex.
 
 ## Computer input and Python
 

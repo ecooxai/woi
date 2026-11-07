@@ -9,12 +9,13 @@ import 'package:woi/core/context/compressor.dart';
 import 'package:woi/core/models/message.dart';
 import 'package:woi/core/pipeline/turn_pipeline.dart';
 import 'package:woi/core/settings/settings.dart';
+import 'package:woi/core/voice/backend_factory.dart';
 import 'package:woi/core/storage/history_store.dart';
 import 'package:woi/ui/notes/note_editor.dart';
 import 'package:woi/ui/notes/note_tabs.dart';
 import 'package:woi/ui/screens/home_screen.dart';
 import 'package:woi/ui/screens/settings_screen.dart';
-import 'package:woi/ui/widgets/glass.dart';
+import 'package:woi/ui/login/login_screen.dart';
 import 'package:woi/ui/theme.dart';
 import 'package:woi/ui/widgets/tab_strip.dart';
 import 'package:woi/ui/widgets/voice_status.dart';
@@ -359,7 +360,7 @@ void main() {
       await ctrl(LogicalKeyboardKey.digit4);
       expect(a.view.value, HomeView.settings);
       expect(find.byKey(const ValueKey('settings-view')), findsOneWidget);
-      expect(find.byKey(const ValueKey('choices-backend')), findsOneWidget);
+      expect(find.byKey(const ValueKey('settings-group-connection')), findsOneWidget);
       // Inline: no route was pushed and the input bar stays.
       expect(find.byKey(const ValueKey('input-bar')), findsOneWidget);
       await t.sendKeyEvent(LogicalKeyboardKey.escape);
@@ -518,81 +519,6 @@ void main() {
   });
 
   group('Settings', () {
-    testWidgets('every choice is a radio list; picking one applies it', (t) async {
-      final env = _Env();
-      await env.start(t);
-      await t.binding.setSurfaceSize(const Size(1400, 900));
-      addTearDown(() => t.binding.setSurfaceSize(null));
-      await t.pumpWidget(
-        MaterialApp(
-          theme: buildWoiTheme(),
-          home: Scaffold(body: SettingsView(controller: env.c)),
-        ),
-      );
-      await _settle(t);
-
-      // Rare settings sit behind each group's "Advanced" expander.
-      expect(find.byKey(const ValueKey('choices-compression-model')), findsNothing);
-      for (final g in ['voice', 'context']) {
-        final f = find.byKey(ValueKey('advanced-$g'));
-        await _tapInSettings(t, f);
-      }
-      t.state<ScrollableState>(_settingsList).position.jumpTo(0);
-      await t.pump();
-
-      for (final id in [
-        'backend',
-        'voice-model',
-        'realtime-model',
-        'voice',
-        'compression-model',
-        'delegate-model',
-        'theme',
-      ]) {
-        final group = find.byKey(ValueKey('choices-$id'));
-        await t.scrollUntilVisible(group, 200, scrollable: _settingsList);
-        expect(group, findsOneWidget, reason: id);
-        expect(find.descendant(of: group, matching: find.byType(DropdownButtonFormField<String>)), findsNothing);
-      }
-      expect(find.byType(Radio<AppTheme>), findsNWidgets(3));
-      await t.scrollUntilVisible(find.byKey(const ValueKey('choices-backend')), -200, scrollable: _settingsList);
-      expect(find.byType(Radio<BackendMode>), findsNWidgets(BackendMode.values.length));
-
-      final list = _settingsList;
-      Future<void> pick(String key, {double delta = 150}) async {
-        final f = find.byKey(ValueKey(key));
-        await t.scrollUntilVisible(f, delta, scrollable: list);
-        await Scrollable.ensureVisible(t.element(f), alignment: 0.5);
-        await t.pump();
-        await t.tap(f);
-        await _settle(t);
-      }
-
-      // Top to bottom, then back up.
-      await t.scrollUntilVisible(find.byKey(const ValueKey('choices-backend')), -300, scrollable: list);
-      await pick('radio-voice-model-gpt-live-1');
-      expect(env.c.settings.voiceModel, 'gpt-live-1');
-      await pick('radio-voice-maple');
-      expect(env.c.settings.liveVoice, 'maple');
-      await pick('radio-compression-model-gpt-6.1-sol');
-      expect(env.c.settings.compressionModel, 'gpt-6.1-sol');
-      await pick('radio-delegate-model-gpt-6-luna');
-      expect(env.c.settings.delegateModel, 'gpt-6-luna');
-      // Custom model id.
-      await pick('radio-delegate-model-\u0000custom');
-      expect(find.byKey(const ValueKey('custom-delegate-model')), findsOneWidget);
-      await pick('radio-theme-dark');
-      expect(env.c.settings.theme, AppTheme.dark);
-
-      await pick('radio-backend-direct', delta: -150);
-      expect(env.c.settings.backendMode, BackendMode.direct);
-      expect(find.byKey(const ValueKey('choices-voice-model')), findsNothing);
-      await pick('radio-voice-cedar', delta: -150);
-      expect(env.c.settings.voice, 'cedar');
-
-      await env.stop(t);
-    });
-
     Future<void> pumpSettings(WidgetTester t, _Env env, Size size) async {
       await t.binding.setSurfaceSize(size);
       addTearDown(() => t.binding.setSurfaceSize(null));
@@ -605,66 +531,313 @@ void main() {
       await _settle(t);
     }
 
-    testWidgets('groups with headers, no cards; Advanced expands and collapses', (t) async {
+    Future<void> choose(WidgetTester t, String id, String label) async {
+      final field = find.byKey(ValueKey('select-$id'));
+      await _showInSettings(t, field);
+      await t.tap(field);
+      await _settle(t);
+      await t.tap(find.text(label).hitTestable().last);
+      await _settle(t);
+    }
+
+    Future<void> search(WidgetTester t, String query) async {
+      await t.enterText(find.byKey(const ValueKey('settings-search')), query);
+      await _settle(t);
+    }
+
+    testWidgets('backend and audio choices preserve saved models and compatible voices', (t) async {
+      GptLiveHook.register((_) => ScriptedBackend());
+      addTearDown(GptLiveHook.unregister);
+      final env = _Env();
+      await env.start(
+        t,
+        savedSettings: const AppSettings(
+          backendMode: BackendMode.apiKey,
+          apiKey: 'qa-only-key',
+          realtimeModel: 'custom-realtime-id',
+          voice: 'echo',
+          liveVoice: 'maple',
+          micMode: MicMode.muted,
+        ),
+      );
+      await pumpSettings(t, env, const Size(1000, 1000));
+      expect(find.byKey(const ValueKey('codex-login-status')), findsOneWidget);
+      expect(find.byKey(const ValueKey('setting-api-key')), findsOneWidget);
+      final live = find.byKey(const ValueKey('radio-audio-model-gpt-live-1.1'));
+      await _showInSettings(t, live);
+      expect(t.widget<InkWell>(live).onTap, isNull);
+      expect(find.text('API uses realtime audio models. gpt-live requires Codex login.'), findsWidgets);
+
+      await _tapInSettings(t, find.byKey(const ValueKey('radio-backend-codex')));
+      expect(env.c.settings.backendMode, BackendMode.direct);
+      expect(env.c.settings.realtimeModel, 'custom-realtime-id');
+      final audio = find.byKey(const ValueKey('select-audio-model'));
+      await _showInSettings(t, audio);
+      expect(t.widget<DropdownButton<(AudioModelFamily, String)>>(audio).value, (
+        AudioModelFamily.realtime,
+        'custom-realtime-id',
+      ));
+      await _tapInSettings(t, live);
+      expect(env.c.settings.backendMode, BackendMode.gptLive);
+      expect(env.c.settings.liveVoice, 'maple');
+      final marin = find.byKey(const ValueKey('radio-voice-marin'));
+      await _showInSettings(t, marin);
+      expect(t.widget<InkWell>(marin).onTap, isNull);
+      expect(env.c.settings.voice, 'echo');
+      await choose(t, 'voice', 'Cove');
+      expect(env.c.settings.liveVoice, 'cove');
+      expect(env.c.settings.voiceModel, 'gpt-live-1.1');
+      expect(env.c.settings.backendMode, BackendMode.gptLive);
+      await _tapInSettings(t, find.byKey(const ValueKey('radio-audio-model-gpt-realtime-2.1')));
+      await _tapInSettings(t, find.byKey(const ValueKey('radio-voice-marin')));
+      expect(env.c.settings.backendMode, BackendMode.direct);
+      expect(env.c.settings.realtimeModel, 'gpt-realtime-2.1');
+      expect(env.c.settings.voice, 'marin');
+      expect(env.c.settings.liveVoice, 'cove');
+      final saved = await t.runAsync(() => SettingsStore(env.fp.services.paths.settingsFile).load());
+      expect(saved!.toJson(), env.c.settings.toJson());
+      expect(t.takeException(), isNull);
+      await env.stop(t);
+    });
+
+    testWidgets('custom text and compression model edits persist independently', (t) async {
       final env = _Env();
       await env.start(t);
       await pumpSettings(t, env, const Size(1000, 900));
-      final list = _settingsList;
-      for (final g in ['voice', 'audio', 'screen', 'context', 'editing', 'appearance', 'account', 'about']) {
-        final f = find.byKey(ValueKey('settings-group-$g'));
-        await t.scrollUntilVisible(f, 200, scrollable: list);
-        expect(f, findsOneWidget, reason: g);
+      await search(t, 'delegated');
+      await choose(t, 'delegate-model', 'Custom model…');
+      await t.enterText(find.byKey(const ValueKey('custom-delegate-model')), 'private-reasoner-v2');
+      await t.pump(const Duration(milliseconds: 701));
+      await _settle(t);
+      expect(env.c.settings.delegateModel, 'private-reasoner-v2');
+      expect(env.c.settings.compressionModel, 'gpt-6-luna');
+      await search(t, 'Compression model');
+      await choose(t, 'compression-model', 'Custom model…');
+      await t.enterText(find.byKey(const ValueKey('custom-compression-model')), 'private-compactor-v3');
+      await t.pump(const Duration(milliseconds: 701));
+      await _settle(t);
+      expect(env.c.settings.delegateModel, 'private-reasoner-v2');
+      expect(env.c.settings.compressionModel, 'private-compactor-v3');
+      await t.pumpWidget(const SizedBox());
+      await _settle(t);
+      final saved = await t.runAsync(() => SettingsStore(env.fp.services.paths.settingsFile).load());
+      expect(saved!.delegateModel, 'private-reasoner-v2');
+      expect(saved.compressionModel, 'private-compactor-v3');
+      await env.stop(t);
+    });
+
+    testWidgets('one Advanced fold keeps tuning reachable and search opens only matching rows', (t) async {
+      final env = _Env();
+      await env.start(t);
+      await pumpSettings(t, env, const Size(1000, 900));
+      for (final id in ['connection', 'model', 'preferences']) {
+        await _showInSettings(t, find.byKey(ValueKey('settings-group-$id')));
       }
-      expect(find.byType(GlassPanel), findsNothing);
-      // Android-only settings stay hidden on desktop.
+      final advanced = find.byKey(const ValueKey('advanced-settings'));
+      await _showInSettings(t, advanced);
+      expect(advanced, findsOneWidget);
+      expect(find.byKey(const ValueKey('setting-workspace')), findsNothing);
       expect(find.byKey(const ValueKey('settings-group-android')), findsNothing);
-
-      final adv = find.byKey(const ValueKey('advanced-editing'));
-      t.state<ScrollableState>(list).position.jumpTo(0);
-      await t.pump();
-      expect(find.text('Workspace folder'), findsNothing);
-      await _tapInSettings(t, adv);
-      expect(find.text('Workspace folder'), findsWidgets);
-      await _tapInSettings(t, adv);
-      expect(find.text('Workspace folder'), findsNothing);
-      await env.stop(t);
-    });
-
-    testWidgets('search filters rows and shows advanced matches', (t) async {
-      final env = _Env();
-      await env.start(t);
-      await pumpSettings(t, env, const Size(1000, 900));
-      await t.enterText(find.byKey(const ValueKey('settings-search')), 'delegate');
-      await _settle(t);
-      expect(find.byKey(const ValueKey('choices-delegate-model')), findsOneWidget);
-      expect(find.byKey(const ValueKey('choices-backend')), findsNothing);
-      expect(find.byKey(const ValueKey('settings-group-audio')), findsNothing);
-      await t.enterText(find.byKey(const ValueKey('settings-search')), 'stop word');
-      await _settle(t);
+      await _tapInSettings(t, advanced);
+      await _showInSettings(t, find.byKey(const ValueKey('setting-workspace')));
+      expect(find.byKey(const ValueKey('setting-workspace')), findsOneWidget);
+      await _tapInSettings(t, advanced);
+      expect(find.byKey(const ValueKey('setting-workspace')), findsNothing);
+      await search(t, 'stop word');
       expect(find.text('Stop word detection'), findsOneWidget);
-      expect(find.text('Stop words'), findsWidgets);
-      expect(find.byKey(const ValueKey('settings-group-audio')), findsOneWidget);
-      await t.enterText(find.byKey(const ValueKey('settings-search')), 'zzzz');
-      await _settle(t);
+      expect(find.byKey(const ValueKey('setting-stop-words')), findsOneWidget);
+      expect(find.byKey(const ValueKey('settings-group-connection')), findsNothing);
+      expect(advanced, findsOneWidget);
+      await search(t, 'workspace');
+      expect(find.byKey(const ValueKey('setting-workspace')), findsOneWidget);
+      await search(t, 'delegated');
+      expect(find.byKey(const ValueKey('select-delegate-model')), findsOneWidget);
+      expect(advanced, findsNothing);
+      await search(t, 'zzzz');
       expect(find.textContaining('No settings match'), findsOneWidget);
+      await search(t, '');
+      expect(find.byKey(const ValueKey('setting-workspace')), findsNothing);
       await env.stop(t);
     });
 
-    testWidgets('phone width: rows stack, everything expanded, no overflow', (t) async {
+    testWidgets('effective text model and full usage reason update while Advanced is closed', (t) async {
+      final env = _Env();
+      await env.start(t, savedSettings: const AppSettings(delegateModel: 'gpt-6.1-sol'));
+      await pumpSettings(t, env, const Size(1000, 1000));
+      await _showInSettings(t, find.byKey(const ValueKey('select-delegate-model')));
+      expect(find.byKey(const ValueKey('effective-text-model')), findsNothing);
+      env.c.usage.updateFromHeaders({'x-codex-primary-used-percent': '90', 'x-codex-primary-window-minutes': '300'});
+      await t.pump();
+      expect(find.text('Active text model: gpt-6-luna'), findsOneWidget);
+      expect(
+        find.text('5h usage window has 10% left (< 20%): using gpt-6-luna instead of gpt-6.1-sol'),
+        findsOneWidget,
+      );
+      expect(env.c.settings.delegateModel, 'gpt-6.1-sol');
+      expect(find.byKey(const ValueKey('settings-group-diagnostics')), findsNothing);
+      env.c.usage.updateFromHeaders({'x-codex-primary-used-percent': '30', 'x-codex-primary-window-minutes': '300'});
+      await t.pump();
+      expect(find.byKey(const ValueKey('effective-text-model')), findsNothing);
+      await env.stop(t);
+    });
+
+    testWidgets('pending model draft and caret survive auth notifications and unrelated external settings', (t) async {
+      final env = _Env();
+      await env.start(t, savedSettings: const AppSettings(delegateModel: 'stored-custom-model'));
+      await pumpSettings(t, env, const Size(1000, 900));
+      await search(t, 'delegated');
+      final field = find.byKey(const ValueKey('custom-delegate-model'));
+      await t.enterText(field, 'pending-custom-model');
+      final editor = t.widget<TextField>(field).controller!;
+      editor.selection = const TextSelection.collapsed(offset: 7);
+      await t.runAsync(
+        () => env.c.updateSettings(env.c.settings.copyWith(theme: AppTheme.dark, confirmBeforeBash: false)),
+      );
+      await t.runAsync(env.c.refreshCodexAuth);
+      env.c.usage.debugSet(null);
+      await t.pump();
+      expect(editor.text, 'pending-custom-model');
+      expect(editor.selection, const TextSelection.collapsed(offset: 7));
+      expect(env.c.settings.delegateModel, 'stored-custom-model');
+      await t.pump(const Duration(milliseconds: 699));
+      expect(env.c.settings.delegateModel, 'stored-custom-model');
+      await t.pump(const Duration(milliseconds: 1));
+      expect(env.c.settings.delegateModel, 'pending-custom-model');
+      expect(env.c.settings.theme, AppTheme.dark);
+      expect(env.c.settings.confirmBeforeBash, isFalse);
+      expect(editor.selection, const TextSelection.collapsed(offset: 7));
+      await _settle(t);
+      final saved = await t.runAsync(() => SettingsStore(env.fp.services.paths.settingsFile).load());
+      expect(saved!.delegateModel, 'pending-custom-model');
+      expect(saved.theme, AppTheme.dark);
+      await env.stop(t);
+    });
+
+    testWidgets('leaving Settings flushes a pending API key without losing an external backend change', (t) async {
+      final env = _Env();
+      await env.start(
+        t,
+        savedSettings: const AppSettings(backendMode: BackendMode.direct, apiKey: 'old-qa-key'),
+      );
+      await pumpSettings(t, env, const Size(1000, 900));
+      final field = find.byKey(const ValueKey('setting-api-key'));
+      await t.enterText(field, '  new-qa-key  ');
+      await t.runAsync(() => env.c.updateSettings(env.c.settings.copyWith(backendMode: BackendMode.apiKey)));
+      await t.pump();
+      expect(t.widget<TextField>(field).controller!.text, '  new-qa-key  ');
+      expect(env.c.settings.apiKey, 'old-qa-key');
+      await t.pumpWidget(const SizedBox());
+      expect(env.c.settings.apiKey, 'new-qa-key');
+      expect(env.c.settings.backendMode, BackendMode.apiKey);
+      await _settle(t);
+      final saved = await t.runAsync(() => SettingsStore(env.fp.services.paths.settingsFile).load());
+      expect(saved!.apiKey, 'new-qa-key');
+      expect(saved.backendMode, BackendMode.apiKey);
+      await env.stop(t);
+    });
+
+    testWidgets('selected model dropdown remains a full touch target on narrow and desktop layouts', (t) async {
       final env = _Env();
       await env.start(t);
-      await pumpSettings(t, env, const Size(360, 800));
-      final list = _settingsList;
-      for (final g in ['voice', 'screen', 'context', 'editing', 'account', 'about']) {
-        await _tapInSettings(t, find.byKey(ValueKey('advanced-$g')));
-        expect(t.takeException(), isNull, reason: g);
+      for (final size in [const Size(360, 740), const Size(1000, 900)]) {
+        await pumpSettings(t, env, size);
+        await search(t, 'delegated');
+        final button = find.byKey(const ValueKey('select-delegate-model'));
+        await _showInSettings(t, button);
+        final bounds = t.getRect(button);
+        expect(
+          bounds.height,
+          greaterThanOrEqualTo(kTouchTarget),
+          reason: 'actual dropdown hit area at ${size.width}px',
+        );
+        // A decorated box can be tall while its child button stays too small.
+        // The lower edge must actually open a menu and accept a new selection.
+        await t.tapAt(Offset(bounds.center.dx, bounds.bottom - 2));
+        await _settle(t);
+        expect(find.text('Custom model…').hitTestable(), findsOneWidget);
+        final selected = size.width < 600 ? 'gpt-6.1-sol' : 'gpt-6-luna';
+        await t.tap(find.text(selected).hitTestable().last);
+        await _settle(t);
+        expect(env.c.settings.delegateModel, selected);
+        expect(t.takeException(), isNull);
       }
-      // A switch row keeps its switch on the label's line.
-      final sw = find.byKey(const ValueKey('run-in-terminal-switch'));
-      t.state<ScrollableState>(list).position.jumpTo(0);
-      await t.pump();
-      await t.scrollUntilVisible(sw, 200, scrollable: list);
-      expect(t.getTopRight(sw).dx, lessThanOrEqualTo(360));
+      await env.stop(t);
+    });
+
+    testWidgets('Codex sign-in can be dismissed by Back or Escape without changing settings', (t) async {
+      final env = _Env();
+      await env.start(
+        t,
+        savedSettings: const AppSettings(backendMode: BackendMode.apiKey, realtimeModel: 'saved-audio'),
+      );
+      await pumpSettings(t, env, const Size(1000, 900));
+      final before = env.c.settings.toJson();
+      await t.tap(find.text('Sign in'));
+      await _settle(t);
+      expect(find.byType(LoginScreen), findsOneWidget);
+      await t.tap(find.byType(BackButton));
+      await _settle(t);
+      expect(find.byType(LoginScreen), findsNothing);
+      await t.tap(find.text('Sign in'));
+      await _settle(t);
+      await t.sendKeyEvent(LogicalKeyboardKey.escape);
+      await _settle(t);
+      expect(find.byType(LoginScreen), findsNothing);
+      expect(env.c.settings.toJson(), before);
+      expect(t.takeException(), isNull);
+      await env.stop(t);
+    });
+
+    testWidgets('narrow settings preserve long custom values and reach Advanced controls without overflow', (t) async {
+      GptLiveHook.register((_) => ScriptedBackend());
+      addTearDown(GptLiveHook.unregister);
+      const liveModel = 'private-audio-model-with-a-long-customer-specific-release-identifier-2026-11';
+      const realtimeModel = 'another-private-realtime-model-with-a-long-release-identifier-2026-11';
+      const unknownVoice = 'preserved-legacy-voice-with-a-long-identifier';
+      final env = _Env();
+      await env.start(
+        t,
+        savedSettings: const AppSettings(
+          voiceModel: liveModel,
+          realtimeModel: realtimeModel,
+          liveVoice: unknownVoice,
+          delegateModel: 'private-reasoning-model-with-a-long-release-identifier-2026-11',
+          compressionModel: 'private-compression-model-with-a-long-release-identifier-2026-11',
+        ),
+      );
+      await pumpSettings(t, env, const Size(360, 740));
+      final audio = find.byKey(const ValueKey('select-audio-model'));
+      await _showInSettings(t, audio);
+      expect(t.widget<DropdownButton<(AudioModelFamily, String)>>(audio).value, (AudioModelFamily.live, liveModel));
+      await t.tap(audio);
+      await _settle(t);
+      expect(t.takeException(), isNull);
+      await t.sendKeyEvent(LogicalKeyboardKey.escape);
+      await _settle(t);
+      final voice = find.byKey(const ValueKey('select-voice'));
+      await _showInSettings(t, voice);
+      expect(t.widget<DropdownButton<String>>(voice).value, unknownVoice);
+      await t.tap(voice);
+      await _settle(t);
+      expect(t.takeException(), isNull);
+      await t.sendKeyEvent(LogicalKeyboardKey.escape);
+      await _settle(t);
+      for (final query in ['Compression model', 'Screenshot tiers', 'workspace']) {
+        await search(t, query);
+        expect(t.takeException(), isNull, reason: query);
+      }
+      await t.enterText(find.byKey(const ValueKey('setting-workspace')), ' /qa/custom/project ');
+      await t.pumpWidget(const SizedBox());
+      expect(env.c.settings.workspaceDir, '/qa/custom/project');
+      expect(env.c.settings.voiceModel, liveModel);
+      expect(env.c.settings.realtimeModel, realtimeModel);
+      expect(env.c.settings.liveVoice, unknownVoice);
+      await _settle(t);
+      await pumpSettings(t, env, const Size(600, 740));
+      await _tapInSettings(t, find.byKey(const ValueKey('advanced-settings')));
+      await _showInSettings(t, find.byKey(const ValueKey('run-in-terminal-switch')));
+      expect(t.takeException(), isNull);
+      await _showInSettings(t, find.byKey(const ValueKey('settings-shortcuts')));
       expect(t.takeException(), isNull);
       await env.stop(t);
     });
@@ -676,10 +849,16 @@ final _settingsList = find
     .descendant(of: find.byKey(const ValueKey('settings-list')), matching: find.byType(Scrollable))
     .first;
 
-Future<void> _tapInSettings(WidgetTester t, Finder f) async {
+Future<void> _showInSettings(WidgetTester t, Finder f) async {
+  t.state<ScrollableState>(_settingsList).position.jumpTo(0);
+  await t.pump();
   await t.scrollUntilVisible(f, 200, scrollable: _settingsList);
   await Scrollable.ensureVisible(t.element(f), alignment: 0.5);
   await t.pump();
+}
+
+Future<void> _tapInSettings(WidgetTester t, Finder f) async {
+  await _showInSettings(t, f);
   await t.tap(f);
   await _settle(t);
 }

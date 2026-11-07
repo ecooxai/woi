@@ -48,6 +48,10 @@ enum BackendMode {
   AuthMode get authMode => this == BackendMode.apiKey ? AuthMode.apiKey : AuthMode.codex;
 }
 
+/// Audio model family, separate from which credentials authenticate it.
+/// It is derived from [BackendMode]; no additional persisted setting is needed.
+enum AudioModelFamily { realtime, live }
+
 /// gpt-live models (WebRTC path, research/REALTIME_API.md §3).
 const kVoiceModels = ['gpt-live-1.1', 'gpt-live-1', 'gpt-live-1-codex'];
 
@@ -65,7 +69,7 @@ const kRealtimeModels = [
 const kVoices = ['marin', 'cedar', 'alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse'];
 
 /// v3 voices accepted by gpt-live (§3.1). Realtime voices (marin, alloy...)
-/// make the call die silently, so anything else maps to [kLiveDefaultVoice].
+/// are incompatible and rejected before opening its transport.
 const kLiveVoices = [
   'cove',
   'juniper',
@@ -264,6 +268,61 @@ class AppSettings {
 
   AuthMode get authMode => backendMode.authMode;
 
+  /// The selected audio model, retaining each family's saved choice.
+  String get audioModel => audioModelFamily == AudioModelFamily.live ? voiceModel : realtimeModel;
+
+  AudioModelFamily get audioModelFamily =>
+      backendMode == BackendMode.gptLive ? AudioModelFamily.live : AudioModelFamily.realtime;
+
+  /// Changing login never overwrites saved models or voices. API auth uses
+  /// realtime; returning from API to Codex preserves that active family.
+  AppSettings withAuthMode(AuthMode mode) {
+    if (mode == authMode) return this;
+    return copyWith(backendMode: mode == AuthMode.apiKey ? BackendMode.apiKey : BackendMode.direct);
+  }
+
+  /// A reason to disable a model family in the UI, or null if selectable.
+  /// Build availability is supplied by the caller instead of depending on a
+  /// registered transport from this settings/persistence layer.
+  String? audioModelUnavailableReason(AudioModelFamily family, {bool liveAvailable = true}) {
+    if (family != AudioModelFamily.live) return null;
+    if (authMode == AuthMode.apiKey) return 'API uses realtime audio models. gpt-live requires Codex login.';
+    if (!liveAvailable) return 'gpt-live is not available in this build.';
+    return null;
+  }
+
+  /// Select a model by its explicit family. Custom IDs retain the family of
+  /// their saved field; never infer it from a name prefix or replace a model.
+  AppSettings withAudioModel(String model, {required AudioModelFamily family, bool liveAvailable = true}) {
+    final selected = model.trim();
+    if (selected.isEmpty) throw ArgumentError.value(model, 'model', 'Choose a nonempty audio model.');
+    final unavailable = audioModelUnavailableReason(family, liveAvailable: liveAvailable);
+    if (unavailable != null) throw ArgumentError.value(model, 'model', unavailable);
+    if (family == AudioModelFamily.live && kRealtimeModels.contains(selected)) {
+      throw ArgumentError.value(model, 'model', 'This model belongs to the realtime audio family.');
+    }
+    if (family == AudioModelFamily.realtime && kVoiceModels.contains(selected)) {
+      throw ArgumentError.value(model, 'model', 'This model belongs to the gpt-live audio family.');
+    }
+    return family == AudioModelFamily.live
+        ? copyWith(backendMode: BackendMode.gptLive, voiceModel: selected)
+        : copyWith(
+            backendMode: authMode == AuthMode.apiKey ? BackendMode.apiKey : BackendMode.direct,
+            realtimeModel: selected,
+          );
+  }
+
+  /// A voice choice changes only the current family's voice. It cannot switch
+  /// login or model to make an incompatible voice appear to work.
+  AppSettings withActiveVoice(String selected) {
+    final value = selected.trim();
+    if (!voiceChoices.contains(value)) {
+      final family = audioModelFamily == AudioModelFamily.live ? 'gpt-live' : 'realtime';
+      throw ArgumentError.value(selected, 'voice', 'This voice is not supported by $family audio models.');
+    }
+    return audioModelFamily == AudioModelFamily.live ? copyWith(liveVoice: value) : copyWith(voice: value);
+  }
+
   AppSettings copyWith({
     BackendMode? backendMode,
     String? apiKey,
@@ -341,7 +400,8 @@ class AppSettings {
   /// Whether a change requires reconnecting the live session.
   bool sessionDiffers(AppSettings o) =>
       o.backendMode != backendMode ||
-      o.apiKey != apiKey ||
+      // Editing a saved API key must not reconnect an active Codex session.
+      (authMode == AuthMode.apiKey && o.apiKey != apiKey) ||
       o.voiceModel != voiceModel ||
       o.realtimeModel != realtimeModel ||
       o.voice != voice ||
