@@ -20,15 +20,15 @@ the plugin registrant with dev dependencies and javac fails).
 
 ## Audio and chat controls
 
-The microphone button toggles listening on a tap. Hold it to record microphone
-and capturable system audio, then release to submit. The first Android hold may
-ask for screen/audio capture consent; after granting it, hold again. A cancelled
+The microphone button toggles listening on a tap. Hold it to record, then release
+to submit. Android records the microphone only and never starts screen sharing
+for a held recording. Linux records microphone plus system audio. A cancelled
 hold sends nothing. At the two-minute limit, the clip waits for release or cancel.
-Android playback capture respects the source app's capture policy.
 
 Status and context usage are compact icons below the text field. Hover or click
 status for connection details; click the context ring for usage. Each assistant
-reply records its producing session model underneath the message.
+reply records its producing session model underneath the message. The camera is
+immediately left of the microphone, and the black send button is at the far right.
 
 On Linux, the native WebRTC microphone uses the PipeWire echo-cancelled source
 when echo cancellation is enabled. Reconnecting rebuilds missing nodes and waits
@@ -36,9 +36,11 @@ for old capture owners to release before reusing audio resources.
 
 ## Computer input and Python
 
-Computer input displays a light-blue warning for one second before an action and
-keeps it visible for one second afterward. Keyboard actions also show a keyboard
-icon and the keys at the top right. User takeover stops further input until a new
+Computer input displays a light-blue mouse pointer for one second before an
+action and keeps the indicator visible for three seconds afterward. Left clicks
+turn the pointer darker blue; right clicks turn it light red. On Android, right
+click means a touch long-press. Keyboard actions show a keyboard icon and the
+keys at the top right. User takeover stops further input until a new
 user request. `move_pointer` positions the pointer without clicking. Linux uses
 XInput2 to distinguish physical input from injected events; Android detects touch
 takeover through an input-transparent accessibility overlay and outside-touch
@@ -53,7 +55,7 @@ variables. The worker is not a security sandbox for hostile code.
 
 Linux development requires the XInput2 headers (`libxi-dev`) as well as the normal
 Flutter/GTK and PipeWire dependencies. Android's embedded Python requires API 24
-or later; playback capture requires API 29 or later.
+or later.
 
 ## Verification
 

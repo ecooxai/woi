@@ -139,7 +139,7 @@ class WoiForegroundService : Service() {
         )
         val what = listOfNotNull(
             if (share) "sharing the screen" else null,
-            if (heldAudio) "recording microphone and system audio" else null,
+            if (heldAudio) "recording microphone" else null,
             if (micOn()) "voice on" else if (voice) "standby · mic off" else null,
             if (login) "waiting for sign-in" else null,
         ).joinToString(" · ")

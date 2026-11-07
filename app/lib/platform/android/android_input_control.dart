@@ -62,47 +62,34 @@ AndroidKeyOp androidOpForAction(KeyAction a) => switch (a) {
   KeyAction.selectAll => const NodeKeyOp('select_all'),
   KeyAction.enter => const NodeKeyOp('enter'),
   KeyAction.escape || KeyAction.back => const GlobalKeyOp('back'),
-  KeyAction.undo || KeyAction.redo => throw UnsupportedError(
-    '${a.wire} has no accessibility action on Android',
-  ),
+  KeyAction.undo || KeyAction.redo => throw UnsupportedError('${a.wire} has no accessibility action on Android'),
 };
 
 /// Spoken names that only make sense on a phone ("recents", "home screen").
-AndroidKeyOp? androidOpForName(String keys) =>
-    switch (keys.trim().toLowerCase().replaceAll(RegExp(r'[\s_-]+'), '')) {
-      'back' => const GlobalKeyOp('back'),
-      'home' || 'homescreen' => const GlobalKeyOp('home'),
-      'recents' ||
-      'recentapps' ||
-      'overview' ||
-      'appswitch' => const GlobalKeyOp('recents'),
-      'notifications' => const GlobalKeyOp('notifications'),
-      'quicksettings' => const GlobalKeyOp('quick_settings'),
-      'selectall' => const NodeKeyOp('select_all'),
-      'copy' => const NodeKeyOp('copy'),
-      'paste' => const NodeKeyOp('paste'),
-      'cut' => const NodeKeyOp('cut'),
-      _ => null,
-    };
+AndroidKeyOp? androidOpForName(String keys) => switch (keys.trim().toLowerCase().replaceAll(RegExp(r'[\s_-]+'), '')) {
+  'back' => const GlobalKeyOp('back'),
+  'home' || 'homescreen' => const GlobalKeyOp('home'),
+  'recents' || 'recentapps' || 'overview' || 'appswitch' => const GlobalKeyOp('recents'),
+  'notifications' => const GlobalKeyOp('notifications'),
+  'quicksettings' => const GlobalKeyOp('quick_settings'),
+  'selectall' => const NodeKeyOp('select_all'),
+  'copy' => const NodeKeyOp('copy'),
+  'paste' => const NodeKeyOp('paste'),
+  'cut' => const NodeKeyOp('cut'),
+  _ => null,
+};
 
 /// click_screen / type_text / send_keys through WoiAccessibilityService.
 /// Coordinates are real screen pixels (screenshots map back with
 /// [Screenshot.toScreen]). If Woi is in front, the service sends it to the
 /// back first so the action lands in the app below.
 class AndroidInputControl implements InputControl {
-  AndroidInputControl({AndroidBridge? bridge, this.control})
-    : _bridge = bridge ?? AndroidBridge.instance;
+  AndroidInputControl({AndroidBridge? bridge, this.control}) : _bridge = bridge ?? AndroidBridge.instance;
 
   final ControlGuard? control;
   ControlLease? _lease;
 
-  Future<T> _visible<T>(
-    String kind,
-    Future<T> Function() action, {
-    String keys = '',
-    int? x,
-    int? y,
-  }) async {
+  Future<T> _visible<T>(String kind, Future<T> Function() action, {String keys = '', int? x, int? y}) async {
     if (control == null) return action();
     return control!.run(
       kind,
@@ -146,16 +133,15 @@ class AndroidInputControl implements InputControl {
   );
 
   @override
-  Future<void> click(
-    int x,
-    int y, {
-    MouseButton button = MouseButton.left,
-  }) async {
+  Future<void> click(int x, int y, {MouseButton button = MouseButton.left}) async {
+    if (button == MouseButton.middle) {
+      throw UnsupportedError('Android supports a left tap or a right long press; middle click is unavailable');
+    }
     _last = Point(x, y);
     await _visible(
       'pointer',
       () async {
-        await _call<bool>('click', {'x': x, 'y': y});
+        await _call<bool>('click', {'x': x, 'y': y, 'button': button.name});
       },
       x: x,
       y: y,
@@ -163,16 +149,17 @@ class AndroidInputControl implements InputControl {
   }
 
   @override
-  Future<void> doubleClick(
-    int x,
-    int y, {
-    MouseButton button = MouseButton.left,
-  }) async {
+  Future<void> doubleClick(int x, int y, {MouseButton button = MouseButton.left}) async {
+    if (button != MouseButton.left) {
+      throw UnsupportedError(
+        'Android supports double tap only for the left button; use a right click for a long press',
+      );
+    }
     _last = Point(x, y);
     await _visible(
       'pointer',
       () async {
-        await _call<bool>('doubleClick', {'x': x, 'y': y});
+        await _call<bool>('doubleClick', {'x': x, 'y': y, 'button': button.name});
       },
       x: x,
       y: y,
@@ -217,11 +204,7 @@ class AndroidInputControl implements InputControl {
   }
 
   @override
-  Future<SendKeysResult> sendKeys({
-    String? keys,
-    KeyAction? action,
-    KeyTarget target = const KeyTarget(),
-  }) async {
+  Future<SendKeysResult> sendKeys({String? keys, KeyAction? action, KeyTarget target = const KeyTarget()}) async {
     if (keys == null && action == null) {
       throw ArgumentError('keys or action required');
     }
@@ -245,9 +228,7 @@ class AndroidInputControl implements InputControl {
     }, keys: keys ?? action?.wire ?? '');
     String? pkg;
     try {
-      pkg =
-          (await _call<Map<Object?, Object?>>('focusTarget'))?['package']
-              as String?;
+      pkg = (await _call<Map<Object?, Object?>>('focusTarget'))?['package'] as String?;
     } catch (_) {}
     return SendKeysResult(chords: chords, windowClass: pkg, windowTitle: pkg);
   }

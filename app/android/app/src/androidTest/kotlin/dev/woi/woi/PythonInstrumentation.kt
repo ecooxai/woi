@@ -24,7 +24,7 @@ class PythonInstrumentation : Instrumentation() {
         start()
     }
 
-    // Keep the target UID/projection token, but never start Flutter or a chat
+    // Keep the target UID, but never start Flutter or a chat
     // connection during the native audio checks. This is test-APK code only.
     override fun newActivity(cl: ClassLoader, className: String, intent: Intent): Activity {
         if (group == "audio" && className == "dev.woi.woi.MainActivity") {

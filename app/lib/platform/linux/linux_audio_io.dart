@@ -19,20 +19,9 @@ import 'pipewire_aec.dart';
 /// reference is the default sink's monitor: everything the speakers play is
 /// removed. An unavailable canceller is reported to the caller instead of
 /// silently exposing uncancelled speaker audio to voice activity detection.
-class LinuxAudioIO
-    implements
-        AudioIO,
-        EchoCancellable,
-        RawMicCapable,
-        ExternalEchoCapture,
-        MicSystemCapture {
-  LinuxAudioIO({
-    this.captureLatencyMs = 20,
-    this.playbackLatencyMs = 40,
-    PipewireEchoCancel? echoCanceller,
-  }) : _aec =
-           echoCanceller ??
-           PipewireEchoCancel(log: (m) => debugPrint('woi aec: $m'));
+class LinuxAudioIO implements AudioIO, EchoCancellable, RawMicCapable, ExternalEchoCapture, HeldAudioCapture {
+  LinuxAudioIO({this.captureLatencyMs = 20, this.playbackLatencyMs = 40, PipewireEchoCancel? echoCanceller})
+    : _aec = echoCanceller ?? PipewireEchoCancel(log: (m) => debugPrint('woi aec: $m'));
 
   final int captureLatencyMs;
   final int playbackLatencyMs;
@@ -53,8 +42,7 @@ class LinuxAudioIO
   }
 
   @override
-  String get echoCancellationStatus =>
-      _echoCancellation ? _aec.status : 'off (setting)';
+  String get echoCancellationStatus => _echoCancellation ? _aec.status : 'off (setting)';
 
   @override
   Future<void> disposeEchoCancellation() => _aec.dispose();
@@ -66,11 +54,7 @@ class LinuxAudioIO
     if (name == null) {
       throw StateError('System echo cancellation unavailable: ${_aec.status}');
     }
-    return EchoCaptureLease(
-      deviceName: name,
-      deviceLabel: _aec.sourceDescription,
-      release: () async => _aec.release(),
-    );
+    return EchoCaptureLease(deviceName: name, deviceLabel: _aec.sourceDescription, release: () async => _aec.release());
   }
 
   (String, List<String>) _captureCommand({String? target}) {
@@ -167,10 +151,7 @@ class LinuxAudioIO
       final (exe, args) = _captureCommand(target: lease?.deviceName ?? _source);
       final (e, a) = withDefaultSigpipe(exe, args);
       final proc = await Process.start(e, a);
-      return _LinuxMic(
-        proc,
-        lease == null ? null : () => unawaited(lease.release()),
-      );
+      return _LinuxMic(proc, lease == null ? null : () => unawaited(lease.release()));
     } catch (_) {
       await lease?.release();
       rethrow;
@@ -178,7 +159,10 @@ class LinuxAudioIO
   }
 
   @override
-  Future<MicStream> openMicAndSystemAudio() async {
+  bool get includesSystemAudio => true;
+
+  @override
+  Future<MicStream> openHeldAudio() async {
     final mic = await openMic();
     try {
       final pw = which('pw-record');
@@ -202,23 +186,14 @@ class LinuxAudioIO
           '-',
         ];
       } else {
-        exe =
-            which('parecord') ?? (throw MissingTool(['pw-record', 'parecord']));
+        exe = which('parecord') ?? (throw MissingTool(['pw-record', 'parecord']));
         final pactl = which('pactl') ?? (throw MissingTool(['pactl']));
-        final result = await Process.run(pactl, [
-          'get-default-sink',
-        ]).timeout(const Duration(seconds: 2));
+        final result = await Process.run(pactl, ['get-default-sink']).timeout(const Duration(seconds: 2));
         final sink = _sink ?? '${result.stdout}'.trim();
         if (sink.isEmpty || result.exitCode != 0) {
           throw StateError('System audio output is unavailable');
         }
-        args = [
-          '--raw',
-          '--device=$sink.monitor',
-          '--rate=$_rate',
-          '--channels=1',
-          '--format=s16le',
-        ];
+        args = ['--raw', '--device=$sink.monitor', '--rate=$_rate', '--channels=1', '--format=s16le'];
       }
       final (e, a) = withDefaultSigpipe(exe, args);
       final system = _LinuxMic(await Process.start(e, a));
@@ -247,8 +222,7 @@ class LinuxAudioIO
   @override
   Future<ClipPlayback> playFile(String path) async {
     final pw = which('pw-play');
-    final exe =
-        pw ?? which('paplay') ?? (throw MissingTool(['pw-play', 'paplay']));
+    final exe = pw ?? which('paplay') ?? (throw MissingTool(['pw-play', 'paplay']));
     final proc = await Process.start(exe, [path]);
     return _ProcessClip(proc);
   }
@@ -313,9 +287,7 @@ class _LinuxMic implements MicStream {
 
 class _LinuxPcmPlayer implements PcmPlayer {
   _LinuxPcmPlayer(this._command, int latencyMs)
-    : _clock = PlaybackClock(
-        outputLatency: Duration(milliseconds: latencyMs + 20),
-      );
+    : _clock = PlaybackClock(outputLatency: Duration(milliseconds: latencyMs + 20));
 
   final (String, List<String>) Function() _command;
   final PlaybackClock _clock;

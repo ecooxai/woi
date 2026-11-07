@@ -15,6 +15,7 @@ import android.widget.TextView;
  * relying on the target application's Kotlin/runtime dependencies. */
 public class ControlOverlayTestActivity extends Activity {
     private int clicks;
+    private int longPresses;
     private int dp(int value) { return (int) (value * getResources().getDisplayMetrics().density); }
 
     @Override public void onCreate(Bundle state) {
@@ -44,6 +45,11 @@ public class ControlOverlayTestActivity extends Activity {
         counter.setText("Touches: 0");
         counter.setTextSize(18);
         counter.setTextColor(Color.BLACK);
+        final TextView longCounter = new TextView(this);
+        longCounter.setContentDescription("woi-test-long-count");
+        longCounter.setText("Long presses: 0");
+        longCounter.setTextSize(18);
+        longCounter.setTextColor(Color.BLACK);
         Button button = new Button(this);
         button.setContentDescription("woi-test-button");
         button.setText("Touch target");
@@ -55,8 +61,16 @@ public class ControlOverlayTestActivity extends Activity {
                 counter.setText("Touches: " + clicks);
             }
         });
+        button.setOnLongClickListener(new View.OnLongClickListener() {
+            @Override public boolean onLongClick(View view) {
+                longPresses++;
+                longCounter.setText("Long presses: " + longPresses);
+                return true;
+            }
+        });
         content.addView(button, new LinearLayout.LayoutParams(-1, dp(88)));
         content.addView(counter, new LinearLayout.LayoutParams(-1, dp(56)));
+        content.addView(longCounter, new LinearLayout.LayoutParams(-1, dp(56)));
         setContentView(content);
         editor.requestFocus();
     }

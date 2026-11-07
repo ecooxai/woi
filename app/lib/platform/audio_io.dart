@@ -114,8 +114,12 @@ abstract interface class ExternalEchoCapture {
   Future<EchoCaptureLease?> acquireEchoCapture();
 }
 
-/// Explicit recording of microphone and system output. Normal listening
-/// stays on the echo-cancelled microphone; only a held recording uses this.
-abstract interface class MicSystemCapture {
-  Future<MicStream> openMicAndSystemAudio();
+/// Explicit held recording, separate from ordinary listening. Android
+/// records only the microphone; Linux also includes system output.
+abstract interface class HeldAudioCapture {
+  /// Whether a held recording includes system output as well as the mic.
+  bool get includesSystemAudio;
+
+  /// Opens the platform's held-recording source without starting screen share.
+  Future<MicStream> openHeldAudio();
 }

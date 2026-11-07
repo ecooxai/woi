@@ -1,14 +1,11 @@
 package dev.woi.woi
 
-import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioManager
-import android.media.AudioPlaybackCaptureConfiguration
 import android.media.AudioRecord
 import android.media.AudioRecordingConfiguration
 import android.media.MediaRecorder
 import android.media.audiofx.AcousticEchoCanceler
-import android.media.projection.MediaProjection
 import android.os.Build
 import android.os.SystemClock
 import android.util.Log
@@ -21,9 +18,9 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.max
 import kotlin.math.sqrt
 
-/** Held recording: an AEC microphone plus capturable system/media audio.
- * No audio focus is requested. Existing projection consent stays available.
- * Native ownership is released before Dart may resume ordinary listening. */
+/** Held recording owns only an AEC microphone. It neither acquires nor stops
+ * screen sharing, and requests no audio focus. Native microphone ownership is
+ * released before Dart may resume ordinary listening. */
 object WoiHeldAudio {
     private const val RATE = 24000
     private const val FRAMES = 480
@@ -33,27 +30,20 @@ object WoiHeldAudio {
     private val retiring = CopyOnWriteArrayList<Capture>()
     private var lastStatus: Map<String, Any?> = emptyMap()
 
-    private class Capture(
-        val id: Int,
-        val projection: MediaProjection,
-        val events: EventChannel.EventSink,
-    ) {
+    private class Capture(val id: Int, val events: EventChannel.EventSink) {
         @Volatile var cancelled = false
         @Volatile var workerStarted = false
         val done = CountDownLatch(1)
         var mic: AudioRecord? = null
-        var system: AudioRecord? = null
-        var projectionCallback: MediaProjection.Callback? = null
         @Volatile var samples = 0L
         @Volatile var micPower = 0.0
-        @Volatile var systemPower = 0.0
         @Volatile var reason: String? = null
 
         fun status(): Map<String, Any?> = mapOf(
             "generation" to id,
-            "samples_per_source" to samples,
+            "sources" to listOf("microphone"),
+            "mic_samples" to samples,
             "mic_rms" to if (samples == 0L) 0.0 else sqrt(micPower / samples) / 32768.0,
-            "system_rms" to if (samples == 0L) 0.0 else sqrt(systemPower / samples) / 32768.0,
             "released" to (done.count == 0L),
             "error" to reason,
         )
@@ -69,27 +59,13 @@ object WoiHeldAudio {
     val handler = object : EventChannel.StreamHandler {
         override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
             stop()
-            if (Build.VERSION.SDK_INT < 29) {
-                events.error("held_audio", "System audio recording requires Android 10 or newer", null)
-                return
-            }
-            val mp = WoiScreen.projectionForAudio()
-            if (mp == null) {
-                events.error("held_audio", "Allow screen and audio capture, then hold the microphone again", null)
-                return
-            }
-            val capture = Capture(++sequence, mp, events)
+            val capture = Capture(++sequence, events)
             current = capture
-            val callback = object : MediaProjection.Callback() {
-                override fun onStop() = fail(capture, "System audio permission ended; recording cancelled")
-            }
-            capture.projectionCallback = callback
             try {
-                mp.registerCallback(callback, WoiBridge.main)
                 WoiForegroundService.startHeldAudio(WoiBridge.appContext)
                 waitForForeground(capture, 0)
             } catch (error: Exception) {
-                fail(capture, error.message ?: "System audio permission is unavailable")
+                fail(capture, error.message ?: "Microphone recording is unavailable")
             }
         }
 
@@ -117,14 +93,12 @@ object WoiHeldAudio {
 
     @Suppress("MissingPermission")
     private fun record(capture: Capture) {
-        if (Build.VERSION.SDK_INT < 29) return
         var microphone: AudioRecord? = null
-        var playback: AudioRecord? = null
         var aec: AcousticEchoCanceler? = null
         var recordingCallback: AudioManager.AudioRecordingCallback? = null
         try {
             val min = AudioRecord.getMinBufferSize(RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
-            check(min > 0) { "24 kHz audio capture is unavailable" }
+            check(min > 0) { "24 kHz microphone capture is unavailable" }
             val size = max(min * 4, FRAMES * 2 * 4)
             val format = AudioFormat.Builder()
                 .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
@@ -133,98 +107,78 @@ object WoiHeldAudio {
                 .setAudioSource(MediaRecorder.AudioSource.VOICE_COMMUNICATION)
                 .setAudioFormat(format).setBufferSizeInBytes(size).build()
             microphone = micRecord
-            val systemRecord = AudioRecord.Builder()
-                .setAudioPlaybackCaptureConfig(AudioPlaybackCaptureConfiguration.Builder(capture.projection)
-                    .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
-                    .addMatchingUsage(AudioAttributes.USAGE_GAME)
-                    .addMatchingUsage(AudioAttributes.USAGE_UNKNOWN).build())
-                .setAudioFormat(format).setBufferSizeInBytes(size).build()
-            playback = systemRecord
-            check(micRecord.state == AudioRecord.STATE_INITIALIZED &&
-                systemRecord.state == AudioRecord.STATE_INITIALIZED) {
-                "Both microphone and system audio must be available"
-            }
+            check(micRecord.state == AudioRecord.STATE_INITIALIZED) { "Microphone capture is unavailable" }
             if (AcousticEchoCanceler.isAvailable()) {
                 aec = AcousticEchoCanceler.create(micRecord.audioSessionId)
                 aec?.enabled = true
             }
-            val callback = object : AudioManager.AudioRecordingCallback() {
-                override fun onRecordingConfigChanged(configs: MutableList<AudioRecordingConfiguration>) {
-                    if (configs.any { it.clientAudioSessionId == micRecord.audioSessionId && it.isClientSilenced }) {
-                        fail(capture, "Android silenced the microphone; recording cancelled")
+            if (Build.VERSION.SDK_INT >= 29) {
+                val callback = object : AudioManager.AudioRecordingCallback() {
+                    override fun onRecordingConfigChanged(configs: MutableList<AudioRecordingConfiguration>) {
+                        if (configs.any { it.clientAudioSessionId == micRecord.audioSessionId && it.isClientSilenced }) {
+                            fail(capture, "Android silenced the microphone; recording cancelled")
+                        }
                     }
                 }
+                recordingCallback = callback
+                micRecord.registerAudioRecordingCallback(WoiBridge.appContext.mainExecutor, callback)
             }
-            recordingCallback = callback
-            micRecord.registerAudioRecordingCallback(WoiBridge.appContext.mainExecutor, callback)
             // Invalidation is volatile and precedes the stop worker's lock.
             // Stop completion waits for this entire worker's finally block.
             synchronized(lock) {
                 if (!active(capture)) return
                 capture.mic = micRecord
-                capture.system = systemRecord
                 micRecord.startRecording()
-                if (!active(capture)) return
-                systemRecord.startRecording()
             }
-            check(micRecord.recordingState == AudioRecord.RECORDSTATE_RECORDING &&
-                systemRecord.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
-                "Both microphone and system audio must be recording"
+            check(micRecord.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
+                "The microphone did not start recording"
             }
             val micFrames = ShortArray(FRAMES)
-            val systemFrames = ShortArray(FRAMES)
             val queued = AtomicInteger(0)
             var ready = false
             while (active(capture)) {
                 readFrames(micRecord, micFrames, capture)
-                readFrames(systemRecord, systemFrames, capture)
                 if (!active(capture)) break
                 if (!ready) {
-                    check(micRecord.activeRecordingConfiguration?.isClientSilenced != true) {
-                        "Android silenced the microphone; recording cancelled"
+                    if (Build.VERSION.SDK_INT >= 29) {
+                        check(micRecord.activeRecordingConfiguration?.isClientSilenced != true) {
+                            "Android silenced the microphone; recording cancelled"
+                        }
                     }
                     ready = true
                     WoiBridge.main.post {
-                        if (active(capture)) capture.events.success(mapOf("ready" to true))
+                        if (active(capture)) capture.events.success(mapOf("ready" to true, "sources" to listOf("microphone")))
                     }
                 }
-                val mixed = ByteArray(FRAMES * 2)
+                val pcm = ByteArray(FRAMES * 2)
                 var micPower = 0.0
-                var systemPower = 0.0
                 for (i in 0 until FRAMES) {
-                    val m = micFrames[i].toInt()
-                    val s = systemFrames[i].toInt()
-                    micPower += m.toDouble() * m
-                    systemPower += s.toDouble() * s
-                    val value = ((m + s) * 0.7071).toInt().coerceIn(-32768, 32767)
-                    mixed[i * 2] = value.toByte()
-                    mixed[i * 2 + 1] = (value shr 8).toByte()
+                    val sample = micFrames[i].toInt()
+                    micPower += sample.toDouble() * sample
+                    pcm[i * 2] = sample.toByte()
+                    pcm[i * 2 + 1] = (sample shr 8).toByte()
                 }
                 capture.micPower += micPower
-                capture.systemPower += systemPower
                 capture.samples += FRAMES
                 check(queued.incrementAndGet() <= 25) { "Audio delivery stalled; recording cancelled" }
                 WoiBridge.main.post {
                     try {
-                        if (active(capture)) capture.events.success(mixed)
+                        if (active(capture)) capture.events.success(pcm)
                     } finally { queued.decrementAndGet() }
                 }
             }
         } catch (error: Throwable) {
-            if (active(capture)) fail(capture, error.message ?: "Audio recording failed")
+            if (active(capture)) fail(capture, error.message ?: "Microphone recording failed")
         } finally {
             try { microphone?.stop() } catch (_: Exception) {}
-            try { playback?.stop() } catch (_: Exception) {}
-            recordingCallback?.let { callback ->
-                try { microphone?.unregisterAudioRecordingCallback(callback) } catch (_: Exception) {}
+            if (Build.VERSION.SDK_INT >= 29) {
+                recordingCallback?.let { callback ->
+                    try { microphone?.unregisterAudioRecordingCallback(callback) } catch (_: Exception) {}
+                }
             }
             try { aec?.release() } catch (_: Exception) {}
             try { microphone?.release() } catch (_: Exception) {}
-            try { playback?.release() } catch (_: Exception) {}
-            synchronized(lock) {
-                capture.mic = null
-                capture.system = null
-            }
+            synchronized(lock) { capture.mic = null }
             capture.done.countDown()
             WoiBridge.main.post {
                 retiring.remove(capture)
@@ -238,7 +192,7 @@ object WoiHeldAudio {
         var offset = 0
         while (offset < target.size && active(capture)) {
             val count = record.read(target, offset, target.size - offset, AudioRecord.READ_BLOCKING)
-            check(count > 0) { "An audio source stopped ($count); recording cancelled" }
+            check(count > 0) { "Microphone capture stopped ($count); recording cancelled" }
             offset += count
         }
     }
@@ -261,10 +215,6 @@ object WoiHeldAudio {
         if (capture.cancelled) return
         capture.cancelled = true
         if (current === capture) current = null
-        capture.projectionCallback?.let { callback ->
-            try { capture.projection.unregisterCallback(callback) } catch (_: Exception) {}
-        }
-        capture.projectionCallback = null
         retiring.addIfAbsent(capture)
         if (!capture.workerStarted) {
             capture.done.countDown()
@@ -274,9 +224,8 @@ object WoiHeldAudio {
             // Never join or call a potentially blocking driver stop on the UI
             // thread. Holding the lock closes the start-after-cancel window.
             Thread({
-                val records = synchronized(lock) { Pair(capture.mic, capture.system) }
-                try { records.first?.stop() } catch (_: Exception) {}
-                try { records.second?.stop() } catch (_: Exception) {}
+                val microphone = synchronized(lock) { capture.mic }
+                try { microphone?.stop() } catch (_: Exception) {}
             }, "woi-held-stop").start()
         }
         WoiForegroundService.stopHeldAudio()

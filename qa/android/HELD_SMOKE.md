@@ -1,78 +1,83 @@
-# Android held microphone/system-audio smoke
+# Android held microphone smoke
 
-The target is the installed release on MI 8 (API 35), serial `2d4f6bc0`.
-ADB currently uses the libusb host backend. These checks require the parent's
-explicit phone interaction lock after APK installation and Python instrumentation.
-Preparation and log summarization below do not call ADB.
+Android held recording is microphone-only from 0.15.1. A hold requests only
+`RECORD_AUDIO`, starts the dedicated microphone foreground service, and waits
+for native readiness. It neither starts nor stops screen sharing. Linux held
+recording continues to mix microphone and system output.
 
-## Privacy and test boundary
+The target device is MI8 (Android 15 / API 35), serial `2d4f6bc0`. Device work
+requires the parent's phone lock after installing the matching release and test
+APKs. New evidence belongs in `qa/out/acceptance-0.15.1`; preserve the archived
+0.15.0 evidence in `qa/out/acceptance`.
 
-Use short captures that are cancelled and discarded. Do not release a completed
-hold into the send path, do not ask a model to identify the recording, and do not
-save or pull microphone PCM. Record only the native per-source counts/RMS,
-release/error state, timestamps, and screenshots of neutral UI/consent.
+## Native test boundary
 
-Production startup deliberately changes a saved muted mode back to hands-free.
-A new production launch is therefore unsuitable as an offline audio test without
-an explicit way to suppress normal voice input. Prefer a native test-APK harness
-that invokes `WoiHeldAudio` with an EventSink which drops ByteArray data, using
-`WoiBridge.ensureContext(targetContext)` and no Flutter engine. Such a harness
-can play an AudioTrack with USAGE_MEDIA and ALLOW_CAPTURE_BY_ALL, and can test
-normal WoiAudio recorder restoration with another discard-only sink. It avoids
-network/model calls altogether. The existing custom `PythonInstrumentation`
-runner supports this pattern; adding an audio group would require test-APK-only
-wiring and a native activity that obtains real projection consent under the
-target app UID. A production hook is not needed.
+Run the existing test-only runner with `-e group audio`. Its substituted native
+Activity starts no Flutter engine or chat connection. Every captured PCM callback
+is discarded immediately; only microphone count/RMS, source names, error, and
+release state are reported. It requests no projection consent and plays no media
+fixture. The test requires an already-granted microphone permission; Flutter
+adapter regressions cover permission denial and no screen-share method calls.
 
-If testing gestures in the already-running production UI, the parent must hand
-over with normal listening muted and the app left running. Verify that state
-from a fresh screenshot before every trial. Cancel an active hold with an
-actual pointer CANCEL, or background the app before pointer UP so lifecycle
-cancellation executes first. The current mic button does not cancel merely
-because a held pointer moves outside its bounds. Do not send a normal UP at the
-end of a completed held recording.
+The updated native harness has eight checks: neutral startup; two consecutive
+microphone captures; cancellation before startup; explicit native cancellation;
+recovery after cancellation; ordinary microphone restoration; and final absence
+of a chat engine or projection. Each check asserts that Woi screen sharing and
+its projection foreground flag stay off. Test cleanup closes only microphones,
+restores audio preferences, and finishes the native Activity. It never stops an
+independently owned projection.
 
-## Fixture
+| Scenario | Required evidence |
+| --- | --- |
+| Cold hold without screen sharing | Native microphone becomes ready without projection or screen consent. |
+| Repeated holds | Fresh generations, `sources=[microphone]`, at least 24,000 mic samples, and an active unsilenced `VOICE_COMMUNICATION` configuration. |
+| Immediate cancel | Zero mic samples, no readiness/late PCM event, and confirmed release. |
+| Native cancellation | Error reaches the sink, capture closes, and the next microphone hold works. |
+| Ordinary mic restoration | Held release is acknowledged before normal capture opens; normal PCM arrives and is discarded. |
+| Cleanup | `released=true`, `active=false`, `closing=0`, no callbacks after acknowledgement, and no screen share or Flutter engine created. |
 
-Run `python3 qa/android/held_smoke.py prepare` on the host. It creates an ignored
-16-second stereo PCM WAV with two low-amplitude tones alternating with silence.
-It contains no speech or recorded audio. A known eligible player must use media
-usage and permit playback capture. Prefer an explicit test AudioTrack because an
-arbitrary installed player may opt out. Keep the device's volume unchanged.
+Zero microphone RMS can be expected from MI8 noise suppression in a quiet room.
+The harness records `mic_signal_observed` honestly and verifies Android has not
+silenced the client. Without an independent acoustic stimulus, these checks prove
+lifecycle and OS eligibility, not calibrated near-end speech performance.
 
-## Scenarios and acceptance
+## Dart regressions and UI checks
 
-| Scenario | Procedure | Evidence required |
-| --- | --- | --- |
-| Cold consent | Start with no projection; request it through the real Android consent UI. | No native recorder before approval; the approved projection becomes ready. |
-| Release during consent | Cancel the hold before approving; then approve the dialog. | No recorded clip or send; no lingering held recorder; the next hold can use consent. |
-| Capturable media | Play the fixture; capture for about 3 seconds; cancel. | Both source sample counts advance; system RMS is nonzero during the tone window; record mic RMS without making a speech-quality claim. |
-| Repeat hold | Repeat twice with the same projection, cancelling each. | New generations, a readiness event each time, confirmed release, no held mic left active. |
-| Cancel during startup | Cancel before native readiness. | No late recording delivery; closing count returns to zero; a subsequent hold succeeds. |
-| Projection revocation | Revoke the approved projection during a short held capture. | Explicit recording cancellation, no send, both recorders released, and fresh consent works afterward. |
-| Restore normal mic | After held capture release acknowledgment, open the ordinary native mic with a discard sink. | No held capture remains, normal recorder gets frames and is not OS-silenced, then closes cleanly. |
+Adapter tests require microphone permission only and assert that no `share*`
+method is called during open, failure, close, or release acknowledgement. They
+also preserve an independently active share and keep microphone capture alive
+when that share ends. Recorded-turn tests cover microphone-only and mixed-source
+history labels across reconnect, clip persistence, and no screenshot capture on
+submission. Existing managed-capture tests retain native mic release ordering
+and suspension across reconnect.
 
-For a native test harness, collect `WoiHeldAudio.status()` after each stop and
-assert `active=false`, `closing=0`, and `released=true`. Revoke with the actual
-MediaProjection stop path. For UI smoke, correlate the restricted native log
-`held audio released: {...}` with each scenario; do not clear the global device
-log. `python3 qa/android/held_smoke.py summarize <restricted-log>` extracts numeric
-metrics into ignored `qa/out/android-held/native-summary.json`.
+For an actual Flutter gesture smoke, root must hand over an already-running
+app with normal listening muted. Cancel or discard short holds; do not send
+ambient microphone audio to a model. A native check does not validate the
+Flutter gesture itself. Explicit camera and screen-share controls keep their
+own behavior and are not activated by holding the microphone.
 
-Microphone/system RMS alone cannot prove accurate speech or universal playback
-capture. Playback policy, protected content, and silence must be distinguished
-from a missing recorder. This smoke supplements the Flutter gesture, cancellation,
-and reconnect-ordering regressions; native-only checks do not substitute for the
-actual Flutter consent/gesture path.
+The numeric log helper remains available:
 
-## Handoff
+```sh
+python3 qa/android/held_smoke.py summarize path/to/restricted-native.log
+```
 
-Restore the pre-test foreground activity, microphone mode, media playback state,
-and projection state where applicable. Remove only this fixture/test state.
-Return the phone lock to root for the overlay agent. Do not restart the ADB
-server while another owner has the lock.
+Its `prepare` command is retained only for reproducing the archived dual-source
+0.15.0 media fixture. The current microphone-only harness does not use it.
 
-## Release device result
+## Current validation status
+
+The 0.15.1 native harness and Dart regressions are implemented. Release-build and
+real-device verification are pending the root coordinator's build/device lock.
+Do not apply the historical dual-source pass below to the new microphone-only
+implementation.
+
+## Historical 0.15.0 dual-source device result
+
+These archived results apply to the previous dual-source Android implementation.
+The original logs and numeric measurements remain unchanged.
+
 
 On MI8 (Android 15), the release-native instrumentation passed all 10 checks:
 missing consent, cancellation while real consent is pending, repeated held

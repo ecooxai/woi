@@ -624,7 +624,7 @@ class TurnPipeline extends ChangeNotifier {
   DateTime _lastActivity = DateTime.now();
   EnergyVad? _wakeVad;
   // Typed while in standby or connecting: sent once connected.
-  final List<({String text, AudioClip? audio})> _queuedTexts = [];
+  final List<({String text, AudioClip? audio, bool includesSystemAudio})> _queuedTexts = [];
 
   /// Audio kept in standby before the wake onset (the start of the words).
   static const int standbyLeadBytes = kVoiceBytesPerSecond * 3 ~/ 2;
@@ -690,7 +690,7 @@ class TurnPipeline extends ChangeNotifier {
     final texts = List.of(_queuedTexts);
     _queuedTexts.clear();
     for (final t in texts) {
-      sendText(t.text, audioClip: t.audio);
+      sendText(t.text, audioClip: t.audio, includesSystemAudio: t.includesSystemAudio);
     }
   }
 
@@ -1368,7 +1368,7 @@ class TurnPipeline extends ChangeNotifier {
 
   /// Persist the original clip and send its full transcription/description.
   /// This also works for WebRTC transports that cannot inject PCM over RTP.
-  Future<void> sendRecordedAudio(Uint8List pcm, String text) async {
+  Future<void> sendRecordedAudio(Uint8List pcm, String text, {bool includesSystemAudio = false}) async {
     if (_disposed) return;
     final conversation = _conv;
     final clip = await store.saveAudio(newId('recording'), pcm);
@@ -1383,7 +1383,7 @@ class TurnPipeline extends ChangeNotifier {
         (_status != SessionStatus.connected && _status != SessionStatus.connecting && !_standby)) {
       throw StateError('Voice connection unavailable; the audio was saved at ${clip.path}');
     }
-    sendText(text, audioClip: clip);
+    sendText(text, audioClip: clip, includesSystemAudio: includesSystemAudio);
   }
 
   Future<void> setMicMode(MicMode mode) async {
@@ -2459,12 +2459,12 @@ class TurnPipeline extends ChangeNotifier {
   void _pushScreenMemory() => _backend?.updateScreenMemory(screenMemory());
 
   /// Typed input (text fallback).
-  void sendText(String text, {AudioClip? audioClip}) {
+  void sendText(String text, {AudioClip? audioClip, bool includesSystemAudio = false}) {
     final t = text.trim();
     if (t.isEmpty) return;
     if (_standby || (_status == SessionStatus.connecting && _backend != null)) {
       // Sent once the session is up (standby: it wakes now).
-      _queuedTexts.add((text: t, audio: audioClip));
+      _queuedTexts.add((text: t, audio: audioClip, includesSystemAudio: includesSystemAudio));
       if (_standby) _wake('typed text');
       return;
     }
@@ -2481,7 +2481,7 @@ class TurnPipeline extends ChangeNotifier {
         text: t,
         audio: audioClip,
         meta: {
-          if (audioClip != null) 'captureSources': ['microphone', 'system'],
+          if (audioClip != null) 'captureSources': ['microphone', if (includesSystemAudio) 'system'],
         },
       ),
     );

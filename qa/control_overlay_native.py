@@ -2,7 +2,7 @@
 """Verify native indicators and physical takeover using two private X displays.
 
 Example: python3 qa/control_overlay_native.py --outer-display 72 --inner-display 73
-Requires Xvfb, Xephyr, xdotool, C++ compiler, gtk+-3.0, xi, and x11 development files.
+Requires Xvfb, Xephyr, xdotool, C++ compiler, gtk+-3.0, xi, and x11 development files, ImageMagick import/convert.
 Compiles the actual native overlay source; no Flutter build or user desktop is used.
 """
 import argparse
@@ -14,16 +14,19 @@ import shutil
 import subprocess
 import time
 
+
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--outer-display', type=int, default=72)
 parser.add_argument('--inner-display', type=int, default=73)
+parser.add_argument('--out', type=Path, default=Path('qa/out/control-native'))
 args = parser.parse_args()
 if min(args.outer_display, args.inner_display) < 10 or args.outer_display == args.inner_display:
     parser.error('use two distinct private displays numbered 10 or higher')
-out = Path('qa/out/control-native')
+out = args.out
 out.mkdir(parents=True, exist_ok=True)
 outer = {**os.environ, 'DISPLAY': f':{args.outer_display}', 'GDK_BACKEND': 'x11'}
-inner = {**os.environ, 'DISPLAY': f':{args.inner_display}', 'GDK_BACKEND': 'x11'}
+inner = {**os.environ, 'DISPLAY': f':{args.inner_display}', 'GDK_BACKEND': 'x11',
+         'WOI_CONTROL_TEST_OUT': str(out.resolve())}
 
 
 def cmd(argv, env=inner):
@@ -49,6 +52,8 @@ flags = shlex.split(cmd(['pkg-config', '--cflags', '--libs', 'gtk+-3.0', 'xi', '
 subprocess.run(['c++', '-std=c++17', '-Wall', '-Werror', '-ffunction-sections',
                 '-fdata-sections', '-Wl,--gc-sections', '-Iapp/linux/flutter/ephemeral',
                 'qa/lib/control_overlay_native.cc', '-o', str(out / 'harness'), *flags], check=True)
+if not shutil.which('import') or not shutil.which('convert'):
+    raise RuntimeError('ImageMagick import/convert are required for pointer color/hotspot screenshots')
 servers = []
 harness = None
 try:
@@ -64,29 +69,50 @@ try:
     results = []
     for mode in ('synthetic', 'physical'):
         harness = subprocess.Popen([str(out / 'harness')], env=inner,
-                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         assert harness.stdout.readline().strip() == 'READY'
         target = cmd(['xdotool', 'search', '--name', 'Woi native overlay target']).splitlines()[-1]
         cmd(['xdotool', 'windowfocus', target])
         cmd(['xdotool', 'type', '--delay', '12', '--', 'overlaytest'])
-        cmd(['xdotool', 'mousemove', '444', '312', 'click', '1'])
-        time.sleep(.2)
+        cmd(['xdotool', 'mousemove', '640', '430'])
+        for button, rgb in (('none', (92, 190, 255)), ('left', (52, 155, 231)),
+                            ('right', (255, 166, 166)), ('none', (92, 190, 255))):
+            harness.stdin.write(button + '\n')
+            harness.stdin.flush()
+            assert harness.stdout.readline().strip() == f'BUTTON {button}'
+            if button != 'none':
+                cmd(['xdotool', 'click', '1' if button == 'left' else '3'])
+            time.sleep(.15)
+            shot = out / f'{mode}-pointer-{button}.png'
+            cmd(['import', '-display', inner['DISPLAY'], '-window', 'root', str(shot)])
+            def pixel(x, y):
+                raw = subprocess.run(['convert', str(shot), '-crop', f'1x1+{x}+{y}',
+                                      '+repage', '-depth', '8', 'rgb:-'],
+                                     check=True, capture_output=True).stdout
+                assert len(raw) == 3, raw
+                return tuple(raw)
+            for dx, dy in ((4, 12), (16, 32)):
+                actual = pixel(640 + dx, 430 + dy)
+                assert all(abs(a - b) <= 2 for a, b in zip(actual, rgb)), (button, actual, rgb)
+            assert pixel(630, 442) != rgb, 'Cursor hotspot drifted or circular marker remained'
         if mode == 'physical':
-            # The outer XTEST movement reaches Xephyr as a physical source.
-            # Inner XTEST is the source our own xdotool uses and must be ignored.
+            # Take over during the third trailing second. Outer XTEST reaches
+            # Xephyr as a physical source; the app's inner XTEST stays ignored.
+            time.sleep(2.3)
             cmd(['xdotool', 'mousemove', '--window', host, '200', '200'], outer)
             cmd(['xdotool', 'mousemove', '--window', host, '250', '220'], outer)
-        elif shutil.which('import'):
-            cmd(['import', '-display', inner['DISPLAY'], '-window', 'root', str(out / 'overlay.png')])
         stdout, stderr = harness.communicate(timeout=12)
         harness = None
         (out / f'{mode}.log').write_text(stdout + stderr)
         expected = 'cancelled=0' if mode == 'synthetic' else 'cancelled=1'
         assert expected in stdout, stdout + stderr
+        assert 'arrow_palette=1 hotspot=1' in stdout, stdout + stderr
         assert 'clicks=1' in stdout, stdout + stderr
         assert 'text=overlaytest' in stdout, stdout + stderr
         results.append({'scenario': mode, 'cancelled': mode == 'physical',
-                        'click_through': True, 'typing_focus_preserved': True})
+                        'click_through': True, 'typing_focus_preserved': True,
+                        'arrow_palette_and_hotspot': True, 'neutral_reset': True,
+                        'takeover_after_input_ms': 2300 if mode == 'physical' else None})
         time.sleep(.2)
     (out / 'result.json').write_text(json.dumps(results, indent=2) + '\n')
     print(json.dumps(results))
