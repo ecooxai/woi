@@ -1,0 +1,55 @@
+{
+  "generated_at_utc": "2026-11-07T21:01:56Z",
+  "baseline_checkpoint": "3d744b8b",
+  "branch": "gpt-6-astra-pro/woi-click-accuracy-lab-20261107",
+  "phase_counts": {
+    "screening-high": {
+      "trials": 192,
+      "hits": 120,
+      "misses": 72,
+      "errors": {}
+    },
+    "screening-original": {
+      "trials": 120,
+      "hits": 120,
+      "misses": 0,
+      "errors": {}
+    },
+    "confirmation-ui": {
+      "trials": 120,
+      "hits": 81,
+      "misses": 39,
+      "errors": {}
+    }
+  },
+  "release_source_sha256": {
+    "benchmark.py": "329a5cf6b05f99ddb3265b43e4c2d15ef73ee16b41913cc63e7d18c74511e626",
+    "test_lab.py": "8c9de49434d9c510816c83251fd53d409ebdac39a0314ef50feddce9c68c2064",
+    "test_click_all.py": "ce4785a7421d5e47532b517054fd4781a95cafca272001cc7e61658c3dfb4ba7",
+    "report_results.py": "372992d473a679fac464e8aaf0e9ae3e21ecc4cf52579aae9f351047bc6d4621",
+    "report_click_all.py": "22fd266e8504b8c597cbb12685ebf5441b2e1f868a5d21b4e54058614b4b2ca5",
+    "adapters.py": "786dc65d129313e81ccb61a83aab38cb405b55bfa4bd3902979a31563b270e4c",
+    "server.py": "1aea6f8000b0ee2ee76657491e1205c0dd28e49171633e2fb1cc7b76ca717f8e",
+    "app.js": "622b438efc1d910c183c2bbac7a2ee1fb627b5c3d6ed531e88fdab2119b67c86",
+    "app.css": "a812e1a8ee0fa47153d1274e22e58660afae182095f680d95642f56cf687ba78",
+    "index.html": "8706da7b774fef443a10697c25ebd48c0669ef14d25e5d276739bebd40134731",
+    "launch.py": "5c97ea3408305bcb18de3dc2c65fdc531b1455c5fa0af6bd18ff83ffbc95ca12"
+  },
+  "source_hash_scope": "Final implementation files at report publication; per-phase provider protocol, prompt and immutable row hashes are recorded separately.",
+  "raw_rows_sha256": {
+    "screening-high": "30fdd7cecae7eb3a38e5d2366d950f9833cf71afbb1d120f01947d5764605a35",
+    "screening-original": "d50d9d4441a62e37938f9146923c86a267b99b33ef8cee61d0382cf9fa5b3615",
+    "confirmation-ui": "8b0434cc2ebbbaa54b0f4b0a95e0c27a11c7ff63f2bacd3a96579540dda1baa0"
+  },
+  "provider_endpoints": [
+    "https://chatgpt.com/backend-api/codex/responses",
+    "wss://api.openai.com/v1/realtime"
+  ],
+  "provider_reported_alias_changes": [],
+  "responses_missing_resolved_model": 0,
+  "text_input_for_all_audio_trials": true,
+  "speech_recognition_tested": false,
+  "screenshot_history_sent": false,
+  "ground_truth_sent_to_models": false,
+  "coordinate_execution": "Trusted Chromium CDP events inside isolated benchmark pages; no operating-system input"
+}

@@ -1,0 +1,2265 @@
+{
+  "status": "High-detail baseline completed; native-detail text retesting is pending and must be reported separately.",
+  "protocol": "detail high; output coordinates in source PNG pixels; no clamping; text instructions for all models",
+  "independent_oracle": "12/12 trusted browser events at DPR1 and DPR2",
+  "finding": "Several text candidates hit all eight 1x captures and miss all four 2560x1440 DPR2 captures. Luna6 coordinates scale about0.822; reserve/terra5.6/luna5.6 about0.8. This is consistent with model/provider image resizing or coordinate interpretation, not evaluator mapping. Cause is an inference; DPR and capture dimensions are correlated in this sweep.",
+  "models": [
+    {
+      "model": "codex-auto-review",
+      "strata": {
+        "1280x720;DPR=1": {
+          "hits": 4,
+          "trials": 4,
+          "through_origin_fit": {
+            "x_scale": 0.999967,
+            "y_scale": 1.000005,
+            "median_residual_px": 0.138,
+            "sample_count": 4
+          },
+          "cases": [
+            {
+              "case_id": "case-000",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                68.0,
+                93.0
+              ],
+              "returned_xy": [
+                68,
+                93
+              ]
+            },
+            {
+              "case_id": "case-001",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                431.921875,
+                258.65625
+              ],
+              "returned_xy": [
+                432,
+                259
+              ]
+            },
+            {
+              "case_id": "case-002",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                765.140625,
+                420.203125
+              ],
+              "returned_xy": [
+                765,
+                420
+              ]
+            },
+            {
+              "case_id": "case-003",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                1212.0,
+                687.0
+              ],
+              "returned_xy": [
+                1212,
+                687
+              ]
+            }
+          ]
+        },
+        "960x720;DPR=1": {
+          "hits": 4,
+          "trials": 4,
+          "through_origin_fit": {
+            "x_scale": 1.000173,
+            "y_scale": 1.000071,
+            "median_residual_px": 0.293,
+            "sample_count": 4
+          },
+          "cases": [
+            {
+              "case_id": "case-004",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                426.546875,
+                159.109375
+              ],
+              "returned_xy": [
+                427,
+                159
+              ]
+            },
+            {
+              "case_id": "case-005",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                601.375,
+                335.96875
+              ],
+              "returned_xy": [
+                601,
+                336
+              ]
+            },
+            {
+              "case_id": "case-006",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                804.734375,
+                438.0
+              ],
+              "returned_xy": [
+                805,
+                438
+              ]
+            },
+            {
+              "case_id": "case-007",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                134.796875,
+                573.90625
+              ],
+              "returned_xy": [
+                135,
+                574
+              ]
+            }
+          ]
+        },
+        "2560x1440;DPR=2": {
+          "hits": 0,
+          "trials": 4,
+          "through_origin_fit": {
+            "x_scale": 0.800215,
+            "y_scale": 0.799707,
+            "median_residual_px": 0.474,
+            "sample_count": 4
+          },
+          "cases": [
+            {
+              "case_id": "case-008",
+              "hit": false,
+              "status": "miss",
+              "expected_xy": [
+                1499.1875,
+                313.3125
+              ],
+              "returned_xy": [
+                1200,
+                251
+              ]
+            },
+            {
+              "case_id": "case-009",
+              "hit": false,
+              "status": "miss",
+              "expected_xy": [
+                2025.84375,
+                626.28125
+              ],
+              "returned_xy": [
+                1621,
+                501
+              ]
+            },
+            {
+              "case_id": "case-010",
+              "hit": false,
+              "status": "miss",
+              "expected_xy": [
+                301.71875,
+                996.78125
+              ],
+              "returned_xy": [
+                242,
+                797
+              ]
+            },
+            {
+              "case_id": "case-011",
+              "hit": false,
+              "status": "miss",
+              "expected_xy": [
+                1113.9375,
+                1251.8125
+              ],
+              "returned_xy": [
+                891,
+                1001
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "model": "gpt-5.6-luna",
+      "strata": {
+        "1280x720;DPR=1": {
+          "hits": 4,
+          "trials": 4,
+          "through_origin_fit": {
+            "x_scale": 0.999967,
+            "y_scale": 1.000005,
+            "median_residual_px": 0.138,
+            "sample_count": 4
+          },
+          "cases": [
+            {
+              "case_id": "case-000",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                68.0,
+                93.0
+              ],
+              "returned_xy": [
+                68,
+                93
+              ]
+            },
+            {
+              "case_id": "case-001",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                431.921875,
+                258.65625
+              ],
+              "returned_xy": [
+                432,
+                259
+              ]
+            },
+            {
+              "case_id": "case-002",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                765.140625,
+                420.203125
+              ],
+              "returned_xy": [
+                765,
+                420
+              ]
+            },
+            {
+              "case_id": "case-003",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                1212.0,
+                687.0
+              ],
+              "returned_xy": [
+                1212,
+                687
+              ]
+            }
+          ]
+        },
+        "960x720;DPR=1": {
+          "hits": 4,
+          "trials": 4,
+          "through_origin_fit": {
+            "x_scale": 1.000173,
+            "y_scale": 1.000071,
+            "median_residual_px": 0.293,
+            "sample_count": 4
+          },
+          "cases": [
+            {
+              "case_id": "case-004",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                426.546875,
+                159.109375
+              ],
+              "returned_xy": [
+                427,
+                159
+              ]
+            },
+            {
+              "case_id": "case-005",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                601.375,
+                335.96875
+              ],
+              "returned_xy": [
+                601,
+                336
+              ]
+            },
+            {
+              "case_id": "case-006",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                804.734375,
+                438.0
+              ],
+              "returned_xy": [
+                805,
+                438
+              ]
+            },
+            {
+              "case_id": "case-007",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                134.796875,
+                573.90625
+              ],
+              "returned_xy": [
+                135,
+                574
+              ]
+            }
+          ]
+        },
+        "2560x1440;DPR=2": {
+          "hits": 0,
+          "trials": 4,
+          "through_origin_fit": {
+            "x_scale": 0.799952,
+            "y_scale": 0.799707,
+            "median_residual_px": 0.626,
+            "sample_count": 4
+          },
+          "cases": [
+            {
+              "case_id": "case-008",
+              "hit": false,
+              "status": "miss",
+              "expected_xy": [
+                1499.1875,
+                313.3125
+              ],
+              "returned_xy": [
+                1200,
+                251
+              ]
+            },
+            {
+              "case_id": "case-009",
+              "hit": false,
+              "status": "miss",
+              "expected_xy": [
+                2025.84375,
+                626.28125
+              ],
+              "returned_xy": [
+                1620,
+                501
+              ]
+            },
+            {
+              "case_id": "case-010",
+              "hit": false,
+              "status": "miss",
+              "expected_xy": [
+                301.71875,
+                996.78125
+              ],
+              "returned_xy": [
+                242,
+                797
+              ]
+            },
+            {
+              "case_id": "case-011",
+              "hit": false,
+              "status": "miss",
+              "expected_xy": [
+                1113.9375,
+                1251.8125
+              ],
+              "returned_xy": [
+                891,
+                1001
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "model": "gpt-5.6-sol",
+      "strata": {
+        "1280x720;DPR=1": {
+          "hits": 4,
+          "trials": 4,
+          "through_origin_fit": {
+            "x_scale": 0.999967,
+            "y_scale": 1.000005,
+            "median_residual_px": 0.138,
+            "sample_count": 4
+          },
+          "cases": [
+            {
+              "case_id": "case-000",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                68.0,
+                93.0
+              ],
+              "returned_xy": [
+                68,
+                93
+              ]
+            },
+            {
+              "case_id": "case-001",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                431.921875,
+                258.65625
+              ],
+              "returned_xy": [
+                432,
+                259
+              ]
+            },
+            {
+              "case_id": "case-002",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                765.140625,
+                420.203125
+              ],
+              "returned_xy": [
+                765,
+                420
+              ]
+            },
+            {
+              "case_id": "case-003",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                1212.0,
+                687.0
+              ],
+              "returned_xy": [
+                1212,
+                687
+              ]
+            }
+          ]
+        },
+        "960x720;DPR=1": {
+          "hits": 4,
+          "trials": 4,
+          "through_origin_fit": {
+            "x_scale": 1.000173,
+            "y_scale": 1.000071,
+            "median_residual_px": 0.293,
+            "sample_count": 4
+          },
+          "cases": [
+            {
+              "case_id": "case-004",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                426.546875,
+                159.109375
+              ],
+              "returned_xy": [
+                427,
+                159
+              ]
+            },
+            {
+              "case_id": "case-005",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                601.375,
+                335.96875
+              ],
+              "returned_xy": [
+                601,
+                336
+              ]
+            },
+            {
+              "case_id": "case-006",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                804.734375,
+                438.0
+              ],
+              "returned_xy": [
+                805,
+                438
+              ]
+            },
+            {
+              "case_id": "case-007",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                134.796875,
+                573.90625
+              ],
+              "returned_xy": [
+                135,
+                574
+              ]
+            }
+          ]
+        },
+        "2560x1440;DPR=2": {
+          "hits": 4,
+          "trials": 4,
+          "through_origin_fit": {
+            "x_scale": 0.99988,
+            "y_scale": 0.999835,
+            "median_residual_px": 0.716,
+            "sample_count": 4
+          },
+          "cases": [
+            {
+              "case_id": "case-008",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                1499.1875,
+                313.3125
+              ],
+              "returned_xy": [
+                1499,
+                314
+              ]
+            },
+            {
+              "case_id": "case-009",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                2025.84375,
+                626.28125
+              ],
+              "returned_xy": [
+                2026,
+                626
+              ]
+            },
+            {
+              "case_id": "case-010",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                301.71875,
+                996.78125
+              ],
+              "returned_xy": [
+                302,
+                996
+              ]
+            },
+            {
+              "case_id": "case-011",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                1113.9375,
+                1251.8125
+              ],
+              "returned_xy": [
+                1113,
+                1252
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "model": "gpt-5.6-terra",
+      "strata": {
+        "1280x720;DPR=1": {
+          "hits": 4,
+          "trials": 4,
+          "through_origin_fit": {
+            "x_scale": 0.999967,
+            "y_scale": 1.000005,
+            "median_residual_px": 0.138,
+            "sample_count": 4
+          },
+          "cases": [
+            {
+              "case_id": "case-000",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                68.0,
+                93.0
+              ],
+              "returned_xy": [
+                68,
+                93
+              ]
+            },
+            {
+              "case_id": "case-001",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                431.921875,
+                258.65625
+              ],
+              "returned_xy": [
+                432,
+                259
+              ]
+            },
+            {
+              "case_id": "case-002",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                765.140625,
+                420.203125
+              ],
+              "returned_xy": [
+                765,
+                420
+              ]
+            },
+            {
+              "case_id": "case-003",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                1212.0,
+                687.0
+              ],
+              "returned_xy": [
+                1212,
+                687
+              ]
+            }
+          ]
+        },
+        "960x720;DPR=1": {
+          "hits": 4,
+          "trials": 4,
+          "through_origin_fit": {
+            "x_scale": 1.000173,
+            "y_scale": 1.000071,
+            "median_residual_px": 0.293,
+            "sample_count": 4
+          },
+          "cases": [
+            {
+              "case_id": "case-004",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                426.546875,
+                159.109375
+              ],
+              "returned_xy": [
+                427,
+                159
+              ]
+            },
+            {
+              "case_id": "case-005",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                601.375,
+                335.96875
+              ],
+              "returned_xy": [
+                601,
+                336
+              ]
+            },
+            {
+              "case_id": "case-006",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                804.734375,
+                438.0
+              ],
+              "returned_xy": [
+                805,
+                438
+              ]
+            },
+            {
+              "case_id": "case-007",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                134.796875,
+                573.90625
+              ],
+              "returned_xy": [
+                135,
+                574
+              ]
+            }
+          ]
+        },
+        "2560x1440;DPR=2": {
+          "hits": 0,
+          "trials": 4,
+          "through_origin_fit": {
+            "x_scale": 0.800176,
+            "y_scale": 0.799912,
+            "median_residual_px": 0.645,
+            "sample_count": 4
+          },
+          "cases": [
+            {
+              "case_id": "case-008",
+              "hit": false,
+              "status": "miss",
+              "expected_xy": [
+                1499.1875,
+                313.3125
+              ],
+              "returned_xy": [
+                1200,
+                251
+              ]
+            },
+            {
+              "case_id": "case-009",
+              "hit": false,
+              "status": "miss",
+              "expected_xy": [
+                2025.84375,
+                626.28125
+              ],
+              "returned_xy": [
+                1621,
+                500
+              ]
+            },
+            {
+              "case_id": "case-010",
+              "hit": false,
+              "status": "miss",
+              "expected_xy": [
+                301.71875,
+                996.78125
+              ],
+              "returned_xy": [
+                241,
+                797
+              ]
+            },
+            {
+              "case_id": "case-011",
+              "hit": false,
+              "status": "miss",
+              "expected_xy": [
+                1113.9375,
+                1251.8125
+              ],
+              "returned_xy": [
+                891,
+                1002
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "model": "gpt-6-astra",
+      "strata": {
+        "1280x720;DPR=1": {
+          "hits": 4,
+          "trials": 4,
+          "through_origin_fit": {
+            "x_scale": 0.999967,
+            "y_scale": 1.000005,
+            "median_residual_px": 0.138,
+            "sample_count": 4
+          },
+          "cases": [
+            {
+              "case_id": "case-000",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                68.0,
+                93.0
+              ],
+              "returned_xy": [
+                68,
+                93
+              ]
+            },
+            {
+              "case_id": "case-001",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                431.921875,
+                258.65625
+              ],
+              "returned_xy": [
+                432,
+                259
+              ]
+            },
+            {
+              "case_id": "case-002",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                765.140625,
+                420.203125
+              ],
+              "returned_xy": [
+                765,
+                420
+              ]
+            },
+            {
+              "case_id": "case-003",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                1212.0,
+                687.0
+              ],
+              "returned_xy": [
+                1212,
+                687
+              ]
+            }
+          ]
+        },
+        "960x720;DPR=1": {
+          "hits": 4,
+          "trials": 4,
+          "through_origin_fit": {
+            "x_scale": 1.000173,
+            "y_scale": 1.000071,
+            "median_residual_px": 0.293,
+            "sample_count": 4
+          },
+          "cases": [
+            {
+              "case_id": "case-004",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                426.546875,
+                159.109375
+              ],
+              "returned_xy": [
+                427,
+                159
+              ]
+            },
+            {
+              "case_id": "case-005",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                601.375,
+                335.96875
+              ],
+              "returned_xy": [
+                601,
+                336
+              ]
+            },
+            {
+              "case_id": "case-006",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                804.734375,
+                438.0
+              ],
+              "returned_xy": [
+                805,
+                438
+              ]
+            },
+            {
+              "case_id": "case-007",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                134.796875,
+                573.90625
+              ],
+              "returned_xy": [
+                135,
+                574
+              ]
+            }
+          ]
+        },
+        "2560x1440;DPR=2": {
+          "hits": 4,
+          "trials": 4,
+          "through_origin_fit": {
+            "x_scale": 1.00022,
+            "y_scale": 1.000161,
+            "median_residual_px": 0.351,
+            "sample_count": 4
+          },
+          "cases": [
+            {
+              "case_id": "case-008",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                1499.1875,
+                313.3125
+              ],
+              "returned_xy": [
+                1500,
+                314
+              ]
+            },
+            {
+              "case_id": "case-009",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                2025.84375,
+                626.28125
+              ],
+              "returned_xy": [
+                2026,
+                626
+              ]
+            },
+            {
+              "case_id": "case-010",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                301.71875,
+                996.78125
+              ],
+              "returned_xy": [
+                302,
+                997
+              ]
+            },
+            {
+              "case_id": "case-011",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                1113.9375,
+                1251.8125
+              ],
+              "returned_xy": [
+                1114,
+                1252
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "model": "gpt-6-luna",
+      "strata": {
+        "1280x720;DPR=1": {
+          "hits": 4,
+          "trials": 4,
+          "through_origin_fit": {
+            "x_scale": 0.999967,
+            "y_scale": 1.000005,
+            "median_residual_px": 0.138,
+            "sample_count": 4
+          },
+          "cases": [
+            {
+              "case_id": "case-000",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                68.0,
+                93.0
+              ],
+              "returned_xy": [
+                68,
+                93
+              ]
+            },
+            {
+              "case_id": "case-001",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                431.921875,
+                258.65625
+              ],
+              "returned_xy": [
+                432,
+                259
+              ]
+            },
+            {
+              "case_id": "case-002",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                765.140625,
+                420.203125
+              ],
+              "returned_xy": [
+                765,
+                420
+              ]
+            },
+            {
+              "case_id": "case-003",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                1212.0,
+                687.0
+              ],
+              "returned_xy": [
+                1212,
+                687
+              ]
+            }
+          ]
+        },
+        "960x720;DPR=1": {
+          "hits": 4,
+          "trials": 4,
+          "through_origin_fit": {
+            "x_scale": 0.99982,
+            "y_scale": 1.000071,
+            "median_residual_px": 0.339,
+            "sample_count": 4
+          },
+          "cases": [
+            {
+              "case_id": "case-004",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                426.546875,
+                159.109375
+              ],
+              "returned_xy": [
+                426,
+                159
+              ]
+            },
+            {
+              "case_id": "case-005",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                601.375,
+                335.96875
+              ],
+              "returned_xy": [
+                601,
+                336
+              ]
+            },
+            {
+              "case_id": "case-006",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                804.734375,
+                438.0
+              ],
+              "returned_xy": [
+                805,
+                438
+              ]
+            },
+            {
+              "case_id": "case-007",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                134.796875,
+                573.90625
+              ],
+              "returned_xy": [
+                135,
+                574
+              ]
+            }
+          ]
+        },
+        "2560x1440;DPR=2": {
+          "hits": 0,
+          "trials": 4,
+          "through_origin_fit": {
+            "x_scale": 0.821775,
+            "y_scale": 0.821771,
+            "median_residual_px": 0.516,
+            "sample_count": 4
+          },
+          "cases": [
+            {
+              "case_id": "case-008",
+              "hit": false,
+              "status": "miss",
+              "expected_xy": [
+                1499.1875,
+                313.3125
+              ],
+              "returned_xy": [
+                1232,
+                258
+              ]
+            },
+            {
+              "case_id": "case-009",
+              "hit": false,
+              "status": "miss",
+              "expected_xy": [
+                2025.84375,
+                626.28125
+              ],
+              "returned_xy": [
+                1665,
+                514
+              ]
+            },
+            {
+              "case_id": "case-010",
+              "hit": false,
+              "status": "miss",
+              "expected_xy": [
+                301.71875,
+                996.78125
+              ],
+              "returned_xy": [
+                248,
+                819
+              ]
+            },
+            {
+              "case_id": "case-011",
+              "hit": false,
+              "status": "miss",
+              "expected_xy": [
+                1113.9375,
+                1251.8125
+              ],
+              "returned_xy": [
+                915,
+                1029
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "model": "gpt-6-sol",
+      "strata": {
+        "1280x720;DPR=1": {
+          "hits": 4,
+          "trials": 4,
+          "through_origin_fit": {
+            "x_scale": 0.999967,
+            "y_scale": 1.000005,
+            "median_residual_px": 0.138,
+            "sample_count": 4
+          },
+          "cases": [
+            {
+              "case_id": "case-000",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                68.0,
+                93.0
+              ],
+              "returned_xy": [
+                68,
+                93
+              ]
+            },
+            {
+              "case_id": "case-001",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                431.921875,
+                258.65625
+              ],
+              "returned_xy": [
+                432,
+                259
+              ]
+            },
+            {
+              "case_id": "case-002",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                765.140625,
+                420.203125
+              ],
+              "returned_xy": [
+                765,
+                420
+              ]
+            },
+            {
+              "case_id": "case-003",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                1212.0,
+                687.0
+              ],
+              "returned_xy": [
+                1212,
+                687
+              ]
+            }
+          ]
+        },
+        "960x720;DPR=1": {
+          "hits": 4,
+          "trials": 4,
+          "through_origin_fit": {
+            "x_scale": 1.000173,
+            "y_scale": 1.000071,
+            "median_residual_px": 0.293,
+            "sample_count": 4
+          },
+          "cases": [
+            {
+              "case_id": "case-004",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                426.546875,
+                159.109375
+              ],
+              "returned_xy": [
+                427,
+                159
+              ]
+            },
+            {
+              "case_id": "case-005",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                601.375,
+                335.96875
+              ],
+              "returned_xy": [
+                601,
+                336
+              ]
+            },
+            {
+              "case_id": "case-006",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                804.734375,
+                438.0
+              ],
+              "returned_xy": [
+                805,
+                438
+              ]
+            },
+            {
+              "case_id": "case-007",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                134.796875,
+                573.90625
+              ],
+              "returned_xy": [
+                135,
+                574
+              ]
+            }
+          ]
+        },
+        "2560x1440;DPR=2": {
+          "hits": 4,
+          "trials": 4,
+          "through_origin_fit": {
+            "x_scale": 0.999761,
+            "y_scale": 0.999629,
+            "median_residual_px": 0.776,
+            "sample_count": 4
+          },
+          "cases": [
+            {
+              "case_id": "case-008",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                1499.1875,
+                313.3125
+              ],
+              "returned_xy": [
+                1499,
+                314
+              ]
+            },
+            {
+              "case_id": "case-009",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                2025.84375,
+                626.28125
+              ],
+              "returned_xy": [
+                2025,
+                625
+              ]
+            },
+            {
+              "case_id": "case-010",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                301.71875,
+                996.78125
+              ],
+              "returned_xy": [
+                302,
+                996
+              ]
+            },
+            {
+              "case_id": "case-011",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                1113.9375,
+                1251.8125
+              ],
+              "returned_xy": [
+                1114,
+                1252
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "model": "gpt-6.1-sol",
+      "strata": {
+        "1280x720;DPR=1": {
+          "hits": 4,
+          "trials": 4,
+          "through_origin_fit": {
+            "x_scale": 0.999967,
+            "y_scale": 1.000005,
+            "median_residual_px": 0.138,
+            "sample_count": 4
+          },
+          "cases": [
+            {
+              "case_id": "case-000",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                68.0,
+                93.0
+              ],
+              "returned_xy": [
+                68,
+                93
+              ]
+            },
+            {
+              "case_id": "case-001",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                431.921875,
+                258.65625
+              ],
+              "returned_xy": [
+                432,
+                259
+              ]
+            },
+            {
+              "case_id": "case-002",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                765.140625,
+                420.203125
+              ],
+              "returned_xy": [
+                765,
+                420
+              ]
+            },
+            {
+              "case_id": "case-003",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                1212.0,
+                687.0
+              ],
+              "returned_xy": [
+                1212,
+                687
+              ]
+            }
+          ]
+        },
+        "960x720;DPR=1": {
+          "hits": 4,
+          "trials": 4,
+          "through_origin_fit": {
+            "x_scale": 1.000173,
+            "y_scale": 1.000071,
+            "median_residual_px": 0.293,
+            "sample_count": 4
+          },
+          "cases": [
+            {
+              "case_id": "case-004",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                426.546875,
+                159.109375
+              ],
+              "returned_xy": [
+                427,
+                159
+              ]
+            },
+            {
+              "case_id": "case-005",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                601.375,
+                335.96875
+              ],
+              "returned_xy": [
+                601,
+                336
+              ]
+            },
+            {
+              "case_id": "case-006",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                804.734375,
+                438.0
+              ],
+              "returned_xy": [
+                805,
+                438
+              ]
+            },
+            {
+              "case_id": "case-007",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                134.796875,
+                573.90625
+              ],
+              "returned_xy": [
+                135,
+                574
+              ]
+            }
+          ]
+        },
+        "2560x1440;DPR=2": {
+          "hits": 4,
+          "trials": 4,
+          "through_origin_fit": {
+            "x_scale": 1.00022,
+            "y_scale": 0.999835,
+            "median_residual_px": 0.544,
+            "sample_count": 4
+          },
+          "cases": [
+            {
+              "case_id": "case-008",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                1499.1875,
+                313.3125
+              ],
+              "returned_xy": [
+                1500,
+                314
+              ]
+            },
+            {
+              "case_id": "case-009",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                2025.84375,
+                626.28125
+              ],
+              "returned_xy": [
+                2026,
+                626
+              ]
+            },
+            {
+              "case_id": "case-010",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                301.71875,
+                996.78125
+              ],
+              "returned_xy": [
+                302,
+                996
+              ]
+            },
+            {
+              "case_id": "case-011",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                1113.9375,
+                1251.8125
+              ],
+              "returned_xy": [
+                1114,
+                1252
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "model": "gpt-6.1-terra",
+      "strata": {
+        "1280x720;DPR=1": {
+          "hits": 4,
+          "trials": 4,
+          "through_origin_fit": {
+            "x_scale": 0.999967,
+            "y_scale": 1.000005,
+            "median_residual_px": 0.138,
+            "sample_count": 4
+          },
+          "cases": [
+            {
+              "case_id": "case-000",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                68.0,
+                93.0
+              ],
+              "returned_xy": [
+                68,
+                93
+              ]
+            },
+            {
+              "case_id": "case-001",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                431.921875,
+                258.65625
+              ],
+              "returned_xy": [
+                432,
+                259
+              ]
+            },
+            {
+              "case_id": "case-002",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                765.140625,
+                420.203125
+              ],
+              "returned_xy": [
+                765,
+                420
+              ]
+            },
+            {
+              "case_id": "case-003",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                1212.0,
+                687.0
+              ],
+              "returned_xy": [
+                1212,
+                687
+              ]
+            }
+          ]
+        },
+        "960x720;DPR=1": {
+          "hits": 4,
+          "trials": 4,
+          "through_origin_fit": {
+            "x_scale": 1.000173,
+            "y_scale": 1.000071,
+            "median_residual_px": 0.293,
+            "sample_count": 4
+          },
+          "cases": [
+            {
+              "case_id": "case-004",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                426.546875,
+                159.109375
+              ],
+              "returned_xy": [
+                427,
+                159
+              ]
+            },
+            {
+              "case_id": "case-005",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                601.375,
+                335.96875
+              ],
+              "returned_xy": [
+                601,
+                336
+              ]
+            },
+            {
+              "case_id": "case-006",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                804.734375,
+                438.0
+              ],
+              "returned_xy": [
+                805,
+                438
+              ]
+            },
+            {
+              "case_id": "case-007",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                134.796875,
+                573.90625
+              ],
+              "returned_xy": [
+                135,
+                574
+              ]
+            }
+          ]
+        },
+        "2560x1440;DPR=2": {
+          "hits": 4,
+          "trials": 4,
+          "through_origin_fit": {
+            "x_scale": 0.999811,
+            "y_scale": 0.999835,
+            "median_residual_px": 0.765,
+            "sample_count": 4
+          },
+          "cases": [
+            {
+              "case_id": "case-008",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                1499.1875,
+                313.3125
+              ],
+              "returned_xy": [
+                1500,
+                314
+              ]
+            },
+            {
+              "case_id": "case-009",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                2025.84375,
+                626.28125
+              ],
+              "returned_xy": [
+                2025,
+                626
+              ]
+            },
+            {
+              "case_id": "case-010",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                301.71875,
+                996.78125
+              ],
+              "returned_xy": [
+                302,
+                996
+              ]
+            },
+            {
+              "case_id": "case-011",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                1113.9375,
+                1251.8125
+              ],
+              "returned_xy": [
+                1113,
+                1252
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "model": "gpt-realtime-2.1",
+      "strata": {
+        "1280x720;DPR=1": {
+          "hits": 2,
+          "trials": 4,
+          "through_origin_fit": {
+            "x_scale": 1.000358,
+            "y_scale": 1.024114,
+            "median_residual_px": 56.196,
+            "sample_count": 4
+          },
+          "cases": [
+            {
+              "case_id": "case-000",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                68.0,
+                93.0
+              ],
+              "returned_xy": [
+                95,
+                95
+              ]
+            },
+            {
+              "case_id": "case-001",
+              "hit": false,
+              "status": "miss",
+              "expected_xy": [
+                431.921875,
+                258.65625
+              ],
+              "returned_xy": [
+                600,
+                275
+              ]
+            },
+            {
+              "case_id": "case-002",
+              "hit": false,
+              "status": "miss",
+              "expected_xy": [
+                765.140625,
+                420.203125
+              ],
+              "returned_xy": [
+                680,
+                430
+              ]
+            },
+            {
+              "case_id": "case-003",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                1212.0,
+                687.0
+              ],
+              "returned_xy": [
+                1205,
+                700
+              ]
+            }
+          ]
+        },
+        "960x720;DPR=1": {
+          "hits": 3,
+          "trials": 4,
+          "through_origin_fit": {
+            "x_scale": 0.959305,
+            "y_scale": 1.033163,
+            "median_residual_px": 26.988,
+            "sample_count": 4
+          },
+          "cases": [
+            {
+              "case_id": "case-004",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                426.546875,
+                159.109375
+              ],
+              "returned_xy": [
+                439,
+                167
+              ]
+            },
+            {
+              "case_id": "case-005",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                601.375,
+                335.96875
+              ],
+              "returned_xy": [
+                560,
+                330
+              ]
+            },
+            {
+              "case_id": "case-006",
+              "hit": false,
+              "status": "miss",
+              "expected_xy": [
+                804.734375,
+                438.0
+              ],
+              "returned_xy": [
+                762,
+                462
+              ]
+            },
+            {
+              "case_id": "case-007",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                134.796875,
+                573.90625
+              ],
+              "returned_xy": [
+                170,
+                595
+              ]
+            }
+          ]
+        },
+        "2560x1440;DPR=2": {
+          "hits": 1,
+          "trials": 4,
+          "through_origin_fit": {
+            "x_scale": 0.946001,
+            "y_scale": 0.859308,
+            "median_residual_px": 79.781,
+            "sample_count": 4
+          },
+          "cases": [
+            {
+              "case_id": "case-008",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                1499.1875,
+                313.3125
+              ],
+              "returned_xy": [
+                1350,
+                290
+              ]
+            },
+            {
+              "case_id": "case-009",
+              "hit": false,
+              "status": "miss",
+              "expected_xy": [
+                2025.84375,
+                626.28125
+              ],
+              "returned_xy": [
+                1920,
+                450
+              ]
+            },
+            {
+              "case_id": "case-010",
+              "hit": false,
+              "status": "miss",
+              "expected_xy": [
+                301.71875,
+                996.78125
+              ],
+              "returned_xy": [
+                430,
+                900
+              ]
+            },
+            {
+              "case_id": "case-011",
+              "hit": false,
+              "status": "miss",
+              "expected_xy": [
+                1113.9375,
+                1251.8125
+              ],
+              "returned_xy": [
+                1100,
+                1080
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "model": "gpt-realtime-2.1-mini",
+      "strata": {
+        "1280x720;DPR=1": {
+          "hits": 2,
+          "trials": 4,
+          "through_origin_fit": {
+            "x_scale": 1.069286,
+            "y_scale": 0.968759,
+            "median_residual_px": 103.051,
+            "sample_count": 4
+          },
+          "cases": [
+            {
+              "case_id": "case-000",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                68.0,
+                93.0
+              ],
+              "returned_xy": [
+                80,
+                85
+              ]
+            },
+            {
+              "case_id": "case-001",
+              "hit": false,
+              "status": "miss",
+              "expected_xy": [
+                431.921875,
+                258.65625
+              ],
+              "returned_xy": [
+                650,
+                325
+              ]
+            },
+            {
+              "case_id": "case-002",
+              "hit": false,
+              "status": "miss",
+              "expected_xy": [
+                765.140625,
+                420.203125
+              ],
+              "returned_xy": [
+                895,
+                360
+              ]
+            },
+            {
+              "case_id": "case-003",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                1212.0,
+                687.0
+              ],
+              "returned_xy": [
+                1180,
+                667
+              ]
+            }
+          ]
+        },
+        "960x720;DPR=1": {
+          "hits": 0,
+          "trials": 1,
+          "through_origin_fit": null,
+          "cases": [
+            {
+              "case_id": "case-004",
+              "hit": false,
+              "status": "miss",
+              "expected_xy": [
+                426.546875,
+                159.109375
+              ],
+              "returned_xy": [
+                480,
+                150
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "model": "gpt-reserve",
+      "strata": {
+        "1280x720;DPR=1": {
+          "hits": 4,
+          "trials": 4,
+          "through_origin_fit": {
+            "x_scale": 0.999967,
+            "y_scale": 1.000005,
+            "median_residual_px": 0.138,
+            "sample_count": 4
+          },
+          "cases": [
+            {
+              "case_id": "case-000",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                68.0,
+                93.0
+              ],
+              "returned_xy": [
+                68,
+                93
+              ]
+            },
+            {
+              "case_id": "case-001",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                431.921875,
+                258.65625
+              ],
+              "returned_xy": [
+                432,
+                259
+              ]
+            },
+            {
+              "case_id": "case-002",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                765.140625,
+                420.203125
+              ],
+              "returned_xy": [
+                765,
+                420
+              ]
+            },
+            {
+              "case_id": "case-003",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                1212.0,
+                687.0
+              ],
+              "returned_xy": [
+                1212,
+                687
+              ]
+            }
+          ]
+        },
+        "960x720;DPR=1": {
+          "hits": 4,
+          "trials": 4,
+          "through_origin_fit": {
+            "x_scale": 1.000173,
+            "y_scale": 1.000071,
+            "median_residual_px": 0.293,
+            "sample_count": 4
+          },
+          "cases": [
+            {
+              "case_id": "case-004",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                426.546875,
+                159.109375
+              ],
+              "returned_xy": [
+                427,
+                159
+              ]
+            },
+            {
+              "case_id": "case-005",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                601.375,
+                335.96875
+              ],
+              "returned_xy": [
+                601,
+                336
+              ]
+            },
+            {
+              "case_id": "case-006",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                804.734375,
+                438.0
+              ],
+              "returned_xy": [
+                805,
+                438
+              ]
+            },
+            {
+              "case_id": "case-007",
+              "hit": true,
+              "status": "hit",
+              "expected_xy": [
+                134.796875,
+                573.90625
+              ],
+              "returned_xy": [
+                135,
+                574
+              ]
+            }
+          ]
+        },
+        "2560x1440;DPR=2": {
+          "hits": 0,
+          "trials": 4,
+          "through_origin_fit": {
+            "x_scale": 0.799912,
+            "y_scale": 0.799707,
+            "median_residual_px": 0.448,
+            "sample_count": 4
+          },
+          "cases": [
+            {
+              "case_id": "case-008",
+              "hit": false,
+              "status": "miss",
+              "expected_xy": [
+                1499.1875,
+                313.3125
+              ],
+              "returned_xy": [
+                1200,
+                251
+              ]
+            },
+            {
+              "case_id": "case-009",
+              "hit": false,
+              "status": "miss",
+              "expected_xy": [
+                2025.84375,
+                626.28125
+              ],
+              "returned_xy": [
+                1620,
+                501
+              ]
+            },
+            {
+              "case_id": "case-010",
+              "hit": false,
+              "status": "miss",
+              "expected_xy": [
+                301.71875,
+                996.78125
+              ],
+              "returned_xy": [
+                241,
+                797
+              ]
+            },
+            {
+              "case_id": "case-011",
+              "hit": false,
+              "status": "miss",
+              "expected_xy": [
+                1113.9375,
+                1251.8125
+              ],
+              "returned_xy": [
+                891,
+                1001
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "historical_comparison": "Earlier research/REALTIME_API.md measured 1600x900 synthetic screens; current app VisionLocator caps captures at 1920px width. Luna remains8/8 at960x720 and1280x720 here, while new2560x1440 tests exceed the earlier comparison. No contradiction with that bounded prior result."
+}

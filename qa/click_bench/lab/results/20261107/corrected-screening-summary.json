@@ -1,0 +1,930 @@
+[
+  {
+    "model": "gpt-5.6-luna",
+    "kind": "text",
+    "trials": 12,
+    "valid_predictions": 12,
+    "hits": 12,
+    "operational_hit_rate": 1.0,
+    "accuracy_given_prediction": 1.0,
+    "accuracy_wilson_95": [
+      0.7575,
+      1.0
+    ],
+    "click_hits": 6,
+    "click_trials": 6,
+    "move_hits": 6,
+    "move_trials": 6,
+    "median_error_px": 0.29400000000000004,
+    "error_p90_px": 0.803,
+    "latency_median_ms": 2734.95,
+    "latency_p90_ms": 3639.37,
+    "wall_time_median_ms": 2741.63,
+    "wall_time_p90_ms": 3642.342,
+    "by_capture_resolution": {
+      "1280x720": {
+        "trials": 4,
+        "hits": 4,
+        "errors": 0
+      },
+      "960x720": {
+        "trials": 4,
+        "hits": 4,
+        "errors": 0
+      },
+      "2560x1440": {
+        "trials": 4,
+        "hits": 4,
+        "errors": 0
+      }
+    },
+    "by_target_size": {
+      "normal": {
+        "trials": 5,
+        "hits": 5,
+        "errors": 0
+      },
+      "small": {
+        "trials": 2,
+        "hits": 2,
+        "errors": 0
+      },
+      "large": {
+        "trials": 5,
+        "hits": 5,
+        "errors": 0
+      }
+    },
+    "errors": {}
+  },
+  {
+    "model": "codex-auto-review",
+    "kind": "text",
+    "trials": 12,
+    "valid_predictions": 12,
+    "hits": 12,
+    "operational_hit_rate": 1.0,
+    "accuracy_given_prediction": 1.0,
+    "accuracy_wilson_95": [
+      0.7575,
+      1.0
+    ],
+    "click_hits": 6,
+    "click_trials": 6,
+    "move_hits": 6,
+    "move_trials": 6,
+    "median_error_px": 0.29400000000000004,
+    "error_p90_px": 0.794,
+    "latency_median_ms": 2820.9,
+    "latency_p90_ms": 3912.73,
+    "wall_time_median_ms": 2826.335,
+    "wall_time_p90_ms": 3916.936,
+    "by_capture_resolution": {
+      "1280x720": {
+        "trials": 4,
+        "hits": 4,
+        "errors": 0
+      },
+      "960x720": {
+        "trials": 4,
+        "hits": 4,
+        "errors": 0
+      },
+      "2560x1440": {
+        "trials": 4,
+        "hits": 4,
+        "errors": 0
+      }
+    },
+    "by_target_size": {
+      "normal": {
+        "trials": 5,
+        "hits": 5,
+        "errors": 0
+      },
+      "small": {
+        "trials": 2,
+        "hits": 2,
+        "errors": 0
+      },
+      "large": {
+        "trials": 5,
+        "hits": 5,
+        "errors": 0
+      }
+    },
+    "errors": {}
+  },
+  {
+    "model": "gpt-6-sol",
+    "kind": "text",
+    "trials": 12,
+    "valid_predictions": 12,
+    "hits": 12,
+    "operational_hit_rate": 1.0,
+    "accuracy_given_prediction": 1.0,
+    "accuracy_wilson_95": [
+      0.7575,
+      1.0
+    ],
+    "click_hits": 6,
+    "click_trials": 6,
+    "move_hits": 6,
+    "move_trials": 6,
+    "median_error_px": 0.29400000000000004,
+    "error_p90_px": 0.794,
+    "latency_median_ms": 2990.25,
+    "latency_p90_ms": 3395.75,
+    "wall_time_median_ms": 2994.1800000000003,
+    "wall_time_p90_ms": 3401.116,
+    "by_capture_resolution": {
+      "1280x720": {
+        "trials": 4,
+        "hits": 4,
+        "errors": 0
+      },
+      "960x720": {
+        "trials": 4,
+        "hits": 4,
+        "errors": 0
+      },
+      "2560x1440": {
+        "trials": 4,
+        "hits": 4,
+        "errors": 0
+      }
+    },
+    "by_target_size": {
+      "normal": {
+        "trials": 5,
+        "hits": 5,
+        "errors": 0
+      },
+      "small": {
+        "trials": 2,
+        "hits": 2,
+        "errors": 0
+      },
+      "large": {
+        "trials": 5,
+        "hits": 5,
+        "errors": 0
+      }
+    },
+    "errors": {}
+  },
+  {
+    "model": "gpt-6-luna",
+    "kind": "text",
+    "trials": 12,
+    "valid_predictions": 12,
+    "hits": 12,
+    "operational_hit_rate": 1.0,
+    "accuracy_given_prediction": 1.0,
+    "accuracy_wilson_95": [
+      0.7575,
+      1.0
+    ],
+    "click_hits": 6,
+    "click_trials": 6,
+    "move_hits": 6,
+    "move_trials": 6,
+    "median_error_px": 0.29400000000000004,
+    "error_p90_px": 0.688,
+    "latency_median_ms": 3028.65,
+    "latency_p90_ms": 3246.27,
+    "wall_time_median_ms": 3032.0299999999997,
+    "wall_time_p90_ms": 3250.905,
+    "by_capture_resolution": {
+      "1280x720": {
+        "trials": 4,
+        "hits": 4,
+        "errors": 0
+      },
+      "960x720": {
+        "trials": 4,
+        "hits": 4,
+        "errors": 0
+      },
+      "2560x1440": {
+        "trials": 4,
+        "hits": 4,
+        "errors": 0
+      }
+    },
+    "by_target_size": {
+      "normal": {
+        "trials": 5,
+        "hits": 5,
+        "errors": 0
+      },
+      "small": {
+        "trials": 2,
+        "hits": 2,
+        "errors": 0
+      },
+      "large": {
+        "trials": 5,
+        "hits": 5,
+        "errors": 0
+      }
+    },
+    "errors": {}
+  },
+  {
+    "model": "gpt-5.6-sol",
+    "kind": "text",
+    "trials": 12,
+    "valid_predictions": 12,
+    "hits": 12,
+    "operational_hit_rate": 1.0,
+    "accuracy_given_prediction": 1.0,
+    "accuracy_wilson_95": [
+      0.7575,
+      1.0
+    ],
+    "click_hits": 6,
+    "click_trials": 6,
+    "move_hits": 6,
+    "move_trials": 6,
+    "median_error_px": 0.29400000000000004,
+    "error_p90_px": 0.794,
+    "latency_median_ms": 3145.6,
+    "latency_p90_ms": 3786.7,
+    "wall_time_median_ms": 3149.645,
+    "wall_time_p90_ms": 3793.223,
+    "by_capture_resolution": {
+      "1280x720": {
+        "trials": 4,
+        "hits": 4,
+        "errors": 0
+      },
+      "960x720": {
+        "trials": 4,
+        "hits": 4,
+        "errors": 0
+      },
+      "2560x1440": {
+        "trials": 4,
+        "hits": 4,
+        "errors": 0
+      }
+    },
+    "by_target_size": {
+      "normal": {
+        "trials": 5,
+        "hits": 5,
+        "errors": 0
+      },
+      "small": {
+        "trials": 2,
+        "hits": 2,
+        "errors": 0
+      },
+      "large": {
+        "trials": 5,
+        "hits": 5,
+        "errors": 0
+      }
+    },
+    "errors": {}
+  },
+  {
+    "model": "gpt-6.1-terra",
+    "kind": "text",
+    "trials": 12,
+    "valid_predictions": 12,
+    "hits": 12,
+    "operational_hit_rate": 1.0,
+    "accuracy_given_prediction": 1.0,
+    "accuracy_wilson_95": [
+      0.7575,
+      1.0
+    ],
+    "click_hits": 6,
+    "click_trials": 6,
+    "move_hits": 6,
+    "move_trials": 6,
+    "median_error_px": 0.29400000000000004,
+    "error_p90_px": 0.794,
+    "latency_median_ms": 3264.5,
+    "latency_p90_ms": 5298.23,
+    "wall_time_median_ms": 3268.705,
+    "wall_time_p90_ms": 5306.581,
+    "by_capture_resolution": {
+      "1280x720": {
+        "trials": 4,
+        "hits": 4,
+        "errors": 0
+      },
+      "960x720": {
+        "trials": 4,
+        "hits": 4,
+        "errors": 0
+      },
+      "2560x1440": {
+        "trials": 4,
+        "hits": 4,
+        "errors": 0
+      }
+    },
+    "by_target_size": {
+      "normal": {
+        "trials": 5,
+        "hits": 5,
+        "errors": 0
+      },
+      "small": {
+        "trials": 2,
+        "hits": 2,
+        "errors": 0
+      },
+      "large": {
+        "trials": 5,
+        "hits": 5,
+        "errors": 0
+      }
+    },
+    "errors": {}
+  },
+  {
+    "model": "gpt-6-astra",
+    "kind": "text",
+    "trials": 12,
+    "valid_predictions": 12,
+    "hits": 12,
+    "operational_hit_rate": 1.0,
+    "accuracy_given_prediction": 1.0,
+    "accuracy_wilson_95": [
+      0.7575,
+      1.0
+    ],
+    "click_hits": 6,
+    "click_trials": 6,
+    "move_hits": 6,
+    "move_trials": 6,
+    "median_error_px": 0.29400000000000004,
+    "error_p90_px": 0.794,
+    "latency_median_ms": 3509.4,
+    "latency_p90_ms": 3851.15,
+    "wall_time_median_ms": 3513.83,
+    "wall_time_p90_ms": 3858.526,
+    "by_capture_resolution": {
+      "1280x720": {
+        "trials": 4,
+        "hits": 4,
+        "errors": 0
+      },
+      "960x720": {
+        "trials": 4,
+        "hits": 4,
+        "errors": 0
+      },
+      "2560x1440": {
+        "trials": 4,
+        "hits": 4,
+        "errors": 0
+      }
+    },
+    "by_target_size": {
+      "normal": {
+        "trials": 5,
+        "hits": 5,
+        "errors": 0
+      },
+      "small": {
+        "trials": 2,
+        "hits": 2,
+        "errors": 0
+      },
+      "large": {
+        "trials": 5,
+        "hits": 5,
+        "errors": 0
+      }
+    },
+    "errors": {}
+  },
+  {
+    "model": "gpt-reserve",
+    "kind": "text",
+    "trials": 12,
+    "valid_predictions": 12,
+    "hits": 12,
+    "operational_hit_rate": 1.0,
+    "accuracy_given_prediction": 1.0,
+    "accuracy_wilson_95": [
+      0.7575,
+      1.0
+    ],
+    "click_hits": 6,
+    "click_trials": 6,
+    "move_hits": 6,
+    "move_trials": 6,
+    "median_error_px": 0.29400000000000004,
+    "error_p90_px": 0.803,
+    "latency_median_ms": 3666.6,
+    "latency_p90_ms": 4146.95,
+    "wall_time_median_ms": 3670.84,
+    "wall_time_p90_ms": 4151.89,
+    "by_capture_resolution": {
+      "1280x720": {
+        "trials": 4,
+        "hits": 4,
+        "errors": 0
+      },
+      "960x720": {
+        "trials": 4,
+        "hits": 4,
+        "errors": 0
+      },
+      "2560x1440": {
+        "trials": 4,
+        "hits": 4,
+        "errors": 0
+      }
+    },
+    "by_target_size": {
+      "normal": {
+        "trials": 5,
+        "hits": 5,
+        "errors": 0
+      },
+      "small": {
+        "trials": 2,
+        "hits": 2,
+        "errors": 0
+      },
+      "large": {
+        "trials": 5,
+        "hits": 5,
+        "errors": 0
+      }
+    },
+    "errors": {}
+  },
+  {
+    "model": "gpt-5.6-terra",
+    "kind": "text",
+    "trials": 12,
+    "valid_predictions": 12,
+    "hits": 12,
+    "operational_hit_rate": 1.0,
+    "accuracy_given_prediction": 1.0,
+    "accuracy_wilson_95": [
+      0.7575,
+      1.0
+    ],
+    "click_hits": 6,
+    "click_trials": 6,
+    "move_hits": 6,
+    "move_trials": 6,
+    "median_error_px": 0.3645,
+    "error_p90_px": 0.883,
+    "latency_median_ms": 3690.8500000000004,
+    "latency_p90_ms": 4063.11,
+    "wall_time_median_ms": 3695.965,
+    "wall_time_p90_ms": 4069.789,
+    "by_capture_resolution": {
+      "1280x720": {
+        "trials": 4,
+        "hits": 4,
+        "errors": 0
+      },
+      "960x720": {
+        "trials": 4,
+        "hits": 4,
+        "errors": 0
+      },
+      "2560x1440": {
+        "trials": 4,
+        "hits": 4,
+        "errors": 0
+      }
+    },
+    "by_target_size": {
+      "normal": {
+        "trials": 5,
+        "hits": 5,
+        "errors": 0
+      },
+      "small": {
+        "trials": 2,
+        "hits": 2,
+        "errors": 0
+      },
+      "large": {
+        "trials": 5,
+        "hits": 5,
+        "errors": 0
+      }
+    },
+    "errors": {}
+  },
+  {
+    "model": "gpt-6.1-sol",
+    "kind": "text",
+    "trials": 12,
+    "valid_predictions": 12,
+    "hits": 12,
+    "operational_hit_rate": 1.0,
+    "accuracy_given_prediction": 1.0,
+    "accuracy_wilson_95": [
+      0.7575,
+      1.0
+    ],
+    "click_hits": 6,
+    "click_trials": 6,
+    "move_hits": 6,
+    "move_trials": 6,
+    "median_error_px": 0.29400000000000004,
+    "error_p90_px": 0.794,
+    "latency_median_ms": 3792.65,
+    "latency_p90_ms": 4184.18,
+    "wall_time_median_ms": 3798.835,
+    "wall_time_p90_ms": 4188.393,
+    "by_capture_resolution": {
+      "1280x720": {
+        "trials": 4,
+        "hits": 4,
+        "errors": 0
+      },
+      "960x720": {
+        "trials": 4,
+        "hits": 4,
+        "errors": 0
+      },
+      "2560x1440": {
+        "trials": 4,
+        "hits": 4,
+        "errors": 0
+      }
+    },
+    "by_target_size": {
+      "normal": {
+        "trials": 5,
+        "hits": 5,
+        "errors": 0
+      },
+      "small": {
+        "trials": 2,
+        "hits": 2,
+        "errors": 0
+      },
+      "large": {
+        "trials": 5,
+        "hits": 5,
+        "errors": 0
+      }
+    },
+    "errors": {}
+  },
+  {
+    "model": "gpt-realtime-2",
+    "kind": "audio",
+    "trials": 12,
+    "valid_predictions": 12,
+    "hits": 6,
+    "operational_hit_rate": 0.5,
+    "accuracy_given_prediction": 0.5,
+    "accuracy_wilson_95": [
+      0.2538,
+      0.7462
+    ],
+    "click_hits": 3,
+    "click_trials": 6,
+    "move_hits": 3,
+    "move_trials": 6,
+    "median_error_px": 57.83500000000001,
+    "error_p90_px": 230.214,
+    "latency_median_ms": 5323.8,
+    "latency_p90_ms": 6086.68,
+    "wall_time_median_ms": 5419.014999999999,
+    "wall_time_p90_ms": 6309.523,
+    "by_capture_resolution": {
+      "1280x720": {
+        "trials": 4,
+        "hits": 2,
+        "errors": 0
+      },
+      "960x720": {
+        "trials": 4,
+        "hits": 4,
+        "errors": 0
+      },
+      "2560x1440": {
+        "trials": 4,
+        "hits": 0,
+        "errors": 0
+      }
+    },
+    "by_target_size": {
+      "normal": {
+        "trials": 5,
+        "hits": 3,
+        "errors": 0
+      },
+      "small": {
+        "trials": 2,
+        "hits": 1,
+        "errors": 0
+      },
+      "large": {
+        "trials": 5,
+        "hits": 2,
+        "errors": 0
+      }
+    },
+    "errors": {}
+  },
+  {
+    "model": "gpt-realtime-2.1",
+    "kind": "audio",
+    "trials": 12,
+    "valid_predictions": 12,
+    "hits": 6,
+    "operational_hit_rate": 0.5,
+    "accuracy_given_prediction": 0.5,
+    "accuracy_wilson_95": [
+      0.2538,
+      0.7462
+    ],
+    "click_hits": 3,
+    "click_trials": 6,
+    "move_hits": 3,
+    "move_trials": 6,
+    "median_error_px": 67.3575,
+    "error_p90_px": 172.026,
+    "latency_median_ms": 5649.05,
+    "latency_p90_ms": 6293.59,
+    "wall_time_median_ms": 5654.725,
+    "wall_time_p90_ms": 6301.046,
+    "by_capture_resolution": {
+      "1280x720": {
+        "trials": 4,
+        "hits": 2,
+        "errors": 0
+      },
+      "960x720": {
+        "trials": 4,
+        "hits": 3,
+        "errors": 0
+      },
+      "2560x1440": {
+        "trials": 4,
+        "hits": 1,
+        "errors": 0
+      }
+    },
+    "by_target_size": {
+      "normal": {
+        "trials": 5,
+        "hits": 2,
+        "errors": 0
+      },
+      "small": {
+        "trials": 2,
+        "hits": 1,
+        "errors": 0
+      },
+      "large": {
+        "trials": 5,
+        "hits": 3,
+        "errors": 0
+      }
+    },
+    "errors": {}
+  },
+  {
+    "model": "gpt-realtime-1.5",
+    "kind": "audio",
+    "trials": 12,
+    "valid_predictions": 12,
+    "hits": 4,
+    "operational_hit_rate": 0.3333,
+    "accuracy_given_prediction": 0.3333,
+    "accuracy_wilson_95": [
+      0.1381,
+      0.6094
+    ],
+    "click_hits": 1,
+    "click_trials": 6,
+    "move_hits": 3,
+    "move_trials": 6,
+    "median_error_px": 50.304,
+    "error_p90_px": 137.839,
+    "latency_median_ms": 4018.7,
+    "latency_p90_ms": 5124.62,
+    "wall_time_median_ms": 4021.96,
+    "wall_time_p90_ms": 5128.529,
+    "by_capture_resolution": {
+      "1280x720": {
+        "trials": 4,
+        "hits": 2,
+        "errors": 0
+      },
+      "960x720": {
+        "trials": 4,
+        "hits": 2,
+        "errors": 0
+      },
+      "2560x1440": {
+        "trials": 4,
+        "hits": 0,
+        "errors": 0
+      }
+    },
+    "by_target_size": {
+      "normal": {
+        "trials": 5,
+        "hits": 2,
+        "errors": 0
+      },
+      "small": {
+        "trials": 2,
+        "hits": 0,
+        "errors": 0
+      },
+      "large": {
+        "trials": 5,
+        "hits": 2,
+        "errors": 0
+      }
+    },
+    "errors": {}
+  },
+  {
+    "model": "gpt-realtime-2.1-mini",
+    "kind": "audio",
+    "trials": 12,
+    "valid_predictions": 12,
+    "hits": 2,
+    "operational_hit_rate": 0.1667,
+    "accuracy_given_prediction": 0.1667,
+    "accuracy_wilson_95": [
+      0.047,
+      0.448
+    ],
+    "click_hits": 1,
+    "click_trials": 6,
+    "move_hits": 1,
+    "move_trials": 6,
+    "median_error_px": 149.914,
+    "error_p90_px": 242.948,
+    "latency_median_ms": 4668.55,
+    "latency_p90_ms": 5185.92,
+    "wall_time_median_ms": 4673.785,
+    "wall_time_p90_ms": 5192.496,
+    "by_capture_resolution": {
+      "1280x720": {
+        "trials": 4,
+        "hits": 2,
+        "errors": 0
+      },
+      "960x720": {
+        "trials": 4,
+        "hits": 0,
+        "errors": 0
+      },
+      "2560x1440": {
+        "trials": 4,
+        "hits": 0,
+        "errors": 0
+      }
+    },
+    "by_target_size": {
+      "normal": {
+        "trials": 5,
+        "hits": 2,
+        "errors": 0
+      },
+      "small": {
+        "trials": 2,
+        "hits": 0,
+        "errors": 0
+      },
+      "large": {
+        "trials": 5,
+        "hits": 0,
+        "errors": 0
+      }
+    },
+    "errors": {}
+  },
+  {
+    "model": "gpt-realtime",
+    "kind": "audio",
+    "trials": 12,
+    "valid_predictions": 12,
+    "hits": 1,
+    "operational_hit_rate": 0.0833,
+    "accuracy_given_prediction": 0.0833,
+    "accuracy_wilson_95": [
+      0.0149,
+      0.3539
+    ],
+    "click_hits": 0,
+    "click_trials": 6,
+    "move_hits": 1,
+    "move_trials": 6,
+    "median_error_px": 102.286,
+    "error_p90_px": 319.392,
+    "latency_median_ms": 4027.6,
+    "latency_p90_ms": 4601.26,
+    "wall_time_median_ms": 4033.8549999999996,
+    "wall_time_p90_ms": 4605.752,
+    "by_capture_resolution": {
+      "1280x720": {
+        "trials": 4,
+        "hits": 0,
+        "errors": 0
+      },
+      "960x720": {
+        "trials": 4,
+        "hits": 1,
+        "errors": 0
+      },
+      "2560x1440": {
+        "trials": 4,
+        "hits": 0,
+        "errors": 0
+      }
+    },
+    "by_target_size": {
+      "normal": {
+        "trials": 5,
+        "hits": 0,
+        "errors": 0
+      },
+      "small": {
+        "trials": 2,
+        "hits": 0,
+        "errors": 0
+      },
+      "large": {
+        "trials": 5,
+        "hits": 1,
+        "errors": 0
+      }
+    },
+    "errors": {}
+  },
+  {
+    "model": "gpt-realtime-mini",
+    "kind": "audio",
+    "trials": 12,
+    "valid_predictions": 12,
+    "hits": 1,
+    "operational_hit_rate": 0.0833,
+    "accuracy_given_prediction": 0.0833,
+    "accuracy_wilson_95": [
+      0.0149,
+      0.3539
+    ],
+    "click_hits": 0,
+    "click_trials": 6,
+    "move_hits": 1,
+    "move_trials": 6,
+    "median_error_px": 125.03200000000001,
+    "error_p90_px": 473.25,
+    "latency_median_ms": 5128.2,
+    "latency_p90_ms": 6023.01,
+    "wall_time_median_ms": 5132.115,
+    "wall_time_p90_ms": 6026.825,
+    "by_capture_resolution": {
+      "1280x720": {
+        "trials": 4,
+        "hits": 1,
+        "errors": 0
+      },
+      "960x720": {
+        "trials": 4,
+        "hits": 0,
+        "errors": 0
+      },
+      "2560x1440": {
+        "trials": 4,
+        "hits": 0,
+        "errors": 0
+      }
+    },
+    "by_target_size": {
+      "normal": {
+        "trials": 5,
+        "hits": 1,
+        "errors": 0
+      },
+      "small": {
+        "trials": 2,
+        "hits": 0,
+        "errors": 0
+      },
+      "large": {
+        "trials": 5,
+        "hits": 0,
+        "errors": 0
+      }
+    },
+    "errors": {}
+  }
+]

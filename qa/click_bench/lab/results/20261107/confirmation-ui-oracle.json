@@ -1,0 +1,981 @@
+{
+  "passed": 30,
+  "total": 30,
+  "cases": [
+    {
+      "case_id": "ui-case-012",
+      "dpr": 1,
+      "status": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_correct": true,
+      "center_error_px": 0.0,
+      "actual_event_hit": true,
+      "trusted_events": true,
+      "events": [
+        {
+          "type": "mousemove",
+          "x": 543,
+          "y": 199,
+          "target": "button-4",
+          "isTrusted": true
+        },
+        {
+          "type": "mousedown",
+          "x": 543,
+          "y": 199,
+          "target": "button-4",
+          "isTrusted": true
+        },
+        {
+          "type": "mouseup",
+          "x": 543,
+          "y": 199,
+          "target": "button-4",
+          "isTrusted": true
+        },
+        {
+          "type": "click",
+          "x": 543,
+          "y": 199,
+          "target": "button-4",
+          "isTrusted": true
+        }
+      ],
+      "css_x": 356.6484375,
+      "css_y": 65.8125
+    },
+    {
+      "case_id": "ui-case-013",
+      "dpr": 1,
+      "status": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_correct": true,
+      "center_error_px": 0.0,
+      "actual_event_hit": true,
+      "trusted_events": true,
+      "events": [
+        {
+          "type": "mousemove",
+          "x": 733,
+          "y": 194,
+          "target": "button-9",
+          "isTrusted": true
+        }
+      ],
+      "css_x": 547.0703125,
+      "css_y": 60.8125
+    },
+    {
+      "case_id": "ui-case-014",
+      "dpr": 1,
+      "status": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_correct": true,
+      "center_error_px": 0.0,
+      "actual_event_hit": true,
+      "trusted_events": true,
+      "events": [
+        {
+          "type": "mousemove",
+          "x": 970,
+          "y": 297,
+          "target": "button-2",
+          "isTrusted": true
+        },
+        {
+          "type": "mousedown",
+          "x": 970,
+          "y": 297,
+          "target": "button-2",
+          "isTrusted": true
+        },
+        {
+          "type": "mouseup",
+          "x": 970,
+          "y": 297,
+          "target": "button-2",
+          "isTrusted": true
+        },
+        {
+          "type": "click",
+          "x": 970,
+          "y": 297,
+          "target": "button-2",
+          "isTrusted": true
+        }
+      ],
+      "css_x": 784.1484374999999,
+      "css_y": 163.3125
+    },
+    {
+      "case_id": "ui-case-015",
+      "dpr": 1,
+      "status": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_correct": true,
+      "center_error_px": 0.0,
+      "actual_event_hit": true,
+      "trusted_events": true,
+      "events": [
+        {
+          "type": "mousemove",
+          "x": 482,
+          "y": 436,
+          "target": "button-7",
+          "isTrusted": true
+        }
+      ],
+      "css_x": 295.40625,
+      "css_y": 302.46874999999994
+    },
+    {
+      "case_id": "ui-case-016",
+      "dpr": 1,
+      "status": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_correct": true,
+      "center_error_px": 0.0,
+      "actual_event_hit": true,
+      "trusted_events": true,
+      "events": [
+        {
+          "type": "mousemove",
+          "x": 791,
+          "y": 481,
+          "target": "button-1",
+          "isTrusted": true
+        },
+        {
+          "type": "mousedown",
+          "x": 791,
+          "y": 481,
+          "target": "button-1",
+          "isTrusted": true
+        },
+        {
+          "type": "mouseup",
+          "x": 791,
+          "y": 481,
+          "target": "button-1",
+          "isTrusted": true
+        },
+        {
+          "type": "click",
+          "x": 791,
+          "y": 481,
+          "target": "button-1",
+          "isTrusted": true
+        }
+      ],
+      "css_x": 458.0390625,
+      "css_y": 347.75
+    },
+    {
+      "case_id": "ui-case-017",
+      "dpr": 1,
+      "status": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_correct": true,
+      "center_error_px": 0.0,
+      "actual_event_hit": true,
+      "trusted_events": true,
+      "events": [
+        {
+          "type": "mousemove",
+          "x": 402,
+          "y": 195,
+          "target": "button-6",
+          "isTrusted": true
+        }
+      ],
+      "css_x": 68.8828125,
+      "css_y": 61.64843750000001
+    },
+    {
+      "case_id": "ui-case-018",
+      "dpr": 1,
+      "status": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_correct": true,
+      "center_error_px": 0.0,
+      "actual_event_hit": true,
+      "trusted_events": true,
+      "events": [
+        {
+          "type": "mousemove",
+          "x": 417,
+          "y": 441,
+          "target": "button-11",
+          "isTrusted": true
+        },
+        {
+          "type": "mousedown",
+          "x": 417,
+          "y": 441,
+          "target": "button-11",
+          "isTrusted": true
+        },
+        {
+          "type": "mouseup",
+          "x": 417,
+          "y": 441,
+          "target": "button-11",
+          "isTrusted": true
+        },
+        {
+          "type": "click",
+          "x": 417,
+          "y": 441,
+          "target": "button-11",
+          "isTrusted": true
+        }
+      ],
+      "css_x": 83.875,
+      "css_y": 307.19531250000006
+    },
+    {
+      "case_id": "ui-case-019",
+      "dpr": 1,
+      "status": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_correct": true,
+      "center_error_px": 0.0,
+      "actual_event_hit": true,
+      "trusted_events": true,
+      "events": [
+        {
+          "type": "mousemove",
+          "x": 674,
+          "y": 182,
+          "target": "button-4",
+          "isTrusted": true
+        }
+      ],
+      "css_x": 341.3828125,
+      "css_y": 48.875
+    },
+    {
+      "case_id": "ui-case-020",
+      "dpr": 2,
+      "status": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_correct": true,
+      "center_error_px": 0.0,
+      "actual_event_hit": true,
+      "trusted_events": true,
+      "events": [
+        {
+          "type": "mousemove",
+          "x": 683,
+          "y": 175,
+          "target": "button-10",
+          "isTrusted": true
+        },
+        {
+          "type": "mousedown",
+          "x": 683,
+          "y": 175,
+          "target": "button-10",
+          "isTrusted": true
+        },
+        {
+          "type": "mouseup",
+          "x": 683,
+          "y": 175,
+          "target": "button-10",
+          "isTrusted": true
+        },
+        {
+          "type": "click",
+          "x": 683,
+          "y": 175,
+          "target": "button-10",
+          "isTrusted": true
+        }
+      ],
+      "css_x": 318.6015625,
+      "css_y": 41.09375
+    },
+    {
+      "case_id": "ui-case-021",
+      "dpr": 2,
+      "status": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_correct": true,
+      "center_error_px": 0.0,
+      "actual_event_hit": true,
+      "trusted_events": true,
+      "events": [
+        {
+          "type": "mousemove",
+          "x": 958,
+          "y": 518,
+          "target": "button-3",
+          "isTrusted": true
+        }
+      ],
+      "css_x": 594.2890625,
+      "css_y": 384.14062500000006
+    },
+    {
+      "case_id": "ui-case-022",
+      "dpr": 2,
+      "status": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_correct": true,
+      "center_error_px": 0.0,
+      "actual_event_hit": true,
+      "trusted_events": true,
+      "events": [
+        {
+          "type": "mousemove",
+          "x": 829,
+          "y": 153,
+          "target": "button-8",
+          "isTrusted": true
+        },
+        {
+          "type": "mousedown",
+          "x": 829,
+          "y": 153,
+          "target": "button-8",
+          "isTrusted": true
+        },
+        {
+          "type": "mouseup",
+          "x": 829,
+          "y": 153,
+          "target": "button-8",
+          "isTrusted": true
+        },
+        {
+          "type": "click",
+          "x": 829,
+          "y": 153,
+          "target": "button-8",
+          "isTrusted": true
+        }
+      ],
+      "css_x": 465.3984375,
+      "css_y": 19.4296875
+    },
+    {
+      "case_id": "ui-case-023",
+      "dpr": 2,
+      "status": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_correct": true,
+      "center_error_px": 0.0,
+      "actual_event_hit": true,
+      "trusted_events": true,
+      "events": [
+        {
+          "type": "mousemove",
+          "x": 741,
+          "y": 279,
+          "target": "button-1",
+          "isTrusted": true
+        }
+      ],
+      "css_x": 376.796875,
+      "css_y": 145.8125
+    },
+    {
+      "case_id": "ui-case-024",
+      "dpr": 1,
+      "status": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_correct": true,
+      "center_error_px": 0.0,
+      "actual_event_hit": true,
+      "trusted_events": true,
+      "events": [
+        {
+          "type": "mousemove",
+          "x": 354,
+          "y": 428,
+          "target": "button-7",
+          "isTrusted": true
+        },
+        {
+          "type": "mousedown",
+          "x": 354,
+          "y": 428,
+          "target": "button-7",
+          "isTrusted": true
+        },
+        {
+          "type": "mouseup",
+          "x": 354,
+          "y": 428,
+          "target": "button-7",
+          "isTrusted": true
+        },
+        {
+          "type": "click",
+          "x": 354,
+          "y": 428,
+          "target": "button-7",
+          "isTrusted": true
+        }
+      ],
+      "css_x": 167.484375,
+      "css_y": 294.96875
+    },
+    {
+      "case_id": "ui-case-025",
+      "dpr": 1,
+      "status": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_correct": true,
+      "center_error_px": 0.0,
+      "actual_event_hit": true,
+      "trusted_events": true,
+      "events": [
+        {
+          "type": "mousemove",
+          "x": 731,
+          "y": 335,
+          "target": "button-12",
+          "isTrusted": true
+        }
+      ],
+      "css_x": 544.5703124999999,
+      "css_y": 201.64062499999997
+    },
+    {
+      "case_id": "ui-case-026",
+      "dpr": 1,
+      "status": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_correct": true,
+      "center_error_px": 0.0,
+      "actual_event_hit": true,
+      "trusted_events": true,
+      "events": [
+        {
+          "type": "mousemove",
+          "x": 954,
+          "y": 343,
+          "target": "button-5",
+          "isTrusted": true
+        },
+        {
+          "type": "mousedown",
+          "x": 954,
+          "y": 343,
+          "target": "button-5",
+          "isTrusted": true
+        },
+        {
+          "type": "mouseup",
+          "x": 954,
+          "y": 343,
+          "target": "button-5",
+          "isTrusted": true
+        },
+        {
+          "type": "click",
+          "x": 954,
+          "y": 343,
+          "target": "button-5",
+          "isTrusted": true
+        }
+      ],
+      "css_x": 767.8906249999999,
+      "css_y": 209.98437499999997
+    },
+    {
+      "case_id": "ui-case-027",
+      "dpr": 1,
+      "status": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_correct": true,
+      "center_error_px": 0.0,
+      "actual_event_hit": true,
+      "trusted_events": true,
+      "events": [
+        {
+          "type": "mousemove",
+          "x": 894,
+          "y": 227,
+          "target": "button-10",
+          "isTrusted": true
+        }
+      ],
+      "css_x": 708.3046874999999,
+      "css_y": 93.3125
+    },
+    {
+      "case_id": "ui-case-028",
+      "dpr": 1,
+      "status": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_correct": true,
+      "center_error_px": 0.0,
+      "actual_event_hit": true,
+      "trusted_events": true,
+      "events": [
+        {
+          "type": "mousemove",
+          "x": 386,
+          "y": 335,
+          "target": "button-4",
+          "isTrusted": true
+        },
+        {
+          "type": "mousedown",
+          "x": 386,
+          "y": 335,
+          "target": "button-4",
+          "isTrusted": true
+        },
+        {
+          "type": "mouseup",
+          "x": 386,
+          "y": 335,
+          "target": "button-4",
+          "isTrusted": true
+        },
+        {
+          "type": "click",
+          "x": 386,
+          "y": 335,
+          "target": "button-4",
+          "isTrusted": true
+        }
+      ],
+      "css_x": 53.3203125,
+      "css_y": 201.640625
+    },
+    {
+      "case_id": "ui-case-029",
+      "dpr": 1,
+      "status": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_correct": true,
+      "center_error_px": 0.0,
+      "actual_event_hit": true,
+      "trusted_events": true,
+      "events": [
+        {
+          "type": "mousemove",
+          "x": 520,
+          "y": 190,
+          "target": "button-9",
+          "isTrusted": true
+        }
+      ],
+      "css_x": 187.21093750000003,
+      "css_y": 56.6484375
+    },
+    {
+      "case_id": "ui-case-030",
+      "dpr": 1,
+      "status": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_correct": true,
+      "center_error_px": 0.0,
+      "actual_event_hit": true,
+      "trusted_events": true,
+      "events": [
+        {
+          "type": "mousemove",
+          "x": 668,
+          "y": 190,
+          "target": "button-2",
+          "isTrusted": true
+        },
+        {
+          "type": "mousedown",
+          "x": 668,
+          "y": 190,
+          "target": "button-2",
+          "isTrusted": true
+        },
+        {
+          "type": "mouseup",
+          "x": 668,
+          "y": 190,
+          "target": "button-2",
+          "isTrusted": true
+        },
+        {
+          "type": "click",
+          "x": 668,
+          "y": 190,
+          "target": "button-2",
+          "isTrusted": true
+        }
+      ],
+      "css_x": 335.25781250000006,
+      "css_y": 56.1015625
+    },
+    {
+      "case_id": "ui-case-031",
+      "dpr": 1,
+      "status": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_correct": true,
+      "center_error_px": 0.0,
+      "actual_event_hit": true,
+      "trusted_events": true,
+      "events": [
+        {
+          "type": "mousemove",
+          "x": 691,
+          "y": 510,
+          "target": "button-7",
+          "isTrusted": true
+        }
+      ],
+      "css_x": 358.3203125,
+      "css_y": 376.078125
+    },
+    {
+      "case_id": "ui-case-032",
+      "dpr": 2,
+      "status": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_correct": true,
+      "center_error_px": 0.0,
+      "actual_event_hit": true,
+      "trusted_events": true,
+      "events": [
+        {
+          "type": "mousemove",
+          "x": 442,
+          "y": 416,
+          "target": "button-1",
+          "isTrusted": true
+        },
+        {
+          "type": "mousedown",
+          "x": 442,
+          "y": 416,
+          "target": "button-1",
+          "isTrusted": true
+        },
+        {
+          "type": "mouseup",
+          "x": 442,
+          "y": 416,
+          "target": "button-1",
+          "isTrusted": true
+        },
+        {
+          "type": "click",
+          "x": 442,
+          "y": 416,
+          "target": "button-1",
+          "isTrusted": true
+        }
+      ],
+      "css_x": 77.765625,
+      "css_y": 282.203125
+    },
+    {
+      "case_id": "ui-case-033",
+      "dpr": 2,
+      "status": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_correct": true,
+      "center_error_px": 0.0,
+      "actual_event_hit": true,
+      "trusted_events": true,
+      "events": [
+        {
+          "type": "mousemove",
+          "x": 442,
+          "y": 363,
+          "target": "button-6",
+          "isTrusted": true
+        }
+      ],
+      "css_x": 78.4609375,
+      "css_y": 229.42187500000003
+    },
+    {
+      "case_id": "ui-case-034",
+      "dpr": 2,
+      "status": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_correct": true,
+      "center_error_px": 0.0,
+      "actual_event_hit": true,
+      "trusted_events": true,
+      "events": [
+        {
+          "type": "mousemove",
+          "x": 570,
+          "y": 475,
+          "target": "button-11",
+          "isTrusted": true
+        },
+        {
+          "type": "mousedown",
+          "x": 570,
+          "y": 475,
+          "target": "button-11",
+          "isTrusted": true
+        },
+        {
+          "type": "mouseup",
+          "x": 570,
+          "y": 475,
+          "target": "button-11",
+          "isTrusted": true
+        },
+        {
+          "type": "click",
+          "x": 570,
+          "y": 475,
+          "target": "button-11",
+          "isTrusted": true
+        }
+      ],
+      "css_x": 206.3828125,
+      "css_y": 341.9140625
+    },
+    {
+      "case_id": "ui-case-035",
+      "dpr": 2,
+      "status": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_correct": true,
+      "center_error_px": 0.0,
+      "actual_event_hit": true,
+      "trusted_events": true,
+      "events": [
+        {
+          "type": "mousemove",
+          "x": 735,
+          "y": 255,
+          "target": "button-4",
+          "isTrusted": true
+        }
+      ],
+      "css_x": 371.2421875,
+      "css_y": 121.9375
+    },
+    {
+      "case_id": "ui-case-036",
+      "dpr": 1,
+      "status": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_correct": true,
+      "center_error_px": 0.0,
+      "actual_event_hit": true,
+      "trusted_events": true,
+      "events": [
+        {
+          "type": "mousemove",
+          "x": 537,
+          "y": 238,
+          "target": "button-10",
+          "isTrusted": true
+        },
+        {
+          "type": "mousedown",
+          "x": 537,
+          "y": 238,
+          "target": "button-10",
+          "isTrusted": true
+        },
+        {
+          "type": "mouseup",
+          "x": 537,
+          "y": 238,
+          "target": "button-10",
+          "isTrusted": true
+        },
+        {
+          "type": "click",
+          "x": 537,
+          "y": 238,
+          "target": "button-10",
+          "isTrusted": true
+        }
+      ],
+      "css_x": 351.2265625,
+      "css_y": 104.15625
+    },
+    {
+      "case_id": "ui-case-037",
+      "dpr": 1,
+      "status": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_correct": true,
+      "center_error_px": 0.0,
+      "actual_event_hit": true,
+      "trusted_events": true,
+      "events": [
+        {
+          "type": "mousemove",
+          "x": 722,
+          "y": 319,
+          "target": "button-3",
+          "isTrusted": true
+        }
+      ],
+      "css_x": 536.2421874999999,
+      "css_y": 185.81249999999997
+    },
+    {
+      "case_id": "ui-case-038",
+      "dpr": 1,
+      "status": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_correct": true,
+      "center_error_px": 0.0,
+      "actual_event_hit": true,
+      "trusted_events": true,
+      "events": [
+        {
+          "type": "mousemove",
+          "x": 514,
+          "y": 369,
+          "target": "button-8",
+          "isTrusted": true
+        },
+        {
+          "type": "mousedown",
+          "x": 514,
+          "y": 369,
+          "target": "button-8",
+          "isTrusted": true
+        },
+        {
+          "type": "mouseup",
+          "x": 514,
+          "y": 369,
+          "target": "button-8",
+          "isTrusted": true
+        },
+        {
+          "type": "click",
+          "x": 514,
+          "y": 369,
+          "target": "button-8",
+          "isTrusted": true
+        }
+      ],
+      "css_x": 327.49218749999994,
+      "css_y": 235.81249999999997
+    },
+    {
+      "case_id": "ui-case-039",
+      "dpr": 1,
+      "status": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_correct": true,
+      "center_error_px": 0.0,
+      "actual_event_hit": true,
+      "trusted_events": true,
+      "events": [
+        {
+          "type": "mousemove",
+          "x": 934,
+          "y": 197,
+          "target": "button-1",
+          "isTrusted": true
+        }
+      ],
+      "css_x": 747.8984375,
+      "css_y": 63.31249999999999
+    },
+    {
+      "case_id": "ui-case-040",
+      "dpr": 1,
+      "status": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_correct": true,
+      "center_error_px": 0.0,
+      "actual_event_hit": true,
+      "trusted_events": true,
+      "events": [
+        {
+          "type": "mousemove",
+          "x": 805,
+          "y": 461,
+          "target": "button-7",
+          "isTrusted": true
+        },
+        {
+          "type": "mousedown",
+          "x": 805,
+          "y": 461,
+          "target": "button-7",
+          "isTrusted": true
+        },
+        {
+          "type": "mouseup",
+          "x": 805,
+          "y": 461,
+          "target": "button-7",
+          "isTrusted": true
+        },
+        {
+          "type": "click",
+          "x": 805,
+          "y": 461,
+          "target": "button-7",
+          "isTrusted": true
+        }
+      ],
+      "css_x": 472.21093750000006,
+      "css_y": 327.75
+    },
+    {
+      "case_id": "ui-case-041",
+      "dpr": 1,
+      "status": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_correct": true,
+      "center_error_px": 0.0,
+      "actual_event_hit": true,
+      "trusted_events": true,
+      "events": [
+        {
+          "type": "mousemove",
+          "x": 531,
+          "y": 211,
+          "target": "button-12",
+          "isTrusted": true
+        }
+      ],
+      "css_x": 198.3203125,
+      "css_y": 77.2109375
+    }
+  ]
+}

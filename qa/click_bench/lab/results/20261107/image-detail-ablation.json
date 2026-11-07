@@ -1,0 +1,342 @@
+{
+  "schema": 1,
+  "date": "2026-11-07",
+  "design": "Paired image-detail ablation on the four 2560x1440 baseline failures per model. Separate fresh requests; only provider image detail changed.",
+  "baseline_sha256": "30fdd7cecae7eb3a38e5d2366d950f9833cf71afbb1d120f01947d5764605a35",
+  "native_policy": "auto",
+  "models": [
+    "gpt-6-luna",
+    "gpt-5.6-terra"
+  ],
+  "case_ids": [
+    "case-008",
+    "case-009",
+    "case-010",
+    "case-011"
+  ],
+  "high_hits": 0,
+  "original_hits": 8,
+  "trials_per_configuration": 8,
+  "rows": [
+    {
+      "model": "gpt-6-luna",
+      "case_id": "case-008",
+      "screenshot_sha256": "9b63f725105a02e3a71ae900d62a3f7b762205284351d98823571e4e16aaef56",
+      "width": 2560,
+      "height": 1440,
+      "screen": {
+        "width": 1280,
+        "height": 720,
+        "devicePixelRatio": 2
+      },
+      "reasoning_effort": "low",
+      "prompt_sha256": "318bb45e72ab96b61be356b5d3a9a0c2ee1f390ecbeb0834363df2f4c2e9fc2f",
+      "high": {
+        "protocol": "screenshot-only-v1",
+        "image_detail": "high",
+        "action": "click",
+        "x": 1232,
+        "y": 258,
+        "hit": false,
+        "center_error_px": 272.853,
+        "latency_ms": 2970.7
+      },
+      "original": {
+        "protocol": "screenshot-only-v2",
+        "image_detail": "original",
+        "action": "click",
+        "x": 1500,
+        "y": 315,
+        "hit": true,
+        "center_error_px": 1.873,
+        "latency_ms": 4552.3,
+        "all_events_trusted": true,
+        "event_types": [
+          "mousemove",
+          "mousedown",
+          "mouseup",
+          "click"
+        ]
+      }
+    },
+    {
+      "model": "gpt-6-luna",
+      "case_id": "case-009",
+      "screenshot_sha256": "9b63f725105a02e3a71ae900d62a3f7b762205284351d98823571e4e16aaef56",
+      "width": 2560,
+      "height": 1440,
+      "screen": {
+        "width": 1280,
+        "height": 720,
+        "devicePixelRatio": 2
+      },
+      "reasoning_effort": "low",
+      "prompt_sha256": "318bb45e72ab96b61be356b5d3a9a0c2ee1f390ecbeb0834363df2f4c2e9fc2f",
+      "high": {
+        "protocol": "screenshot-only-v1",
+        "image_detail": "high",
+        "action": "move",
+        "x": 1665,
+        "y": 514,
+        "hit": false,
+        "center_error_px": 377.909,
+        "latency_ms": 1843.8
+      },
+      "original": {
+        "protocol": "screenshot-only-v2",
+        "image_detail": "original",
+        "action": "move",
+        "x": 2026,
+        "y": 626,
+        "hit": true,
+        "center_error_px": 0.322,
+        "latency_ms": 3636.2,
+        "all_events_trusted": true,
+        "event_types": [
+          "mousemove"
+        ]
+      }
+    },
+    {
+      "model": "gpt-6-luna",
+      "case_id": "case-010",
+      "screenshot_sha256": "9b63f725105a02e3a71ae900d62a3f7b762205284351d98823571e4e16aaef56",
+      "width": 2560,
+      "height": 1440,
+      "screen": {
+        "width": 1280,
+        "height": 720,
+        "devicePixelRatio": 2
+      },
+      "reasoning_effort": "low",
+      "prompt_sha256": "318bb45e72ab96b61be356b5d3a9a0c2ee1f390ecbeb0834363df2f4c2e9fc2f",
+      "high": {
+        "protocol": "screenshot-only-v1",
+        "image_detail": "high",
+        "action": "click",
+        "x": 248,
+        "y": 819,
+        "hit": false,
+        "center_error_px": 185.72,
+        "latency_ms": 3042.3
+      },
+      "original": {
+        "protocol": "screenshot-only-v2",
+        "image_detail": "original",
+        "action": "click",
+        "x": 301,
+        "y": 996,
+        "hit": true,
+        "center_error_px": 1.062,
+        "latency_ms": 3217.5,
+        "all_events_trusted": true,
+        "event_types": [
+          "mousemove",
+          "mousedown",
+          "mouseup",
+          "click"
+        ]
+      }
+    },
+    {
+      "model": "gpt-6-luna",
+      "case_id": "case-011",
+      "screenshot_sha256": "9b63f725105a02e3a71ae900d62a3f7b762205284351d98823571e4e16aaef56",
+      "width": 2560,
+      "height": 1440,
+      "screen": {
+        "width": 1280,
+        "height": 720,
+        "devicePixelRatio": 2
+      },
+      "reasoning_effort": "low",
+      "prompt_sha256": "318bb45e72ab96b61be356b5d3a9a0c2ee1f390ecbeb0834363df2f4c2e9fc2f",
+      "high": {
+        "protocol": "screenshot-only-v1",
+        "image_detail": "high",
+        "action": "move",
+        "x": 915,
+        "y": 1029,
+        "hit": false,
+        "center_error_px": 298.7,
+        "latency_ms": 1880.8
+      },
+      "original": {
+        "protocol": "screenshot-only-v2",
+        "image_detail": "original",
+        "action": "move",
+        "x": 1114,
+        "y": 1252,
+        "hit": true,
+        "center_error_px": 0.198,
+        "latency_ms": 3274.1,
+        "all_events_trusted": true,
+        "event_types": [
+          "mousemove"
+        ]
+      }
+    },
+    {
+      "model": "gpt-5.6-terra",
+      "case_id": "case-008",
+      "screenshot_sha256": "9b63f725105a02e3a71ae900d62a3f7b762205284351d98823571e4e16aaef56",
+      "width": 2560,
+      "height": 1440,
+      "screen": {
+        "width": 1280,
+        "height": 720,
+        "devicePixelRatio": 2
+      },
+      "reasoning_effort": "low",
+      "prompt_sha256": "318bb45e72ab96b61be356b5d3a9a0c2ee1f390ecbeb0834363df2f4c2e9fc2f",
+      "high": {
+        "protocol": "screenshot-only-v1",
+        "image_detail": "high",
+        "action": "click",
+        "x": 1200,
+        "y": 251,
+        "hit": false,
+        "center_error_px": 305.608,
+        "latency_ms": 2152.6
+      },
+      "original": {
+        "protocol": "screenshot-only-v2",
+        "image_detail": "original",
+        "action": "click",
+        "x": 1500,
+        "y": 314,
+        "hit": true,
+        "center_error_px": 1.064,
+        "latency_ms": 4288.3,
+        "all_events_trusted": true,
+        "event_types": [
+          "mousemove",
+          "mousedown",
+          "mouseup",
+          "click"
+        ]
+      }
+    },
+    {
+      "model": "gpt-5.6-terra",
+      "case_id": "case-009",
+      "screenshot_sha256": "9b63f725105a02e3a71ae900d62a3f7b762205284351d98823571e4e16aaef56",
+      "width": 2560,
+      "height": 1440,
+      "screen": {
+        "width": 1280,
+        "height": 720,
+        "devicePixelRatio": 2
+      },
+      "reasoning_effort": "low",
+      "prompt_sha256": "318bb45e72ab96b61be356b5d3a9a0c2ee1f390ecbeb0834363df2f4c2e9fc2f",
+      "high": {
+        "protocol": "screenshot-only-v1",
+        "image_detail": "high",
+        "action": "move",
+        "x": 1621,
+        "y": 500,
+        "hit": false,
+        "center_error_px": 424.082,
+        "latency_ms": 2394.0
+      },
+      "original": {
+        "protocol": "screenshot-only-v2",
+        "image_detail": "original",
+        "action": "move",
+        "x": 2025,
+        "y": 626,
+        "hit": true,
+        "center_error_px": 0.889,
+        "latency_ms": 3282.2,
+        "all_events_trusted": true,
+        "event_types": [
+          "mousemove"
+        ]
+      }
+    },
+    {
+      "model": "gpt-5.6-terra",
+      "case_id": "case-010",
+      "screenshot_sha256": "9b63f725105a02e3a71ae900d62a3f7b762205284351d98823571e4e16aaef56",
+      "width": 2560,
+      "height": 1440,
+      "screen": {
+        "width": 1280,
+        "height": 720,
+        "devicePixelRatio": 2
+      },
+      "reasoning_effort": "low",
+      "prompt_sha256": "318bb45e72ab96b61be356b5d3a9a0c2ee1f390ecbeb0834363df2f4c2e9fc2f",
+      "high": {
+        "protocol": "screenshot-only-v1",
+        "image_detail": "high",
+        "action": "click",
+        "x": 241,
+        "y": 797,
+        "hit": false,
+        "center_error_px": 208.804,
+        "latency_ms": 3158.6
+      },
+      "original": {
+        "protocol": "screenshot-only-v2",
+        "image_detail": "original",
+        "action": "click",
+        "x": 302,
+        "y": 996,
+        "hit": true,
+        "center_error_px": 0.83,
+        "latency_ms": 4192.0,
+        "all_events_trusted": true,
+        "event_types": [
+          "mousemove",
+          "mousedown",
+          "mouseup",
+          "click"
+        ]
+      }
+    },
+    {
+      "model": "gpt-5.6-terra",
+      "case_id": "case-011",
+      "screenshot_sha256": "9b63f725105a02e3a71ae900d62a3f7b762205284351d98823571e4e16aaef56",
+      "width": 2560,
+      "height": 1440,
+      "screen": {
+        "width": 1280,
+        "height": 720,
+        "devicePixelRatio": 2
+      },
+      "reasoning_effort": "low",
+      "prompt_sha256": "318bb45e72ab96b61be356b5d3a9a0c2ee1f390ecbeb0834363df2f4c2e9fc2f",
+      "high": {
+        "protocol": "screenshot-only-v1",
+        "image_detail": "high",
+        "action": "move",
+        "x": 891,
+        "y": 1002,
+        "hit": false,
+        "center_error_px": 334.824,
+        "latency_ms": 2518.8
+      },
+      "original": {
+        "protocol": "screenshot-only-v2",
+        "image_detail": "original",
+        "action": "move",
+        "x": 1114,
+        "y": 1252,
+        "hit": true,
+        "center_error_px": 0.198,
+        "latency_ms": 3979.2,
+        "all_events_trusted": true,
+        "event_types": [
+          "mousemove"
+        ]
+      }
+    }
+  ],
+  "sources": [
+    "https://developers.openai.com/api/docs/guides/images-vision",
+    "https://developers.openai.com/api/docs/guides/tools-computer-use-integration"
+  ]
+}

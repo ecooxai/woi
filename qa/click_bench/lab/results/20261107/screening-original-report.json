@@ -1,0 +1,631 @@
+{
+  "generated_at_utc": "2026-11-07T20:37:41Z",
+  "phase": "screening-original",
+  "fixture": "standardized",
+  "trials_per_model_requested": 12,
+  "case_offset": 0,
+  "model_ids": [
+    "gpt-6.1-sol",
+    "gpt-6-astra",
+    "gpt-6.1-terra",
+    "gpt-6-sol",
+    "gpt-reserve",
+    "gpt-6-luna",
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+    "gpt-5.6-luna",
+    "codex-auto-review"
+  ],
+  "request_fields": [
+    "height",
+    "instruction",
+    "model",
+    "request_id",
+    "screen",
+    "screenshot",
+    "width"
+  ],
+  "expected_protocol": "screenshot-only-v2",
+  "expected_text_image_detail": "original",
+  "observed_protocols": [
+    "screenshot-only-v2"
+  ],
+  "observed_prompt_hashes": [
+    "318bb45e72ab96b61be356b5d3a9a0c2ee1f390ecbeb0834363df2f4c2e9fc2f"
+  ],
+  "matched_case_reference": "qa/out/click_lab/benchmark/20261107/screening/cases",
+  "reported_model_alias_changes": [],
+  "observed_image_details": [
+    "original"
+  ],
+  "fresh_request": true,
+  "history_included": false,
+  "ground_truth_sent_to_model": false,
+  "execution": "Chromium CDP real trusted pointer events in isolated synthetic page; no OS input",
+  "input_mode": "Text instruction plus screenshot for every model, including audio models",
+  "scoring": "Correct action and actual event inside target; out-of-range predictions rejected, never clamped",
+  "summary": [
+    {
+      "model": "gpt-5.6-luna",
+      "kind": "text",
+      "trials": 12,
+      "valid_predictions": 12,
+      "hits": 12,
+      "operational_hit_rate": 1.0,
+      "accuracy_given_prediction": 1.0,
+      "accuracy_wilson_95": [
+        0.7575,
+        1.0
+      ],
+      "click_hits": 6,
+      "click_trials": 6,
+      "move_hits": 6,
+      "move_trials": 6,
+      "median_error_px": 0.29400000000000004,
+      "error_p90_px": 0.803,
+      "latency_median_ms": 2734.95,
+      "latency_p90_ms": 3639.37,
+      "wall_time_median_ms": 2741.63,
+      "wall_time_p90_ms": 3642.342,
+      "by_capture_resolution": {
+        "1280x720": {
+          "trials": 4,
+          "hits": 4,
+          "errors": 0
+        },
+        "960x720": {
+          "trials": 4,
+          "hits": 4,
+          "errors": 0
+        },
+        "2560x1440": {
+          "trials": 4,
+          "hits": 4,
+          "errors": 0
+        }
+      },
+      "by_target_size": {
+        "normal": {
+          "trials": 5,
+          "hits": 5,
+          "errors": 0
+        },
+        "small": {
+          "trials": 2,
+          "hits": 2,
+          "errors": 0
+        },
+        "large": {
+          "trials": 5,
+          "hits": 5,
+          "errors": 0
+        }
+      },
+      "errors": {}
+    },
+    {
+      "model": "codex-auto-review",
+      "kind": "text",
+      "trials": 12,
+      "valid_predictions": 12,
+      "hits": 12,
+      "operational_hit_rate": 1.0,
+      "accuracy_given_prediction": 1.0,
+      "accuracy_wilson_95": [
+        0.7575,
+        1.0
+      ],
+      "click_hits": 6,
+      "click_trials": 6,
+      "move_hits": 6,
+      "move_trials": 6,
+      "median_error_px": 0.29400000000000004,
+      "error_p90_px": 0.794,
+      "latency_median_ms": 2820.9,
+      "latency_p90_ms": 3912.73,
+      "wall_time_median_ms": 2826.335,
+      "wall_time_p90_ms": 3916.936,
+      "by_capture_resolution": {
+        "1280x720": {
+          "trials": 4,
+          "hits": 4,
+          "errors": 0
+        },
+        "960x720": {
+          "trials": 4,
+          "hits": 4,
+          "errors": 0
+        },
+        "2560x1440": {
+          "trials": 4,
+          "hits": 4,
+          "errors": 0
+        }
+      },
+      "by_target_size": {
+        "normal": {
+          "trials": 5,
+          "hits": 5,
+          "errors": 0
+        },
+        "small": {
+          "trials": 2,
+          "hits": 2,
+          "errors": 0
+        },
+        "large": {
+          "trials": 5,
+          "hits": 5,
+          "errors": 0
+        }
+      },
+      "errors": {}
+    },
+    {
+      "model": "gpt-6-sol",
+      "kind": "text",
+      "trials": 12,
+      "valid_predictions": 12,
+      "hits": 12,
+      "operational_hit_rate": 1.0,
+      "accuracy_given_prediction": 1.0,
+      "accuracy_wilson_95": [
+        0.7575,
+        1.0
+      ],
+      "click_hits": 6,
+      "click_trials": 6,
+      "move_hits": 6,
+      "move_trials": 6,
+      "median_error_px": 0.29400000000000004,
+      "error_p90_px": 0.794,
+      "latency_median_ms": 2990.25,
+      "latency_p90_ms": 3395.75,
+      "wall_time_median_ms": 2994.1800000000003,
+      "wall_time_p90_ms": 3401.116,
+      "by_capture_resolution": {
+        "1280x720": {
+          "trials": 4,
+          "hits": 4,
+          "errors": 0
+        },
+        "960x720": {
+          "trials": 4,
+          "hits": 4,
+          "errors": 0
+        },
+        "2560x1440": {
+          "trials": 4,
+          "hits": 4,
+          "errors": 0
+        }
+      },
+      "by_target_size": {
+        "normal": {
+          "trials": 5,
+          "hits": 5,
+          "errors": 0
+        },
+        "small": {
+          "trials": 2,
+          "hits": 2,
+          "errors": 0
+        },
+        "large": {
+          "trials": 5,
+          "hits": 5,
+          "errors": 0
+        }
+      },
+      "errors": {}
+    },
+    {
+      "model": "gpt-6-luna",
+      "kind": "text",
+      "trials": 12,
+      "valid_predictions": 12,
+      "hits": 12,
+      "operational_hit_rate": 1.0,
+      "accuracy_given_prediction": 1.0,
+      "accuracy_wilson_95": [
+        0.7575,
+        1.0
+      ],
+      "click_hits": 6,
+      "click_trials": 6,
+      "move_hits": 6,
+      "move_trials": 6,
+      "median_error_px": 0.29400000000000004,
+      "error_p90_px": 0.688,
+      "latency_median_ms": 3028.65,
+      "latency_p90_ms": 3246.27,
+      "wall_time_median_ms": 3032.0299999999997,
+      "wall_time_p90_ms": 3250.905,
+      "by_capture_resolution": {
+        "1280x720": {
+          "trials": 4,
+          "hits": 4,
+          "errors": 0
+        },
+        "960x720": {
+          "trials": 4,
+          "hits": 4,
+          "errors": 0
+        },
+        "2560x1440": {
+          "trials": 4,
+          "hits": 4,
+          "errors": 0
+        }
+      },
+      "by_target_size": {
+        "normal": {
+          "trials": 5,
+          "hits": 5,
+          "errors": 0
+        },
+        "small": {
+          "trials": 2,
+          "hits": 2,
+          "errors": 0
+        },
+        "large": {
+          "trials": 5,
+          "hits": 5,
+          "errors": 0
+        }
+      },
+      "errors": {}
+    },
+    {
+      "model": "gpt-5.6-sol",
+      "kind": "text",
+      "trials": 12,
+      "valid_predictions": 12,
+      "hits": 12,
+      "operational_hit_rate": 1.0,
+      "accuracy_given_prediction": 1.0,
+      "accuracy_wilson_95": [
+        0.7575,
+        1.0
+      ],
+      "click_hits": 6,
+      "click_trials": 6,
+      "move_hits": 6,
+      "move_trials": 6,
+      "median_error_px": 0.29400000000000004,
+      "error_p90_px": 0.794,
+      "latency_median_ms": 3145.6,
+      "latency_p90_ms": 3786.7,
+      "wall_time_median_ms": 3149.645,
+      "wall_time_p90_ms": 3793.223,
+      "by_capture_resolution": {
+        "1280x720": {
+          "trials": 4,
+          "hits": 4,
+          "errors": 0
+        },
+        "960x720": {
+          "trials": 4,
+          "hits": 4,
+          "errors": 0
+        },
+        "2560x1440": {
+          "trials": 4,
+          "hits": 4,
+          "errors": 0
+        }
+      },
+      "by_target_size": {
+        "normal": {
+          "trials": 5,
+          "hits": 5,
+          "errors": 0
+        },
+        "small": {
+          "trials": 2,
+          "hits": 2,
+          "errors": 0
+        },
+        "large": {
+          "trials": 5,
+          "hits": 5,
+          "errors": 0
+        }
+      },
+      "errors": {}
+    },
+    {
+      "model": "gpt-6.1-terra",
+      "kind": "text",
+      "trials": 12,
+      "valid_predictions": 12,
+      "hits": 12,
+      "operational_hit_rate": 1.0,
+      "accuracy_given_prediction": 1.0,
+      "accuracy_wilson_95": [
+        0.7575,
+        1.0
+      ],
+      "click_hits": 6,
+      "click_trials": 6,
+      "move_hits": 6,
+      "move_trials": 6,
+      "median_error_px": 0.29400000000000004,
+      "error_p90_px": 0.794,
+      "latency_median_ms": 3264.5,
+      "latency_p90_ms": 5298.23,
+      "wall_time_median_ms": 3268.705,
+      "wall_time_p90_ms": 5306.581,
+      "by_capture_resolution": {
+        "1280x720": {
+          "trials": 4,
+          "hits": 4,
+          "errors": 0
+        },
+        "960x720": {
+          "trials": 4,
+          "hits": 4,
+          "errors": 0
+        },
+        "2560x1440": {
+          "trials": 4,
+          "hits": 4,
+          "errors": 0
+        }
+      },
+      "by_target_size": {
+        "normal": {
+          "trials": 5,
+          "hits": 5,
+          "errors": 0
+        },
+        "small": {
+          "trials": 2,
+          "hits": 2,
+          "errors": 0
+        },
+        "large": {
+          "trials": 5,
+          "hits": 5,
+          "errors": 0
+        }
+      },
+      "errors": {}
+    },
+    {
+      "model": "gpt-6-astra",
+      "kind": "text",
+      "trials": 12,
+      "valid_predictions": 12,
+      "hits": 12,
+      "operational_hit_rate": 1.0,
+      "accuracy_given_prediction": 1.0,
+      "accuracy_wilson_95": [
+        0.7575,
+        1.0
+      ],
+      "click_hits": 6,
+      "click_trials": 6,
+      "move_hits": 6,
+      "move_trials": 6,
+      "median_error_px": 0.29400000000000004,
+      "error_p90_px": 0.794,
+      "latency_median_ms": 3509.4,
+      "latency_p90_ms": 3851.15,
+      "wall_time_median_ms": 3513.83,
+      "wall_time_p90_ms": 3858.526,
+      "by_capture_resolution": {
+        "1280x720": {
+          "trials": 4,
+          "hits": 4,
+          "errors": 0
+        },
+        "960x720": {
+          "trials": 4,
+          "hits": 4,
+          "errors": 0
+        },
+        "2560x1440": {
+          "trials": 4,
+          "hits": 4,
+          "errors": 0
+        }
+      },
+      "by_target_size": {
+        "normal": {
+          "trials": 5,
+          "hits": 5,
+          "errors": 0
+        },
+        "small": {
+          "trials": 2,
+          "hits": 2,
+          "errors": 0
+        },
+        "large": {
+          "trials": 5,
+          "hits": 5,
+          "errors": 0
+        }
+      },
+      "errors": {}
+    },
+    {
+      "model": "gpt-reserve",
+      "kind": "text",
+      "trials": 12,
+      "valid_predictions": 12,
+      "hits": 12,
+      "operational_hit_rate": 1.0,
+      "accuracy_given_prediction": 1.0,
+      "accuracy_wilson_95": [
+        0.7575,
+        1.0
+      ],
+      "click_hits": 6,
+      "click_trials": 6,
+      "move_hits": 6,
+      "move_trials": 6,
+      "median_error_px": 0.29400000000000004,
+      "error_p90_px": 0.803,
+      "latency_median_ms": 3666.6,
+      "latency_p90_ms": 4146.95,
+      "wall_time_median_ms": 3670.84,
+      "wall_time_p90_ms": 4151.89,
+      "by_capture_resolution": {
+        "1280x720": {
+          "trials": 4,
+          "hits": 4,
+          "errors": 0
+        },
+        "960x720": {
+          "trials": 4,
+          "hits": 4,
+          "errors": 0
+        },
+        "2560x1440": {
+          "trials": 4,
+          "hits": 4,
+          "errors": 0
+        }
+      },
+      "by_target_size": {
+        "normal": {
+          "trials": 5,
+          "hits": 5,
+          "errors": 0
+        },
+        "small": {
+          "trials": 2,
+          "hits": 2,
+          "errors": 0
+        },
+        "large": {
+          "trials": 5,
+          "hits": 5,
+          "errors": 0
+        }
+      },
+      "errors": {}
+    },
+    {
+      "model": "gpt-5.6-terra",
+      "kind": "text",
+      "trials": 12,
+      "valid_predictions": 12,
+      "hits": 12,
+      "operational_hit_rate": 1.0,
+      "accuracy_given_prediction": 1.0,
+      "accuracy_wilson_95": [
+        0.7575,
+        1.0
+      ],
+      "click_hits": 6,
+      "click_trials": 6,
+      "move_hits": 6,
+      "move_trials": 6,
+      "median_error_px": 0.3645,
+      "error_p90_px": 0.883,
+      "latency_median_ms": 3690.8500000000004,
+      "latency_p90_ms": 4063.11,
+      "wall_time_median_ms": 3695.965,
+      "wall_time_p90_ms": 4069.789,
+      "by_capture_resolution": {
+        "1280x720": {
+          "trials": 4,
+          "hits": 4,
+          "errors": 0
+        },
+        "960x720": {
+          "trials": 4,
+          "hits": 4,
+          "errors": 0
+        },
+        "2560x1440": {
+          "trials": 4,
+          "hits": 4,
+          "errors": 0
+        }
+      },
+      "by_target_size": {
+        "normal": {
+          "trials": 5,
+          "hits": 5,
+          "errors": 0
+        },
+        "small": {
+          "trials": 2,
+          "hits": 2,
+          "errors": 0
+        },
+        "large": {
+          "trials": 5,
+          "hits": 5,
+          "errors": 0
+        }
+      },
+      "errors": {}
+    },
+    {
+      "model": "gpt-6.1-sol",
+      "kind": "text",
+      "trials": 12,
+      "valid_predictions": 12,
+      "hits": 12,
+      "operational_hit_rate": 1.0,
+      "accuracy_given_prediction": 1.0,
+      "accuracy_wilson_95": [
+        0.7575,
+        1.0
+      ],
+      "click_hits": 6,
+      "click_trials": 6,
+      "move_hits": 6,
+      "move_trials": 6,
+      "median_error_px": 0.29400000000000004,
+      "error_p90_px": 0.794,
+      "latency_median_ms": 3792.65,
+      "latency_p90_ms": 4184.18,
+      "wall_time_median_ms": 3798.835,
+      "wall_time_p90_ms": 4188.393,
+      "by_capture_resolution": {
+        "1280x720": {
+          "trials": 4,
+          "hits": 4,
+          "errors": 0
+        },
+        "960x720": {
+          "trials": 4,
+          "hits": 4,
+          "errors": 0
+        },
+        "2560x1440": {
+          "trials": 4,
+          "hits": 4,
+          "errors": 0
+        }
+      },
+      "by_target_size": {
+        "normal": {
+          "trials": 5,
+          "hits": 5,
+          "errors": 0
+        },
+        "small": {
+          "trials": 2,
+          "hits": 2,
+          "errors": 0
+        },
+        "large": {
+          "trials": 5,
+          "hits": 5,
+          "errors": 0
+        }
+      },
+      "errors": {}
+    }
+  ],
+  "phase_label": "screening-original",
+  "raw_rows_sha256": "d50d9d4441a62e37938f9146923c86a267b99b33ef8cee61d0382cf9fa5b3615"
+}

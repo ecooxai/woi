@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Woi · Model click lab</title>
+  <link rel="stylesheet" href="/app.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="app-header">
+      <div class="identity"><span class="brand">w</span><div><h1>Model click lab</h1><p>One screenshot. One instruction. A fresh request every time.</p></div></div>
+      <span id="connection" class="connection"><i></i><span>Loading models…</span></span>
+    </header>
+
+    <section class="panel board-panel" aria-labelledby="board-title">
+      <div class="panel-top">
+        <div class="section-label"><h2 id="board-title">Test surface</h2><span id="layout-label" class="muted"></span></div>
+        <div class="board-controls">
+          <label class="compact-label">Size<select id="resolution"><option value="1280x480">1280 × 480</option><option value="960x540">960 × 540</option><option value="1280x720">1280 × 720</option><option value="1600x900">1600 × 900</option><option value="1920x1080">1920 × 1080</option><option value="2560x1440">2560 × 1440</option></select></label>
+          <label class="compact-label">Buttons<select id="button-count"><option>6</option><option selected>12</option><option>20</option><option>32</option></select></label>
+          <button id="randomize" class="button secondary" type="button"><span aria-hidden="true">↻</span> Randomize</button>
+        </div>
+      </div>
+      <div class="board-well">
+        <div id="board-frame" class="board-frame">
+          <canvas id="board" width="1280" height="480" aria-label="Randomized buttons. Ask a model to click a named button or move its pointer to it."></canvas>
+          <div id="hit-layer" class="hit-layer"></div>
+          <canvas id="markers" width="1280" height="480" aria-hidden="true"></canvas>
+        </div>
+      </div>
+      <div class="board-meta"><span id="capture-meta"></span><span id="screen-meta"></span><span id="board-event" aria-live="polite">Click a button yourself to check the surface.</span></div>
+    </section>
+
+    <div class="work-grid">
+      <section class="panel command-panel" aria-labelledby="instruction-title">
+        <div class="panel-top"><h2 id="instruction-title">What should the model do?</h2><span class="fresh-badge">Fresh context</span></div>
+        <form id="trial-form">
+          <label class="sr-only" for="instruction">Instruction for the model</label>
+          <textarea id="instruction" rows="2" spellcheck="false" placeholder="Click the Cobalt button."></textarea>
+          <div class="command-options">
+            <div class="action-switch" role="group" aria-label="Suggested action"><button type="button" id="suggest-click" class="active">Click</button><button type="button" id="suggest-move">Move pointer</button></div>
+            <button type="button" id="another-target" class="text-button">Try another target</button>
+          </div>
+          <div class="run-row"><button id="send" class="button primary" type="submit">Send test <span aria-hidden="true">↗</span></button><button id="click-all" class="button secondary" type="button">Click all buttons</button><button id="batch" class="button secondary" type="button">Test all available models</button><button id="stop" class="button secondary" type="button" hidden>Stop after this request</button></div>
+        </form>
+        <div id="run-status" class="run-status" role="status" aria-live="polite">Choose a model, then send a test.</div>
+        <details class="scoring-details"><summary>Scoring and request details</summary><div class="scoring-grid"><label>Expected button<select id="expected-target"><option value="auto">Detect from instruction</option><option value="none">Do not score</option></select></label><label>Expected action<select id="expected-action"><option value="auto">Detect from instruction</option><option value="click">Click</option><option value="move">Move pointer</option></select></label><label>Layout seed<input id="seed" type="number" min="0" max="4294967295" inputmode="numeric"></label><button id="apply-seed" type="button" class="button secondary">Apply seed</button></div><p>Only the screenshot, its dimensions, screen metadata, and your current instruction are sent to the selected model. Expected buttons and previous trials stay out of the model request. A move sends no click events.</p><p id="score-preview"></p></details>
+      </section>
+
+      <section class="panel model-panel" aria-labelledby="model-title">
+        <div class="panel-top"><div class="section-label"><h2 id="model-title">Model</h2><span id="model-count" class="muted"></span></div><button id="refresh-models" class="text-button" type="button">Refresh</button></div>
+        <label class="sr-only" for="model-filter">Filter models</label><input id="model-filter" class="model-filter" placeholder="Filter models…" type="search" autocomplete="off">
+        <div id="models" class="models" aria-live="polite"><div class="empty-models">Loading the account’s model catalog…</div></div>
+        <p id="catalog-source" class="catalog-source">Audio models receive the same text instruction and screenshot.</p>
+      </section>
+    </div>
+
+    <section class="panel results-panel" aria-labelledby="results-title">
+      <div class="panel-top"><div class="section-label"><h2 id="results-title">Results</h2><span id="result-count" class="muted">No trials yet</span></div><div class="result-actions"><button id="export" class="text-button" type="button" disabled>Export JSON</button><button id="clear" class="text-button" type="button" disabled>Clear</button></div></div>
+      <section id="button-run" class="button-run" aria-labelledby="button-run-title" hidden>
+        <div class="button-run-top"><div><h3 id="button-run-title">Click all buttons</h3><p id="button-run-status" role="status" aria-live="polite"></p></div><span id="button-run-badge" class="run-badge">Running</span></div>
+        <progress id="button-run-progress" max="1" value="0" aria-label="Completed button attempts"></progress>
+        <div class="button-run-metrics">
+          <div><strong id="button-run-score">0 / 0</strong><span>successful / completed</span></div>
+          <div><strong id="button-run-completed">0 / 0</strong><span>completed / planned</span></div>
+          <div><strong id="button-run-total">0 s</strong><span>total wall time</span></div>
+          <div><strong id="button-run-mean">—</strong><span>average send → click</span></div>
+          <div><strong id="button-run-min">—</strong><span>fastest send → click</span></div>
+          <div><strong id="button-run-max">—</strong><span>slowest send → click</span></div>
+        </div>
+        <p id="button-run-failures" class="button-run-note"></p><p id="button-run-timing-note" class="button-run-note"></p>
+      </section>
+      <div id="metrics" class="metrics" hidden></div>
+      <div id="results-empty" class="results-empty"><span class="empty-cross" aria-hidden="true">⌖</span><p>The model’s point will appear on the surface.<br>Each result keeps the exact image sent for that trial.</p></div>
+      <div class="table-scroll"><table id="results-table" hidden><thead><tr><th>Model</th><th>Outcome</th><th>Action / point</th><th>Expected button</th><th>API time</th><th>Send → click</th><th>Capture</th></tr></thead><tbody id="results-body"></tbody></table></div>
+      <details id="last-detail" class="response-details" hidden><summary>Latest response details</summary><p id="response-image-detail" class="muted"></p><pre id="raw-response"></pre></details>
+    </section>
+    <footer class="app-footer"><span>Woi · controlled screenshot test</span><span>Actions run inside this test surface.</span></footer>
+  </main>
+  <dialog id="capture-dialog"><div class="dialog-top"><h2 id="capture-title">Exact image sent</h2><button id="close-capture" class="button secondary" type="button">Close</button></div><p id="capture-description"></p><div class="capture-scroll"><img id="capture-image" alt="Exact clean screenshot transmitted for this trial"></div><p class="muted">No result markers or expected-target highlight are included in this image.</p></dialog>
+</body>
+</html>

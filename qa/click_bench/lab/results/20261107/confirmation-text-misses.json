@@ -1,0 +1,32 @@
+[
+  {
+    "model": "gpt-5.6-luna",
+    "case_id": "ui-case-031",
+    "instruction": "Move the pointer to the button labeled \"Moss\". Do not click.",
+    "expected_label": "Moss",
+    "actual_label": "Sage",
+    "prediction": {
+      "action": "move",
+      "x": 877,
+      "y": 678
+    },
+    "expected_bounds": {
+      "id": "button-7",
+      "label": "Moss",
+      "x": 606,
+      "y": 664,
+      "w": 78,
+      "h": 26,
+      "font": 12,
+      "size": "small",
+      "fill": "#f0f2f6",
+      "border": "#cfd6e0",
+      "color": "#586779"
+    },
+    "capture_width": 960,
+    "capture_height": 720,
+    "screenshot_sha256": "86e2d815c2ccdc55a98e25838bc3bd0dd926056f6365c9f1c6a0256a5ad9872b",
+    "trusted_events": true,
+    "center_error_px": 232.019
+  }
+]

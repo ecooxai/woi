@@ -1,0 +1,8315 @@
+{
+  "scope": "Evaluator ground truth; never included in model requests",
+  "cases": [
+    {
+      "case_id": "ui-case-012",
+      "fixture": "interactive-lab",
+      "seed": 12020,
+      "width": 1280,
+      "height": 480,
+      "css_width": 1066.65625,
+      "css_height": 399.984375,
+      "device_pixel_ratio": 1,
+      "instruction": "Click the button labeled \"Fern\".",
+      "expected_action": "click",
+      "target_id": "button-4",
+      "target_label": "Fern",
+      "target_size": "small",
+      "boxes": [
+        {
+          "id": "button-1",
+          "label": "Willow",
+          "x": 104.15625,
+          "y": 309.984375,
+          "w": 64.15625,
+          "h": 21.65625
+        },
+        {
+          "id": "button-2",
+          "label": "Silver",
+          "x": 736.65625,
+          "y": 147.484375,
+          "w": 94.984375,
+          "h": 31.65625
+        },
+        {
+          "id": "button-3",
+          "label": "Harbor",
+          "x": 451.65625,
+          "y": 212.484375,
+          "w": 139.15625,
+          "h": 41.65625
+        },
+        {
+          "id": "button-4",
+          "label": "Fern",
+          "x": 324.984375,
+          "y": 54.984375,
+          "w": 63.328125,
+          "h": 21.65625
+        },
+        {
+          "id": "button-5",
+          "label": "Pine",
+          "x": 646.65625,
+          "y": 312.484375,
+          "w": 101.65625,
+          "h": 31.65625
+        },
+        {
+          "id": "button-6",
+          "label": "Lotus",
+          "x": 892.484375,
+          "y": 186.65625,
+          "w": 133.328125,
+          "h": 41.65625
+        },
+        {
+          "id": "button-7",
+          "label": "Pearl",
+          "x": 260.828125,
+          "y": 291.640625,
+          "w": 69.15625,
+          "h": 21.65625
+        },
+        {
+          "id": "button-8",
+          "label": "Umber",
+          "x": 310.828125,
+          "y": 198.3125,
+          "w": 103.328125,
+          "h": 31.65625
+        },
+        {
+          "id": "button-9",
+          "label": "Reed",
+          "x": 481.65625,
+          "y": 39.984375,
+          "w": 130.828125,
+          "h": 41.65625
+        },
+        {
+          "id": "button-10",
+          "label": "Zinc",
+          "x": 876.65625,
+          "y": 66.65625,
+          "w": 65.828125,
+          "h": 21.65625
+        },
+        {
+          "id": "button-11",
+          "label": "Nova",
+          "x": 41.65625,
+          "y": 79.984375,
+          "w": 102.484375,
+          "h": 31.65625
+        },
+        {
+          "id": "button-12",
+          "label": "Robin",
+          "x": 676.65625,
+          "y": 64.984375,
+          "w": 130.828125,
+          "h": 41.65625
+        }
+      ],
+      "native_targets": [
+        {
+          "id": "button-1",
+          "label": "Willow",
+          "x": 125,
+          "y": 372,
+          "w": 77,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-2",
+          "label": "Silver",
+          "x": 884,
+          "y": 177,
+          "w": 114,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-3",
+          "label": "Harbor",
+          "x": 542,
+          "y": 255,
+          "w": 167,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-4",
+          "label": "Fern",
+          "x": 390,
+          "y": 66,
+          "w": 76,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-5",
+          "label": "Pine",
+          "x": 776,
+          "y": 375,
+          "w": 122,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-6",
+          "label": "Lotus",
+          "x": 1071,
+          "y": 224,
+          "w": 160,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-7",
+          "label": "Pearl",
+          "x": 313,
+          "y": 350,
+          "w": 83,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-8",
+          "label": "Umber",
+          "x": 373,
+          "y": 238,
+          "w": 124,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#f4edff",
+          "border": "#d9c5ee",
+          "color": "#78539e"
+        },
+        {
+          "id": "button-9",
+          "label": "Reed",
+          "x": 578,
+          "y": 48,
+          "w": 157,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-10",
+          "label": "Zinc",
+          "x": 1052,
+          "y": 80,
+          "w": 79,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#eaf2ff",
+          "border": "#bdd3f2",
+          "color": "#2b5e9a"
+        },
+        {
+          "id": "button-11",
+          "label": "Nova",
+          "x": 50,
+          "y": 96,
+          "w": 123,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#eaf2ff",
+          "border": "#bdd3f2",
+          "color": "#2b5e9a"
+        },
+        {
+          "id": "button-12",
+          "label": "Robin",
+          "x": 812,
+          "y": 78,
+          "w": 157,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        }
+      ],
+      "screenshot_sha256": "621c2d093192ed03ec28200deda6850f2a33f8cc7980b3edf3f0098f0df70eda",
+      "screen_metadata": {
+        "width": 1440,
+        "height": 1100,
+        "devicePixelRatio": 1
+      }
+    },
+    {
+      "case_id": "ui-case-013",
+      "fixture": "interactive-lab",
+      "seed": 12020,
+      "width": 1280,
+      "height": 480,
+      "css_width": 1066.65625,
+      "css_height": 399.984375,
+      "device_pixel_ratio": 1,
+      "instruction": "Move the pointer to the button labeled \"Reed\". Do not click.",
+      "expected_action": "move",
+      "target_id": "button-9",
+      "target_label": "Reed",
+      "target_size": "large",
+      "boxes": [
+        {
+          "id": "button-1",
+          "label": "Willow",
+          "x": 104.15625,
+          "y": 309.984375,
+          "w": 64.15625,
+          "h": 21.65625
+        },
+        {
+          "id": "button-2",
+          "label": "Silver",
+          "x": 736.65625,
+          "y": 147.484375,
+          "w": 94.984375,
+          "h": 31.65625
+        },
+        {
+          "id": "button-3",
+          "label": "Harbor",
+          "x": 451.65625,
+          "y": 212.484375,
+          "w": 139.15625,
+          "h": 41.65625
+        },
+        {
+          "id": "button-4",
+          "label": "Fern",
+          "x": 324.984375,
+          "y": 54.984375,
+          "w": 63.328125,
+          "h": 21.65625
+        },
+        {
+          "id": "button-5",
+          "label": "Pine",
+          "x": 646.65625,
+          "y": 312.484375,
+          "w": 101.65625,
+          "h": 31.65625
+        },
+        {
+          "id": "button-6",
+          "label": "Lotus",
+          "x": 892.484375,
+          "y": 186.65625,
+          "w": 133.328125,
+          "h": 41.65625
+        },
+        {
+          "id": "button-7",
+          "label": "Pearl",
+          "x": 260.828125,
+          "y": 291.640625,
+          "w": 69.15625,
+          "h": 21.65625
+        },
+        {
+          "id": "button-8",
+          "label": "Umber",
+          "x": 310.828125,
+          "y": 198.3125,
+          "w": 103.328125,
+          "h": 31.65625
+        },
+        {
+          "id": "button-9",
+          "label": "Reed",
+          "x": 481.65625,
+          "y": 39.984375,
+          "w": 130.828125,
+          "h": 41.65625
+        },
+        {
+          "id": "button-10",
+          "label": "Zinc",
+          "x": 876.65625,
+          "y": 66.65625,
+          "w": 65.828125,
+          "h": 21.65625
+        },
+        {
+          "id": "button-11",
+          "label": "Nova",
+          "x": 41.65625,
+          "y": 79.984375,
+          "w": 102.484375,
+          "h": 31.65625
+        },
+        {
+          "id": "button-12",
+          "label": "Robin",
+          "x": 676.65625,
+          "y": 64.984375,
+          "w": 130.828125,
+          "h": 41.65625
+        }
+      ],
+      "native_targets": [
+        {
+          "id": "button-1",
+          "label": "Willow",
+          "x": 125,
+          "y": 372,
+          "w": 77,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-2",
+          "label": "Silver",
+          "x": 884,
+          "y": 177,
+          "w": 114,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-3",
+          "label": "Harbor",
+          "x": 542,
+          "y": 255,
+          "w": 167,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-4",
+          "label": "Fern",
+          "x": 390,
+          "y": 66,
+          "w": 76,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-5",
+          "label": "Pine",
+          "x": 776,
+          "y": 375,
+          "w": 122,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-6",
+          "label": "Lotus",
+          "x": 1071,
+          "y": 224,
+          "w": 160,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-7",
+          "label": "Pearl",
+          "x": 313,
+          "y": 350,
+          "w": 83,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-8",
+          "label": "Umber",
+          "x": 373,
+          "y": 238,
+          "w": 124,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#f4edff",
+          "border": "#d9c5ee",
+          "color": "#78539e"
+        },
+        {
+          "id": "button-9",
+          "label": "Reed",
+          "x": 578,
+          "y": 48,
+          "w": 157,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-10",
+          "label": "Zinc",
+          "x": 1052,
+          "y": 80,
+          "w": 79,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#eaf2ff",
+          "border": "#bdd3f2",
+          "color": "#2b5e9a"
+        },
+        {
+          "id": "button-11",
+          "label": "Nova",
+          "x": 50,
+          "y": 96,
+          "w": 123,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#eaf2ff",
+          "border": "#bdd3f2",
+          "color": "#2b5e9a"
+        },
+        {
+          "id": "button-12",
+          "label": "Robin",
+          "x": 812,
+          "y": 78,
+          "w": 157,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        }
+      ],
+      "screenshot_sha256": "621c2d093192ed03ec28200deda6850f2a33f8cc7980b3edf3f0098f0df70eda",
+      "screen_metadata": {
+        "width": 1440,
+        "height": 1100,
+        "devicePixelRatio": 1
+      }
+    },
+    {
+      "case_id": "ui-case-014",
+      "fixture": "interactive-lab",
+      "seed": 12020,
+      "width": 1280,
+      "height": 480,
+      "css_width": 1066.65625,
+      "css_height": 399.984375,
+      "device_pixel_ratio": 1,
+      "instruction": "Click the button labeled \"Silver\".",
+      "expected_action": "click",
+      "target_id": "button-2",
+      "target_label": "Silver",
+      "target_size": "medium",
+      "boxes": [
+        {
+          "id": "button-1",
+          "label": "Willow",
+          "x": 104.15625,
+          "y": 309.984375,
+          "w": 64.15625,
+          "h": 21.65625
+        },
+        {
+          "id": "button-2",
+          "label": "Silver",
+          "x": 736.65625,
+          "y": 147.484375,
+          "w": 94.984375,
+          "h": 31.65625
+        },
+        {
+          "id": "button-3",
+          "label": "Harbor",
+          "x": 451.65625,
+          "y": 212.484375,
+          "w": 139.15625,
+          "h": 41.65625
+        },
+        {
+          "id": "button-4",
+          "label": "Fern",
+          "x": 324.984375,
+          "y": 54.984375,
+          "w": 63.328125,
+          "h": 21.65625
+        },
+        {
+          "id": "button-5",
+          "label": "Pine",
+          "x": 646.65625,
+          "y": 312.484375,
+          "w": 101.65625,
+          "h": 31.65625
+        },
+        {
+          "id": "button-6",
+          "label": "Lotus",
+          "x": 892.484375,
+          "y": 186.65625,
+          "w": 133.328125,
+          "h": 41.65625
+        },
+        {
+          "id": "button-7",
+          "label": "Pearl",
+          "x": 260.828125,
+          "y": 291.640625,
+          "w": 69.15625,
+          "h": 21.65625
+        },
+        {
+          "id": "button-8",
+          "label": "Umber",
+          "x": 310.828125,
+          "y": 198.3125,
+          "w": 103.328125,
+          "h": 31.65625
+        },
+        {
+          "id": "button-9",
+          "label": "Reed",
+          "x": 481.65625,
+          "y": 39.984375,
+          "w": 130.828125,
+          "h": 41.65625
+        },
+        {
+          "id": "button-10",
+          "label": "Zinc",
+          "x": 876.65625,
+          "y": 66.65625,
+          "w": 65.828125,
+          "h": 21.65625
+        },
+        {
+          "id": "button-11",
+          "label": "Nova",
+          "x": 41.65625,
+          "y": 79.984375,
+          "w": 102.484375,
+          "h": 31.65625
+        },
+        {
+          "id": "button-12",
+          "label": "Robin",
+          "x": 676.65625,
+          "y": 64.984375,
+          "w": 130.828125,
+          "h": 41.65625
+        }
+      ],
+      "native_targets": [
+        {
+          "id": "button-1",
+          "label": "Willow",
+          "x": 125,
+          "y": 372,
+          "w": 77,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-2",
+          "label": "Silver",
+          "x": 884,
+          "y": 177,
+          "w": 114,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-3",
+          "label": "Harbor",
+          "x": 542,
+          "y": 255,
+          "w": 167,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-4",
+          "label": "Fern",
+          "x": 390,
+          "y": 66,
+          "w": 76,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-5",
+          "label": "Pine",
+          "x": 776,
+          "y": 375,
+          "w": 122,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-6",
+          "label": "Lotus",
+          "x": 1071,
+          "y": 224,
+          "w": 160,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-7",
+          "label": "Pearl",
+          "x": 313,
+          "y": 350,
+          "w": 83,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-8",
+          "label": "Umber",
+          "x": 373,
+          "y": 238,
+          "w": 124,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#f4edff",
+          "border": "#d9c5ee",
+          "color": "#78539e"
+        },
+        {
+          "id": "button-9",
+          "label": "Reed",
+          "x": 578,
+          "y": 48,
+          "w": 157,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-10",
+          "label": "Zinc",
+          "x": 1052,
+          "y": 80,
+          "w": 79,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#eaf2ff",
+          "border": "#bdd3f2",
+          "color": "#2b5e9a"
+        },
+        {
+          "id": "button-11",
+          "label": "Nova",
+          "x": 50,
+          "y": 96,
+          "w": 123,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#eaf2ff",
+          "border": "#bdd3f2",
+          "color": "#2b5e9a"
+        },
+        {
+          "id": "button-12",
+          "label": "Robin",
+          "x": 812,
+          "y": 78,
+          "w": 157,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        }
+      ],
+      "screenshot_sha256": "621c2d093192ed03ec28200deda6850f2a33f8cc7980b3edf3f0098f0df70eda",
+      "screen_metadata": {
+        "width": 1440,
+        "height": 1100,
+        "devicePixelRatio": 1
+      }
+    },
+    {
+      "case_id": "ui-case-015",
+      "fixture": "interactive-lab",
+      "seed": 12020,
+      "width": 1280,
+      "height": 480,
+      "css_width": 1066.65625,
+      "css_height": 399.984375,
+      "device_pixel_ratio": 1,
+      "instruction": "Move the pointer to the button labeled \"Pearl\". Do not click.",
+      "expected_action": "move",
+      "target_id": "button-7",
+      "target_label": "Pearl",
+      "target_size": "small",
+      "boxes": [
+        {
+          "id": "button-1",
+          "label": "Willow",
+          "x": 104.15625,
+          "y": 309.984375,
+          "w": 64.15625,
+          "h": 21.65625
+        },
+        {
+          "id": "button-2",
+          "label": "Silver",
+          "x": 736.65625,
+          "y": 147.484375,
+          "w": 94.984375,
+          "h": 31.65625
+        },
+        {
+          "id": "button-3",
+          "label": "Harbor",
+          "x": 451.65625,
+          "y": 212.484375,
+          "w": 139.15625,
+          "h": 41.65625
+        },
+        {
+          "id": "button-4",
+          "label": "Fern",
+          "x": 324.984375,
+          "y": 54.984375,
+          "w": 63.328125,
+          "h": 21.65625
+        },
+        {
+          "id": "button-5",
+          "label": "Pine",
+          "x": 646.65625,
+          "y": 312.484375,
+          "w": 101.65625,
+          "h": 31.65625
+        },
+        {
+          "id": "button-6",
+          "label": "Lotus",
+          "x": 892.484375,
+          "y": 186.65625,
+          "w": 133.328125,
+          "h": 41.65625
+        },
+        {
+          "id": "button-7",
+          "label": "Pearl",
+          "x": 260.828125,
+          "y": 291.640625,
+          "w": 69.15625,
+          "h": 21.65625
+        },
+        {
+          "id": "button-8",
+          "label": "Umber",
+          "x": 310.828125,
+          "y": 198.3125,
+          "w": 103.328125,
+          "h": 31.65625
+        },
+        {
+          "id": "button-9",
+          "label": "Reed",
+          "x": 481.65625,
+          "y": 39.984375,
+          "w": 130.828125,
+          "h": 41.65625
+        },
+        {
+          "id": "button-10",
+          "label": "Zinc",
+          "x": 876.65625,
+          "y": 66.65625,
+          "w": 65.828125,
+          "h": 21.65625
+        },
+        {
+          "id": "button-11",
+          "label": "Nova",
+          "x": 41.65625,
+          "y": 79.984375,
+          "w": 102.484375,
+          "h": 31.65625
+        },
+        {
+          "id": "button-12",
+          "label": "Robin",
+          "x": 676.65625,
+          "y": 64.984375,
+          "w": 130.828125,
+          "h": 41.65625
+        }
+      ],
+      "native_targets": [
+        {
+          "id": "button-1",
+          "label": "Willow",
+          "x": 125,
+          "y": 372,
+          "w": 77,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-2",
+          "label": "Silver",
+          "x": 884,
+          "y": 177,
+          "w": 114,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-3",
+          "label": "Harbor",
+          "x": 542,
+          "y": 255,
+          "w": 167,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-4",
+          "label": "Fern",
+          "x": 390,
+          "y": 66,
+          "w": 76,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-5",
+          "label": "Pine",
+          "x": 776,
+          "y": 375,
+          "w": 122,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-6",
+          "label": "Lotus",
+          "x": 1071,
+          "y": 224,
+          "w": 160,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-7",
+          "label": "Pearl",
+          "x": 313,
+          "y": 350,
+          "w": 83,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-8",
+          "label": "Umber",
+          "x": 373,
+          "y": 238,
+          "w": 124,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#f4edff",
+          "border": "#d9c5ee",
+          "color": "#78539e"
+        },
+        {
+          "id": "button-9",
+          "label": "Reed",
+          "x": 578,
+          "y": 48,
+          "w": 157,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-10",
+          "label": "Zinc",
+          "x": 1052,
+          "y": 80,
+          "w": 79,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#eaf2ff",
+          "border": "#bdd3f2",
+          "color": "#2b5e9a"
+        },
+        {
+          "id": "button-11",
+          "label": "Nova",
+          "x": 50,
+          "y": 96,
+          "w": 123,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#eaf2ff",
+          "border": "#bdd3f2",
+          "color": "#2b5e9a"
+        },
+        {
+          "id": "button-12",
+          "label": "Robin",
+          "x": 812,
+          "y": 78,
+          "w": 157,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        }
+      ],
+      "screenshot_sha256": "621c2d093192ed03ec28200deda6850f2a33f8cc7980b3edf3f0098f0df70eda",
+      "screen_metadata": {
+        "width": 1440,
+        "height": 1100,
+        "devicePixelRatio": 1
+      }
+    },
+    {
+      "case_id": "ui-case-016",
+      "fixture": "interactive-lab",
+      "seed": 12021,
+      "width": 960,
+      "height": 720,
+      "css_width": 533.328125,
+      "css_height": 399.984375,
+      "device_pixel_ratio": 1,
+      "instruction": "Click the button labeled \"Fern\".",
+      "expected_action": "click",
+      "target_id": "button-1",
+      "target_label": "Fern",
+      "target_size": "small",
+      "boxes": [
+        {
+          "id": "button-1",
+          "label": "Fern",
+          "x": 433.875,
+          "y": 340.53125,
+          "w": 48.328125,
+          "h": 14.4375
+        },
+        {
+          "id": "button-2",
+          "label": "Echo",
+          "x": 289.984375,
+          "y": 273.3125,
+          "w": 66.65625,
+          "h": 21.109375
+        },
+        {
+          "id": "button-3",
+          "label": "Aspen",
+          "x": 148.328125,
+          "y": 191.09375,
+          "w": 90.546875,
+          "h": 27.765625
+        },
+        {
+          "id": "button-4",
+          "label": "Brook",
+          "x": 318.328125,
+          "y": 41.65625,
+          "w": 46.109375,
+          "h": 14.4375
+        },
+        {
+          "id": "button-5",
+          "label": "Cobalt",
+          "x": 187.21875,
+          "y": 20.546875,
+          "w": 64.4375,
+          "h": 21.109375
+        },
+        {
+          "id": "button-6",
+          "label": "Opal",
+          "x": 22.21875,
+          "y": 47.765625,
+          "w": 93.328125,
+          "h": 27.765625
+        },
+        {
+          "id": "button-7",
+          "label": "Pine",
+          "x": 464.984375,
+          "y": 228.875,
+          "w": 41.109375,
+          "h": 14.4375
+        },
+        {
+          "id": "button-8",
+          "label": "Lotus",
+          "x": 421.09375,
+          "y": 90.546875,
+          "w": 63.875,
+          "h": 21.109375
+        },
+        {
+          "id": "button-9",
+          "label": "Nova",
+          "x": 271.09375,
+          "y": 179.984375,
+          "w": 93.875,
+          "h": 27.765625
+        },
+        {
+          "id": "button-10",
+          "label": "Amber",
+          "x": 78.328125,
+          "y": 194.421875,
+          "w": 48.328125,
+          "h": 14.4375
+        },
+        {
+          "id": "button-11",
+          "label": "Flint",
+          "x": 52.765625,
+          "y": 296.640625,
+          "w": 62.21875,
+          "h": 21.109375
+        },
+        {
+          "id": "button-12",
+          "label": "Zinc",
+          "x": 152.765625,
+          "y": 323.875,
+          "w": 91.65625,
+          "h": 27.765625
+        }
+      ],
+      "native_targets": [
+        {
+          "id": "button-1",
+          "label": "Fern",
+          "x": 781,
+          "y": 613,
+          "w": 87,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-2",
+          "label": "Echo",
+          "x": 522,
+          "y": 492,
+          "w": 120,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-3",
+          "label": "Aspen",
+          "x": 267,
+          "y": 344,
+          "w": 163,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        },
+        {
+          "id": "button-4",
+          "label": "Brook",
+          "x": 573,
+          "y": 75,
+          "w": 83,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-5",
+          "label": "Cobalt",
+          "x": 337,
+          "y": 37,
+          "w": 116,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        },
+        {
+          "id": "button-6",
+          "label": "Opal",
+          "x": 40,
+          "y": 86,
+          "w": 168,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        },
+        {
+          "id": "button-7",
+          "label": "Pine",
+          "x": 837,
+          "y": 412,
+          "w": 74,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-8",
+          "label": "Lotus",
+          "x": 758,
+          "y": 163,
+          "w": 115,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-9",
+          "label": "Nova",
+          "x": 488,
+          "y": 324,
+          "w": 169,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-10",
+          "label": "Amber",
+          "x": 141,
+          "y": 350,
+          "w": 87,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-11",
+          "label": "Flint",
+          "x": 95,
+          "y": 534,
+          "w": 112,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-12",
+          "label": "Zinc",
+          "x": 275,
+          "y": 583,
+          "w": 165,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        }
+      ],
+      "screenshot_sha256": "2445eab46f157714cfcc57af1caf881a0b4d70f6e2c7f87dc7c208f8668fed36",
+      "screen_metadata": {
+        "width": 1200,
+        "height": 1100,
+        "devicePixelRatio": 1
+      }
+    },
+    {
+      "case_id": "ui-case-017",
+      "fixture": "interactive-lab",
+      "seed": 12021,
+      "width": 960,
+      "height": 720,
+      "css_width": 533.328125,
+      "css_height": 399.984375,
+      "device_pixel_ratio": 1,
+      "instruction": "Move the pointer to the button labeled \"Opal\". Do not click.",
+      "expected_action": "move",
+      "target_id": "button-6",
+      "target_label": "Opal",
+      "target_size": "large",
+      "boxes": [
+        {
+          "id": "button-1",
+          "label": "Fern",
+          "x": 433.875,
+          "y": 340.53125,
+          "w": 48.328125,
+          "h": 14.4375
+        },
+        {
+          "id": "button-2",
+          "label": "Echo",
+          "x": 289.984375,
+          "y": 273.3125,
+          "w": 66.65625,
+          "h": 21.109375
+        },
+        {
+          "id": "button-3",
+          "label": "Aspen",
+          "x": 148.328125,
+          "y": 191.09375,
+          "w": 90.546875,
+          "h": 27.765625
+        },
+        {
+          "id": "button-4",
+          "label": "Brook",
+          "x": 318.328125,
+          "y": 41.65625,
+          "w": 46.109375,
+          "h": 14.4375
+        },
+        {
+          "id": "button-5",
+          "label": "Cobalt",
+          "x": 187.21875,
+          "y": 20.546875,
+          "w": 64.4375,
+          "h": 21.109375
+        },
+        {
+          "id": "button-6",
+          "label": "Opal",
+          "x": 22.21875,
+          "y": 47.765625,
+          "w": 93.328125,
+          "h": 27.765625
+        },
+        {
+          "id": "button-7",
+          "label": "Pine",
+          "x": 464.984375,
+          "y": 228.875,
+          "w": 41.109375,
+          "h": 14.4375
+        },
+        {
+          "id": "button-8",
+          "label": "Lotus",
+          "x": 421.09375,
+          "y": 90.546875,
+          "w": 63.875,
+          "h": 21.109375
+        },
+        {
+          "id": "button-9",
+          "label": "Nova",
+          "x": 271.09375,
+          "y": 179.984375,
+          "w": 93.875,
+          "h": 27.765625
+        },
+        {
+          "id": "button-10",
+          "label": "Amber",
+          "x": 78.328125,
+          "y": 194.421875,
+          "w": 48.328125,
+          "h": 14.4375
+        },
+        {
+          "id": "button-11",
+          "label": "Flint",
+          "x": 52.765625,
+          "y": 296.640625,
+          "w": 62.21875,
+          "h": 21.109375
+        },
+        {
+          "id": "button-12",
+          "label": "Zinc",
+          "x": 152.765625,
+          "y": 323.875,
+          "w": 91.65625,
+          "h": 27.765625
+        }
+      ],
+      "native_targets": [
+        {
+          "id": "button-1",
+          "label": "Fern",
+          "x": 781,
+          "y": 613,
+          "w": 87,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-2",
+          "label": "Echo",
+          "x": 522,
+          "y": 492,
+          "w": 120,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-3",
+          "label": "Aspen",
+          "x": 267,
+          "y": 344,
+          "w": 163,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        },
+        {
+          "id": "button-4",
+          "label": "Brook",
+          "x": 573,
+          "y": 75,
+          "w": 83,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-5",
+          "label": "Cobalt",
+          "x": 337,
+          "y": 37,
+          "w": 116,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        },
+        {
+          "id": "button-6",
+          "label": "Opal",
+          "x": 40,
+          "y": 86,
+          "w": 168,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        },
+        {
+          "id": "button-7",
+          "label": "Pine",
+          "x": 837,
+          "y": 412,
+          "w": 74,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-8",
+          "label": "Lotus",
+          "x": 758,
+          "y": 163,
+          "w": 115,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-9",
+          "label": "Nova",
+          "x": 488,
+          "y": 324,
+          "w": 169,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-10",
+          "label": "Amber",
+          "x": 141,
+          "y": 350,
+          "w": 87,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-11",
+          "label": "Flint",
+          "x": 95,
+          "y": 534,
+          "w": 112,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-12",
+          "label": "Zinc",
+          "x": 275,
+          "y": 583,
+          "w": 165,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        }
+      ],
+      "screenshot_sha256": "2445eab46f157714cfcc57af1caf881a0b4d70f6e2c7f87dc7c208f8668fed36",
+      "screen_metadata": {
+        "width": 1200,
+        "height": 1100,
+        "devicePixelRatio": 1
+      }
+    },
+    {
+      "case_id": "ui-case-018",
+      "fixture": "interactive-lab",
+      "seed": 12021,
+      "width": 960,
+      "height": 720,
+      "css_width": 533.328125,
+      "css_height": 399.984375,
+      "device_pixel_ratio": 1,
+      "instruction": "Click the button labeled \"Flint\".",
+      "expected_action": "click",
+      "target_id": "button-11",
+      "target_label": "Flint",
+      "target_size": "medium",
+      "boxes": [
+        {
+          "id": "button-1",
+          "label": "Fern",
+          "x": 433.875,
+          "y": 340.53125,
+          "w": 48.328125,
+          "h": 14.4375
+        },
+        {
+          "id": "button-2",
+          "label": "Echo",
+          "x": 289.984375,
+          "y": 273.3125,
+          "w": 66.65625,
+          "h": 21.109375
+        },
+        {
+          "id": "button-3",
+          "label": "Aspen",
+          "x": 148.328125,
+          "y": 191.09375,
+          "w": 90.546875,
+          "h": 27.765625
+        },
+        {
+          "id": "button-4",
+          "label": "Brook",
+          "x": 318.328125,
+          "y": 41.65625,
+          "w": 46.109375,
+          "h": 14.4375
+        },
+        {
+          "id": "button-5",
+          "label": "Cobalt",
+          "x": 187.21875,
+          "y": 20.546875,
+          "w": 64.4375,
+          "h": 21.109375
+        },
+        {
+          "id": "button-6",
+          "label": "Opal",
+          "x": 22.21875,
+          "y": 47.765625,
+          "w": 93.328125,
+          "h": 27.765625
+        },
+        {
+          "id": "button-7",
+          "label": "Pine",
+          "x": 464.984375,
+          "y": 228.875,
+          "w": 41.109375,
+          "h": 14.4375
+        },
+        {
+          "id": "button-8",
+          "label": "Lotus",
+          "x": 421.09375,
+          "y": 90.546875,
+          "w": 63.875,
+          "h": 21.109375
+        },
+        {
+          "id": "button-9",
+          "label": "Nova",
+          "x": 271.09375,
+          "y": 179.984375,
+          "w": 93.875,
+          "h": 27.765625
+        },
+        {
+          "id": "button-10",
+          "label": "Amber",
+          "x": 78.328125,
+          "y": 194.421875,
+          "w": 48.328125,
+          "h": 14.4375
+        },
+        {
+          "id": "button-11",
+          "label": "Flint",
+          "x": 52.765625,
+          "y": 296.640625,
+          "w": 62.21875,
+          "h": 21.109375
+        },
+        {
+          "id": "button-12",
+          "label": "Zinc",
+          "x": 152.765625,
+          "y": 323.875,
+          "w": 91.65625,
+          "h": 27.765625
+        }
+      ],
+      "native_targets": [
+        {
+          "id": "button-1",
+          "label": "Fern",
+          "x": 781,
+          "y": 613,
+          "w": 87,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-2",
+          "label": "Echo",
+          "x": 522,
+          "y": 492,
+          "w": 120,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-3",
+          "label": "Aspen",
+          "x": 267,
+          "y": 344,
+          "w": 163,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        },
+        {
+          "id": "button-4",
+          "label": "Brook",
+          "x": 573,
+          "y": 75,
+          "w": 83,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-5",
+          "label": "Cobalt",
+          "x": 337,
+          "y": 37,
+          "w": 116,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        },
+        {
+          "id": "button-6",
+          "label": "Opal",
+          "x": 40,
+          "y": 86,
+          "w": 168,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        },
+        {
+          "id": "button-7",
+          "label": "Pine",
+          "x": 837,
+          "y": 412,
+          "w": 74,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-8",
+          "label": "Lotus",
+          "x": 758,
+          "y": 163,
+          "w": 115,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-9",
+          "label": "Nova",
+          "x": 488,
+          "y": 324,
+          "w": 169,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-10",
+          "label": "Amber",
+          "x": 141,
+          "y": 350,
+          "w": 87,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-11",
+          "label": "Flint",
+          "x": 95,
+          "y": 534,
+          "w": 112,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-12",
+          "label": "Zinc",
+          "x": 275,
+          "y": 583,
+          "w": 165,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        }
+      ],
+      "screenshot_sha256": "2445eab46f157714cfcc57af1caf881a0b4d70f6e2c7f87dc7c208f8668fed36",
+      "screen_metadata": {
+        "width": 1200,
+        "height": 1100,
+        "devicePixelRatio": 1
+      }
+    },
+    {
+      "case_id": "ui-case-019",
+      "fixture": "interactive-lab",
+      "seed": 12021,
+      "width": 960,
+      "height": 720,
+      "css_width": 533.328125,
+      "css_height": 399.984375,
+      "device_pixel_ratio": 1,
+      "instruction": "Move the pointer to the button labeled \"Brook\". Do not click.",
+      "expected_action": "move",
+      "target_id": "button-4",
+      "target_label": "Brook",
+      "target_size": "small",
+      "boxes": [
+        {
+          "id": "button-1",
+          "label": "Fern",
+          "x": 433.875,
+          "y": 340.53125,
+          "w": 48.328125,
+          "h": 14.4375
+        },
+        {
+          "id": "button-2",
+          "label": "Echo",
+          "x": 289.984375,
+          "y": 273.3125,
+          "w": 66.65625,
+          "h": 21.109375
+        },
+        {
+          "id": "button-3",
+          "label": "Aspen",
+          "x": 148.328125,
+          "y": 191.09375,
+          "w": 90.546875,
+          "h": 27.765625
+        },
+        {
+          "id": "button-4",
+          "label": "Brook",
+          "x": 318.328125,
+          "y": 41.65625,
+          "w": 46.109375,
+          "h": 14.4375
+        },
+        {
+          "id": "button-5",
+          "label": "Cobalt",
+          "x": 187.21875,
+          "y": 20.546875,
+          "w": 64.4375,
+          "h": 21.109375
+        },
+        {
+          "id": "button-6",
+          "label": "Opal",
+          "x": 22.21875,
+          "y": 47.765625,
+          "w": 93.328125,
+          "h": 27.765625
+        },
+        {
+          "id": "button-7",
+          "label": "Pine",
+          "x": 464.984375,
+          "y": 228.875,
+          "w": 41.109375,
+          "h": 14.4375
+        },
+        {
+          "id": "button-8",
+          "label": "Lotus",
+          "x": 421.09375,
+          "y": 90.546875,
+          "w": 63.875,
+          "h": 21.109375
+        },
+        {
+          "id": "button-9",
+          "label": "Nova",
+          "x": 271.09375,
+          "y": 179.984375,
+          "w": 93.875,
+          "h": 27.765625
+        },
+        {
+          "id": "button-10",
+          "label": "Amber",
+          "x": 78.328125,
+          "y": 194.421875,
+          "w": 48.328125,
+          "h": 14.4375
+        },
+        {
+          "id": "button-11",
+          "label": "Flint",
+          "x": 52.765625,
+          "y": 296.640625,
+          "w": 62.21875,
+          "h": 21.109375
+        },
+        {
+          "id": "button-12",
+          "label": "Zinc",
+          "x": 152.765625,
+          "y": 323.875,
+          "w": 91.65625,
+          "h": 27.765625
+        }
+      ],
+      "native_targets": [
+        {
+          "id": "button-1",
+          "label": "Fern",
+          "x": 781,
+          "y": 613,
+          "w": 87,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-2",
+          "label": "Echo",
+          "x": 522,
+          "y": 492,
+          "w": 120,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-3",
+          "label": "Aspen",
+          "x": 267,
+          "y": 344,
+          "w": 163,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        },
+        {
+          "id": "button-4",
+          "label": "Brook",
+          "x": 573,
+          "y": 75,
+          "w": 83,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-5",
+          "label": "Cobalt",
+          "x": 337,
+          "y": 37,
+          "w": 116,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        },
+        {
+          "id": "button-6",
+          "label": "Opal",
+          "x": 40,
+          "y": 86,
+          "w": 168,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        },
+        {
+          "id": "button-7",
+          "label": "Pine",
+          "x": 837,
+          "y": 412,
+          "w": 74,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-8",
+          "label": "Lotus",
+          "x": 758,
+          "y": 163,
+          "w": 115,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-9",
+          "label": "Nova",
+          "x": 488,
+          "y": 324,
+          "w": 169,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-10",
+          "label": "Amber",
+          "x": 141,
+          "y": 350,
+          "w": 87,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-11",
+          "label": "Flint",
+          "x": 95,
+          "y": 534,
+          "w": 112,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-12",
+          "label": "Zinc",
+          "x": 275,
+          "y": 583,
+          "w": 165,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        }
+      ],
+      "screenshot_sha256": "2445eab46f157714cfcc57af1caf881a0b4d70f6e2c7f87dc7c208f8668fed36",
+      "screen_metadata": {
+        "width": 1200,
+        "height": 1100,
+        "devicePixelRatio": 1
+      }
+    },
+    {
+      "case_id": "ui-case-020",
+      "fixture": "interactive-lab",
+      "seed": 12022,
+      "width": 2560,
+      "height": 1440,
+      "css_width": 711.109375,
+      "css_height": 399.984375,
+      "device_pixel_ratio": 2,
+      "instruction": "Click the button labeled \"Sage\".",
+      "expected_action": "click",
+      "target_id": "button-10",
+      "target_label": "Sage",
+      "target_size": "small",
+      "boxes": [
+        {
+          "id": "button-1",
+          "label": "Zinc",
+          "x": 364.71875,
+          "y": 142.203125,
+          "w": 24.15625,
+          "h": 7.21875
+        },
+        {
+          "id": "button-2",
+          "label": "Echo",
+          "x": 22.484375,
+          "y": 193.875,
+          "w": 34.4375,
+          "h": 10.546875
+        },
+        {
+          "id": "button-3",
+          "label": "Aspen",
+          "x": 572.484375,
+          "y": 377.203125,
+          "w": 43.609375,
+          "h": 13.875
+        },
+        {
+          "id": "button-4",
+          "label": "Lotus",
+          "x": 320.828125,
+          "y": 360.53125,
+          "w": 22.484375,
+          "h": 7.21875
+        },
+        {
+          "id": "button-5",
+          "label": "Nova",
+          "x": 66.65625,
+          "y": 317.75,
+          "w": 35.546875,
+          "h": 10.546875
+        },
+        {
+          "id": "button-6",
+          "label": "Moss",
+          "x": 559.984375,
+          "y": 144.4375,
+          "w": 47.21875,
+          "h": 13.875
+        },
+        {
+          "id": "button-7",
+          "label": "Jade",
+          "x": 626.375,
+          "y": 110.546875,
+          "w": 22.484375,
+          "h": 7.21875
+        },
+        {
+          "id": "button-8",
+          "label": "Birch",
+          "x": 449.15625,
+          "y": 14.15625,
+          "w": 32.484375,
+          "h": 10.546875
+        },
+        {
+          "id": "button-9",
+          "label": "Quartz",
+          "x": 284.984375,
+          "y": 197.765625,
+          "w": 43.609375,
+          "h": 13.875
+        },
+        {
+          "id": "button-10",
+          "label": "Sage",
+          "x": 308.609375,
+          "y": 37.484375,
+          "w": 19.984375,
+          "h": 7.21875
+        },
+        {
+          "id": "button-11",
+          "label": "Flint",
+          "x": 383.046875,
+          "y": 361.640625,
+          "w": 35.265625,
+          "h": 10.546875
+        },
+        {
+          "id": "button-12",
+          "label": "Iris",
+          "x": 112.484375,
+          "y": 14.4375,
+          "w": 45.265625,
+          "h": 13.875
+        }
+      ],
+      "native_targets": [
+        {
+          "id": "button-1",
+          "label": "Zinc",
+          "x": 1313,
+          "y": 512,
+          "w": 87,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-2",
+          "label": "Echo",
+          "x": 81,
+          "y": 698,
+          "w": 124,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-3",
+          "label": "Aspen",
+          "x": 2061,
+          "y": 1358,
+          "w": 157,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        },
+        {
+          "id": "button-4",
+          "label": "Lotus",
+          "x": 1155,
+          "y": 1298,
+          "w": 81,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-5",
+          "label": "Nova",
+          "x": 240,
+          "y": 1144,
+          "w": 128,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-6",
+          "label": "Moss",
+          "x": 2016,
+          "y": 520,
+          "w": 170,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        },
+        {
+          "id": "button-7",
+          "label": "Jade",
+          "x": 2255,
+          "y": 398,
+          "w": 81,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-8",
+          "label": "Birch",
+          "x": 1617,
+          "y": 51,
+          "w": 117,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#f4edff",
+          "border": "#d9c5ee",
+          "color": "#78539e"
+        },
+        {
+          "id": "button-9",
+          "label": "Quartz",
+          "x": 1026,
+          "y": 712,
+          "w": 157,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-10",
+          "label": "Sage",
+          "x": 1111,
+          "y": 135,
+          "w": 72,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-11",
+          "label": "Flint",
+          "x": 1379,
+          "y": 1302,
+          "w": 127,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-12",
+          "label": "Iris",
+          "x": 405,
+          "y": 52,
+          "w": 163,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#f4edff",
+          "border": "#d9c5ee",
+          "color": "#78539e"
+        }
+      ],
+      "screenshot_sha256": "39f2f45629e6abc1341d4073676106adb6420d77de0f22c451a2297dad073d30",
+      "screen_metadata": {
+        "width": 1440,
+        "height": 1100,
+        "devicePixelRatio": 2
+      }
+    },
+    {
+      "case_id": "ui-case-021",
+      "fixture": "interactive-lab",
+      "seed": 12022,
+      "width": 2560,
+      "height": 1440,
+      "css_width": 711.109375,
+      "css_height": 399.984375,
+      "device_pixel_ratio": 2,
+      "instruction": "Move the pointer to the button labeled \"Aspen\". Do not click.",
+      "expected_action": "move",
+      "target_id": "button-3",
+      "target_label": "Aspen",
+      "target_size": "large",
+      "boxes": [
+        {
+          "id": "button-1",
+          "label": "Zinc",
+          "x": 364.71875,
+          "y": 142.203125,
+          "w": 24.15625,
+          "h": 7.21875
+        },
+        {
+          "id": "button-2",
+          "label": "Echo",
+          "x": 22.484375,
+          "y": 193.875,
+          "w": 34.4375,
+          "h": 10.546875
+        },
+        {
+          "id": "button-3",
+          "label": "Aspen",
+          "x": 572.484375,
+          "y": 377.203125,
+          "w": 43.609375,
+          "h": 13.875
+        },
+        {
+          "id": "button-4",
+          "label": "Lotus",
+          "x": 320.828125,
+          "y": 360.53125,
+          "w": 22.484375,
+          "h": 7.21875
+        },
+        {
+          "id": "button-5",
+          "label": "Nova",
+          "x": 66.65625,
+          "y": 317.75,
+          "w": 35.546875,
+          "h": 10.546875
+        },
+        {
+          "id": "button-6",
+          "label": "Moss",
+          "x": 559.984375,
+          "y": 144.4375,
+          "w": 47.21875,
+          "h": 13.875
+        },
+        {
+          "id": "button-7",
+          "label": "Jade",
+          "x": 626.375,
+          "y": 110.546875,
+          "w": 22.484375,
+          "h": 7.21875
+        },
+        {
+          "id": "button-8",
+          "label": "Birch",
+          "x": 449.15625,
+          "y": 14.15625,
+          "w": 32.484375,
+          "h": 10.546875
+        },
+        {
+          "id": "button-9",
+          "label": "Quartz",
+          "x": 284.984375,
+          "y": 197.765625,
+          "w": 43.609375,
+          "h": 13.875
+        },
+        {
+          "id": "button-10",
+          "label": "Sage",
+          "x": 308.609375,
+          "y": 37.484375,
+          "w": 19.984375,
+          "h": 7.21875
+        },
+        {
+          "id": "button-11",
+          "label": "Flint",
+          "x": 383.046875,
+          "y": 361.640625,
+          "w": 35.265625,
+          "h": 10.546875
+        },
+        {
+          "id": "button-12",
+          "label": "Iris",
+          "x": 112.484375,
+          "y": 14.4375,
+          "w": 45.265625,
+          "h": 13.875
+        }
+      ],
+      "native_targets": [
+        {
+          "id": "button-1",
+          "label": "Zinc",
+          "x": 1313,
+          "y": 512,
+          "w": 87,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-2",
+          "label": "Echo",
+          "x": 81,
+          "y": 698,
+          "w": 124,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-3",
+          "label": "Aspen",
+          "x": 2061,
+          "y": 1358,
+          "w": 157,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        },
+        {
+          "id": "button-4",
+          "label": "Lotus",
+          "x": 1155,
+          "y": 1298,
+          "w": 81,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-5",
+          "label": "Nova",
+          "x": 240,
+          "y": 1144,
+          "w": 128,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-6",
+          "label": "Moss",
+          "x": 2016,
+          "y": 520,
+          "w": 170,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        },
+        {
+          "id": "button-7",
+          "label": "Jade",
+          "x": 2255,
+          "y": 398,
+          "w": 81,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-8",
+          "label": "Birch",
+          "x": 1617,
+          "y": 51,
+          "w": 117,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#f4edff",
+          "border": "#d9c5ee",
+          "color": "#78539e"
+        },
+        {
+          "id": "button-9",
+          "label": "Quartz",
+          "x": 1026,
+          "y": 712,
+          "w": 157,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-10",
+          "label": "Sage",
+          "x": 1111,
+          "y": 135,
+          "w": 72,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-11",
+          "label": "Flint",
+          "x": 1379,
+          "y": 1302,
+          "w": 127,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-12",
+          "label": "Iris",
+          "x": 405,
+          "y": 52,
+          "w": 163,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#f4edff",
+          "border": "#d9c5ee",
+          "color": "#78539e"
+        }
+      ],
+      "screenshot_sha256": "39f2f45629e6abc1341d4073676106adb6420d77de0f22c451a2297dad073d30",
+      "screen_metadata": {
+        "width": 1440,
+        "height": 1100,
+        "devicePixelRatio": 2
+      }
+    },
+    {
+      "case_id": "ui-case-022",
+      "fixture": "interactive-lab",
+      "seed": 12022,
+      "width": 2560,
+      "height": 1440,
+      "css_width": 711.109375,
+      "css_height": 399.984375,
+      "device_pixel_ratio": 2,
+      "instruction": "Click the button labeled \"Birch\".",
+      "expected_action": "click",
+      "target_id": "button-8",
+      "target_label": "Birch",
+      "target_size": "medium",
+      "boxes": [
+        {
+          "id": "button-1",
+          "label": "Zinc",
+          "x": 364.71875,
+          "y": 142.203125,
+          "w": 24.15625,
+          "h": 7.21875
+        },
+        {
+          "id": "button-2",
+          "label": "Echo",
+          "x": 22.484375,
+          "y": 193.875,
+          "w": 34.4375,
+          "h": 10.546875
+        },
+        {
+          "id": "button-3",
+          "label": "Aspen",
+          "x": 572.484375,
+          "y": 377.203125,
+          "w": 43.609375,
+          "h": 13.875
+        },
+        {
+          "id": "button-4",
+          "label": "Lotus",
+          "x": 320.828125,
+          "y": 360.53125,
+          "w": 22.484375,
+          "h": 7.21875
+        },
+        {
+          "id": "button-5",
+          "label": "Nova",
+          "x": 66.65625,
+          "y": 317.75,
+          "w": 35.546875,
+          "h": 10.546875
+        },
+        {
+          "id": "button-6",
+          "label": "Moss",
+          "x": 559.984375,
+          "y": 144.4375,
+          "w": 47.21875,
+          "h": 13.875
+        },
+        {
+          "id": "button-7",
+          "label": "Jade",
+          "x": 626.375,
+          "y": 110.546875,
+          "w": 22.484375,
+          "h": 7.21875
+        },
+        {
+          "id": "button-8",
+          "label": "Birch",
+          "x": 449.15625,
+          "y": 14.15625,
+          "w": 32.484375,
+          "h": 10.546875
+        },
+        {
+          "id": "button-9",
+          "label": "Quartz",
+          "x": 284.984375,
+          "y": 197.765625,
+          "w": 43.609375,
+          "h": 13.875
+        },
+        {
+          "id": "button-10",
+          "label": "Sage",
+          "x": 308.609375,
+          "y": 37.484375,
+          "w": 19.984375,
+          "h": 7.21875
+        },
+        {
+          "id": "button-11",
+          "label": "Flint",
+          "x": 383.046875,
+          "y": 361.640625,
+          "w": 35.265625,
+          "h": 10.546875
+        },
+        {
+          "id": "button-12",
+          "label": "Iris",
+          "x": 112.484375,
+          "y": 14.4375,
+          "w": 45.265625,
+          "h": 13.875
+        }
+      ],
+      "native_targets": [
+        {
+          "id": "button-1",
+          "label": "Zinc",
+          "x": 1313,
+          "y": 512,
+          "w": 87,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-2",
+          "label": "Echo",
+          "x": 81,
+          "y": 698,
+          "w": 124,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-3",
+          "label": "Aspen",
+          "x": 2061,
+          "y": 1358,
+          "w": 157,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        },
+        {
+          "id": "button-4",
+          "label": "Lotus",
+          "x": 1155,
+          "y": 1298,
+          "w": 81,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-5",
+          "label": "Nova",
+          "x": 240,
+          "y": 1144,
+          "w": 128,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-6",
+          "label": "Moss",
+          "x": 2016,
+          "y": 520,
+          "w": 170,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        },
+        {
+          "id": "button-7",
+          "label": "Jade",
+          "x": 2255,
+          "y": 398,
+          "w": 81,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-8",
+          "label": "Birch",
+          "x": 1617,
+          "y": 51,
+          "w": 117,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#f4edff",
+          "border": "#d9c5ee",
+          "color": "#78539e"
+        },
+        {
+          "id": "button-9",
+          "label": "Quartz",
+          "x": 1026,
+          "y": 712,
+          "w": 157,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-10",
+          "label": "Sage",
+          "x": 1111,
+          "y": 135,
+          "w": 72,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-11",
+          "label": "Flint",
+          "x": 1379,
+          "y": 1302,
+          "w": 127,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-12",
+          "label": "Iris",
+          "x": 405,
+          "y": 52,
+          "w": 163,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#f4edff",
+          "border": "#d9c5ee",
+          "color": "#78539e"
+        }
+      ],
+      "screenshot_sha256": "39f2f45629e6abc1341d4073676106adb6420d77de0f22c451a2297dad073d30",
+      "screen_metadata": {
+        "width": 1440,
+        "height": 1100,
+        "devicePixelRatio": 2
+      }
+    },
+    {
+      "case_id": "ui-case-023",
+      "fixture": "interactive-lab",
+      "seed": 12022,
+      "width": 2560,
+      "height": 1440,
+      "css_width": 711.109375,
+      "css_height": 399.984375,
+      "device_pixel_ratio": 2,
+      "instruction": "Move the pointer to the button labeled \"Zinc\". Do not click.",
+      "expected_action": "move",
+      "target_id": "button-1",
+      "target_label": "Zinc",
+      "target_size": "small",
+      "boxes": [
+        {
+          "id": "button-1",
+          "label": "Zinc",
+          "x": 364.71875,
+          "y": 142.203125,
+          "w": 24.15625,
+          "h": 7.21875
+        },
+        {
+          "id": "button-2",
+          "label": "Echo",
+          "x": 22.484375,
+          "y": 193.875,
+          "w": 34.4375,
+          "h": 10.546875
+        },
+        {
+          "id": "button-3",
+          "label": "Aspen",
+          "x": 572.484375,
+          "y": 377.203125,
+          "w": 43.609375,
+          "h": 13.875
+        },
+        {
+          "id": "button-4",
+          "label": "Lotus",
+          "x": 320.828125,
+          "y": 360.53125,
+          "w": 22.484375,
+          "h": 7.21875
+        },
+        {
+          "id": "button-5",
+          "label": "Nova",
+          "x": 66.65625,
+          "y": 317.75,
+          "w": 35.546875,
+          "h": 10.546875
+        },
+        {
+          "id": "button-6",
+          "label": "Moss",
+          "x": 559.984375,
+          "y": 144.4375,
+          "w": 47.21875,
+          "h": 13.875
+        },
+        {
+          "id": "button-7",
+          "label": "Jade",
+          "x": 626.375,
+          "y": 110.546875,
+          "w": 22.484375,
+          "h": 7.21875
+        },
+        {
+          "id": "button-8",
+          "label": "Birch",
+          "x": 449.15625,
+          "y": 14.15625,
+          "w": 32.484375,
+          "h": 10.546875
+        },
+        {
+          "id": "button-9",
+          "label": "Quartz",
+          "x": 284.984375,
+          "y": 197.765625,
+          "w": 43.609375,
+          "h": 13.875
+        },
+        {
+          "id": "button-10",
+          "label": "Sage",
+          "x": 308.609375,
+          "y": 37.484375,
+          "w": 19.984375,
+          "h": 7.21875
+        },
+        {
+          "id": "button-11",
+          "label": "Flint",
+          "x": 383.046875,
+          "y": 361.640625,
+          "w": 35.265625,
+          "h": 10.546875
+        },
+        {
+          "id": "button-12",
+          "label": "Iris",
+          "x": 112.484375,
+          "y": 14.4375,
+          "w": 45.265625,
+          "h": 13.875
+        }
+      ],
+      "native_targets": [
+        {
+          "id": "button-1",
+          "label": "Zinc",
+          "x": 1313,
+          "y": 512,
+          "w": 87,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-2",
+          "label": "Echo",
+          "x": 81,
+          "y": 698,
+          "w": 124,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-3",
+          "label": "Aspen",
+          "x": 2061,
+          "y": 1358,
+          "w": 157,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        },
+        {
+          "id": "button-4",
+          "label": "Lotus",
+          "x": 1155,
+          "y": 1298,
+          "w": 81,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-5",
+          "label": "Nova",
+          "x": 240,
+          "y": 1144,
+          "w": 128,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-6",
+          "label": "Moss",
+          "x": 2016,
+          "y": 520,
+          "w": 170,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        },
+        {
+          "id": "button-7",
+          "label": "Jade",
+          "x": 2255,
+          "y": 398,
+          "w": 81,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-8",
+          "label": "Birch",
+          "x": 1617,
+          "y": 51,
+          "w": 117,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#f4edff",
+          "border": "#d9c5ee",
+          "color": "#78539e"
+        },
+        {
+          "id": "button-9",
+          "label": "Quartz",
+          "x": 1026,
+          "y": 712,
+          "w": 157,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-10",
+          "label": "Sage",
+          "x": 1111,
+          "y": 135,
+          "w": 72,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-11",
+          "label": "Flint",
+          "x": 1379,
+          "y": 1302,
+          "w": 127,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-12",
+          "label": "Iris",
+          "x": 405,
+          "y": 52,
+          "w": 163,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#f4edff",
+          "border": "#d9c5ee",
+          "color": "#78539e"
+        }
+      ],
+      "screenshot_sha256": "39f2f45629e6abc1341d4073676106adb6420d77de0f22c451a2297dad073d30",
+      "screen_metadata": {
+        "width": 1440,
+        "height": 1100,
+        "devicePixelRatio": 2
+      }
+    },
+    {
+      "case_id": "ui-case-024",
+      "fixture": "interactive-lab",
+      "seed": 12023,
+      "width": 1280,
+      "height": 480,
+      "css_width": 1066.65625,
+      "css_height": 399.984375,
+      "device_pixel_ratio": 1,
+      "instruction": "Click the button labeled \"Olive\".",
+      "expected_action": "click",
+      "target_id": "button-7",
+      "target_label": "Olive",
+      "target_size": "small",
+      "boxes": [
+        {
+          "id": "button-1",
+          "label": "Aspen",
+          "x": 84.15625,
+          "y": 208.3125,
+          "w": 71.65625,
+          "h": 21.65625
+        },
+        {
+          "id": "button-2",
+          "label": "Zinc",
+          "x": 491.65625,
+          "y": 62.484375,
+          "w": 96.65625,
+          "h": 31.65625
+        },
+        {
+          "id": "button-3",
+          "label": "Iris",
+          "x": 499.15625,
+          "y": 298.3125,
+          "w": 131.65625,
+          "h": 41.65625
+        },
+        {
+          "id": "button-4",
+          "label": "Harbor",
+          "x": 744.15625,
+          "y": 301.640625,
+          "w": 71.65625,
+          "h": 21.65625
+        },
+        {
+          "id": "button-5",
+          "label": "Quartz",
+          "x": 720.8125,
+          "y": 194.15625,
+          "w": 94.15625,
+          "h": 31.65625
+        },
+        {
+          "id": "button-6",
+          "label": "Opal",
+          "x": 856.65625,
+          "y": 39.15625,
+          "w": 143.328125,
+          "h": 41.65625
+        },
+        {
+          "id": "button-7",
+          "label": "Olive",
+          "x": 134.15625,
+          "y": 284.140625,
+          "w": 66.65625,
+          "h": 21.65625
+        },
+        {
+          "id": "button-8",
+          "label": "Garnet",
+          "x": 868.3125,
+          "y": 150.8125,
+          "w": 98.328125,
+          "h": 31.65625
+        },
+        {
+          "id": "button-9",
+          "label": "Maple",
+          "x": 49.984375,
+          "y": 91.65625,
+          "w": 136.65625,
+          "h": 41.65625
+        },
+        {
+          "id": "button-10",
+          "label": "Juniper",
+          "x": 675.8125,
+          "y": 82.484375,
+          "w": 64.984375,
+          "h": 21.65625
+        },
+        {
+          "id": "button-11",
+          "label": "Silver",
+          "x": 289.15625,
+          "y": 307.484375,
+          "w": 94.15625,
+          "h": 31.65625
+        },
+        {
+          "id": "button-12",
+          "label": "Fern",
+          "x": 474.15625,
+          "y": 180.8125,
+          "w": 140.828125,
+          "h": 41.65625
+        }
+      ],
+      "native_targets": [
+        {
+          "id": "button-1",
+          "label": "Aspen",
+          "x": 101,
+          "y": 250,
+          "w": 86,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-2",
+          "label": "Zinc",
+          "x": 590,
+          "y": 75,
+          "w": 116,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#f4edff",
+          "border": "#d9c5ee",
+          "color": "#78539e"
+        },
+        {
+          "id": "button-3",
+          "label": "Iris",
+          "x": 599,
+          "y": 358,
+          "w": 158,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        },
+        {
+          "id": "button-4",
+          "label": "Harbor",
+          "x": 893,
+          "y": 362,
+          "w": 86,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-5",
+          "label": "Quartz",
+          "x": 865,
+          "y": 233,
+          "w": 113,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#eaf2ff",
+          "border": "#bdd3f2",
+          "color": "#2b5e9a"
+        },
+        {
+          "id": "button-6",
+          "label": "Opal",
+          "x": 1028,
+          "y": 47,
+          "w": 172,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#f4edff",
+          "border": "#d9c5ee",
+          "color": "#78539e"
+        },
+        {
+          "id": "button-7",
+          "label": "Olive",
+          "x": 161,
+          "y": 341,
+          "w": 80,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-8",
+          "label": "Garnet",
+          "x": 1042,
+          "y": 181,
+          "w": 118,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-9",
+          "label": "Maple",
+          "x": 60,
+          "y": 110,
+          "w": 164,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-10",
+          "label": "Juniper",
+          "x": 811,
+          "y": 99,
+          "w": 78,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-11",
+          "label": "Silver",
+          "x": 347,
+          "y": 369,
+          "w": 113,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        },
+        {
+          "id": "button-12",
+          "label": "Fern",
+          "x": 569,
+          "y": 217,
+          "w": 169,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        }
+      ],
+      "screenshot_sha256": "cd1175698e57799c74e51b9d5a2018c052ccdc7f1b43d58338c9af817af494af",
+      "screen_metadata": {
+        "width": 1440,
+        "height": 1100,
+        "devicePixelRatio": 1
+      }
+    },
+    {
+      "case_id": "ui-case-025",
+      "fixture": "interactive-lab",
+      "seed": 12023,
+      "width": 1280,
+      "height": 480,
+      "css_width": 1066.65625,
+      "css_height": 399.984375,
+      "device_pixel_ratio": 1,
+      "instruction": "Move the pointer to the button labeled \"Fern\". Do not click.",
+      "expected_action": "move",
+      "target_id": "button-12",
+      "target_label": "Fern",
+      "target_size": "large",
+      "boxes": [
+        {
+          "id": "button-1",
+          "label": "Aspen",
+          "x": 84.15625,
+          "y": 208.3125,
+          "w": 71.65625,
+          "h": 21.65625
+        },
+        {
+          "id": "button-2",
+          "label": "Zinc",
+          "x": 491.65625,
+          "y": 62.484375,
+          "w": 96.65625,
+          "h": 31.65625
+        },
+        {
+          "id": "button-3",
+          "label": "Iris",
+          "x": 499.15625,
+          "y": 298.3125,
+          "w": 131.65625,
+          "h": 41.65625
+        },
+        {
+          "id": "button-4",
+          "label": "Harbor",
+          "x": 744.15625,
+          "y": 301.640625,
+          "w": 71.65625,
+          "h": 21.65625
+        },
+        {
+          "id": "button-5",
+          "label": "Quartz",
+          "x": 720.8125,
+          "y": 194.15625,
+          "w": 94.15625,
+          "h": 31.65625
+        },
+        {
+          "id": "button-6",
+          "label": "Opal",
+          "x": 856.65625,
+          "y": 39.15625,
+          "w": 143.328125,
+          "h": 41.65625
+        },
+        {
+          "id": "button-7",
+          "label": "Olive",
+          "x": 134.15625,
+          "y": 284.140625,
+          "w": 66.65625,
+          "h": 21.65625
+        },
+        {
+          "id": "button-8",
+          "label": "Garnet",
+          "x": 868.3125,
+          "y": 150.8125,
+          "w": 98.328125,
+          "h": 31.65625
+        },
+        {
+          "id": "button-9",
+          "label": "Maple",
+          "x": 49.984375,
+          "y": 91.65625,
+          "w": 136.65625,
+          "h": 41.65625
+        },
+        {
+          "id": "button-10",
+          "label": "Juniper",
+          "x": 675.8125,
+          "y": 82.484375,
+          "w": 64.984375,
+          "h": 21.65625
+        },
+        {
+          "id": "button-11",
+          "label": "Silver",
+          "x": 289.15625,
+          "y": 307.484375,
+          "w": 94.15625,
+          "h": 31.65625
+        },
+        {
+          "id": "button-12",
+          "label": "Fern",
+          "x": 474.15625,
+          "y": 180.8125,
+          "w": 140.828125,
+          "h": 41.65625
+        }
+      ],
+      "native_targets": [
+        {
+          "id": "button-1",
+          "label": "Aspen",
+          "x": 101,
+          "y": 250,
+          "w": 86,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-2",
+          "label": "Zinc",
+          "x": 590,
+          "y": 75,
+          "w": 116,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#f4edff",
+          "border": "#d9c5ee",
+          "color": "#78539e"
+        },
+        {
+          "id": "button-3",
+          "label": "Iris",
+          "x": 599,
+          "y": 358,
+          "w": 158,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        },
+        {
+          "id": "button-4",
+          "label": "Harbor",
+          "x": 893,
+          "y": 362,
+          "w": 86,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-5",
+          "label": "Quartz",
+          "x": 865,
+          "y": 233,
+          "w": 113,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#eaf2ff",
+          "border": "#bdd3f2",
+          "color": "#2b5e9a"
+        },
+        {
+          "id": "button-6",
+          "label": "Opal",
+          "x": 1028,
+          "y": 47,
+          "w": 172,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#f4edff",
+          "border": "#d9c5ee",
+          "color": "#78539e"
+        },
+        {
+          "id": "button-7",
+          "label": "Olive",
+          "x": 161,
+          "y": 341,
+          "w": 80,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-8",
+          "label": "Garnet",
+          "x": 1042,
+          "y": 181,
+          "w": 118,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-9",
+          "label": "Maple",
+          "x": 60,
+          "y": 110,
+          "w": 164,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-10",
+          "label": "Juniper",
+          "x": 811,
+          "y": 99,
+          "w": 78,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-11",
+          "label": "Silver",
+          "x": 347,
+          "y": 369,
+          "w": 113,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        },
+        {
+          "id": "button-12",
+          "label": "Fern",
+          "x": 569,
+          "y": 217,
+          "w": 169,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        }
+      ],
+      "screenshot_sha256": "cd1175698e57799c74e51b9d5a2018c052ccdc7f1b43d58338c9af817af494af",
+      "screen_metadata": {
+        "width": 1440,
+        "height": 1100,
+        "devicePixelRatio": 1
+      }
+    },
+    {
+      "case_id": "ui-case-026",
+      "fixture": "interactive-lab",
+      "seed": 12023,
+      "width": 1280,
+      "height": 480,
+      "css_width": 1066.65625,
+      "css_height": 399.984375,
+      "device_pixel_ratio": 1,
+      "instruction": "Click the button labeled \"Quartz\".",
+      "expected_action": "click",
+      "target_id": "button-5",
+      "target_label": "Quartz",
+      "target_size": "medium",
+      "boxes": [
+        {
+          "id": "button-1",
+          "label": "Aspen",
+          "x": 84.15625,
+          "y": 208.3125,
+          "w": 71.65625,
+          "h": 21.65625
+        },
+        {
+          "id": "button-2",
+          "label": "Zinc",
+          "x": 491.65625,
+          "y": 62.484375,
+          "w": 96.65625,
+          "h": 31.65625
+        },
+        {
+          "id": "button-3",
+          "label": "Iris",
+          "x": 499.15625,
+          "y": 298.3125,
+          "w": 131.65625,
+          "h": 41.65625
+        },
+        {
+          "id": "button-4",
+          "label": "Harbor",
+          "x": 744.15625,
+          "y": 301.640625,
+          "w": 71.65625,
+          "h": 21.65625
+        },
+        {
+          "id": "button-5",
+          "label": "Quartz",
+          "x": 720.8125,
+          "y": 194.15625,
+          "w": 94.15625,
+          "h": 31.65625
+        },
+        {
+          "id": "button-6",
+          "label": "Opal",
+          "x": 856.65625,
+          "y": 39.15625,
+          "w": 143.328125,
+          "h": 41.65625
+        },
+        {
+          "id": "button-7",
+          "label": "Olive",
+          "x": 134.15625,
+          "y": 284.140625,
+          "w": 66.65625,
+          "h": 21.65625
+        },
+        {
+          "id": "button-8",
+          "label": "Garnet",
+          "x": 868.3125,
+          "y": 150.8125,
+          "w": 98.328125,
+          "h": 31.65625
+        },
+        {
+          "id": "button-9",
+          "label": "Maple",
+          "x": 49.984375,
+          "y": 91.65625,
+          "w": 136.65625,
+          "h": 41.65625
+        },
+        {
+          "id": "button-10",
+          "label": "Juniper",
+          "x": 675.8125,
+          "y": 82.484375,
+          "w": 64.984375,
+          "h": 21.65625
+        },
+        {
+          "id": "button-11",
+          "label": "Silver",
+          "x": 289.15625,
+          "y": 307.484375,
+          "w": 94.15625,
+          "h": 31.65625
+        },
+        {
+          "id": "button-12",
+          "label": "Fern",
+          "x": 474.15625,
+          "y": 180.8125,
+          "w": 140.828125,
+          "h": 41.65625
+        }
+      ],
+      "native_targets": [
+        {
+          "id": "button-1",
+          "label": "Aspen",
+          "x": 101,
+          "y": 250,
+          "w": 86,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-2",
+          "label": "Zinc",
+          "x": 590,
+          "y": 75,
+          "w": 116,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#f4edff",
+          "border": "#d9c5ee",
+          "color": "#78539e"
+        },
+        {
+          "id": "button-3",
+          "label": "Iris",
+          "x": 599,
+          "y": 358,
+          "w": 158,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        },
+        {
+          "id": "button-4",
+          "label": "Harbor",
+          "x": 893,
+          "y": 362,
+          "w": 86,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-5",
+          "label": "Quartz",
+          "x": 865,
+          "y": 233,
+          "w": 113,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#eaf2ff",
+          "border": "#bdd3f2",
+          "color": "#2b5e9a"
+        },
+        {
+          "id": "button-6",
+          "label": "Opal",
+          "x": 1028,
+          "y": 47,
+          "w": 172,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#f4edff",
+          "border": "#d9c5ee",
+          "color": "#78539e"
+        },
+        {
+          "id": "button-7",
+          "label": "Olive",
+          "x": 161,
+          "y": 341,
+          "w": 80,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-8",
+          "label": "Garnet",
+          "x": 1042,
+          "y": 181,
+          "w": 118,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-9",
+          "label": "Maple",
+          "x": 60,
+          "y": 110,
+          "w": 164,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-10",
+          "label": "Juniper",
+          "x": 811,
+          "y": 99,
+          "w": 78,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-11",
+          "label": "Silver",
+          "x": 347,
+          "y": 369,
+          "w": 113,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        },
+        {
+          "id": "button-12",
+          "label": "Fern",
+          "x": 569,
+          "y": 217,
+          "w": 169,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        }
+      ],
+      "screenshot_sha256": "cd1175698e57799c74e51b9d5a2018c052ccdc7f1b43d58338c9af817af494af",
+      "screen_metadata": {
+        "width": 1440,
+        "height": 1100,
+        "devicePixelRatio": 1
+      }
+    },
+    {
+      "case_id": "ui-case-027",
+      "fixture": "interactive-lab",
+      "seed": 12023,
+      "width": 1280,
+      "height": 480,
+      "css_width": 1066.65625,
+      "css_height": 399.984375,
+      "device_pixel_ratio": 1,
+      "instruction": "Move the pointer to the button labeled \"Juniper\". Do not click.",
+      "expected_action": "move",
+      "target_id": "button-10",
+      "target_label": "Juniper",
+      "target_size": "small",
+      "boxes": [
+        {
+          "id": "button-1",
+          "label": "Aspen",
+          "x": 84.15625,
+          "y": 208.3125,
+          "w": 71.65625,
+          "h": 21.65625
+        },
+        {
+          "id": "button-2",
+          "label": "Zinc",
+          "x": 491.65625,
+          "y": 62.484375,
+          "w": 96.65625,
+          "h": 31.65625
+        },
+        {
+          "id": "button-3",
+          "label": "Iris",
+          "x": 499.15625,
+          "y": 298.3125,
+          "w": 131.65625,
+          "h": 41.65625
+        },
+        {
+          "id": "button-4",
+          "label": "Harbor",
+          "x": 744.15625,
+          "y": 301.640625,
+          "w": 71.65625,
+          "h": 21.65625
+        },
+        {
+          "id": "button-5",
+          "label": "Quartz",
+          "x": 720.8125,
+          "y": 194.15625,
+          "w": 94.15625,
+          "h": 31.65625
+        },
+        {
+          "id": "button-6",
+          "label": "Opal",
+          "x": 856.65625,
+          "y": 39.15625,
+          "w": 143.328125,
+          "h": 41.65625
+        },
+        {
+          "id": "button-7",
+          "label": "Olive",
+          "x": 134.15625,
+          "y": 284.140625,
+          "w": 66.65625,
+          "h": 21.65625
+        },
+        {
+          "id": "button-8",
+          "label": "Garnet",
+          "x": 868.3125,
+          "y": 150.8125,
+          "w": 98.328125,
+          "h": 31.65625
+        },
+        {
+          "id": "button-9",
+          "label": "Maple",
+          "x": 49.984375,
+          "y": 91.65625,
+          "w": 136.65625,
+          "h": 41.65625
+        },
+        {
+          "id": "button-10",
+          "label": "Juniper",
+          "x": 675.8125,
+          "y": 82.484375,
+          "w": 64.984375,
+          "h": 21.65625
+        },
+        {
+          "id": "button-11",
+          "label": "Silver",
+          "x": 289.15625,
+          "y": 307.484375,
+          "w": 94.15625,
+          "h": 31.65625
+        },
+        {
+          "id": "button-12",
+          "label": "Fern",
+          "x": 474.15625,
+          "y": 180.8125,
+          "w": 140.828125,
+          "h": 41.65625
+        }
+      ],
+      "native_targets": [
+        {
+          "id": "button-1",
+          "label": "Aspen",
+          "x": 101,
+          "y": 250,
+          "w": 86,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-2",
+          "label": "Zinc",
+          "x": 590,
+          "y": 75,
+          "w": 116,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#f4edff",
+          "border": "#d9c5ee",
+          "color": "#78539e"
+        },
+        {
+          "id": "button-3",
+          "label": "Iris",
+          "x": 599,
+          "y": 358,
+          "w": 158,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        },
+        {
+          "id": "button-4",
+          "label": "Harbor",
+          "x": 893,
+          "y": 362,
+          "w": 86,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-5",
+          "label": "Quartz",
+          "x": 865,
+          "y": 233,
+          "w": 113,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#eaf2ff",
+          "border": "#bdd3f2",
+          "color": "#2b5e9a"
+        },
+        {
+          "id": "button-6",
+          "label": "Opal",
+          "x": 1028,
+          "y": 47,
+          "w": 172,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#f4edff",
+          "border": "#d9c5ee",
+          "color": "#78539e"
+        },
+        {
+          "id": "button-7",
+          "label": "Olive",
+          "x": 161,
+          "y": 341,
+          "w": 80,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-8",
+          "label": "Garnet",
+          "x": 1042,
+          "y": 181,
+          "w": 118,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-9",
+          "label": "Maple",
+          "x": 60,
+          "y": 110,
+          "w": 164,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-10",
+          "label": "Juniper",
+          "x": 811,
+          "y": 99,
+          "w": 78,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-11",
+          "label": "Silver",
+          "x": 347,
+          "y": 369,
+          "w": 113,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        },
+        {
+          "id": "button-12",
+          "label": "Fern",
+          "x": 569,
+          "y": 217,
+          "w": 169,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        }
+      ],
+      "screenshot_sha256": "cd1175698e57799c74e51b9d5a2018c052ccdc7f1b43d58338c9af817af494af",
+      "screen_metadata": {
+        "width": 1440,
+        "height": 1100,
+        "devicePixelRatio": 1
+      }
+    },
+    {
+      "case_id": "ui-case-028",
+      "fixture": "interactive-lab",
+      "seed": 12024,
+      "width": 960,
+      "height": 720,
+      "css_width": 533.328125,
+      "css_height": 399.984375,
+      "device_pixel_ratio": 1,
+      "instruction": "Click the button labeled \"Willow\".",
+      "expected_action": "click",
+      "target_id": "button-4",
+      "target_label": "Willow",
+      "target_size": "small",
+      "boxes": [
+        {
+          "id": "button-1",
+          "label": "Sage",
+          "x": 466.65625,
+          "y": 369.421875,
+          "w": 41.109375,
+          "h": 14.4375
+        },
+        {
+          "id": "button-2",
+          "label": "Fern",
+          "x": 302.765625,
+          "y": 45.546875,
+          "w": 64.984375,
+          "h": 21.109375
+        },
+        {
+          "id": "button-3",
+          "label": "Amber",
+          "x": 160.546875,
+          "y": 349.984375,
+          "w": 95.546875,
+          "h": 27.765625
+        },
+        {
+          "id": "button-4",
+          "label": "Willow",
+          "x": 33.328125,
+          "y": 194.421875,
+          "w": 39.984375,
+          "h": 14.4375
+        },
+        {
+          "id": "button-5",
+          "label": "Lemon",
+          "x": 399.984375,
+          "y": 59.4375,
+          "w": 67.21875,
+          "h": 21.109375
+        },
+        {
+          "id": "button-6",
+          "label": "Hazel",
+          "x": 30.546875,
+          "y": 269.984375,
+          "w": 89.4375,
+          "h": 27.765625
+        },
+        {
+          "id": "button-7",
+          "label": "Moss",
+          "x": 336.65625,
+          "y": 368.859375,
+          "w": 43.328125,
+          "h": 14.4375
+        },
+        {
+          "id": "button-8",
+          "label": "Harbor",
+          "x": 53.875,
+          "y": 20.546875,
+          "w": 66.109375,
+          "h": 21.109375
+        },
+        {
+          "id": "button-9",
+          "label": "Juniper",
+          "x": 142.21875,
+          "y": 42.765625,
+          "w": 89.984375,
+          "h": 27.765625
+        },
+        {
+          "id": "button-10",
+          "label": "Delta",
+          "x": 291.09375,
+          "y": 214.421875,
+          "w": 40.546875,
+          "h": 14.4375
+        },
+        {
+          "id": "button-11",
+          "label": "Ember",
+          "x": 156.109375,
+          "y": 229.984375,
+          "w": 69.984375,
+          "h": 21.109375
+        },
+        {
+          "id": "button-12",
+          "label": "Iris",
+          "x": 407.765625,
+          "y": 231.09375,
+          "w": 94.4375,
+          "h": 27.765625
+        }
+      ],
+      "native_targets": [
+        {
+          "id": "button-1",
+          "label": "Sage",
+          "x": 840,
+          "y": 665,
+          "w": 74,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#f4edff",
+          "border": "#d9c5ee",
+          "color": "#78539e"
+        },
+        {
+          "id": "button-2",
+          "label": "Fern",
+          "x": 545,
+          "y": 82,
+          "w": 117,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        },
+        {
+          "id": "button-3",
+          "label": "Amber",
+          "x": 289,
+          "y": 630,
+          "w": 172,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-4",
+          "label": "Willow",
+          "x": 60,
+          "y": 350,
+          "w": 72,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#f4edff",
+          "border": "#d9c5ee",
+          "color": "#78539e"
+        },
+        {
+          "id": "button-5",
+          "label": "Lemon",
+          "x": 720,
+          "y": 107,
+          "w": 121,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-6",
+          "label": "Hazel",
+          "x": 55,
+          "y": 486,
+          "w": 161,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-7",
+          "label": "Moss",
+          "x": 606,
+          "y": 664,
+          "w": 78,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-8",
+          "label": "Harbor",
+          "x": 97,
+          "y": 37,
+          "w": 119,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-9",
+          "label": "Juniper",
+          "x": 256,
+          "y": 77,
+          "w": 162,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-10",
+          "label": "Delta",
+          "x": 524,
+          "y": 386,
+          "w": 73,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-11",
+          "label": "Ember",
+          "x": 281,
+          "y": 414,
+          "w": 126,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        },
+        {
+          "id": "button-12",
+          "label": "Iris",
+          "x": 734,
+          "y": 416,
+          "w": 170,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        }
+      ],
+      "screenshot_sha256": "86e2d815c2ccdc55a98e25838bc3bd0dd926056f6365c9f1c6a0256a5ad9872b",
+      "screen_metadata": {
+        "width": 1200,
+        "height": 1100,
+        "devicePixelRatio": 1
+      }
+    },
+    {
+      "case_id": "ui-case-029",
+      "fixture": "interactive-lab",
+      "seed": 12024,
+      "width": 960,
+      "height": 720,
+      "css_width": 533.328125,
+      "css_height": 399.984375,
+      "device_pixel_ratio": 1,
+      "instruction": "Move the pointer to the button labeled \"Juniper\". Do not click.",
+      "expected_action": "move",
+      "target_id": "button-9",
+      "target_label": "Juniper",
+      "target_size": "large",
+      "boxes": [
+        {
+          "id": "button-1",
+          "label": "Sage",
+          "x": 466.65625,
+          "y": 369.421875,
+          "w": 41.109375,
+          "h": 14.4375
+        },
+        {
+          "id": "button-2",
+          "label": "Fern",
+          "x": 302.765625,
+          "y": 45.546875,
+          "w": 64.984375,
+          "h": 21.109375
+        },
+        {
+          "id": "button-3",
+          "label": "Amber",
+          "x": 160.546875,
+          "y": 349.984375,
+          "w": 95.546875,
+          "h": 27.765625
+        },
+        {
+          "id": "button-4",
+          "label": "Willow",
+          "x": 33.328125,
+          "y": 194.421875,
+          "w": 39.984375,
+          "h": 14.4375
+        },
+        {
+          "id": "button-5",
+          "label": "Lemon",
+          "x": 399.984375,
+          "y": 59.4375,
+          "w": 67.21875,
+          "h": 21.109375
+        },
+        {
+          "id": "button-6",
+          "label": "Hazel",
+          "x": 30.546875,
+          "y": 269.984375,
+          "w": 89.4375,
+          "h": 27.765625
+        },
+        {
+          "id": "button-7",
+          "label": "Moss",
+          "x": 336.65625,
+          "y": 368.859375,
+          "w": 43.328125,
+          "h": 14.4375
+        },
+        {
+          "id": "button-8",
+          "label": "Harbor",
+          "x": 53.875,
+          "y": 20.546875,
+          "w": 66.109375,
+          "h": 21.109375
+        },
+        {
+          "id": "button-9",
+          "label": "Juniper",
+          "x": 142.21875,
+          "y": 42.765625,
+          "w": 89.984375,
+          "h": 27.765625
+        },
+        {
+          "id": "button-10",
+          "label": "Delta",
+          "x": 291.09375,
+          "y": 214.421875,
+          "w": 40.546875,
+          "h": 14.4375
+        },
+        {
+          "id": "button-11",
+          "label": "Ember",
+          "x": 156.109375,
+          "y": 229.984375,
+          "w": 69.984375,
+          "h": 21.109375
+        },
+        {
+          "id": "button-12",
+          "label": "Iris",
+          "x": 407.765625,
+          "y": 231.09375,
+          "w": 94.4375,
+          "h": 27.765625
+        }
+      ],
+      "native_targets": [
+        {
+          "id": "button-1",
+          "label": "Sage",
+          "x": 840,
+          "y": 665,
+          "w": 74,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#f4edff",
+          "border": "#d9c5ee",
+          "color": "#78539e"
+        },
+        {
+          "id": "button-2",
+          "label": "Fern",
+          "x": 545,
+          "y": 82,
+          "w": 117,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        },
+        {
+          "id": "button-3",
+          "label": "Amber",
+          "x": 289,
+          "y": 630,
+          "w": 172,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-4",
+          "label": "Willow",
+          "x": 60,
+          "y": 350,
+          "w": 72,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#f4edff",
+          "border": "#d9c5ee",
+          "color": "#78539e"
+        },
+        {
+          "id": "button-5",
+          "label": "Lemon",
+          "x": 720,
+          "y": 107,
+          "w": 121,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-6",
+          "label": "Hazel",
+          "x": 55,
+          "y": 486,
+          "w": 161,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-7",
+          "label": "Moss",
+          "x": 606,
+          "y": 664,
+          "w": 78,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-8",
+          "label": "Harbor",
+          "x": 97,
+          "y": 37,
+          "w": 119,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-9",
+          "label": "Juniper",
+          "x": 256,
+          "y": 77,
+          "w": 162,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-10",
+          "label": "Delta",
+          "x": 524,
+          "y": 386,
+          "w": 73,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-11",
+          "label": "Ember",
+          "x": 281,
+          "y": 414,
+          "w": 126,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        },
+        {
+          "id": "button-12",
+          "label": "Iris",
+          "x": 734,
+          "y": 416,
+          "w": 170,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        }
+      ],
+      "screenshot_sha256": "86e2d815c2ccdc55a98e25838bc3bd0dd926056f6365c9f1c6a0256a5ad9872b",
+      "screen_metadata": {
+        "width": 1200,
+        "height": 1100,
+        "devicePixelRatio": 1
+      }
+    },
+    {
+      "case_id": "ui-case-030",
+      "fixture": "interactive-lab",
+      "seed": 12024,
+      "width": 960,
+      "height": 720,
+      "css_width": 533.328125,
+      "css_height": 399.984375,
+      "device_pixel_ratio": 1,
+      "instruction": "Click the button labeled \"Fern\".",
+      "expected_action": "click",
+      "target_id": "button-2",
+      "target_label": "Fern",
+      "target_size": "medium",
+      "boxes": [
+        {
+          "id": "button-1",
+          "label": "Sage",
+          "x": 466.65625,
+          "y": 369.421875,
+          "w": 41.109375,
+          "h": 14.4375
+        },
+        {
+          "id": "button-2",
+          "label": "Fern",
+          "x": 302.765625,
+          "y": 45.546875,
+          "w": 64.984375,
+          "h": 21.109375
+        },
+        {
+          "id": "button-3",
+          "label": "Amber",
+          "x": 160.546875,
+          "y": 349.984375,
+          "w": 95.546875,
+          "h": 27.765625
+        },
+        {
+          "id": "button-4",
+          "label": "Willow",
+          "x": 33.328125,
+          "y": 194.421875,
+          "w": 39.984375,
+          "h": 14.4375
+        },
+        {
+          "id": "button-5",
+          "label": "Lemon",
+          "x": 399.984375,
+          "y": 59.4375,
+          "w": 67.21875,
+          "h": 21.109375
+        },
+        {
+          "id": "button-6",
+          "label": "Hazel",
+          "x": 30.546875,
+          "y": 269.984375,
+          "w": 89.4375,
+          "h": 27.765625
+        },
+        {
+          "id": "button-7",
+          "label": "Moss",
+          "x": 336.65625,
+          "y": 368.859375,
+          "w": 43.328125,
+          "h": 14.4375
+        },
+        {
+          "id": "button-8",
+          "label": "Harbor",
+          "x": 53.875,
+          "y": 20.546875,
+          "w": 66.109375,
+          "h": 21.109375
+        },
+        {
+          "id": "button-9",
+          "label": "Juniper",
+          "x": 142.21875,
+          "y": 42.765625,
+          "w": 89.984375,
+          "h": 27.765625
+        },
+        {
+          "id": "button-10",
+          "label": "Delta",
+          "x": 291.09375,
+          "y": 214.421875,
+          "w": 40.546875,
+          "h": 14.4375
+        },
+        {
+          "id": "button-11",
+          "label": "Ember",
+          "x": 156.109375,
+          "y": 229.984375,
+          "w": 69.984375,
+          "h": 21.109375
+        },
+        {
+          "id": "button-12",
+          "label": "Iris",
+          "x": 407.765625,
+          "y": 231.09375,
+          "w": 94.4375,
+          "h": 27.765625
+        }
+      ],
+      "native_targets": [
+        {
+          "id": "button-1",
+          "label": "Sage",
+          "x": 840,
+          "y": 665,
+          "w": 74,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#f4edff",
+          "border": "#d9c5ee",
+          "color": "#78539e"
+        },
+        {
+          "id": "button-2",
+          "label": "Fern",
+          "x": 545,
+          "y": 82,
+          "w": 117,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        },
+        {
+          "id": "button-3",
+          "label": "Amber",
+          "x": 289,
+          "y": 630,
+          "w": 172,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-4",
+          "label": "Willow",
+          "x": 60,
+          "y": 350,
+          "w": 72,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#f4edff",
+          "border": "#d9c5ee",
+          "color": "#78539e"
+        },
+        {
+          "id": "button-5",
+          "label": "Lemon",
+          "x": 720,
+          "y": 107,
+          "w": 121,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-6",
+          "label": "Hazel",
+          "x": 55,
+          "y": 486,
+          "w": 161,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-7",
+          "label": "Moss",
+          "x": 606,
+          "y": 664,
+          "w": 78,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-8",
+          "label": "Harbor",
+          "x": 97,
+          "y": 37,
+          "w": 119,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-9",
+          "label": "Juniper",
+          "x": 256,
+          "y": 77,
+          "w": 162,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-10",
+          "label": "Delta",
+          "x": 524,
+          "y": 386,
+          "w": 73,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-11",
+          "label": "Ember",
+          "x": 281,
+          "y": 414,
+          "w": 126,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        },
+        {
+          "id": "button-12",
+          "label": "Iris",
+          "x": 734,
+          "y": 416,
+          "w": 170,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        }
+      ],
+      "screenshot_sha256": "86e2d815c2ccdc55a98e25838bc3bd0dd926056f6365c9f1c6a0256a5ad9872b",
+      "screen_metadata": {
+        "width": 1200,
+        "height": 1100,
+        "devicePixelRatio": 1
+      }
+    },
+    {
+      "case_id": "ui-case-031",
+      "fixture": "interactive-lab",
+      "seed": 12024,
+      "width": 960,
+      "height": 720,
+      "css_width": 533.328125,
+      "css_height": 399.984375,
+      "device_pixel_ratio": 1,
+      "instruction": "Move the pointer to the button labeled \"Moss\". Do not click.",
+      "expected_action": "move",
+      "target_id": "button-7",
+      "target_label": "Moss",
+      "target_size": "small",
+      "boxes": [
+        {
+          "id": "button-1",
+          "label": "Sage",
+          "x": 466.65625,
+          "y": 369.421875,
+          "w": 41.109375,
+          "h": 14.4375
+        },
+        {
+          "id": "button-2",
+          "label": "Fern",
+          "x": 302.765625,
+          "y": 45.546875,
+          "w": 64.984375,
+          "h": 21.109375
+        },
+        {
+          "id": "button-3",
+          "label": "Amber",
+          "x": 160.546875,
+          "y": 349.984375,
+          "w": 95.546875,
+          "h": 27.765625
+        },
+        {
+          "id": "button-4",
+          "label": "Willow",
+          "x": 33.328125,
+          "y": 194.421875,
+          "w": 39.984375,
+          "h": 14.4375
+        },
+        {
+          "id": "button-5",
+          "label": "Lemon",
+          "x": 399.984375,
+          "y": 59.4375,
+          "w": 67.21875,
+          "h": 21.109375
+        },
+        {
+          "id": "button-6",
+          "label": "Hazel",
+          "x": 30.546875,
+          "y": 269.984375,
+          "w": 89.4375,
+          "h": 27.765625
+        },
+        {
+          "id": "button-7",
+          "label": "Moss",
+          "x": 336.65625,
+          "y": 368.859375,
+          "w": 43.328125,
+          "h": 14.4375
+        },
+        {
+          "id": "button-8",
+          "label": "Harbor",
+          "x": 53.875,
+          "y": 20.546875,
+          "w": 66.109375,
+          "h": 21.109375
+        },
+        {
+          "id": "button-9",
+          "label": "Juniper",
+          "x": 142.21875,
+          "y": 42.765625,
+          "w": 89.984375,
+          "h": 27.765625
+        },
+        {
+          "id": "button-10",
+          "label": "Delta",
+          "x": 291.09375,
+          "y": 214.421875,
+          "w": 40.546875,
+          "h": 14.4375
+        },
+        {
+          "id": "button-11",
+          "label": "Ember",
+          "x": 156.109375,
+          "y": 229.984375,
+          "w": 69.984375,
+          "h": 21.109375
+        },
+        {
+          "id": "button-12",
+          "label": "Iris",
+          "x": 407.765625,
+          "y": 231.09375,
+          "w": 94.4375,
+          "h": 27.765625
+        }
+      ],
+      "native_targets": [
+        {
+          "id": "button-1",
+          "label": "Sage",
+          "x": 840,
+          "y": 665,
+          "w": 74,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#f4edff",
+          "border": "#d9c5ee",
+          "color": "#78539e"
+        },
+        {
+          "id": "button-2",
+          "label": "Fern",
+          "x": 545,
+          "y": 82,
+          "w": 117,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        },
+        {
+          "id": "button-3",
+          "label": "Amber",
+          "x": 289,
+          "y": 630,
+          "w": 172,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-4",
+          "label": "Willow",
+          "x": 60,
+          "y": 350,
+          "w": 72,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#f4edff",
+          "border": "#d9c5ee",
+          "color": "#78539e"
+        },
+        {
+          "id": "button-5",
+          "label": "Lemon",
+          "x": 720,
+          "y": 107,
+          "w": 121,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-6",
+          "label": "Hazel",
+          "x": 55,
+          "y": 486,
+          "w": 161,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-7",
+          "label": "Moss",
+          "x": 606,
+          "y": 664,
+          "w": 78,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-8",
+          "label": "Harbor",
+          "x": 97,
+          "y": 37,
+          "w": 119,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-9",
+          "label": "Juniper",
+          "x": 256,
+          "y": 77,
+          "w": 162,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-10",
+          "label": "Delta",
+          "x": 524,
+          "y": 386,
+          "w": 73,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-11",
+          "label": "Ember",
+          "x": 281,
+          "y": 414,
+          "w": 126,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        },
+        {
+          "id": "button-12",
+          "label": "Iris",
+          "x": 734,
+          "y": 416,
+          "w": 170,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        }
+      ],
+      "screenshot_sha256": "86e2d815c2ccdc55a98e25838bc3bd0dd926056f6365c9f1c6a0256a5ad9872b",
+      "screen_metadata": {
+        "width": 1200,
+        "height": 1100,
+        "devicePixelRatio": 1
+      }
+    },
+    {
+      "case_id": "ui-case-032",
+      "fixture": "interactive-lab",
+      "seed": 12025,
+      "width": 2560,
+      "height": 1440,
+      "css_width": 711.109375,
+      "css_height": 399.984375,
+      "device_pixel_ratio": 2,
+      "instruction": "Click the button labeled \"Jade\".",
+      "expected_action": "click",
+      "target_id": "button-1",
+      "target_label": "Jade",
+      "target_size": "small",
+      "boxes": [
+        {
+          "id": "button-1",
+          "label": "Jade",
+          "x": 66.65625,
+          "y": 278.59375,
+          "w": 22.21875,
+          "h": 7.21875
+        },
+        {
+          "id": "button-2",
+          "label": "Lemon",
+          "x": 184.71875,
+          "y": 171.375,
+          "w": 34.4375,
+          "h": 10.546875
+        },
+        {
+          "id": "button-3",
+          "label": "Pearl",
+          "x": 130.265625,
+          "y": 66.65625,
+          "w": 44.71875,
+          "h": 13.875
+        },
+        {
+          "id": "button-4",
+          "label": "Echo",
+          "x": 359.4375,
+          "y": 118.328125,
+          "w": 23.609375,
+          "h": 7.21875
+        },
+        {
+          "id": "button-5",
+          "label": "Grove",
+          "x": 631.375,
+          "y": 210.8125,
+          "w": 34.984375,
+          "h": 10.546875
+        },
+        {
+          "id": "button-6",
+          "label": "Silver",
+          "x": 54.71875,
+          "y": 222.484375,
+          "w": 47.484375,
+          "h": 13.875
+        },
+        {
+          "id": "button-7",
+          "label": "Reed",
+          "x": 663.328125,
+          "y": 125.546875,
+          "w": 23.875,
+          "h": 7.21875
+        },
+        {
+          "id": "button-8",
+          "label": "Cobalt",
+          "x": 294.71875,
+          "y": 100.546875,
+          "w": 35.265625,
+          "h": 10.546875
+        },
+        {
+          "id": "button-9",
+          "label": "Sage",
+          "x": 412.21875,
+          "y": 145.546875,
+          "w": 47.21875,
+          "h": 13.875
+        },
+        {
+          "id": "button-10",
+          "label": "Cedar",
+          "x": 671.375,
+          "y": 332.203125,
+          "w": 20.265625,
+          "h": 7.21875
+        },
+        {
+          "id": "button-11",
+          "label": "Hazel",
+          "x": 188.609375,
+          "y": 336.640625,
+          "w": 35.546875,
+          "h": 10.546875
+        },
+        {
+          "id": "button-12",
+          "label": "Zinc",
+          "x": 384.71875,
+          "y": 310.53125,
+          "w": 44.984375,
+          "h": 13.875
+        }
+      ],
+      "native_targets": [
+        {
+          "id": "button-1",
+          "label": "Jade",
+          "x": 240,
+          "y": 1003,
+          "w": 80,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-2",
+          "label": "Lemon",
+          "x": 665,
+          "y": 617,
+          "w": 124,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#eaf2ff",
+          "border": "#bdd3f2",
+          "color": "#2b5e9a"
+        },
+        {
+          "id": "button-3",
+          "label": "Pearl",
+          "x": 469,
+          "y": 240,
+          "w": 161,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-4",
+          "label": "Echo",
+          "x": 1294,
+          "y": 426,
+          "w": 85,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#eaf2ff",
+          "border": "#bdd3f2",
+          "color": "#2b5e9a"
+        },
+        {
+          "id": "button-5",
+          "label": "Grove",
+          "x": 2273,
+          "y": 759,
+          "w": 126,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-6",
+          "label": "Silver",
+          "x": 197,
+          "y": 801,
+          "w": 171,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-7",
+          "label": "Reed",
+          "x": 2388,
+          "y": 452,
+          "w": 86,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-8",
+          "label": "Cobalt",
+          "x": 1061,
+          "y": 362,
+          "w": 127,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-9",
+          "label": "Sage",
+          "x": 1484,
+          "y": 524,
+          "w": 170,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        },
+        {
+          "id": "button-10",
+          "label": "Cedar",
+          "x": 2417,
+          "y": 1196,
+          "w": 73,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-11",
+          "label": "Hazel",
+          "x": 679,
+          "y": 1212,
+          "w": 128,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        },
+        {
+          "id": "button-12",
+          "label": "Zinc",
+          "x": 1385,
+          "y": 1118,
+          "w": 162,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        }
+      ],
+      "screenshot_sha256": "6708ac6c35938f8befb259394dbdada6194384f8cea4c60cc9008a030a960bd5",
+      "screen_metadata": {
+        "width": 1440,
+        "height": 1100,
+        "devicePixelRatio": 2
+      }
+    },
+    {
+      "case_id": "ui-case-033",
+      "fixture": "interactive-lab",
+      "seed": 12025,
+      "width": 2560,
+      "height": 1440,
+      "css_width": 711.109375,
+      "css_height": 399.984375,
+      "device_pixel_ratio": 2,
+      "instruction": "Move the pointer to the button labeled \"Silver\". Do not click.",
+      "expected_action": "move",
+      "target_id": "button-6",
+      "target_label": "Silver",
+      "target_size": "large",
+      "boxes": [
+        {
+          "id": "button-1",
+          "label": "Jade",
+          "x": 66.65625,
+          "y": 278.59375,
+          "w": 22.21875,
+          "h": 7.21875
+        },
+        {
+          "id": "button-2",
+          "label": "Lemon",
+          "x": 184.71875,
+          "y": 171.375,
+          "w": 34.4375,
+          "h": 10.546875
+        },
+        {
+          "id": "button-3",
+          "label": "Pearl",
+          "x": 130.265625,
+          "y": 66.65625,
+          "w": 44.71875,
+          "h": 13.875
+        },
+        {
+          "id": "button-4",
+          "label": "Echo",
+          "x": 359.4375,
+          "y": 118.328125,
+          "w": 23.609375,
+          "h": 7.21875
+        },
+        {
+          "id": "button-5",
+          "label": "Grove",
+          "x": 631.375,
+          "y": 210.8125,
+          "w": 34.984375,
+          "h": 10.546875
+        },
+        {
+          "id": "button-6",
+          "label": "Silver",
+          "x": 54.71875,
+          "y": 222.484375,
+          "w": 47.484375,
+          "h": 13.875
+        },
+        {
+          "id": "button-7",
+          "label": "Reed",
+          "x": 663.328125,
+          "y": 125.546875,
+          "w": 23.875,
+          "h": 7.21875
+        },
+        {
+          "id": "button-8",
+          "label": "Cobalt",
+          "x": 294.71875,
+          "y": 100.546875,
+          "w": 35.265625,
+          "h": 10.546875
+        },
+        {
+          "id": "button-9",
+          "label": "Sage",
+          "x": 412.21875,
+          "y": 145.546875,
+          "w": 47.21875,
+          "h": 13.875
+        },
+        {
+          "id": "button-10",
+          "label": "Cedar",
+          "x": 671.375,
+          "y": 332.203125,
+          "w": 20.265625,
+          "h": 7.21875
+        },
+        {
+          "id": "button-11",
+          "label": "Hazel",
+          "x": 188.609375,
+          "y": 336.640625,
+          "w": 35.546875,
+          "h": 10.546875
+        },
+        {
+          "id": "button-12",
+          "label": "Zinc",
+          "x": 384.71875,
+          "y": 310.53125,
+          "w": 44.984375,
+          "h": 13.875
+        }
+      ],
+      "native_targets": [
+        {
+          "id": "button-1",
+          "label": "Jade",
+          "x": 240,
+          "y": 1003,
+          "w": 80,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-2",
+          "label": "Lemon",
+          "x": 665,
+          "y": 617,
+          "w": 124,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#eaf2ff",
+          "border": "#bdd3f2",
+          "color": "#2b5e9a"
+        },
+        {
+          "id": "button-3",
+          "label": "Pearl",
+          "x": 469,
+          "y": 240,
+          "w": 161,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-4",
+          "label": "Echo",
+          "x": 1294,
+          "y": 426,
+          "w": 85,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#eaf2ff",
+          "border": "#bdd3f2",
+          "color": "#2b5e9a"
+        },
+        {
+          "id": "button-5",
+          "label": "Grove",
+          "x": 2273,
+          "y": 759,
+          "w": 126,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-6",
+          "label": "Silver",
+          "x": 197,
+          "y": 801,
+          "w": 171,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-7",
+          "label": "Reed",
+          "x": 2388,
+          "y": 452,
+          "w": 86,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-8",
+          "label": "Cobalt",
+          "x": 1061,
+          "y": 362,
+          "w": 127,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-9",
+          "label": "Sage",
+          "x": 1484,
+          "y": 524,
+          "w": 170,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        },
+        {
+          "id": "button-10",
+          "label": "Cedar",
+          "x": 2417,
+          "y": 1196,
+          "w": 73,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-11",
+          "label": "Hazel",
+          "x": 679,
+          "y": 1212,
+          "w": 128,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        },
+        {
+          "id": "button-12",
+          "label": "Zinc",
+          "x": 1385,
+          "y": 1118,
+          "w": 162,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        }
+      ],
+      "screenshot_sha256": "6708ac6c35938f8befb259394dbdada6194384f8cea4c60cc9008a030a960bd5",
+      "screen_metadata": {
+        "width": 1440,
+        "height": 1100,
+        "devicePixelRatio": 2
+      }
+    },
+    {
+      "case_id": "ui-case-034",
+      "fixture": "interactive-lab",
+      "seed": 12025,
+      "width": 2560,
+      "height": 1440,
+      "css_width": 711.109375,
+      "css_height": 399.984375,
+      "device_pixel_ratio": 2,
+      "instruction": "Click the button labeled \"Hazel\".",
+      "expected_action": "click",
+      "target_id": "button-11",
+      "target_label": "Hazel",
+      "target_size": "medium",
+      "boxes": [
+        {
+          "id": "button-1",
+          "label": "Jade",
+          "x": 66.65625,
+          "y": 278.59375,
+          "w": 22.21875,
+          "h": 7.21875
+        },
+        {
+          "id": "button-2",
+          "label": "Lemon",
+          "x": 184.71875,
+          "y": 171.375,
+          "w": 34.4375,
+          "h": 10.546875
+        },
+        {
+          "id": "button-3",
+          "label": "Pearl",
+          "x": 130.265625,
+          "y": 66.65625,
+          "w": 44.71875,
+          "h": 13.875
+        },
+        {
+          "id": "button-4",
+          "label": "Echo",
+          "x": 359.4375,
+          "y": 118.328125,
+          "w": 23.609375,
+          "h": 7.21875
+        },
+        {
+          "id": "button-5",
+          "label": "Grove",
+          "x": 631.375,
+          "y": 210.8125,
+          "w": 34.984375,
+          "h": 10.546875
+        },
+        {
+          "id": "button-6",
+          "label": "Silver",
+          "x": 54.71875,
+          "y": 222.484375,
+          "w": 47.484375,
+          "h": 13.875
+        },
+        {
+          "id": "button-7",
+          "label": "Reed",
+          "x": 663.328125,
+          "y": 125.546875,
+          "w": 23.875,
+          "h": 7.21875
+        },
+        {
+          "id": "button-8",
+          "label": "Cobalt",
+          "x": 294.71875,
+          "y": 100.546875,
+          "w": 35.265625,
+          "h": 10.546875
+        },
+        {
+          "id": "button-9",
+          "label": "Sage",
+          "x": 412.21875,
+          "y": 145.546875,
+          "w": 47.21875,
+          "h": 13.875
+        },
+        {
+          "id": "button-10",
+          "label": "Cedar",
+          "x": 671.375,
+          "y": 332.203125,
+          "w": 20.265625,
+          "h": 7.21875
+        },
+        {
+          "id": "button-11",
+          "label": "Hazel",
+          "x": 188.609375,
+          "y": 336.640625,
+          "w": 35.546875,
+          "h": 10.546875
+        },
+        {
+          "id": "button-12",
+          "label": "Zinc",
+          "x": 384.71875,
+          "y": 310.53125,
+          "w": 44.984375,
+          "h": 13.875
+        }
+      ],
+      "native_targets": [
+        {
+          "id": "button-1",
+          "label": "Jade",
+          "x": 240,
+          "y": 1003,
+          "w": 80,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-2",
+          "label": "Lemon",
+          "x": 665,
+          "y": 617,
+          "w": 124,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#eaf2ff",
+          "border": "#bdd3f2",
+          "color": "#2b5e9a"
+        },
+        {
+          "id": "button-3",
+          "label": "Pearl",
+          "x": 469,
+          "y": 240,
+          "w": 161,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-4",
+          "label": "Echo",
+          "x": 1294,
+          "y": 426,
+          "w": 85,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#eaf2ff",
+          "border": "#bdd3f2",
+          "color": "#2b5e9a"
+        },
+        {
+          "id": "button-5",
+          "label": "Grove",
+          "x": 2273,
+          "y": 759,
+          "w": 126,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-6",
+          "label": "Silver",
+          "x": 197,
+          "y": 801,
+          "w": 171,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-7",
+          "label": "Reed",
+          "x": 2388,
+          "y": 452,
+          "w": 86,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-8",
+          "label": "Cobalt",
+          "x": 1061,
+          "y": 362,
+          "w": 127,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-9",
+          "label": "Sage",
+          "x": 1484,
+          "y": 524,
+          "w": 170,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        },
+        {
+          "id": "button-10",
+          "label": "Cedar",
+          "x": 2417,
+          "y": 1196,
+          "w": 73,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-11",
+          "label": "Hazel",
+          "x": 679,
+          "y": 1212,
+          "w": 128,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        },
+        {
+          "id": "button-12",
+          "label": "Zinc",
+          "x": 1385,
+          "y": 1118,
+          "w": 162,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        }
+      ],
+      "screenshot_sha256": "6708ac6c35938f8befb259394dbdada6194384f8cea4c60cc9008a030a960bd5",
+      "screen_metadata": {
+        "width": 1440,
+        "height": 1100,
+        "devicePixelRatio": 2
+      }
+    },
+    {
+      "case_id": "ui-case-035",
+      "fixture": "interactive-lab",
+      "seed": 12025,
+      "width": 2560,
+      "height": 1440,
+      "css_width": 711.109375,
+      "css_height": 399.984375,
+      "device_pixel_ratio": 2,
+      "instruction": "Move the pointer to the button labeled \"Echo\". Do not click.",
+      "expected_action": "move",
+      "target_id": "button-4",
+      "target_label": "Echo",
+      "target_size": "small",
+      "boxes": [
+        {
+          "id": "button-1",
+          "label": "Jade",
+          "x": 66.65625,
+          "y": 278.59375,
+          "w": 22.21875,
+          "h": 7.21875
+        },
+        {
+          "id": "button-2",
+          "label": "Lemon",
+          "x": 184.71875,
+          "y": 171.375,
+          "w": 34.4375,
+          "h": 10.546875
+        },
+        {
+          "id": "button-3",
+          "label": "Pearl",
+          "x": 130.265625,
+          "y": 66.65625,
+          "w": 44.71875,
+          "h": 13.875
+        },
+        {
+          "id": "button-4",
+          "label": "Echo",
+          "x": 359.4375,
+          "y": 118.328125,
+          "w": 23.609375,
+          "h": 7.21875
+        },
+        {
+          "id": "button-5",
+          "label": "Grove",
+          "x": 631.375,
+          "y": 210.8125,
+          "w": 34.984375,
+          "h": 10.546875
+        },
+        {
+          "id": "button-6",
+          "label": "Silver",
+          "x": 54.71875,
+          "y": 222.484375,
+          "w": 47.484375,
+          "h": 13.875
+        },
+        {
+          "id": "button-7",
+          "label": "Reed",
+          "x": 663.328125,
+          "y": 125.546875,
+          "w": 23.875,
+          "h": 7.21875
+        },
+        {
+          "id": "button-8",
+          "label": "Cobalt",
+          "x": 294.71875,
+          "y": 100.546875,
+          "w": 35.265625,
+          "h": 10.546875
+        },
+        {
+          "id": "button-9",
+          "label": "Sage",
+          "x": 412.21875,
+          "y": 145.546875,
+          "w": 47.21875,
+          "h": 13.875
+        },
+        {
+          "id": "button-10",
+          "label": "Cedar",
+          "x": 671.375,
+          "y": 332.203125,
+          "w": 20.265625,
+          "h": 7.21875
+        },
+        {
+          "id": "button-11",
+          "label": "Hazel",
+          "x": 188.609375,
+          "y": 336.640625,
+          "w": 35.546875,
+          "h": 10.546875
+        },
+        {
+          "id": "button-12",
+          "label": "Zinc",
+          "x": 384.71875,
+          "y": 310.53125,
+          "w": 44.984375,
+          "h": 13.875
+        }
+      ],
+      "native_targets": [
+        {
+          "id": "button-1",
+          "label": "Jade",
+          "x": 240,
+          "y": 1003,
+          "w": 80,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-2",
+          "label": "Lemon",
+          "x": 665,
+          "y": 617,
+          "w": 124,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#eaf2ff",
+          "border": "#bdd3f2",
+          "color": "#2b5e9a"
+        },
+        {
+          "id": "button-3",
+          "label": "Pearl",
+          "x": 469,
+          "y": 240,
+          "w": 161,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-4",
+          "label": "Echo",
+          "x": 1294,
+          "y": 426,
+          "w": 85,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#eaf2ff",
+          "border": "#bdd3f2",
+          "color": "#2b5e9a"
+        },
+        {
+          "id": "button-5",
+          "label": "Grove",
+          "x": 2273,
+          "y": 759,
+          "w": 126,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-6",
+          "label": "Silver",
+          "x": 197,
+          "y": 801,
+          "w": 171,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-7",
+          "label": "Reed",
+          "x": 2388,
+          "y": 452,
+          "w": 86,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-8",
+          "label": "Cobalt",
+          "x": 1061,
+          "y": 362,
+          "w": 127,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-9",
+          "label": "Sage",
+          "x": 1484,
+          "y": 524,
+          "w": 170,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        },
+        {
+          "id": "button-10",
+          "label": "Cedar",
+          "x": 2417,
+          "y": 1196,
+          "w": 73,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-11",
+          "label": "Hazel",
+          "x": 679,
+          "y": 1212,
+          "w": 128,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        },
+        {
+          "id": "button-12",
+          "label": "Zinc",
+          "x": 1385,
+          "y": 1118,
+          "w": 162,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        }
+      ],
+      "screenshot_sha256": "6708ac6c35938f8befb259394dbdada6194384f8cea4c60cc9008a030a960bd5",
+      "screen_metadata": {
+        "width": 1440,
+        "height": 1100,
+        "devicePixelRatio": 2
+      }
+    },
+    {
+      "case_id": "ui-case-036",
+      "fixture": "interactive-lab",
+      "seed": 12026,
+      "width": 1280,
+      "height": 480,
+      "css_width": 1066.65625,
+      "css_height": 399.984375,
+      "device_pixel_ratio": 1,
+      "instruction": "Click the button labeled \"Cedar\".",
+      "expected_action": "click",
+      "target_id": "button-10",
+      "target_label": "Cedar",
+      "target_size": "small",
+      "boxes": [
+        {
+          "id": "button-1",
+          "label": "Willow",
+          "x": 714.984375,
+          "y": 52.484375,
+          "w": 65.828125,
+          "h": 21.65625
+        },
+        {
+          "id": "button-2",
+          "label": "Iris",
+          "x": 264.984375,
+          "y": 276.640625,
+          "w": 96.65625,
+          "h": 31.65625
+        },
+        {
+          "id": "button-3",
+          "label": "Zinc",
+          "x": 465.828125,
+          "y": 164.984375,
+          "w": 140.828125,
+          "h": 41.65625
+        },
+        {
+          "id": "button-4",
+          "label": "Echo",
+          "x": 89.15625,
+          "y": 86.65625,
+          "w": 64.15625,
+          "h": 21.65625
+        },
+        {
+          "id": "button-5",
+          "label": "Brook",
+          "x": 482.484375,
+          "y": 39.984375,
+          "w": 105.828125,
+          "h": 31.65625
+        },
+        {
+          "id": "button-6",
+          "label": "Lemon",
+          "x": 894.15625,
+          "y": 26.65625,
+          "w": 130.828125,
+          "h": 41.65625
+        },
+        {
+          "id": "button-7",
+          "label": "Ember",
+          "x": 542.484375,
+          "y": 285.8125,
+          "w": 72.484375,
+          "h": 21.65625
+        },
+        {
+          "id": "button-8",
+          "label": "Grove",
+          "x": 278.328125,
+          "y": 219.984375,
+          "w": 98.328125,
+          "h": 31.65625
+        },
+        {
+          "id": "button-9",
+          "label": "Juniper",
+          "x": 868.3125,
+          "y": 308.3125,
+          "w": 140.828125,
+          "h": 41.65625
+        },
+        {
+          "id": "button-10",
+          "label": "Cedar",
+          "x": 314.984375,
+          "y": 93.328125,
+          "w": 72.484375,
+          "h": 21.65625
+        },
+        {
+          "id": "button-11",
+          "label": "Flint",
+          "x": 84.15625,
+          "y": 200.8125,
+          "w": 104.15625,
+          "h": 31.65625
+        },
+        {
+          "id": "button-12",
+          "label": "Fern",
+          "x": 876.65625,
+          "y": 202.484375,
+          "w": 140.828125,
+          "h": 41.65625
+        }
+      ],
+      "native_targets": [
+        {
+          "id": "button-1",
+          "label": "Willow",
+          "x": 858,
+          "y": 63,
+          "w": 79,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-2",
+          "label": "Iris",
+          "x": 318,
+          "y": 332,
+          "w": 116,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        },
+        {
+          "id": "button-3",
+          "label": "Zinc",
+          "x": 559,
+          "y": 198,
+          "w": 169,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-4",
+          "label": "Echo",
+          "x": 107,
+          "y": 104,
+          "w": 77,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#eaf2ff",
+          "border": "#bdd3f2",
+          "color": "#2b5e9a"
+        },
+        {
+          "id": "button-5",
+          "label": "Brook",
+          "x": 579,
+          "y": 48,
+          "w": 127,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-6",
+          "label": "Lemon",
+          "x": 1073,
+          "y": 32,
+          "w": 157,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        },
+        {
+          "id": "button-7",
+          "label": "Ember",
+          "x": 651,
+          "y": 343,
+          "w": 87,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-8",
+          "label": "Grove",
+          "x": 334,
+          "y": 264,
+          "w": 118,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        },
+        {
+          "id": "button-9",
+          "label": "Juniper",
+          "x": 1042,
+          "y": 370,
+          "w": 169,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-10",
+          "label": "Cedar",
+          "x": 378,
+          "y": 112,
+          "w": 87,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#f4edff",
+          "border": "#d9c5ee",
+          "color": "#78539e"
+        },
+        {
+          "id": "button-11",
+          "label": "Flint",
+          "x": 101,
+          "y": 241,
+          "w": 125,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        },
+        {
+          "id": "button-12",
+          "label": "Fern",
+          "x": 1052,
+          "y": 243,
+          "w": 169,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        }
+      ],
+      "screenshot_sha256": "eb7d0fdc1aa2519c7281a39d5beb58cf0d3e2441a349a5d034c5742aa40988d7",
+      "screen_metadata": {
+        "width": 1440,
+        "height": 1100,
+        "devicePixelRatio": 1
+      }
+    },
+    {
+      "case_id": "ui-case-037",
+      "fixture": "interactive-lab",
+      "seed": 12026,
+      "width": 1280,
+      "height": 480,
+      "css_width": 1066.65625,
+      "css_height": 399.984375,
+      "device_pixel_ratio": 1,
+      "instruction": "Move the pointer to the button labeled \"Zinc\". Do not click.",
+      "expected_action": "move",
+      "target_id": "button-3",
+      "target_label": "Zinc",
+      "target_size": "large",
+      "boxes": [
+        {
+          "id": "button-1",
+          "label": "Willow",
+          "x": 714.984375,
+          "y": 52.484375,
+          "w": 65.828125,
+          "h": 21.65625
+        },
+        {
+          "id": "button-2",
+          "label": "Iris",
+          "x": 264.984375,
+          "y": 276.640625,
+          "w": 96.65625,
+          "h": 31.65625
+        },
+        {
+          "id": "button-3",
+          "label": "Zinc",
+          "x": 465.828125,
+          "y": 164.984375,
+          "w": 140.828125,
+          "h": 41.65625
+        },
+        {
+          "id": "button-4",
+          "label": "Echo",
+          "x": 89.15625,
+          "y": 86.65625,
+          "w": 64.15625,
+          "h": 21.65625
+        },
+        {
+          "id": "button-5",
+          "label": "Brook",
+          "x": 482.484375,
+          "y": 39.984375,
+          "w": 105.828125,
+          "h": 31.65625
+        },
+        {
+          "id": "button-6",
+          "label": "Lemon",
+          "x": 894.15625,
+          "y": 26.65625,
+          "w": 130.828125,
+          "h": 41.65625
+        },
+        {
+          "id": "button-7",
+          "label": "Ember",
+          "x": 542.484375,
+          "y": 285.8125,
+          "w": 72.484375,
+          "h": 21.65625
+        },
+        {
+          "id": "button-8",
+          "label": "Grove",
+          "x": 278.328125,
+          "y": 219.984375,
+          "w": 98.328125,
+          "h": 31.65625
+        },
+        {
+          "id": "button-9",
+          "label": "Juniper",
+          "x": 868.3125,
+          "y": 308.3125,
+          "w": 140.828125,
+          "h": 41.65625
+        },
+        {
+          "id": "button-10",
+          "label": "Cedar",
+          "x": 314.984375,
+          "y": 93.328125,
+          "w": 72.484375,
+          "h": 21.65625
+        },
+        {
+          "id": "button-11",
+          "label": "Flint",
+          "x": 84.15625,
+          "y": 200.8125,
+          "w": 104.15625,
+          "h": 31.65625
+        },
+        {
+          "id": "button-12",
+          "label": "Fern",
+          "x": 876.65625,
+          "y": 202.484375,
+          "w": 140.828125,
+          "h": 41.65625
+        }
+      ],
+      "native_targets": [
+        {
+          "id": "button-1",
+          "label": "Willow",
+          "x": 858,
+          "y": 63,
+          "w": 79,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-2",
+          "label": "Iris",
+          "x": 318,
+          "y": 332,
+          "w": 116,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        },
+        {
+          "id": "button-3",
+          "label": "Zinc",
+          "x": 559,
+          "y": 198,
+          "w": 169,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-4",
+          "label": "Echo",
+          "x": 107,
+          "y": 104,
+          "w": 77,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#eaf2ff",
+          "border": "#bdd3f2",
+          "color": "#2b5e9a"
+        },
+        {
+          "id": "button-5",
+          "label": "Brook",
+          "x": 579,
+          "y": 48,
+          "w": 127,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-6",
+          "label": "Lemon",
+          "x": 1073,
+          "y": 32,
+          "w": 157,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        },
+        {
+          "id": "button-7",
+          "label": "Ember",
+          "x": 651,
+          "y": 343,
+          "w": 87,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-8",
+          "label": "Grove",
+          "x": 334,
+          "y": 264,
+          "w": 118,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        },
+        {
+          "id": "button-9",
+          "label": "Juniper",
+          "x": 1042,
+          "y": 370,
+          "w": 169,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-10",
+          "label": "Cedar",
+          "x": 378,
+          "y": 112,
+          "w": 87,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#f4edff",
+          "border": "#d9c5ee",
+          "color": "#78539e"
+        },
+        {
+          "id": "button-11",
+          "label": "Flint",
+          "x": 101,
+          "y": 241,
+          "w": 125,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        },
+        {
+          "id": "button-12",
+          "label": "Fern",
+          "x": 1052,
+          "y": 243,
+          "w": 169,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        }
+      ],
+      "screenshot_sha256": "eb7d0fdc1aa2519c7281a39d5beb58cf0d3e2441a349a5d034c5742aa40988d7",
+      "screen_metadata": {
+        "width": 1440,
+        "height": 1100,
+        "devicePixelRatio": 1
+      }
+    },
+    {
+      "case_id": "ui-case-038",
+      "fixture": "interactive-lab",
+      "seed": 12026,
+      "width": 1280,
+      "height": 480,
+      "css_width": 1066.65625,
+      "css_height": 399.984375,
+      "device_pixel_ratio": 1,
+      "instruction": "Click the button labeled \"Grove\".",
+      "expected_action": "click",
+      "target_id": "button-8",
+      "target_label": "Grove",
+      "target_size": "medium",
+      "boxes": [
+        {
+          "id": "button-1",
+          "label": "Willow",
+          "x": 714.984375,
+          "y": 52.484375,
+          "w": 65.828125,
+          "h": 21.65625
+        },
+        {
+          "id": "button-2",
+          "label": "Iris",
+          "x": 264.984375,
+          "y": 276.640625,
+          "w": 96.65625,
+          "h": 31.65625
+        },
+        {
+          "id": "button-3",
+          "label": "Zinc",
+          "x": 465.828125,
+          "y": 164.984375,
+          "w": 140.828125,
+          "h": 41.65625
+        },
+        {
+          "id": "button-4",
+          "label": "Echo",
+          "x": 89.15625,
+          "y": 86.65625,
+          "w": 64.15625,
+          "h": 21.65625
+        },
+        {
+          "id": "button-5",
+          "label": "Brook",
+          "x": 482.484375,
+          "y": 39.984375,
+          "w": 105.828125,
+          "h": 31.65625
+        },
+        {
+          "id": "button-6",
+          "label": "Lemon",
+          "x": 894.15625,
+          "y": 26.65625,
+          "w": 130.828125,
+          "h": 41.65625
+        },
+        {
+          "id": "button-7",
+          "label": "Ember",
+          "x": 542.484375,
+          "y": 285.8125,
+          "w": 72.484375,
+          "h": 21.65625
+        },
+        {
+          "id": "button-8",
+          "label": "Grove",
+          "x": 278.328125,
+          "y": 219.984375,
+          "w": 98.328125,
+          "h": 31.65625
+        },
+        {
+          "id": "button-9",
+          "label": "Juniper",
+          "x": 868.3125,
+          "y": 308.3125,
+          "w": 140.828125,
+          "h": 41.65625
+        },
+        {
+          "id": "button-10",
+          "label": "Cedar",
+          "x": 314.984375,
+          "y": 93.328125,
+          "w": 72.484375,
+          "h": 21.65625
+        },
+        {
+          "id": "button-11",
+          "label": "Flint",
+          "x": 84.15625,
+          "y": 200.8125,
+          "w": 104.15625,
+          "h": 31.65625
+        },
+        {
+          "id": "button-12",
+          "label": "Fern",
+          "x": 876.65625,
+          "y": 202.484375,
+          "w": 140.828125,
+          "h": 41.65625
+        }
+      ],
+      "native_targets": [
+        {
+          "id": "button-1",
+          "label": "Willow",
+          "x": 858,
+          "y": 63,
+          "w": 79,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-2",
+          "label": "Iris",
+          "x": 318,
+          "y": 332,
+          "w": 116,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        },
+        {
+          "id": "button-3",
+          "label": "Zinc",
+          "x": 559,
+          "y": 198,
+          "w": 169,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-4",
+          "label": "Echo",
+          "x": 107,
+          "y": 104,
+          "w": 77,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#eaf2ff",
+          "border": "#bdd3f2",
+          "color": "#2b5e9a"
+        },
+        {
+          "id": "button-5",
+          "label": "Brook",
+          "x": 579,
+          "y": 48,
+          "w": 127,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-6",
+          "label": "Lemon",
+          "x": 1073,
+          "y": 32,
+          "w": 157,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        },
+        {
+          "id": "button-7",
+          "label": "Ember",
+          "x": 651,
+          "y": 343,
+          "w": 87,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-8",
+          "label": "Grove",
+          "x": 334,
+          "y": 264,
+          "w": 118,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        },
+        {
+          "id": "button-9",
+          "label": "Juniper",
+          "x": 1042,
+          "y": 370,
+          "w": 169,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-10",
+          "label": "Cedar",
+          "x": 378,
+          "y": 112,
+          "w": 87,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#f4edff",
+          "border": "#d9c5ee",
+          "color": "#78539e"
+        },
+        {
+          "id": "button-11",
+          "label": "Flint",
+          "x": 101,
+          "y": 241,
+          "w": 125,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        },
+        {
+          "id": "button-12",
+          "label": "Fern",
+          "x": 1052,
+          "y": 243,
+          "w": 169,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        }
+      ],
+      "screenshot_sha256": "eb7d0fdc1aa2519c7281a39d5beb58cf0d3e2441a349a5d034c5742aa40988d7",
+      "screen_metadata": {
+        "width": 1440,
+        "height": 1100,
+        "devicePixelRatio": 1
+      }
+    },
+    {
+      "case_id": "ui-case-039",
+      "fixture": "interactive-lab",
+      "seed": 12026,
+      "width": 1280,
+      "height": 480,
+      "css_width": 1066.65625,
+      "css_height": 399.984375,
+      "device_pixel_ratio": 1,
+      "instruction": "Move the pointer to the button labeled \"Willow\". Do not click.",
+      "expected_action": "move",
+      "target_id": "button-1",
+      "target_label": "Willow",
+      "target_size": "small",
+      "boxes": [
+        {
+          "id": "button-1",
+          "label": "Willow",
+          "x": 714.984375,
+          "y": 52.484375,
+          "w": 65.828125,
+          "h": 21.65625
+        },
+        {
+          "id": "button-2",
+          "label": "Iris",
+          "x": 264.984375,
+          "y": 276.640625,
+          "w": 96.65625,
+          "h": 31.65625
+        },
+        {
+          "id": "button-3",
+          "label": "Zinc",
+          "x": 465.828125,
+          "y": 164.984375,
+          "w": 140.828125,
+          "h": 41.65625
+        },
+        {
+          "id": "button-4",
+          "label": "Echo",
+          "x": 89.15625,
+          "y": 86.65625,
+          "w": 64.15625,
+          "h": 21.65625
+        },
+        {
+          "id": "button-5",
+          "label": "Brook",
+          "x": 482.484375,
+          "y": 39.984375,
+          "w": 105.828125,
+          "h": 31.65625
+        },
+        {
+          "id": "button-6",
+          "label": "Lemon",
+          "x": 894.15625,
+          "y": 26.65625,
+          "w": 130.828125,
+          "h": 41.65625
+        },
+        {
+          "id": "button-7",
+          "label": "Ember",
+          "x": 542.484375,
+          "y": 285.8125,
+          "w": 72.484375,
+          "h": 21.65625
+        },
+        {
+          "id": "button-8",
+          "label": "Grove",
+          "x": 278.328125,
+          "y": 219.984375,
+          "w": 98.328125,
+          "h": 31.65625
+        },
+        {
+          "id": "button-9",
+          "label": "Juniper",
+          "x": 868.3125,
+          "y": 308.3125,
+          "w": 140.828125,
+          "h": 41.65625
+        },
+        {
+          "id": "button-10",
+          "label": "Cedar",
+          "x": 314.984375,
+          "y": 93.328125,
+          "w": 72.484375,
+          "h": 21.65625
+        },
+        {
+          "id": "button-11",
+          "label": "Flint",
+          "x": 84.15625,
+          "y": 200.8125,
+          "w": 104.15625,
+          "h": 31.65625
+        },
+        {
+          "id": "button-12",
+          "label": "Fern",
+          "x": 876.65625,
+          "y": 202.484375,
+          "w": 140.828125,
+          "h": 41.65625
+        }
+      ],
+      "native_targets": [
+        {
+          "id": "button-1",
+          "label": "Willow",
+          "x": 858,
+          "y": 63,
+          "w": 79,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-2",
+          "label": "Iris",
+          "x": 318,
+          "y": 332,
+          "w": 116,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        },
+        {
+          "id": "button-3",
+          "label": "Zinc",
+          "x": 559,
+          "y": 198,
+          "w": 169,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-4",
+          "label": "Echo",
+          "x": 107,
+          "y": 104,
+          "w": 77,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#eaf2ff",
+          "border": "#bdd3f2",
+          "color": "#2b5e9a"
+        },
+        {
+          "id": "button-5",
+          "label": "Brook",
+          "x": 579,
+          "y": 48,
+          "w": 127,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#326fbd",
+          "border": "#326fbd",
+          "color": "#ffffff"
+        },
+        {
+          "id": "button-6",
+          "label": "Lemon",
+          "x": 1073,
+          "y": 32,
+          "w": 157,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        },
+        {
+          "id": "button-7",
+          "label": "Ember",
+          "x": 651,
+          "y": 343,
+          "w": 87,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-8",
+          "label": "Grove",
+          "x": 334,
+          "y": 264,
+          "w": 118,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        },
+        {
+          "id": "button-9",
+          "label": "Juniper",
+          "x": 1042,
+          "y": 370,
+          "w": 169,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-10",
+          "label": "Cedar",
+          "x": 378,
+          "y": 112,
+          "w": 87,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#f4edff",
+          "border": "#d9c5ee",
+          "color": "#78539e"
+        },
+        {
+          "id": "button-11",
+          "label": "Flint",
+          "x": 101,
+          "y": 241,
+          "w": 125,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        },
+        {
+          "id": "button-12",
+          "label": "Fern",
+          "x": 1052,
+          "y": 243,
+          "w": 169,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        }
+      ],
+      "screenshot_sha256": "eb7d0fdc1aa2519c7281a39d5beb58cf0d3e2441a349a5d034c5742aa40988d7",
+      "screen_metadata": {
+        "width": 1440,
+        "height": 1100,
+        "devicePixelRatio": 1
+      }
+    },
+    {
+      "case_id": "ui-case-040",
+      "fixture": "interactive-lab",
+      "seed": 12027,
+      "width": 960,
+      "height": 720,
+      "css_width": 533.328125,
+      "css_height": 399.984375,
+      "device_pixel_ratio": 1,
+      "instruction": "Click the button labeled \"Harbor\".",
+      "expected_action": "click",
+      "target_id": "button-7",
+      "target_label": "Harbor",
+      "target_size": "small",
+      "boxes": [
+        {
+          "id": "button-1",
+          "label": "Sage",
+          "x": 79.4375,
+          "y": 219.984375,
+          "w": 48.328125,
+          "h": 14.4375
+        },
+        {
+          "id": "button-2",
+          "label": "Flint",
+          "x": 143.328125,
+          "y": 271.09375,
+          "w": 67.765625,
+          "h": 21.109375
+        },
+        {
+          "id": "button-3",
+          "label": "Indigo",
+          "x": 17.765625,
+          "y": 96.09375,
+          "w": 93.875,
+          "h": 27.765625
+        },
+        {
+          "id": "button-4",
+          "label": "Umber",
+          "x": 347.765625,
+          "y": 34.984375,
+          "w": 43.328125,
+          "h": 14.4375
+        },
+        {
+          "id": "button-5",
+          "label": "Olive",
+          "x": 197.765625,
+          "y": 200.546875,
+          "w": 65.546875,
+          "h": 21.109375
+        },
+        {
+          "id": "button-6",
+          "label": "Reed",
+          "x": 42.765625,
+          "y": 341.640625,
+          "w": 90.546875,
+          "h": 27.765625
+        },
+        {
+          "id": "button-7",
+          "label": "Harbor",
+          "x": 450.546875,
+          "y": 320.53125,
+          "w": 43.328125,
+          "h": 14.4375
+        },
+        {
+          "id": "button-8",
+          "label": "Robin",
+          "x": 443.328125,
+          "y": 211.65625,
+          "w": 65.546875,
+          "h": 21.109375
+        },
+        {
+          "id": "button-9",
+          "label": "Pearl",
+          "x": 289.984375,
+          "y": 303.3125,
+          "w": 94.984375,
+          "h": 27.765625
+        },
+        {
+          "id": "button-10",
+          "label": "Hazel",
+          "x": 427.765625,
+          "y": 27.21875,
+          "w": 43.328125,
+          "h": 14.4375
+        },
+        {
+          "id": "button-11",
+          "label": "Silver",
+          "x": 319.4375,
+          "y": 178.3125,
+          "w": 62.765625,
+          "h": 21.109375
+        },
+        {
+          "id": "button-12",
+          "label": "Aspen",
+          "x": 151.65625,
+          "y": 63.328125,
+          "w": 93.328125,
+          "h": 27.765625
+        }
+      ],
+      "native_targets": [
+        {
+          "id": "button-1",
+          "label": "Sage",
+          "x": 143,
+          "y": 396,
+          "w": 87,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        },
+        {
+          "id": "button-2",
+          "label": "Flint",
+          "x": 258,
+          "y": 488,
+          "w": 122,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#f4edff",
+          "border": "#d9c5ee",
+          "color": "#78539e"
+        },
+        {
+          "id": "button-3",
+          "label": "Indigo",
+          "x": 32,
+          "y": 173,
+          "w": 169,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        },
+        {
+          "id": "button-4",
+          "label": "Umber",
+          "x": 626,
+          "y": 63,
+          "w": 78,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        },
+        {
+          "id": "button-5",
+          "label": "Olive",
+          "x": 356,
+          "y": 361,
+          "w": 118,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#eaf2ff",
+          "border": "#bdd3f2",
+          "color": "#2b5e9a"
+        },
+        {
+          "id": "button-6",
+          "label": "Reed",
+          "x": 77,
+          "y": 615,
+          "w": 163,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-7",
+          "label": "Harbor",
+          "x": 811,
+          "y": 577,
+          "w": 78,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-8",
+          "label": "Robin",
+          "x": 798,
+          "y": 381,
+          "w": 118,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-9",
+          "label": "Pearl",
+          "x": 522,
+          "y": 546,
+          "w": 171,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-10",
+          "label": "Hazel",
+          "x": 770,
+          "y": 49,
+          "w": 78,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-11",
+          "label": "Silver",
+          "x": 575,
+          "y": 321,
+          "w": 113,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-12",
+          "label": "Aspen",
+          "x": 273,
+          "y": 114,
+          "w": 168,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        }
+      ],
+      "screenshot_sha256": "5f8cad0df6d918657d2130756909b2a6d923f077214a35c0f8a6a749cc74e54d",
+      "screen_metadata": {
+        "width": 1200,
+        "height": 1100,
+        "devicePixelRatio": 1
+      }
+    },
+    {
+      "case_id": "ui-case-041",
+      "fixture": "interactive-lab",
+      "seed": 12027,
+      "width": 960,
+      "height": 720,
+      "css_width": 533.328125,
+      "css_height": 399.984375,
+      "device_pixel_ratio": 1,
+      "instruction": "Move the pointer to the button labeled \"Aspen\". Do not click.",
+      "expected_action": "move",
+      "target_id": "button-12",
+      "target_label": "Aspen",
+      "target_size": "large",
+      "boxes": [
+        {
+          "id": "button-1",
+          "label": "Sage",
+          "x": 79.4375,
+          "y": 219.984375,
+          "w": 48.328125,
+          "h": 14.4375
+        },
+        {
+          "id": "button-2",
+          "label": "Flint",
+          "x": 143.328125,
+          "y": 271.09375,
+          "w": 67.765625,
+          "h": 21.109375
+        },
+        {
+          "id": "button-3",
+          "label": "Indigo",
+          "x": 17.765625,
+          "y": 96.09375,
+          "w": 93.875,
+          "h": 27.765625
+        },
+        {
+          "id": "button-4",
+          "label": "Umber",
+          "x": 347.765625,
+          "y": 34.984375,
+          "w": 43.328125,
+          "h": 14.4375
+        },
+        {
+          "id": "button-5",
+          "label": "Olive",
+          "x": 197.765625,
+          "y": 200.546875,
+          "w": 65.546875,
+          "h": 21.109375
+        },
+        {
+          "id": "button-6",
+          "label": "Reed",
+          "x": 42.765625,
+          "y": 341.640625,
+          "w": 90.546875,
+          "h": 27.765625
+        },
+        {
+          "id": "button-7",
+          "label": "Harbor",
+          "x": 450.546875,
+          "y": 320.53125,
+          "w": 43.328125,
+          "h": 14.4375
+        },
+        {
+          "id": "button-8",
+          "label": "Robin",
+          "x": 443.328125,
+          "y": 211.65625,
+          "w": 65.546875,
+          "h": 21.109375
+        },
+        {
+          "id": "button-9",
+          "label": "Pearl",
+          "x": 289.984375,
+          "y": 303.3125,
+          "w": 94.984375,
+          "h": 27.765625
+        },
+        {
+          "id": "button-10",
+          "label": "Hazel",
+          "x": 427.765625,
+          "y": 27.21875,
+          "w": 43.328125,
+          "h": 14.4375
+        },
+        {
+          "id": "button-11",
+          "label": "Silver",
+          "x": 319.4375,
+          "y": 178.3125,
+          "w": 62.765625,
+          "h": 21.109375
+        },
+        {
+          "id": "button-12",
+          "label": "Aspen",
+          "x": 151.65625,
+          "y": 63.328125,
+          "w": 93.328125,
+          "h": 27.765625
+        }
+      ],
+      "native_targets": [
+        {
+          "id": "button-1",
+          "label": "Sage",
+          "x": 143,
+          "y": 396,
+          "w": 87,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        },
+        {
+          "id": "button-2",
+          "label": "Flint",
+          "x": 258,
+          "y": 488,
+          "w": 122,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#f4edff",
+          "border": "#d9c5ee",
+          "color": "#78539e"
+        },
+        {
+          "id": "button-3",
+          "label": "Indigo",
+          "x": 32,
+          "y": 173,
+          "w": 169,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        },
+        {
+          "id": "button-4",
+          "label": "Umber",
+          "x": 626,
+          "y": 63,
+          "w": 78,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        },
+        {
+          "id": "button-5",
+          "label": "Olive",
+          "x": 356,
+          "y": 361,
+          "w": 118,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#eaf2ff",
+          "border": "#bdd3f2",
+          "color": "#2b5e9a"
+        },
+        {
+          "id": "button-6",
+          "label": "Reed",
+          "x": 77,
+          "y": 615,
+          "w": 163,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-7",
+          "label": "Harbor",
+          "x": 811,
+          "y": 577,
+          "w": 78,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-8",
+          "label": "Robin",
+          "x": 798,
+          "y": 381,
+          "w": 118,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-9",
+          "label": "Pearl",
+          "x": 522,
+          "y": 546,
+          "w": 171,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        },
+        {
+          "id": "button-10",
+          "label": "Hazel",
+          "x": 770,
+          "y": 49,
+          "w": 78,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-11",
+          "label": "Silver",
+          "x": 575,
+          "y": 321,
+          "w": 113,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-12",
+          "label": "Aspen",
+          "x": 273,
+          "y": 114,
+          "w": 168,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        }
+      ],
+      "screenshot_sha256": "5f8cad0df6d918657d2130756909b2a6d923f077214a35c0f8a6a749cc74e54d",
+      "screen_metadata": {
+        "width": 1200,
+        "height": 1100,
+        "devicePixelRatio": 1
+      }
+    }
+  ]
+}

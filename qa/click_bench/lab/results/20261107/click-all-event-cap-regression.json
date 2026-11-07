@@ -1,0 +1,365 @@
+{
+  "before": 5000,
+  "afterClick": 5000,
+  "afterMove": 5000,
+  "click": {
+    "request_id": "trial-1794085298079-b7c2bcd",
+    "at": "2026-11-07T21:01:38.116Z",
+    "model": "gpt-6-luna",
+    "instruction": "Click the Kite button.",
+    "capture_id": "capture-1794085298069-47262c4c",
+    "snapshot": {
+      "id": "capture-1794085298069-47262c4c",
+      "captured_at": "2026-11-07T21:01:38.069Z",
+      "width": 1280,
+      "height": 480,
+      "seed": 7441,
+      "revision": 2,
+      "targets": [
+        {
+          "id": "button-1",
+          "label": "Kite",
+          "x": 565,
+          "y": 406,
+          "w": 84,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-2",
+          "label": "Dune",
+          "x": 980,
+          "y": 296,
+          "w": 123,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-3",
+          "label": "Teal",
+          "x": 988,
+          "y": 127,
+          "w": 158,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#eaf2ff",
+          "border": "#bdd3f2",
+          "color": "#2b5e9a"
+        },
+        {
+          "id": "button-4",
+          "label": "Maple",
+          "x": 34,
+          "y": 253,
+          "w": 84,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#f4edff",
+          "border": "#d9c5ee",
+          "color": "#78539e"
+        }
+      ],
+      "screen": {
+        "width": 800,
+        "height": 600,
+        "devicePixelRatio": 1
+      },
+      "viewport": {
+        "width": 780,
+        "height": 437
+      }
+    },
+    "expected_target": {
+      "id": "button-1",
+      "label": "Kite",
+      "x": 565,
+      "y": 406,
+      "w": 84,
+      "h": 26,
+      "font": 12,
+      "size": "small",
+      "fill": "#e8f5f8",
+      "border": "#b8dce4",
+      "color": "#347c8d"
+    },
+    "expected_action": "click",
+    "latency_ms": 999999,
+    "api_latency_ms": 999999,
+    "wall_ms": 36.60000002384186,
+    "response_wall_ms": 36.60000002384186,
+    "request_sent_perf_ms": 1682.8000000715256,
+    "request_sent_at": "2026-11-07T21:01:38.080Z",
+    "timing_clock_origin_ms": 1794085296397.4,
+    "send_to_click_ms": 38.39999997615814,
+    "click_dispatched_at": "2026-11-07T21:01:38.118Z",
+    "click_dispatched_perf_ms": 1721.2000000476837,
+    "run": null,
+    "usage": null,
+    "prediction": {
+      "action": "click",
+      "x": 607,
+      "y": 419
+    },
+    "response": {
+      "action": "click",
+      "x": 607,
+      "y": 419,
+      "request_id": "trial-1794085298079-b7c2bcd",
+      "model": "gpt-6-luna",
+      "latency_ms": 999999,
+      "fresh_context": true,
+      "image_detail": "original"
+    },
+    "execution": {
+      "events": [
+        {
+          "type": "pointermove",
+          "source": "model",
+          "request_id": "trial-1794085298079-b7c2bcd",
+          "x": 607,
+          "y": 419,
+          "target_id": "button-1",
+          "at": 1794085298117,
+          "performance_ms": 1720.5,
+          "event_timestamp_ms": 1720.4000000953674,
+          "button": 0,
+          "isTrusted": false
+        },
+        {
+          "type": "mousedown",
+          "source": "model",
+          "request_id": "trial-1794085298079-b7c2bcd",
+          "x": 605.8666666666667,
+          "y": 418.1333333333333,
+          "target_id": "button-1",
+          "at": 1794085298118,
+          "performance_ms": 1720.6000000238419,
+          "event_timestamp_ms": 1720.6000000238419,
+          "button": 0,
+          "isTrusted": false
+        },
+        {
+          "type": "mouseup",
+          "source": "model",
+          "request_id": "trial-1794085298079-b7c2bcd",
+          "x": 605.8666666666667,
+          "y": 418.1333333333333,
+          "target_id": "button-1",
+          "at": 1794085298118,
+          "performance_ms": 1720.6000000238419,
+          "event_timestamp_ms": 1720.6000000238419,
+          "button": 0,
+          "isTrusted": false
+        },
+        {
+          "type": "click",
+          "source": "model",
+          "request_id": "trial-1794085298079-b7c2bcd",
+          "x": 605.8666666666667,
+          "y": 418.1333333333333,
+          "target_id": "button-1",
+          "at": 1794085298118,
+          "performance_ms": 1721.2000000476837,
+          "event_timestamp_ms": 1720.6000000238419,
+          "button": 0,
+          "isTrusted": false
+        }
+      ],
+      "target_id": "button-1",
+      "click_count": 1,
+      "executed": true,
+      "click_dispatched_perf_ms": 1721.2000000476837,
+      "click_dispatched_at": "2026-11-07T21:01:38.118Z"
+    },
+    "outcome": "hit",
+    "hit": true,
+    "coordinate_hit": true,
+    "action_match": true,
+    "center_error_px": 0,
+    "error": null,
+    "persisted": true
+  },
+  "move": {
+    "request_id": "trial-1794085298202-176c9a1c",
+    "at": "2026-11-07T21:01:38.238Z",
+    "model": "gpt-6-luna",
+    "instruction": "Move the pointer to the Dune button.",
+    "capture_id": "capture-1794085298195-2b6a6a1b",
+    "snapshot": {
+      "id": "capture-1794085298195-2b6a6a1b",
+      "captured_at": "2026-11-07T21:01:38.195Z",
+      "width": 1280,
+      "height": 480,
+      "seed": 7441,
+      "revision": 2,
+      "targets": [
+        {
+          "id": "button-1",
+          "label": "Kite",
+          "x": 565,
+          "y": 406,
+          "w": 84,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-2",
+          "label": "Dune",
+          "x": 980,
+          "y": 296,
+          "w": 123,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#f0f2f6",
+          "border": "#cfd6e0",
+          "color": "#586779"
+        },
+        {
+          "id": "button-3",
+          "label": "Teal",
+          "x": 988,
+          "y": 127,
+          "w": 158,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#eaf2ff",
+          "border": "#bdd3f2",
+          "color": "#2b5e9a"
+        },
+        {
+          "id": "button-4",
+          "label": "Maple",
+          "x": 34,
+          "y": 253,
+          "w": 84,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#f4edff",
+          "border": "#d9c5ee",
+          "color": "#78539e"
+        }
+      ],
+      "screen": {
+        "width": 800,
+        "height": 600,
+        "devicePixelRatio": 1
+      },
+      "viewport": {
+        "width": 780,
+        "height": 437
+      }
+    },
+    "expected_target": {
+      "id": "button-2",
+      "label": "Dune",
+      "x": 980,
+      "y": 296,
+      "w": 123,
+      "h": 38,
+      "font": 14,
+      "size": "medium",
+      "fill": "#f0f2f6",
+      "border": "#cfd6e0",
+      "color": "#586779"
+    },
+    "expected_action": "move",
+    "latency_ms": 999999,
+    "api_latency_ms": 999999,
+    "wall_ms": 35.60000002384186,
+    "response_wall_ms": 35.60000002384186,
+    "request_sent_perf_ms": 1805.7000000476837,
+    "request_sent_at": "2026-11-07T21:01:38.203Z",
+    "timing_clock_origin_ms": 1794085296397.4,
+    "send_to_click_ms": null,
+    "click_dispatched_at": null,
+    "click_dispatched_perf_ms": null,
+    "run": null,
+    "usage": null,
+    "prediction": {
+      "action": "move",
+      "x": 1041.5,
+      "y": 315
+    },
+    "response": {
+      "action": "move",
+      "x": 1041.5,
+      "y": 315,
+      "request_id": "trial-1794085298202-176c9a1c",
+      "model": "gpt-6-luna",
+      "latency_ms": 999999,
+      "fresh_context": true,
+      "image_detail": "original"
+    },
+    "execution": {
+      "events": [
+        {
+          "type": "pointermove",
+          "source": "model",
+          "request_id": "trial-1794085298202-176c9a1c",
+          "x": 1041.5,
+          "y": 315,
+          "target_id": "button-2",
+          "at": 1794085298239,
+          "performance_ms": 1841.6000000238419,
+          "event_timestamp_ms": 1841.5,
+          "button": 0,
+          "isTrusted": false
+        }
+      ],
+      "target_id": "button-2",
+      "click_count": 0,
+      "executed": true,
+      "click_dispatched_perf_ms": null,
+      "click_dispatched_at": null
+    },
+    "outcome": "hit",
+    "hit": true,
+    "coordinate_hit": true,
+    "action_match": true,
+    "center_error_px": 0,
+    "error": null,
+    "persisted": true
+  },
+  "observed_clicks": [
+    {
+      "request_id": "trial-1794085298079-b7c2bcd",
+      "perf_ms": 1720.7000000476837,
+      "target_id": "button-1",
+      "isTrusted": false
+    }
+  ],
+  "requests": [
+    {
+      "request_id": "trial-1794085298079-b7c2bcd",
+      "sent_perf_ms": 1682.8000000715256
+    },
+    {
+      "request_id": "trial-1794085298202-176c9a1c",
+      "sent_perf_ms": 1805.7000000476837
+    }
+  ],
+  "errors": [],
+  "all_passed": true,
+  "model_api_calls": 0,
+  "mocked_trial_requests": 2,
+  "independent_send_to_click_ms": 37.89999997615814,
+  "scope": "Single focused saturated-history regression after the per-dispatch buffer fix. Global event log stays capped at 5000; exact-center click and move retain their own evidence.",
+  "app_js_sha256": "622b438efc1d910c183c2bbac7a2ee1fb627b5c3d6ed531e88fdab2119b67c86"
+}
