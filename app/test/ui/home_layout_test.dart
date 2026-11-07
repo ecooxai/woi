@@ -90,10 +90,7 @@ class _Env {
       if (watch.elapsed >= const Duration(seconds: 15)) {
         fail('Controller shutdown did not finish while draining file I/O and widget callbacks.');
       }
-      await t.runAsync(() => Future.any<void>([
-        stopping,
-        Future<void>.delayed(const Duration(milliseconds: 15)),
-      ]));
+      await t.runAsync(() => Future.any<void>([stopping, Future<void>.delayed(const Duration(milliseconds: 15))]));
       await t.pump(const Duration(milliseconds: 20));
     }
     if (failure != null) Error.throwWithStackTrace(failure!, failureStack!);
@@ -625,6 +622,40 @@ void main() {
       expect(env.c.settings.liveVoice, 'cove');
       final saved = await t.runAsync(() => SettingsStore(env.fp.services.paths.settingsFile).load());
       expect(saved!.toJson(), env.c.settings.toJson());
+      expect(t.takeException(), isNull);
+      await env.stop(t);
+    });
+
+    testWidgets('image output and Luna pointer settings save cleanly at phone width', (t) async {
+      final env = _Env();
+      await env.start(t, savedSettings: const AppSettings(micMode: MicMode.muted));
+      // Startup restores a previously muted mic unless WOI_MIC_MODE overrides it.
+      final launchMicMode = env.c.settings.micMode;
+      await pumpSettings(t, env, const Size(360, 740));
+      expect(env.c.settings.imageModel, 'gpt-image-2.6-flare');
+      expect(env.c.settings.imageQuality, 'low');
+      await search(t, 'Image size');
+      final size = find.byKey(const ValueKey('select-image-size'));
+      expect(t.widget<DropdownButton<String>>(size).value, '1024x1024');
+      await choose(t, 'image-size', '1536 × 1024');
+      expect(env.c.settings.imageSize, '1536x1024');
+      await search(t, 'Image format');
+      expect(find.text('JPG'), findsOneWidget);
+      expect(env.c.settings.imageFormat, 'jpeg');
+      await _tapInSettings(t, find.byKey(const ValueKey('radio-image-format-webp')));
+      expect(env.c.settings.imageFormat, 'webp');
+      await search(t, 'Luna pointer');
+      final pointer = find.byKey(const ValueKey('use-luna-pointer-switch'));
+      expect(t.widget<Switch>(pointer).value, isTrue);
+      await _tapInSettings(t, pointer);
+      expect(env.c.settings.useLunaPointer, isFalse);
+      expect(t.widget<Switch>(pointer).value, isFalse);
+      final saved = await t.runAsync(() => SettingsStore(env.fp.services.paths.settingsFile).load());
+      expect(saved!.imageSize, '1536x1024');
+      expect(saved.imageFormat, 'webp');
+      expect(saved.imageQuality, 'low');
+      expect(saved.useLunaPointer, isFalse);
+      expect(saved.micMode, launchMicMode, reason: 'Image/pointer edits preserve the startup mic setting');
       expect(t.takeException(), isNull);
       await env.stop(t);
     });

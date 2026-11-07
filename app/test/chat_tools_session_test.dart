@@ -15,49 +15,84 @@ import 'fakes/live_fakes.dart';
 
 void main() {
   for (final mode in BackendMode.values) {
-    test('$mode session exposes image and search tools and refreshes on toggle', () async {
-      final platform = await FakePlatform.create();
-      final backends = <ScriptedBackend>[];
-      final controller = AppController(
-        platform: platform.services,
-        confirmations: FakeConfirmations(),
-        backendFactory: () {
-          final backend = ScriptedBackend();
-          backends.add(backend);
-          return backend;
-        },
-        authManager: CodexAuthManager(path: '${platform.root.path}/no-auth.json'),
-      );
-      addTearDown(() async {
-        await controller.shutdown();
-        await platform.dispose();
-      });
-      await controller.init();
-      expect(controller.settings.webSearchEnabled, isTrue);
-      await controller.updateSettings(controller.settings.copyWith(backendMode: mode, autoScreenshot: false));
-      if (backends.isEmpty) await controller.pipeline.connect();
-      final enabled = backends.last.config!;
-      expect(enabled.tools.map((t) => t.name), containsAll(['web_search', 'generate_image']));
-      expect(enabled.instructions, contains('generate_image'));
-      expect(enabled.instructions, contains('web_search'));
-      if (mode == BackendMode.gptLive) {
-        expect(enabled.instructions, contains('image generation also go to delegation'));
-      }
+    test(
+      '$mode session exposes image and search tools and refreshes on toggle',
+      () async {
+        final platform = await FakePlatform.create();
+        final backends = <ScriptedBackend>[];
+        final controller = AppController(
+          platform: platform.services,
+          confirmations: FakeConfirmations(),
+          backendFactory: () {
+            final backend = ScriptedBackend();
+            backends.add(backend);
+            return backend;
+          },
+          authManager: CodexAuthManager(
+            path: '${platform.root.path}/no-auth.json',
+          ),
+        );
+        addTearDown(() async {
+          await controller.shutdown();
+          await platform.dispose();
+        });
+        await controller.init();
+        expect(controller.settings.webSearchEnabled, isTrue);
+        await controller.updateSettings(
+          controller.settings.copyWith(
+            backendMode: mode,
+            autoScreenshot: false,
+          ),
+        );
+        if (backends.isEmpty) await controller.pipeline.connect();
+        final enabled = backends.last.config!;
+        expect(
+          enabled.tools.map((t) => t.name),
+          containsAll(['web_search', 'generate_image']),
+        );
+        expect(enabled.instructions, contains('generate_image'));
+        expect(enabled.instructions, contains('web_search'));
+        if (mode == BackendMode.gptLive) {
+          expect(
+            enabled.instructions,
+            contains('image generation also go to delegation'),
+          );
+        }
 
-      final realtime = RealtimeWsBackend();
-      addTearDown(realtime.close);
-      final wire = realtime.sessionUpdate(enabled)['session'] as Map;
-      expect((wire['tools'] as List).map((t) => t['name']), containsAll(['web_search', 'generate_image']));
-      final previous = backends.last;
-      await controller.updateSettings(controller.settings.copyWith(webSearchEnabled: false));
-      expect(backends.last, isNot(same(previous)));
-      final disabled = backends.last.config!;
-      expect(disabled.tools.map((t) => t.name), isNot(contains('web_search')));
-      expect(disabled.tools.map((t) => t.name), contains('generate_image'));
-      expect((await controller.tools.dispatch('web_search', '{"query":"test"}')).ok, isFalse);
-      await controller.updateSettings(controller.settings.copyWith(webSearchEnabled: true));
-      expect(backends.last.config!.tools.map((t) => t.name), contains('web_search'));
-    });
+        final realtime = RealtimeWsBackend();
+        addTearDown(realtime.close);
+        final wire = realtime.sessionUpdate(enabled)['session'] as Map;
+        expect(
+          (wire['tools'] as List).map((t) => t['name']),
+          containsAll(['web_search', 'generate_image']),
+        );
+        final previous = backends.last;
+        await controller.updateSettings(
+          controller.settings.copyWith(webSearchEnabled: false),
+        );
+        expect(backends.last, isNot(same(previous)));
+        final disabled = backends.last.config!;
+        expect(
+          disabled.tools.map((t) => t.name),
+          isNot(contains('web_search')),
+        );
+        expect(disabled.tools.map((t) => t.name), contains('generate_image'));
+        expect(
+          (await controller.tools.dispatch(
+            'web_search',
+            '{"query":"test"}',
+          )).ok,
+          isFalse,
+        );
+        await controller.updateSettings(
+          controller.settings.copyWith(webSearchEnabled: true),
+        );
+        expect(
+          backends.last.config!.tools.map((t) => t.name),
+          contains('web_search'),
+        );
+      },
+    );
   }
 
   test('typed image requests and changing facts route to live delegation', () {
@@ -84,7 +119,10 @@ void main() {
             'ok': true,
             'answer': 'A Future holds an asynchronous result.',
             'sources': [
-              {'title': 'Dart Future', 'url': 'https://api.dart.dev/dart-async/Future-class.html'},
+              {
+                'title': 'Dart Future',
+                'url': 'https://api.dart.dev/dart-async/Future-class.html',
+              },
             ],
           },
         ),
@@ -96,53 +134,86 @@ void main() {
           call('web_search', {'query': 'Dart Future docs'}),
         ],
       ),
-      const DelegationModelTurn(text: 'The official Dart docs describe Future as an asynchronous result.', calls: []),
-    ]);
-    final executor = DelegationExecutor(
-      model: model,
-      tools: registry.specs,
-      runTool: (id, name, args) async => (await registry.dispatch(name, args)).json,
-      speculativeCapture: false,
-    );
-    final report = await executor.execute('Search the web for Dart Future documentation', id: 'search-test');
-    expect(report.ok, isTrue);
-    expect(model.requests, hasLength(2));
-    expect(model.requests.first.tools.map((t) => t['name']), contains('web_search'));
-    final output = model.requests.last.input.where((item) => item['type'] == 'function_call_output').single;
-    expect(output['output'], contains('https://api.dart.dev/dart-async/Future-class.html'));
-    expect(report.resultText, contains('official Dart docs'));
-  });
-
-  test('live image delegation queues once and does not call it completed', () async {
-    var requests = 0;
-    final registry = ToolRegistry()
-      ..register(
-        imageGenerationTool(
-          generate: (prompt, size) async {
-            requests++;
-            return {'ok': true, 'status': 'queued', 'note': 'The image is being generated.'};
-          },
-        ),
-      );
-    final model = FakeDelegationModel([
-      DelegationModelTurn(
-        text: '',
-        calls: [
-          call('generate_image', {'prompt': 'A green leaf'}),
-        ],
+      const DelegationModelTurn(
+        text:
+            'The official Dart docs describe Future as an asynchronous result.',
+        calls: [],
       ),
     ]);
     final executor = DelegationExecutor(
       model: model,
       tools: registry.specs,
-      runTool: (id, name, args) async => (await registry.dispatch(name, args)).json,
+      runTool: (id, name, args) async =>
+          (await registry.dispatch(name, args)).json,
       speculativeCapture: false,
     );
-    final report = await executor.execute('Generate an image of a green leaf', id: 'image-test');
+    final report = await executor.execute(
+      'Search the web for Dart Future documentation',
+      id: 'search-test',
+    );
     expect(report.ok, isTrue);
-    expect(requests, 1);
-    expect(report.steps, 1);
-    expect(report.resultText, startsWith('Image generation is running in the background.'));
-    expect(report.resultText, contains(jsonEncode('queued')));
+    expect(model.requests, hasLength(2));
+    expect(
+      model.requests.first.tools.map((t) => t['name']),
+      contains('web_search'),
+    );
+    final output = model.requests.last.input
+        .where((item) => item['type'] == 'function_call_output')
+        .single;
+    expect(
+      output['output'],
+      contains('https://api.dart.dev/dart-async/Future-class.html'),
+    );
+    expect(report.resultText, contains('official Dart docs'));
   });
+
+  test(
+    'live image delegation queues once and does not call it completed',
+    () async {
+      var requests = 0;
+      final registry = ToolRegistry()
+        ..register(
+          imageGenerationTool(
+            generate: (prompt, size, action, sourceMessageId) async {
+              requests++;
+              expect(size, isNull);
+              expect(action, 'generate');
+              expect(sourceMessageId, isNull);
+              return {
+                'ok': true,
+                'status': 'queued',
+                'note': 'The image is being generated.',
+              };
+            },
+          ),
+        );
+      final model = FakeDelegationModel([
+        DelegationModelTurn(
+          text: '',
+          calls: [
+            call('generate_image', {'prompt': 'A green leaf'}),
+          ],
+        ),
+      ]);
+      final executor = DelegationExecutor(
+        model: model,
+        tools: registry.specs,
+        runTool: (id, name, args) async =>
+            (await registry.dispatch(name, args)).json,
+        speculativeCapture: false,
+      );
+      final report = await executor.execute(
+        'Generate an image of a green leaf',
+        id: 'image-test',
+      );
+      expect(report.ok, isTrue);
+      expect(requests, 1);
+      expect(report.steps, 1);
+      expect(
+        report.resultText,
+        startsWith('Image generation is running in the background.'),
+      );
+      expect(report.resultText, contains(jsonEncode('queued')));
+    },
+  );
 }

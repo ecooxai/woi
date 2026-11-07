@@ -131,9 +131,12 @@ class AppSettings {
     this.compressionThreshold = 10000,
     this.compressionModel = 'gpt-6-luna',
     this.delegateModel = 'gpt-6-luna',
-    this.imageModel = 'gpt-image-flare-2.1',
+    this.imageModel = 'gpt-image-2.6-flare',
     this.imageQuality = 'low',
+    this.imageSize = '1024x1024',
+    this.imageFormat = 'jpeg',
     this.webSearchEnabled = true,
+    this.useLunaPointer = true,
     this.screenshotDelayMs = 1200,
     this.autoScreenshot = true,
     this.screenshotScale = 0.0,
@@ -179,11 +182,22 @@ class AppSettings {
   /// The image model ID is sent unchanged to the selected provider.
   final String imageModel;
 
-  /// Rendering quality for generated images: low, medium, high, or auto.
+  /// Rendering quality for generated images.
   final String imageQuality;
+
+  /// Generated image dimensions, or auto for the provider's choice.
+  final String imageSize;
+  static const imageSizeChoices = ['1024x1024', '1024x1536', '1536x1024', 'auto'];
+
+  /// Encoded output format; JPEG is shown as JPG in the settings UI.
+  final String imageFormat;
+  static const imageFormatChoices = ['jpeg', 'png', 'webp'];
 
   /// Make current web information available to the assistant.
   final bool webSearchEnabled;
+
+  /// Route pointer clicks and movement through a dedicated gpt-6-luna agent.
+  final bool useLunaPointer;
   final int screenshotDelayMs;
   final bool autoScreenshot;
 
@@ -346,7 +360,10 @@ class AppSettings {
     String? delegateModel,
     String? imageModel,
     String? imageQuality,
+    String? imageSize,
+    String? imageFormat,
     bool? webSearchEnabled,
+    bool? useLunaPointer,
     int? screenshotDelayMs,
     bool? autoScreenshot,
     double? screenshotScale,
@@ -385,7 +402,10 @@ class AppSettings {
     delegateModel: delegateModel ?? this.delegateModel,
     imageModel: imageModel ?? this.imageModel,
     imageQuality: imageQuality ?? this.imageQuality,
+    imageSize: imageSize ?? this.imageSize,
+    imageFormat: imageFormat ?? this.imageFormat,
     webSearchEnabled: webSearchEnabled ?? this.webSearchEnabled,
+    useLunaPointer: useLunaPointer ?? this.useLunaPointer,
     screenshotDelayMs: screenshotDelayMs ?? this.screenshotDelayMs,
     autoScreenshot: autoScreenshot ?? this.autoScreenshot,
     screenshotScale: screenshotScale ?? this.screenshotScale,
@@ -419,6 +439,7 @@ class AppSettings {
   bool sessionDiffers(AppSettings o) =>
       o.backendMode != backendMode ||
       o.webSearchEnabled != webSearchEnabled ||
+      o.useLunaPointer != useLunaPointer ||
       // Editing a saved API key must not reconnect an active Codex session.
       (authMode == AuthMode.apiKey && o.apiKey != apiKey) ||
       o.voiceModel != voiceModel ||
@@ -439,7 +460,10 @@ class AppSettings {
     'delegateModel': delegateModel,
     'imageModel': imageModel,
     'imageQuality': imageQuality,
+    'imageSize': imageSize,
+    'imageFormat': imageFormat,
     'webSearchEnabled': webSearchEnabled,
+    'useLunaPointer': useLunaPointer,
     'screenshotDelayMs': screenshotDelayMs,
     'autoScreenshot': autoScreenshot,
     'screenshotScale': screenshotScale,
@@ -478,6 +502,8 @@ class AppSettings {
     }
 
     bool b(String k, bool def) => j[k] is bool ? j[k] as bool : def;
+    final savedImageModel = s('imageModel', d.imageModel).trim();
+    final savedImageFormat = s('imageFormat', d.imageFormat).trim().toLowerCase();
     return AppSettings(
       backendMode:
           BackendMode.values.asNameMap()[j['backendMode']] ??
@@ -490,11 +516,19 @@ class AppSettings {
       compressionThreshold: i('compressionThreshold', d.compressionThreshold).clamp(1000, 1000000),
       compressionModel: s('compressionModel', d.compressionModel),
       delegateModel: s('delegateModel', d.delegateModel),
-      imageModel: s('imageModel', d.imageModel).trim().isEmpty ? d.imageModel : s('imageModel', d.imageModel).trim(),
+      // Move the previous default forward without replacing custom choices.
+      imageModel: savedImageModel.isEmpty || savedImageModel == 'gpt-image-flare-2.1' ? d.imageModel : savedImageModel,
       imageQuality: const ['low', 'medium', 'high', 'xhigh', 'max', 'auto'].contains(j['imageQuality'])
           ? j['imageQuality'] as String
           : d.imageQuality,
+      imageSize: imageSizeChoices.contains(j['imageSize']) ? j['imageSize'] as String : d.imageSize,
+      imageFormat: savedImageFormat == 'jpg'
+          ? 'jpeg'
+          : imageFormatChoices.contains(savedImageFormat)
+          ? savedImageFormat
+          : d.imageFormat,
       webSearchEnabled: b('webSearchEnabled', d.webSearchEnabled),
+      useLunaPointer: b('useLunaPointer', d.useLunaPointer),
       screenshotDelayMs: i('screenshotDelayMs', d.screenshotDelayMs).clamp(0, 10000),
       autoScreenshot: b('autoScreenshot', d.autoScreenshot),
       screenshotScale: switch (j['screenshotScale']) {

@@ -16,12 +16,15 @@ class BackgroundChatTasks {
     required this.history,
     required this.currentConversation,
     required this.onChanged,
+    this.onImageCompleted,
   });
   final ImageGenerationClient images;
   final WebSearchService search;
   final HistoryStore history;
   final Conversation Function() currentConversation;
   final void Function(Conversation conversation) onChanged;
+  final Future<void> Function(Conversation conversation, Message message)?
+  onImageCompleted;
   final _conversations = <String, Conversation>{};
   final _references = <String, int>{};
   final _deleted = <String>{};
@@ -61,24 +64,67 @@ class BackgroundChatTasks {
     required String model,
     required String quality,
     required String textModel,
-    String size = 'auto',
+    String size = '1024x1024',
+    String outputFormat = 'jpeg',
+    String action = 'generate',
+    String? sourceMessageId,
   }) async {
     if (prompt.trim().isEmpty || prompt.length > 32000) {
       throw ArgumentError('Image prompt must contain 1–32,000 characters.');
     }
+    if (action != 'generate' && action != 'edit') {
+      throw ArgumentError('Image action must be generate or edit.');
+    }
+    if (action == 'generate' &&
+        sourceMessageId != null &&
+        sourceMessageId.isNotEmpty) {
+      throw ArgumentError('Use action edit when specifying a source image.');
+    }
+    final sourceConversation = currentConversation();
+    final references = sourceConversation.messages
+        .where((m) => m.image != null)
+        .toList();
+    final Message? source;
+    if (action == 'edit') {
+      final artwork = references
+          .where(
+            (m) =>
+                m.image!.generated ||
+                m.meta['imageKind'] == 'generated' ||
+                m.meta['imageKind'] == 'media',
+          )
+          .toList();
+      final candidates = artwork.isNotEmpty ? artwork : references;
+      source = sourceMessageId == null || sourceMessageId.isEmpty
+          ? (candidates.isEmpty ? null : candidates.last)
+          : references.where((m) => m.id == sourceMessageId).firstOrNull;
+      if (source == null) {
+        throw ArgumentError(
+          'No matching image in this chat to edit. Generate or attach an image first.',
+        );
+      }
+    } else {
+      source = null;
+    }
     if (_imageJobs.length >= 3) {
-      throw StateError('Three images are already being generated. Wait for one to finish.');
+      throw StateError(
+        'Three images are already being generated. Wait for one to finish.',
+      );
     }
     final c = _retain();
     final message = Message(
       kind: MessageKind.assistant,
-      text: 'Generating image…',
+      text: action == 'edit' ? 'Editing image…' : 'Generating image…',
       meta: {
         'type': 'image_generation',
         'status': 'pending',
         'prompt': prompt.trim(),
         'model': model,
         'quality': quality,
+        'size': size,
+        'format': outputFormat,
+        'action': action,
+        if (source != null) 'source_message_id': source.id,
       },
     );
     final job = _ImageJob(c, message);
@@ -103,15 +149,30 @@ class BackgroundChatTasks {
         'note': 'Image generation was cancelled because its chat was removed or the app closed.',
       };
     }
-    unawaited(_runImage(job, prompt: prompt.trim(), model: model, quality: quality, textModel: textModel, size: size));
+    unawaited(
+      _runImage(
+        job,
+        prompt: prompt.trim(),
+        model: model,
+        quality: quality,
+        textModel: textModel,
+        size: size,
+        outputFormat: outputFormat,
+        inputImages: source == null ? const [] : [source.image!],
+      ),
+    );
     return {
       'ok': true,
       'status': 'queued',
       'message_id': message.id,
       'model': model,
       'quality': quality,
+      'size': size,
+      'format': outputFormat,
+      'action': action,
+      if (source != null) 'source_message_id': source.id,
       'note':
-          'Image generation started in the background. The image will appear in this chat when complete. '
+          'Image ${action == 'edit' ? 'editing' : 'generation'} started in the background. The image will appear in this chat when complete. '
           'Do not claim it is finished or call generate_image again for this same request.',
     };
   }
@@ -123,6 +184,8 @@ class BackgroundChatTasks {
     required String quality,
     required String textModel,
     required String size,
+    required String outputFormat,
+    required List<ImageAttachment> inputImages,
   }) async {
     final watch = Stopwatch()..start();
     try {
@@ -134,6 +197,8 @@ class BackgroundChatTasks {
         textModel: textModel,
         outputDirectory: Directory(history.paths.imagesDir),
         size: size,
+        outputFormat: outputFormat,
+        inputImages: inputImages,
       );
       if (job.cancelled || !_canPost(job.conversation)) {
         // The user removed the chat while the request was running. Do not
@@ -143,11 +208,34 @@ class BackgroundChatTasks {
         } catch (_) {}
         return;
       }
-      job.message
-        ..image = image
-        ..text = '';
-      job.message.meta['status'] = 'completed';
-      job.message.meta['duration_ms'] = image.generationDurationMs ?? watch.elapsedMilliseconds;
+      final completed = Message(
+        id: job.message.id,
+        kind: MessageKind.assistant,
+        image: image,
+        meta: {
+          ...job.message.meta,
+          'status': 'completed',
+          'imageKind': 'generated',
+          'duration_ms':
+              image.generationDurationMs ?? watch.elapsedMilliseconds,
+          'requested_at': job.message.createdAt.toIso8601String(),
+        },
+      );
+      // Completion is a new visible event: keep its stable reference ID, but
+      // move it after any messages sent while the background job was running.
+      job.conversation.messages.removeWhere((m) => m.id == job.message.id);
+      job.conversation.add(completed);
+      job.message = completed;
+      if (_canPost(job.conversation) && !job.cancelled) {
+        try {
+          await onImageCompleted?.call(job.conversation, job.message);
+        } catch (e) {
+          // The JPEG remains a successful, viewable result even if its live
+          // context delivery fails; reconnect can restore it from history.
+          job.message.meta['context_error'] = redactSecrets('$e');
+          onChanged(job.conversation);
+        }
+      }
       try {
         await _persist(job.conversation);
       } catch (e) {
@@ -155,7 +243,8 @@ class BackgroundChatTasks {
         // disk error from a generation failure so the user can still view it.
         if (!_deleted.contains(job.conversation.id)) {
           job.message.meta['save_error'] = redactSecrets('$e');
-          job.message.text = 'Image generated, but it could not be saved to chat history.';
+          job.message.text =
+              'Image generated, but it could not be saved to chat history.';
           onChanged(job.conversation);
         }
       }
@@ -192,7 +281,10 @@ class BackgroundChatTasks {
       // Provider citation markers are only useful with their annotation map.
       // Persist readable source links separately for the chat UI.
       final answer = (result['answer'] as String? ?? '')
-          .replaceAll(RegExp(r'\uE200[^\uE201]*\uE201|\uE202[^\uE201]*\uE201'), '')
+          .replaceAll(
+            RegExp(r'\uE200[^\uE201]*\uE201|\uE202[^\uE201]*\uE201'),
+            '',
+          )
           .trim();
       c.add(
         Message(
@@ -228,7 +320,8 @@ class BackgroundChatTasks {
   static bool recoverInterrupted(Conversation c) {
     var changed = false;
     for (final m in c.messages) {
-      if (m.meta['type'] == 'image_generation' && m.meta['status'] == 'pending') {
+      if (m.meta['type'] == 'image_generation' &&
+          m.meta['status'] == 'pending') {
         m.meta['status'] = 'interrupted';
         m.text = 'Image generation was interrupted. Ask to generate the image again.';
         changed = true;
@@ -260,6 +353,6 @@ class BackgroundChatTasks {
 class _ImageJob {
   _ImageJob(this.conversation, this.message);
   final Conversation conversation;
-  final Message message;
+  Message message;
   bool cancelled = false;
 }

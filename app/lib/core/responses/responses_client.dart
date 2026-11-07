@@ -222,6 +222,21 @@ class ResponsesClient {
     include: const ['web_search_call.action.sources'],
   );
 
+  /// Dedicated pointer model: minimal reasoning and only the supplied pointer
+  /// function. Keep this separate from create so ordinary chat stays unchanged.
+  Future<ResponsesResult> pointerAction({
+    required List<Map<String, Object?>> input,
+    required String instructions,
+    required List<Map<String, Object?>> tools,
+  }) => _create(
+    model: 'gpt-6-luna',
+    input: input,
+    instructions: instructions,
+    tools: tools,
+    reasoning: const {'effort': 'none'},
+    toolChoice: 'required',
+  );
+
   Future<ResponsesResult> _create({
     required String model,
     required List<Map<String, Object?>> input,

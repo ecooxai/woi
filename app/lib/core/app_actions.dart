@@ -463,6 +463,10 @@ class AppActions {
         final secs = _standbySeconds(lv);
         next = s.copyWith(idleStandbySeconds: secs);
         done = secs == 0 ? 'idle standby off' : 'idle standby after $secs s';
+      case 'use_luna_pointer' || 'luna_pointer':
+        final on = _onOff(lv, 'use_luna_pointer');
+        next = s.copyWith(useLunaPointer: on);
+        done = on ? 'gpt-6-luna pointer control enabled' : 'gpt-6-luna pointer control disabled';
       case 'web_search' || 'web_search_enabled':
         final on = _onOff(lv, 'web_search');
         next = s.copyWith(webSearchEnabled: on);
@@ -531,7 +535,7 @@ class AppActions {
         throw AppActionError(
           'unknown setting "$key" (theme, mic_mode, voice, voice_model, compaction_threshold, run_in_terminal, '
           'edit_apply_delay, echo_cancellation, audio_route, stop_word_detection, stop_words, usage_guard, auto_screenshot, screenshot_delay, reply_delay, idle_standby, '
-          'web_search, image_model, image_quality, camera_replaces_screenshot, thinking_chime, confirm_commands, fallback_to_direct, backend, '
+          'use_luna_pointer, web_search, image_model, image_quality, camera_replaces_screenshot, thinking_chime, confirm_commands, fallback_to_direct, backend, '
           'compression_model, delegate_model, chat_pane, workspace)',
         );
     }

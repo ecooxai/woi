@@ -6,22 +6,86 @@ import 'package:woi/core/voice/backend_factory.dart';
 import 'package:woi/core/voice/realtime_ws_backend.dart';
 
 void main() {
-  test('image defaults and web search migrate without replacing custom model IDs', () {
+  test('image output choices persist and pointer routing refreshes session tools', () {
     final d = AppSettings.fromJson(const {});
-    expect(d.imageModel, 'gpt-image-flare-2.1');
+    expect(d.imageModel, 'gpt-image-2.6-flare');
     expect(d.imageQuality, 'low');
+    expect(d.imageSize, '1024x1024');
+    expect(d.imageFormat, 'jpeg');
     expect(d.webSearchEnabled, isTrue);
-    final changed = d.copyWith(imageModel: 'tenant-image-model', imageQuality: 'high', webSearchEnabled: false);
+    expect(d.useLunaPointer, isTrue);
+    final changed = d.copyWith(
+      imageModel: 'tenant-image-model',
+      imageQuality: 'high',
+      imageSize: '1536x1024',
+      imageFormat: 'png',
+      useLunaPointer: false,
+    );
     final restored = AppSettings.fromJson(changed.toJson());
     expect(restored.imageModel, 'tenant-image-model');
     expect(restored.imageQuality, 'high');
-    expect(restored.webSearchEnabled, isFalse);
-    expect(AppSettings.fromJson(const {'imageQuality': 'invalid'}).imageQuality, 'low');
+    expect(restored.imageSize, '1536x1024');
+    expect(restored.imageFormat, 'png');
+    expect(restored.useLunaPointer, isFalse);
+    expect(
+      changed.copyWith(useLunaPointer: true).sessionDiffers(d),
+      isFalse,
+      reason: 'Image output choices apply to subsequent generation calls',
+    );
+    expect(
+      d.copyWith(useLunaPointer: false).sessionDiffers(d),
+      isTrue,
+      reason: 'Changing the pointer agent refreshes control_pointer schema availability',
+    );
+    final searchOff = d.copyWith(webSearchEnabled: false);
+    expect(AppSettings.fromJson(searchOff.toJson()).webSearchEnabled, isFalse);
+    expect(searchOff.sessionDiffers(d), isTrue, reason: 'Search tool availability refreshes the session');
     for (final quality in ['low', 'medium', 'high', 'xhigh', 'max', 'auto']) {
       expect(AppSettings.fromJson(d.copyWith(imageQuality: quality).toJson()).imageQuality, quality);
     }
-    expect(changed.sessionDiffers(d), isTrue, reason: 'Search tools are refreshed when availability changes');
-    expect(d.copyWith(imageModel: 'tenant-image-model', imageQuality: 'high').sessionDiffers(d), isFalse);
+    for (final size in AppSettings.imageSizeChoices) {
+      expect(AppSettings.fromJson(d.copyWith(imageSize: size).toJson()).imageSize, size);
+    }
+    for (final format in AppSettings.imageFormatChoices) {
+      expect(AppSettings.fromJson(d.copyWith(imageFormat: format).toJson()).imageFormat, format);
+    }
+    final invalid = AppSettings.fromJson(const {
+      'imageQuality': 'invalid',
+      'imageSize': 'invalid',
+      'imageFormat': 'invalid',
+    });
+    expect(invalid.imageQuality, 'low');
+    expect(invalid.imageSize, '1024x1024');
+    expect(invalid.imageFormat, 'jpeg');
+    expect(AppSettings.fromJson(const {'imageFormat': 'JPG'}).imageFormat, 'jpeg');
+  });
+
+  test('previous image default migrates without resetting unrelated saved preferences', () {
+    final previous =
+        const AppSettings(
+            imageModel: 'gpt-image-flare-2.1',
+            imageQuality: 'high',
+            delegateModel: 'private-reasoner',
+            backendMode: BackendMode.apiKey,
+            apiKey: 'qa-only-key',
+            webSearchEnabled: false,
+            theme: AppTheme.dark,
+            micMode: MicMode.muted,
+            screenshotScale: 0.5,
+          ).toJson()
+          ..remove('imageSize')
+          ..remove('imageFormat')
+          ..remove('useLunaPointer');
+    expect(AppSettings.fromJson(previous).toJson(), {
+      ...previous,
+      'imageModel': 'gpt-image-2.6-flare',
+      'imageSize': '1024x1024',
+      'imageFormat': 'jpeg',
+      'useLunaPointer': true,
+    });
+    for (final custom in ['tenant-image-model', 'gpt-image-flare-2.1-custom']) {
+      expect(AppSettings.fromJson({...previous, 'imageModel': custom}).imageModel, custom);
+    }
   });
 
   test('reply delay defaults to 2 s, is clamped, and sets the Direct server VAD silence', () async {

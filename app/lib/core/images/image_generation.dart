@@ -11,6 +11,8 @@ import '../models/message.dart';
 import '../responses/responses_client.dart'
     show SseParser, kCodexResponsesUrl, ResponsesClient;
 import '../util/image_mime.dart';
+import 'image_encoding.dart';
+import 'image_model_catalog.dart';
 
 class ImageGenerationException implements Exception {
   const ImageGenerationException(this.message, {this.status, this.code});
@@ -29,17 +31,22 @@ class ImageGenerationClient {
   ImageGenerationClient({
     required this.credentials,
     Uri? apiEndpoint,
+    Uri? apiEditsEndpoint,
     Uri? codexEndpoint,
     HttpClient Function()? httpClient,
     this.timeout = const Duration(minutes: 5),
   }) : apiEndpoint =
            apiEndpoint ??
            Uri.parse('https://api.openai.com/v1/images/generations'),
+       apiEditsEndpoint =
+           apiEditsEndpoint ??
+           Uri.parse('https://api.openai.com/v1/images/edits'),
        codexEndpoint = codexEndpoint ?? kCodexResponsesUrl,
        _httpClient = httpClient ?? HttpClient.new;
 
   final Future<Credentials?> Function() credentials;
   final Uri apiEndpoint;
+  final Uri apiEditsEndpoint;
   final Uri codexEndpoint;
   final HttpClient Function() _httpClient;
   final Duration timeout;
@@ -47,6 +54,9 @@ class ImageGenerationClient {
   bool _closed = false;
   // A completed image can occur in both output_item.done and response.completed.
   static const maxResponseBytes = 112 * 1024 * 1024;
+  static const maxInputImages = 16;
+  static const maxInputJpegBytes = 14 * 1024 * 1024;
+  static const maxTotalInputJpegBytes = 32 * 1024 * 1024;
 
   void close() {
     _closed = true;
@@ -62,7 +72,9 @@ class ImageGenerationClient {
     required String quality,
     required String textModel,
     required Directory outputDirectory,
-    String size = 'auto',
+    String size = kDefaultImageSize,
+    String outputFormat = kDefaultImageFormat,
+    List<ImageAttachment> inputImages = const [],
   }) async {
     if (_closed) {
       throw const ImageGenerationException('The image service has closed.');
@@ -92,6 +104,38 @@ class ImageGenerationClient {
         'The image quality must be auto, low, medium, high, xhigh or max.',
       );
     }
+    if (!const {'jpeg', 'png', 'webp'}.contains(outputFormat)) {
+      throw const ImageGenerationException(
+        'The image format must be jpeg, png or webp.',
+      );
+    }
+    int? targetWidth;
+    int? targetHeight;
+    if (size != 'auto') {
+      final dimensions = RegExp(r'^(\d{2,5})x(\d{2,5})$').firstMatch(size);
+      final width = dimensions == null ? 0 : int.parse(dimensions.group(1)!);
+      final height = dimensions == null ? 0 : int.parse(dimensions.group(2)!);
+      if (width <= 0 ||
+          height <= 0 ||
+          width % 16 != 0 ||
+          height % 16 != 0 ||
+          width * height > kMaximumImagePixels ||
+          width > height * 3 ||
+          height > width * 3) {
+        throw const ImageGenerationException(
+          'Choose auto or image dimensions divisible by 16 with an aspect ratio between 1:3 and 3:1.',
+        );
+      }
+      targetWidth = width;
+      targetHeight = height;
+    }
+    if (inputImages.length > maxInputImages) {
+      throw const ImageGenerationException(
+        'An image edit supports up to 16 reference images.',
+      );
+    }
+    // Snapshot references before the caller can mutate its conversation/list.
+    final references = List<ImageAttachment>.of(inputImages);
     final creds = await credentials();
     if (creds == null) {
       throw const ImageGenerationException(
@@ -105,7 +149,9 @@ class ImageGenerationClient {
     _active.add(client);
     final watch = Stopwatch()..start();
     try {
-      final bytes = await _request(
+      final inputs = await _readInputImages(references).timeout(timeout);
+      _checkOpen();
+      final raw = await _request(
         client,
         creds,
         prompt,
@@ -113,7 +159,24 @@ class ImageGenerationClient {
         quality,
         textModel,
         size,
-      ).timeout(timeout);
+        outputFormat,
+        inputs,
+      ).timeout(_remaining(watch));
+      _checkOpen();
+      final providerInfo = img.findDecoderForData(raw)?.startDecode(raw);
+      if (providerInfo == null ||
+          providerInfo.width <= 0 ||
+          providerInfo.height <= 0) {
+        throw const ImageGenerationException(
+          'The provider returned an invalid image.',
+        );
+      }
+      final bytes = await normalizeImageEncoding(
+        raw,
+        outputFormat: outputFormat,
+        targetWidth: targetWidth,
+        targetHeight: targetHeight,
+      ).timeout(_remaining(watch));
       if (_closed) {
         throw const ImageGenerationException(
           'The image request was cancelled.',
@@ -126,12 +189,7 @@ class ImageGenerationClient {
         );
       }
       await outputDirectory.create(recursive: true);
-      final mime = imageMimeOf(bytes);
-      final ext = mime == 'image/jpeg'
-          ? 'jpg'
-          : mime == 'image/webp'
-          ? 'webp'
-          : 'png';
+      final ext = imageExtOf(bytes);
       final file = File(
         p.join(outputDirectory.path, '${newId('generated-')}.$ext'),
       );
@@ -158,8 +216,8 @@ class ImageGenerationClient {
         path: file.path,
         width: info.width,
         height: info.height,
-        originalWidth: info.width,
-        originalHeight: info.height,
+        originalWidth: providerInfo.width,
+        originalHeight: providerInfo.height,
         byteSize: bytes.length,
         generationDurationMs: watch.elapsedMilliseconds,
         generationModel: model,
@@ -185,6 +243,52 @@ class ImageGenerationClient {
     }
   }
 
+  void _checkOpen() {
+    if (_closed) {
+      throw const ImageGenerationException('The image request was cancelled.');
+    }
+  }
+
+  Duration _remaining(Stopwatch watch) {
+    final left = timeout - watch.elapsed;
+    if (left <= Duration.zero) {
+      throw TimeoutException('Image request timed out');
+    }
+    return left;
+  }
+
+  Future<List<Uint8List>> _readInputImages(
+    List<ImageAttachment> references,
+  ) async {
+    final images = <Uint8List>[];
+    var total = 0;
+    for (var i = 0; i < references.length; i++) {
+      _checkOpen();
+      final file = File(references[i].path);
+      final stat = await file.stat();
+      if (stat.type != FileSystemEntityType.file) {
+        throw ImageGenerationException(
+          'Reference image ${i + 1} is no longer available.',
+        );
+      }
+      if (stat.size <= 0 || stat.size > kMaximumEncodedImageBytes) {
+        throw ImageGenerationException(
+          'Reference image ${i + 1} is empty or too large to process.',
+        );
+      }
+      final jpeg = await normalizeImageToJpeg(await file.readAsBytes());
+      _checkOpen();
+      total += jpeg.length;
+      if (jpeg.length > maxInputJpegBytes || total > maxTotalInputJpegBytes) {
+        throw const ImageGenerationException(
+          'The reference images are too large to send together. Use fewer or smaller images.',
+        );
+      }
+      images.add(jpeg);
+    }
+    return images;
+  }
+
   Future<Uint8List> _request(
     HttpClient client,
     Credentials creds,
@@ -193,50 +297,78 @@ class ImageGenerationClient {
     String quality,
     String textModel,
     String size,
+    String outputFormat,
+    List<Uint8List> inputImages,
   ) async {
     final api = creds.mode == AuthMode.apiKey;
-    final body = api
-        ? <String, Object?>{
-            'model': model,
-            'prompt': prompt,
-            'quality': quality,
-            'size': size,
-            'n': 1,
-            'output_format': 'png',
-          }
-        : <String, Object?>{
-            'model': textModel,
-            'instructions': 'Generate the image requested by the user with the image_generation tool. Return one image. Do not claim success without an image result.',
-            'input': [
-              {
-                'role': 'user',
-                'content': [
-                  {'type': 'input_text', 'text': prompt},
-                ],
-              },
-            ],
-            'tools': [
-              {
-                'type': 'image_generation',
-                'model': model,
-                'quality': quality,
-                'size': size,
-                'output_format': 'png',
-                'action': 'generate',
-              },
-            ],
-            'tool_choice': {'type': 'image_generation'},
-            'stream': true,
-            'store': false,
-          };
-    final req = await client.postUrl(api ? apiEndpoint : codexEndpoint);
+    final edit = inputImages.isNotEmpty;
+    final nativePrompt = size == 'auto'
+        ? prompt
+        : '$prompt\n\nOutput requirement: exactly $size pixels. Keep all requested content inside this canvas without cropping or stretching.';
+    final endpoint = api
+        ? (edit ? apiEditsEndpoint : apiEndpoint)
+        : codexEndpoint;
+    final req = await client.postUrl(endpoint);
     creds.headers().forEach(req.headers.set);
-    req.headers.contentType = ContentType.json;
     req.headers.set(
       HttpHeaders.acceptHeader,
       api ? 'application/json' : 'text/event-stream',
     );
-    req.add(utf8.encode(jsonEncode(body)));
+    if (api && edit) {
+      _writeEditMultipart(req, {
+        'model': model,
+        'prompt': prompt,
+        'quality': quality,
+        'size': size,
+        'n': '1',
+        'output_format': outputFormat,
+      }, inputImages);
+    } else {
+      final body = api
+          ? <String, Object?>{
+              'model': model,
+              'prompt': prompt,
+              'quality': quality,
+              'size': size,
+              'n': 1,
+              'output_format': outputFormat,
+            }
+          : <String, Object?>{
+              'model': textModel,
+              'instructions': edit
+                  ? 'Edit the supplied reference images as requested with the image_generation tool. Preserve details the user did not ask to change. Return one edited image. Do not claim success without an image result.'
+                  : 'Generate the image requested by the user with the image_generation tool. Return one image. Do not claim success without an image result.',
+              'input': [
+                {
+                  'role': 'user',
+                  'content': [
+                    {'type': 'input_text', 'text': nativePrompt},
+                    for (final image in inputImages)
+                      {
+                        'type': 'input_image',
+                        'image_url':
+                            'data:image/jpeg;base64,${base64Encode(image)}',
+                      },
+                  ],
+                },
+              ],
+              'tools': [
+                {
+                  'type': 'image_generation',
+                  'model': model,
+                  'quality': quality,
+                  'size': size,
+                  'output_format': outputFormat,
+                  'action': edit ? 'edit' : 'generate',
+                },
+              ],
+              'tool_choice': {'type': 'image_generation'},
+              'stream': true,
+              'store': false,
+            };
+      req.headers.contentType = ContentType.json;
+      req.add(utf8.encode(jsonEncode(body)));
+    }
     final response = await req.close();
     final quota = <String, String>{};
     response.headers.forEach((key, values) {
@@ -269,6 +401,47 @@ class ImageGenerationClient {
       model: model,
       secrets: [creds.bearerToken],
     );
+  }
+
+  /// Images edits accepts multipart uploads; references are already validated
+  /// JPEG copies. Fixed filenames avoid exposing local paths in request headers.
+  /// https://developers.openai.com/api/reference/resources/images/methods/edit
+  static void _writeEditMultipart(
+    HttpClientRequest request,
+    Map<String, String> fields,
+    List<Uint8List> images,
+  ) {
+    final boundary = 'woi-image-${newId('part-')}';
+    final parts = <List<int>>[];
+    for (final field in fields.entries) {
+      parts.add(
+        utf8.encode(
+          '--$boundary\r\nContent-Disposition: form-data; name="${field.key}"\r\n\r\n${field.value}\r\n',
+        ),
+      );
+    }
+    for (var i = 0; i < images.length; i++) {
+      parts.add(
+        utf8.encode(
+          '--$boundary\r\nContent-Disposition: form-data; name="image[]"; filename="reference-${i + 1}.jpg"\r\nContent-Type: image/jpeg\r\n\r\n',
+        ),
+      );
+      parts.add(images[i]);
+      parts.add(const [13, 10]);
+    }
+    parts.add(utf8.encode('--$boundary--\r\n'));
+    request.headers.contentType = ContentType(
+      'multipart',
+      'form-data',
+      parameters: {'boundary': boundary},
+    );
+    request.contentLength = parts.fold<int>(
+      0,
+      (length, part) => length + part.length,
+    );
+    for (final part in parts) {
+      request.add(part);
+    }
   }
 
   static Future<Uint8List> _readBounded(

@@ -11,7 +11,12 @@ List<Message> _messages(int n, {DateTime? last, Duration step = const Duration(m
   final end = last ?? _now;
   return [
     for (var i = 0; i < n; i++)
-      Message(id: 'm$i', kind: i.isEven ? MessageKind.user : MessageKind.assistant, text: 'msg $i', createdAt: end.subtract(step * (n - 1 - i))),
+      Message(
+        id: 'm$i',
+        kind: i.isEven ? MessageKind.user : MessageKind.assistant,
+        text: 'msg $i',
+        createdAt: end.subtract(step * (n - 1 - i)),
+      ),
   ];
 }
 
@@ -28,6 +33,26 @@ class _HostState extends State<_Host> {
   late String conv = widget.conversationId;
 
   void add(Message m) => setState(() => messages.add(m));
+  void completeImage(String id) => setState(() {
+    messages.removeWhere((m) => m.id == id);
+    messages.add(
+      Message(
+        id: id,
+        kind: MessageKind.assistant,
+        text: 'completed image',
+        createdAt: _now,
+        image: const ImageAttachment(
+          path: '/transcript-layout-fixture.jpg',
+          width: 1024,
+          height: 1024,
+          originalWidth: 1024,
+          originalHeight: 1024,
+          generationDurationMs: 1000,
+        ),
+        meta: {'type': 'image_generation', 'status': 'completed'},
+      ),
+    );
+  });
   void switchTo(String id, List<Message> msgs) => setState(() {
     conv = id;
     messages = msgs;
@@ -43,7 +68,7 @@ class _HostState extends State<_Host> {
         messages: messages,
         clock: () => _now,
         onOpenHistory: () => Scaffold.of(context).openEndDrawer(),
-        tileBuilder: (context, m, i) => SizedBox(height: 60, child: Text(m.text)),
+        tileBuilder: (context, m, i) => SizedBox(height: m.image == null ? 60 : 300, child: Text(m.text)),
       ),
     ),
   );
@@ -186,6 +211,52 @@ void main() {
     host.add(Message(id: 'new', kind: MessageKind.assistant, text: 'fresh reply', createdAt: _now));
     await t.pump();
     expect(_state(t).renderedCount, 51);
+  });
+
+  testWidgets('same-length completed image moves to the bottom with its stable ID', (t) async {
+    await _pump(t, _Host(messages: _messages(80)));
+    final host = t.state<_HostState>(find.byType(_Host));
+    final count = host.messages.length;
+    host.completeImage('m70');
+    await t.pump();
+    expect(host.messages.length, count);
+    expect(host.messages.last.id, 'm70');
+    expect(find.text('completed image'), findsOneWidget);
+    expect(t.getTopLeft(find.text('completed image')).dy, greaterThanOrEqualTo(0));
+    expect(t.getBottomLeft(find.text('completed image')).dy, lessThanOrEqualTo(700));
+    expect(_state(t).scrollController.position.pixels, 0);
+    expect(_state(t).renderedCount, 50);
+    expect(t.takeException(), isNull);
+  });
+
+  testWidgets('completed last message grows into an image while following the bottom', (t) async {
+    await _pump(t, _Host(messages: _messages(80)));
+    final host = t.state<_HostState>(find.byType(_Host));
+    host.completeImage('m79');
+    await t.pump();
+    expect(host.messages.length, 80);
+    expect(find.text('completed image'), findsOneWidget);
+    expect(t.getBottomLeft(find.text('completed image')).dy, lessThanOrEqualTo(700));
+    expect(_state(t).scrollController.position.pixels, 0);
+    expect(t.takeException(), isNull);
+  });
+
+  testWidgets('same-length image completion does not pull an older reader to the bottom', (t) async {
+    await _pump(t, _Host(messages: _messages(80)));
+    final host = t.state<_HostState>(find.byType(_Host));
+    final sc = _state(t).scrollController;
+    sc.jumpTo(1000);
+    await t.pump();
+    expect(find.text('msg 60').hitTestable(), findsOneWidget);
+    // The pending message was outside the current window; completing it
+    // replaces that old entry and appends a taller image with the same ID.
+    host.completeImage('m5');
+    await t.pump();
+    expect(host.messages.length, 80);
+    expect(sc.position.pixels, greaterThan(48), reason: 'Reading older messages must not jump to the newest image');
+    expect(find.text('completed image').hitTestable(), findsNothing);
+    expect(find.text('msg 60').hitTestable(), findsOneWidget);
+    expect(t.takeException(), isNull);
   });
 
   testWidgets('switching conversations resets to the newest 50', (t) async {

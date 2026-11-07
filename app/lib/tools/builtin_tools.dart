@@ -16,6 +16,14 @@ import 'confirmation.dart';
 import 'python_tool.dart';
 import 'tool_registry.dart';
 
+typedef PointerToolDelegate = Future<Map<String, Object?>> Function({
+  required String tool,
+  required Map<String, Object?> arguments,
+  required String request,
+  required String callId,
+  Screenshot? reference,
+});
+
 /// Shared state and dependencies for the built-in tools.
 class ToolEnvironment {
   ToolEnvironment({
@@ -27,6 +35,7 @@ class ToolEnvironment {
     this.terminalShell,
     this.locator,
     this.userText,
+    this.pointerDelegate,
   });
 
   final PlatformServices platform;
@@ -51,6 +60,10 @@ class ToolEnvironment {
   /// click_screen whose user asked for "the center of the screen" clicks it
   /// however the model words the target.
   String Function()? userText;
+
+  /// Installed by the app: click and move always pass through the dedicated
+  /// visual agent while the setting is enabled, including ordinary delegates.
+  final PointerToolDelegate? pointerDelegate;
 }
 
 /// click_screen: what to click and how it was found.
@@ -355,6 +368,16 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
         },
       ),
       handler: (args, call) async {
+        final pointer = env.pointerDelegate;
+        if (pointer != null && env.settings().useLunaPointer) {
+          return pointer(
+            tool: call.name,
+            callId: call.callId,
+            arguments: args,
+            request: env.userText?.call() ?? '',
+            reference: env.lastScreenshot,
+          );
+        }
         final plan = await planClick(
           target: args.str('target'),
           position: args.str('position'),
@@ -401,6 +424,16 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
         },
       ),
       handler: (args, call) async {
+        final pointer = env.pointerDelegate;
+        if (pointer != null && env.settings().useLunaPointer) {
+          return pointer(
+            tool: call.name,
+            callId: call.callId,
+            arguments: args,
+            request: env.userText?.call() ?? '',
+            reference: env.lastScreenshot,
+          );
+        }
         if (args.str('position').isEmpty &&
             (args['x'] is! num || args['y'] is! num)) {
           throw ToolFailure('Give both x and y, or a screen position.');

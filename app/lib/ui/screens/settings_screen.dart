@@ -339,6 +339,35 @@ class _SettingsViewState extends State<SettingsView> {
         keywords: 'image generation drawing picture photo flare ${_s.imageModel}',
       ),
       _Item(
+        'Image size',
+        'Width × height in pixels.',
+        (w) => _select<String>(
+          id: 'image-size',
+          options: AppSettings.imageSizeChoices,
+          value: _s.imageSize,
+          label: (v) => v == 'auto' ? 'Auto' : v.replaceAll('x', ' × '),
+          onChanged: (v) => _apply(_s.copyWith(imageSize: v)),
+        ),
+        keywords: 'image generation resolution dimensions square portrait landscape auto ${_s.imageSize}',
+      ),
+      _Item(
+        'Image format',
+        'Format for generated image files.',
+        (w) => _quickChoices<String>(
+          id: 'image-format',
+          options: AppSettings.imageFormatChoices,
+          value: _s.imageFormat,
+          label: (v) => switch (v) {
+            'jpeg' => 'JPG',
+            'webp' => 'WebP',
+            _ => v.toUpperCase(),
+          },
+          onChanged: (v) => _apply(_s.copyWith(imageFormat: v)),
+        ),
+        inline: true,
+        keywords: 'image generation file format jpg jpeg png webp ${_s.imageFormat}',
+      ),
+      _Item(
         'Image quality',
         'Low uses less time and tokens.',
         (w) => _quickChoices<String>(
@@ -358,6 +387,17 @@ class _SettingsViewState extends State<SettingsView> {
         'Let the assistant search the internet for current information.',
         (w) => _switch(w, _s.webSearchEnabled, (v) => _apply(_s.copyWith(webSearchEnabled: v))),
         keywords: 'search internet web browse online sources tools',
+      ),
+      _Item(
+        'Luna pointer agent',
+        'Use a dedicated gpt-6-luna agent for clicks and pointer movement.',
+        (w) => _switch(
+          w,
+          _s.useLunaPointer,
+          (v) => _apply(_s.copyWith(useLunaPointer: v)),
+          key: const ValueKey('use-luna-pointer-switch'),
+        ),
+        keywords: 'pointer mouse click move luna agent control',
       ),
       _Item(
         'Theme',

@@ -14,6 +14,7 @@ import '../audio/stop_word_spotter.dart';
 import '../audio/wav.dart';
 import '../context/context_manager.dart';
 import '../context/image_tiers.dart';
+import '../images/generated_image_context.dart';
 import '../media/media_context.dart';
 import '../models/message.dart';
 import '../util/usage_limit.dart';
@@ -137,6 +138,7 @@ class TurnPipeline extends ChangeNotifier {
     this.onScreenshotCaptured,
     this.imageCompactor,
     this.onTurnStart,
+    this.onToolInterrupt,
     this.localCommand,
     this.onSelfTalk,
     this.stopWordSpotter,
@@ -173,6 +175,10 @@ class TurnPipeline extends ChangeNotifier {
   /// A user turn starts (speech or typed text), e.g. to remember the app
   /// the user was in as the default `send_keys` target.
   void Function()? onTurnStart;
+
+  /// Explicit stop/cancel: invalidate background pointer work before it can
+  /// deliver late input. New turns have their own [onTurnStart] invalidation.
+  void Function()? onToolInterrupt;
 
   /// User text handled locally without the model ("apply" / "reject" while
   /// an edit preview is pending, typed "undo that"). Returns true when
@@ -853,6 +859,9 @@ class TurnPipeline extends ChangeNotifier {
         managed.setInputEnabled(_forwarding);
         await managed.setCaptureSuspended(_recordingHold);
       }
+      final conversation = _conv;
+      final generatedImages = await recentGeneratedImageContext(conversation);
+      if (!identical(_backend, b) || !identical(_conv, conversation)) return;
       await b.connect(cfg);
       debugPrint('pre-connect: connect end');
       if (!identical(_backend, b)) return;
@@ -866,6 +875,10 @@ class TurnPipeline extends ChangeNotifier {
       // before a later image item arrives, and the model would answer
       // without seeing the screen. Order on the socket: images, buffered
       // audio, live audio.
+      for (final item in generatedImages) {
+        _deliverGeneratedImage(conversation, item);
+      }
+      _flushPendingGeneratedImages();
       _flushPendingImages();
       _pushScreenMemory();
       _flushPreConnect(b);
@@ -1167,6 +1180,7 @@ class TurnPipeline extends ChangeNotifier {
       return;
     }
     kwsCuts++;
+    onToolInterrupt?.call();
     final why = 'kws "${h.keyword}" threshold ${h.threshold.toStringAsFixed(2)}, lag $lag ms';
     debugPrint('barge-in: $why t=${DateTime.now().millisecondsSinceEpoch}');
     if (_userSpeaking) {
@@ -1326,6 +1340,7 @@ class TurnPipeline extends ChangeNotifier {
   Future<void> switchConversation(Conversation c) async {
     if (_conv.messages.isNotEmpty) await store.save(_conv);
     _pendingImages.clear();
+    _pendingGeneratedImages.clear();
     _conv = c;
     context.attach(c);
     _changed();
@@ -2002,6 +2017,7 @@ class TurnPipeline extends ChangeNotifier {
   /// model's answer to the stop request is dropped.
   void _onStopPhrase(Message m) {
     if (!_stopHandled.add(m.id)) return;
+    onToolInterrupt?.call();
     stopsHandled++;
     _cutTail = null;
     debugPrint('stop phrase "${m.text.trim()}": stopping locally');
@@ -2290,6 +2306,7 @@ class TurnPipeline extends ChangeNotifier {
     required String note,
     String? label,
     Message? to,
+    Map<String, Object?> meta = const {},
     bool activation = false,
   }) async {
     onScreenshotCaptured?.call(shot);
@@ -2303,6 +2320,7 @@ class TurnPipeline extends ChangeNotifier {
             meta: {'type': 'screenshot', if (activation) kActivationMeta: true},
           ),
         );
+    target.meta.addAll(meta);
     final path = await store.saveImage(target.id, shot.png, ext: shot.ext);
     target.image = ImageAttachment(
       path: path,
@@ -2493,6 +2511,7 @@ class TurnPipeline extends ChangeNotifier {
       return;
     }
     if (isStopPhrase(t)) {
+      onToolInterrupt?.call();
       // Typed "stop": handled locally, nothing is sent.
       _stopHandled.add(m.id);
       stopsHandled++;
@@ -2529,6 +2548,7 @@ class TurnPipeline extends ChangeNotifier {
 
   /// Stops the assistant (button / Esc).
   void interrupt() {
+    onToolInterrupt?.call();
     _bargeIn();
     _awaitingResponse = false;
     _changed();
@@ -2874,6 +2894,69 @@ class TurnPipeline extends ChangeNotifier {
   void notice(String text) {
     if (_disposed) return;
     _addSystem(text, meta: {'type': 'notice'});
+  }
+
+  VoiceBackend? _generatedImageBackend;
+  final Set<String> _generatedImageIds = {};
+  final Map<String, (Conversation, GeneratedImageContext)> _pendingGeneratedImages = {};
+
+  /// A finished image is already saved and displayed. Send a JPEG context
+  /// item without creating another chat message or rewriting its metadata.
+  Future<void> generatedImageCompleted(Conversation conversation, Message message) async {
+    if (_disposed || !identical(conversation, _conv)) return;
+    final item = await generatedImageContext(message);
+    if (_disposed || !identical(conversation, _conv)) return;
+    if (_status == SessionStatus.connected && _backend != null) {
+      _deliverGeneratedImage(conversation, item);
+    } else {
+      // Camera and screen queues are transient. They must not evict completed
+      // artwork while its chat's connection is still opening.
+      _pendingGeneratedImages[message.id] = (conversation, item);
+      while (_pendingGeneratedImages.length > 3) {
+        _pendingGeneratedImages.remove(_pendingGeneratedImages.keys.first);
+      }
+    }
+  }
+
+  void _flushPendingGeneratedImages() {
+    final pending = _pendingGeneratedImages.values.toList();
+    _pendingGeneratedImages.clear();
+    for (final (conversation, item) in pending) {
+      _deliverGeneratedImage(conversation, item);
+    }
+  }
+
+  void _deliverGeneratedImage(Conversation conversation, GeneratedImageContext item) {
+    if (_disposed || !identical(conversation, _conv)) return;
+    final backend = _backend;
+    if (backend == null) return;
+    if (!identical(_generatedImageBackend, backend)) {
+      _generatedImageBackend = backend;
+      _generatedImageIds.clear();
+    }
+    if (!_generatedImageIds.add(item.message.id)) return;
+    if (backend is ContextImageSink) {
+      final sink = backend as ContextImageSink;
+      sink.setContextImage('generated:${item.message.id}', DelegationImage(
+        png: item.image.bytes,
+        capturedAt: item.image.capturedAt,
+        note: item.image.note,
+        persistent: true,
+      ));
+      // Keep a small, useful set of artwork references separate from camera
+      // and screen slots. These images do not expire like live camera frames.
+      while (_generatedImageIds.length > 3) {
+        final oldest = _generatedImageIds.first;
+        _generatedImageIds.remove(oldest);
+        sink.setContextImage('generated:$oldest', null);
+      }
+    } else {
+      final serverId = backend.sendImage(item.image.bytes, note: item.image.note);
+      if (serverId != null) item.message.meta[ImageMeta.serverItem] = serverId;
+    }
+    contextImagesSent++;
+    context.onConversationChanged();
+    _persistSoon();
   }
 
   /// Refreshes the transcript after a background tool updates this chat. It

@@ -90,7 +90,7 @@ String messageDisplayText(Message message) {
   if (message.meta['type'] == 'image_generation' &&
       message.meta['status'] == 'pending' &&
       RegExp(
-        r'^generating image(?:…|\.\.\.)?$',
+        r'^(?:generating|editing) image(?:…|\.\.\.)?$',
         caseSensitive: false,
       ).hasMatch(message.text.trim())) {
     // The progress row already speaks and displays this placeholder. Keep
@@ -261,6 +261,29 @@ class _Bubble extends StatelessWidget {
       bottomRight: isUser ? const Radius.circular(6) : r,
     );
 
+    Widget? textContent;
+    if (waiting) {
+      textContent = _TypingDots(
+        color: accent,
+        label: isUser ? 'listening' : null,
+      );
+    } else if (isSpeechPlaceholder(visibleText)) {
+      textContent = _VoiceLabel(text: visibleText, color: accent);
+    } else if (visibleText.isNotEmpty) {
+      // The transcript's SelectionArea makes plain Text selectable across
+      // messages. A live partial transcript stays italic until finalized.
+      textContent = Text(
+        visibleText,
+        style: isUser && m.streaming
+            ? body(
+                15,
+                height: 1.5,
+                color: WoiColors.textDim,
+              ).copyWith(fontStyle: FontStyle.italic)
+            : body(15, height: 1.5, color: WoiColors.text),
+      );
+    }
+
     final content = Column(
       crossAxisAlignment: isUser
           ? CrossAxisAlignment.end
@@ -270,10 +293,15 @@ class _Bubble extends StatelessWidget {
         if (imageStatus == 'pending' ||
             imageStatus == 'failed' ||
             imageStatus == 'interrupted') ...[
-          _ImageGenerationProgress(status: imageStatus!),
+          _ImageGenerationProgress(
+            status: imageStatus!,
+            editing: m.meta['action'] == 'edit',
+          ),
           if (visibleText.isNotEmpty) const SizedBox(height: 8),
         ],
+        if (isUser && textContent != null) textContent,
         if (m.image != null) ...[
+          if (isUser && textContent != null) const SizedBox(height: 10),
           ScreenshotThumb(
             image: m.image!,
             viewer: viewer,
@@ -281,31 +309,9 @@ class _Bubble extends StatelessWidget {
             label: m.image!.generated ? 'Generated image' : imageLabel(m),
           ),
           if (m.image!.generated) _GeneratedImageInfo(image: m.image!),
-          if (visibleText.isNotEmpty || waiting) const SizedBox(height: 10),
+          if (!isUser && textContent != null) const SizedBox(height: 10),
         ],
-        if (waiting)
-          _TypingDots(color: accent, label: isUser ? 'listening' : null)
-        else if (isSpeechPlaceholder(visibleText))
-          _VoiceLabel(text: visibleText, color: accent)
-        else if (isUser && m.streaming && visibleText.isNotEmpty)
-          // Live partial transcript; finalized when the transcription completes.
-          Text(
-            visibleText,
-            style: body(
-              15,
-              height: 1.5,
-              color: WoiColors.textDim,
-            ).copyWith(fontStyle: FontStyle.italic),
-          )
-        else if (visibleText.isNotEmpty)
-          // Plain Text: the transcript's SelectionArea makes it selectable
-          // (also across messages). A SelectableText per bubble built an
-          // editable-text render object, gesture recognizers and a focus
-          // node for every message scrolled into view.
-          Text(
-            visibleText,
-            style: body(15, height: 1.5, color: WoiColors.text),
-          ),
+        if (!isUser && textContent != null) textContent,
         if (m.meta['type'] == 'web_search')
           _SearchSources(sources: m.meta['sources'], opener: urlOpener),
         if (!isUser) ...[
@@ -529,8 +535,9 @@ class _Avatar extends StatelessWidget {
 }
 
 class _ImageGenerationProgress extends StatelessWidget {
-  const _ImageGenerationProgress({required this.status});
+  const _ImageGenerationProgress({required this.status, this.editing = false});
   final String status;
+  final bool editing;
   @override
   Widget build(BuildContext context) => Semantics(
     liveRegion: true,
@@ -552,7 +559,7 @@ class _ImageGenerationProgress extends StatelessWidget {
         Flexible(
           child: Text(
             switch (status) {
-              'pending' => 'Generating image…',
+              'pending' => editing ? 'Editing image…' : 'Generating image…',
               'interrupted' => 'Image generation interrupted',
               _ => 'Image generation failed',
             },
@@ -1023,6 +1030,7 @@ class _TypingDotsState extends State<_TypingDots> {
 const _toolIcons = <String, IconData>{
   'take_screenshot': Icons.screenshot_monitor,
   'click_screen': Icons.ads_click,
+  'control_pointer': Icons.mouse_outlined,
   'type_text': Icons.keyboard,
   'key_combo': Icons.keyboard_command_key,
   'send_keys': Icons.keyboard_command_key,
@@ -1042,6 +1050,7 @@ const _toolIcons = <String, IconData>{
 String toolTitle(String name) => switch (name) {
   'take_screenshot' => 'Screenshot',
   'click_screen' => 'Click',
+  'control_pointer' => 'Pointer',
   'type_text' => 'Type text',
   'key_combo' => 'Key combo',
   'send_keys' => 'Send keys',
@@ -1074,6 +1083,7 @@ String toolArgSummary(String name, String argsJson) {
   if (a.containsKey('raw')) return argsJson;
   final s = switch (name) {
     'run_bash' => a['command'],
+    'control_pointer' => a['request'],
     'read_file' ||
     'list_dir' ||
     'write_file' ||
@@ -1116,6 +1126,39 @@ String toolArgSummary(String name, String argsJson) {
     _ => a.isEmpty ? '' : argsJson,
   };
   return '${s ?? ''}';
+}
+
+Offset? _executedClickPoint(
+  ToolCallInfo info,
+  Map<String, Object?> args,
+  Map<String, Object?> result,
+) {
+  if (info.status != ToolStatus.success || result['clicked'] == false) {
+    return null;
+  }
+  if (info.name != 'click_screen' && info.name != 'control_pointer') {
+    return null;
+  }
+  if (info.name == 'control_pointer' && result['action'] != 'click') {
+    return null;
+  }
+  final point = result['image_xy'];
+  if (point is List &&
+      point.length == 2 &&
+      point[0] is num &&
+      point[1] is num) {
+    final x = (point[0] as num).toDouble(), y = (point[1] as num).toDouble();
+    return x.isFinite && y.isFinite ? Offset(x, y) : null;
+  }
+  // Older direct click results did not record image coordinates.
+  if (info.name == 'click_screen' &&
+      !result.containsKey('image_xy') &&
+      args['x'] is num &&
+      args['y'] is num) {
+    final x = (args['x'] as num).toDouble(), y = (args['y'] as num).toDouble();
+    return x.isFinite && y.isFinite ? Offset(x, y) : null;
+  }
+  return null;
 }
 
 /// Tool call row. Status changes animate; tap to expand args/results
@@ -1162,10 +1205,8 @@ class _ToolCallCardState extends State<ToolCallCard> {
     final busy =
         t.status == ToolStatus.running || t.status == ToolStatus.pending;
     final args = _decode(t.argsJson);
-    final click =
-        t.name == 'click_screen' && args['x'] is num && args['y'] is num
-        ? Offset((args['x'] as num).toDouble(), (args['y'] as num).toDouble())
-        : null;
+    final result = _decode(t.resultJson);
+    final click = _executedClickPoint(t, args, result);
 
     final statusBadge = AnimatedSwitcher(
       duration: WoiMotion.medium,
@@ -1289,7 +1330,7 @@ class _ToolCallCardState extends State<ToolCallCard> {
                                 child: _ToolDetails(
                                   info: t,
                                   args: args,
-                                  result: _decode(t.resultJson),
+                                  result: result,
                                   click: click,
                                   screenshot: widget.screenshot,
                                   viewer: widget.viewer,
@@ -1371,21 +1412,33 @@ class _ToolDetails extends StatelessWidget {
           ),
         );
       case 'click_screen':
+      case 'control_pointer':
         final shot = screenshot;
         if (click != null && shot != null && viewer != null) {
           children.add(
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                ScreenshotThumb(
+            LayoutBuilder(
+              builder: (context, box) {
+                final thumb = ScreenshotThumb(
                   image: shot,
                   viewer: viewer!,
                   marker: click,
                   maxWidth: 280,
-                ),
-                const SizedBox(width: 12),
-                Expanded(child: _kvList({...args, ...result})),
-              ],
+                );
+                final details = _kvList({...args, ...result});
+                return box.maxWidth < 520
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [thumb, const SizedBox(height: 8), details],
+                      )
+                    : Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          thumb,
+                          const SizedBox(width: 12),
+                          Expanded(child: details),
+                        ],
+                      );
+              },
             ),
           );
         } else {

@@ -49,6 +49,42 @@ const kPhoneBreakpoint = 640.0;
 /// Note panel height below which the note tabs are left out.
 const kNoteTabsMinHeight = 220.0;
 
+/// Screens used by tool markers. Pointer captures may be appended after their
+/// tool row, so an explicit call ID takes precedence over chronological fallback.
+List<ImageAttachment?> toolScreenshotsForMessages(List<Message> messages) {
+  bool isScreen(Message message) {
+    if (message.image == null || message.image!.generated) return false;
+    const contextKinds = {'camera', 'media', 'generated', 'image_generation'};
+    return !contextKinds.contains(message.meta['type']) && !contextKinds.contains(message.meta['imageKind']);
+  }
+
+  final byCall = <String, ImageAttachment?>{};
+  for (final message in messages) {
+    final callId = message.meta['pointerCallId'];
+    if (callId is String && callId.isNotEmpty) {
+      // A linked capture still being saved must not show an unrelated old screen.
+      byCall[callId] = isScreen(message) ? message.image : null;
+    }
+  }
+  final screenshots = List<ImageAttachment?>.filled(messages.length, null);
+  ImageAttachment? previousScreen;
+  for (var i = 0; i < messages.length; i++) {
+    final message = messages[i];
+    final tool = message.tool;
+    if (tool != null) {
+      screenshots[i] = byCall.containsKey(tool.callId)
+          ? byCall[tool.callId]
+          : tool.name == 'control_pointer'
+          ? null
+          : previousScreen;
+    }
+    // Unmarked legacy screenshots remain usable; generated artwork and
+    // camera/viewer context images can never become click-coordinate sources.
+    if (isScreen(message)) previousScreen = message.image;
+  }
+  return screenshots;
+}
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, required this.controller});
   final AppController controller;
@@ -792,14 +828,7 @@ class WoiTabsState extends State<WoiTabs> {
         ),
       );
     }
-    // Latest screenshot at or before each message (for click markers).
-    final shots = List<ImageAttachment?>.filled(msgs.length, null);
-    ImageAttachment? last;
-    for (var i = 0; i < msgs.length; i++) {
-      shots[i] = last;
-      final img = msgs[i].image;
-      if (img != null) last = img;
-    }
+    final shots = toolScreenshotsForMessages(msgs);
     // One SelectionArea for the transcript: message text is plain Text.
     // Only the newest messages are rendered (older ones load on scrolling
     // up, then live in History); the conversation itself is untouched.

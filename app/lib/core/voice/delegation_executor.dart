@@ -1,3 +1,4 @@
+import '../../tools/pointer_tools.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -122,10 +123,14 @@ class ResponsesDelegationModel implements DelegationModel {
 
 /// Screenshot the delegation model gets to see.
 class DelegationImage {
-  const DelegationImage({required this.png, required this.capturedAt, this.note});
+  const DelegationImage({required this.png, required this.capturedAt, this.note, this.persistent = false});
   final Uint8List png;
   final DateTime capturedAt;
   final String? note;
+
+  /// A generated image remains available for follow-up discussion. Live camera
+  /// and screen frames still expire normally.
+  final bool persistent;
 }
 
 /// Runs a registry tool (through the app's confirmation UI) and returns the
@@ -252,6 +257,8 @@ class DelegationExecutor {
       'Show, open, view or play a file: show_file. Never change files with run_bash: read_file, then edit_file '
       '(the user approves a diff). '
       'Always use the python tool whenever a calculation is needed. Print the result and answer from the actual tool output. '
+      'When control_pointer is available, use it for every click or pointer move with a clear action request. '
+      'Never use shell commands to control the pointer. '
       'click_screen coordinates are pixels of the attached screenshot. '
       'Keys or shortcuts in another app (copy, paste, select all, "press ctrl c", escape): send_keys; it targets the '
       'app the user was using (never Woi), or `window` when the user names one ("in the xterm" -> window "xterm"). '
@@ -522,6 +529,21 @@ class DelegationExecutor {
   static bool needsScreen(String request) => _visual.hasMatch(request);
 
   Future<void> _run(String request, DelegationReport report, Stopwatch sw) async {
+    // A single explicit pointer request goes straight to the dedicated Luna
+    // agent; no preliminary general-model call or unrelated context is needed.
+    final pointer = pointerAction(request);
+    if (pointer != null && tools.any((t) => t.name == 'control_pointer')) {
+      await _exec(report, sw, 'control_pointer', jsonEncode({'action': pointer, 'request': request}), 'pointer_${report.id}');
+      final run = report.tools.last;
+      report
+        ..model = 'gpt-6-luna'
+        ..steps = 1
+        ..usedScreenshot = run.ok
+        ..firstToolCall = run.startedAt
+        ..toolsDone = run.doneAt
+        ..resultText = _summarize(report, const []);
+      return;
+    }
     // Fast path: "open camera" / "close camera".
     final cam = cameraCommand(request);
     if (cam != null && tools.any((t) => t.name == 'camera')) {
@@ -734,7 +756,7 @@ class DelegationExecutor {
     final now = _now();
     return [
       for (final i in contextImages?.call() ?? const <DelegationImage>[])
-        if (now.difference(i.capturedAt) <= contextImageMaxAge) i,
+        if (i.persistent || now.difference(i.capturedAt) <= contextImageMaxAge) i,
     ];
   }
 

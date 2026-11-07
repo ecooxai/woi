@@ -59,17 +59,31 @@ when leaving the page. Editing a saved inactive API key does not reconnect Codex
 ## Images and web search
 
 **Model** includes an image model selector, a custom model ID, account-model
-refresh, and image quality. The requested default is `gpt-image-flare-2.1` with
-`low` quality. The selected ID is forwarded exactly. Account-listed models are
-distinguished from documented candidates; listing a model does not guarantee
+refresh, and image quality. The default is `gpt-image-2.6-flare` with `low` quality,
+`1024x1024` size and JPG output. The previous default model migrates on load;
+custom model choices stay intact. The selected ID is forwarded exactly.
+Account-listed models are distinguished from documented candidates; listing a model does not guarantee
 that an account can generate with it. Provider rejection is shown without
 silently substituting another model.
 
 The `generate_image` tool starts an independent background request. Its status
-and completed image appear in the originating conversation. Generation duration,
-file size and pixel dimensions are retained with the image and shown in the
-large viewer. The API-key backend uses the Images API; Codex login uses the
-native image-generation tool through its Responses endpoint. Access depends on
+and completed image appear in the originating conversation. Completion moves the
+image to the bottom after any messages sent while it was running. Generation
+duration, file size and pixel dimensions are retained with the image and shown
+in the large viewer. User messages always display their text before images.
+
+Completed images are also added to model context as real JPEG bytes. Recent
+artwork is restored when reconnecting or reopening its chat, and is kept separate
+from the screenshot used for pointer coordinates. Follow-up edits call
+`generate_image` with `action: edit`; the tool sends the saved source image to
+the edit API, optionally selected by `source_message_id`. Without an explicit
+ID, edits prefer the latest artwork over automatic screen captures. New image
+requests do not silently inherit an edit reference. Original image files remain
+unchanged when a JPEG copy is needed for context or editing. If the provider
+returns a different size, the app fits the complete image inside the selected canvas without
+stretching or cropping; JPG uses white padding. Automatic sizing preserves the
+provider's dimensions. The API-key backend uses the Images API; Codex login uses
+the native image-generation tool through its Responses endpoint. Access depends on
 the selected account and model.
 
 **Web search** is enabled by default under Preferences. The assistant can call
@@ -81,6 +95,14 @@ response without a completed search is reported as a failure.
 The camera control is a green circle beside the microphone and becomes darker
 while enabled. Linux microphone and send circles are slightly smaller while
 retaining full click targets.
+
+**Luna pointer agent** is enabled by default. Click and pointer
+movement requests go to a dedicated `gpt-6-luna` agent with a fresh screenshot,
+its dimensions and a clear action request. The agent returns a pointer tool call
+without prose. It uses no reasoning effort or unrelated chat history. The app
+validates the target and coordinates, maps them through that same screenshot,
+and cancels pending actions on interruption or chat changes. Disabling the
+setting restores the original pointer path.
 
 ## Computer input and Python
 

@@ -122,6 +122,36 @@ void main() {
     },
   );
 
+  testWidgets('actual pending edit metadata shows one editing status', (
+    tester,
+  ) async {
+    final message = Message(
+      kind: MessageKind.assistant,
+      createdAt: DateTime(2020),
+      text: 'Editing image…',
+      meta: {
+        'type': 'image_generation',
+        'status': 'pending',
+        'action': 'edit',
+        'prompt': 'Make the sky blue',
+        'source_message_id': 'previous-generated-image',
+      },
+    );
+    Widget tile() => app(
+      MessageTile(message: message, audio: FakeAudioIO(), viewer: FakeViewer()),
+    );
+    await tester.pumpWidget(tile());
+    expect(find.text('Editing image…'), findsOneWidget);
+    expect(find.text('Generating image…'), findsNothing);
+    expect(messageDisplayText(message), isEmpty);
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    message.text = 'Make the sky blue';
+    await tester.pumpWidget(tile());
+    expect(find.text('Editing image…'), findsOneWidget);
+    expect(find.text('Make the sky blue'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'search sources use platform browser and hide opaque citation handles',
     (tester) async {

@@ -6,8 +6,10 @@ import '../auth/auth.dart';
 
 /// The requested default is preserved verbatim, even when an account does not
 /// advertise it. Selecting a model never silently substitutes another model.
-const kDefaultImageModel = 'gpt-image-flare-2.1';
+const kDefaultImageModel = 'gpt-image-2.6-flare';
 const kDefaultImageQuality = 'low';
+const kDefaultImageSize = '1024x1024';
+const kDefaultImageFormat = 'jpeg';
 
 /// Documented candidates, not an entitlement claim for the current account.
 /// https://developers.openai.com/api/docs/guides/image-generation
