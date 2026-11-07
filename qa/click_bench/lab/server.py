@@ -141,11 +141,17 @@ class LabHandler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             pass
 
-    def _error(self, exc, request_id=None):
+    def _error(self, exc, request_id=None, trial=None, response=None):
         code = getattr(exc, "code", "internal_error")
         status = getattr(exc, "status", 500)
         message = adapters.redact(exc)[:600] if isinstance(exc, adapters.LabError) else "The lab could not complete this request."
-        self._send(status, {"error": message, "error_code": code, "request_id": request_id})
+        payload = {"error": message, "error_code": code, "request_id": request_id}
+        if self.path == "/api/trial":
+            metadata = response if isinstance(response, dict) else {}
+            payload.update(request_image_bytes=metadata.get("request_image_bytes", (trial or {}).get("image_bytes")),
+                           request_payload_bytes=metadata.get("request_payload_bytes"),
+                           timing=metadata.get("timing") or adapters.ProviderTiming().snapshot())
+        self._send(status, payload)
 
     def do_GET(self):
         try:
@@ -157,6 +163,8 @@ class LabHandler(BaseHTTPRequestHandler):
                     raise adapters.LabError("frontend_pending", "The frontend file is not installed yet.", status=503)
                 mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
                 self._send(200, path.read_bytes(), mime + "; charset=utf-8")
+            elif parsed.path == "/api/connection":
+                self._send(200, adapters.connection_status())
             elif parsed.path == "/api/models":
                 force = parse_qs(parsed.query).get("refresh", ["0"])[0] == "1"
                 self._send(200, self.server.discovery(force=force))
@@ -191,12 +199,17 @@ class LabHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         request_id = None
+        trial = None
+        response = None
         try:
             self._security()
-            if self.path not in ("/api/trial", "/api/result"):
+            if self.path not in ("/api/trial", "/api/result", "/api/connection"):
                 raise adapters.LabError("not_found", "Not found.", status=404)
             body = self._body()
             request_id = body.get("request_id") if isinstance(body, dict) else None
+            if self.path == "/api/connection":
+                self._send(200, adapters.configure_connection(body))
+                return
             if self.path == "/api/result":
                 if not isinstance(body, dict) or not isinstance(request_id, str) or not adapters.REQUEST_RE.fullmatch(request_id):
                     raise adapters.LabError("invalid_result", "Result must contain a valid request_id.")
@@ -218,7 +231,7 @@ class LabHandler(BaseHTTPRequestHandler):
             # Model/API errors are structured trial results, not fabricated coordinate misses.
             self._send(200, response)
         except Exception as exc:
-            self._error(exc, request_id)
+            self._error(exc, request_id, trial, response)
 
     def do_OPTIONS(self):
         self._send(403, {"error": "Cross-origin requests are not accepted.", "error_code": "cross_origin"})

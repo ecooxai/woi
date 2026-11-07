@@ -14,7 +14,7 @@ The top panel is a deterministic pixel image with real local HTML button hit reg
 
 Type a current instruction such as `Click the Cedar button` or `Move the pointer to the Cedar button. Do not click.` Choose a model radio and send. Audio/realtime models receive this text instruction through their own transport. **Test all available models** runs one fresh trial per eligible catalog entry on the same image and instruction. Access and capability are verified by the trial, not assumed from catalog presence.
 
-The captured PNG excludes pointer/result markers. Each result's **View image** opens the exact transmitted image. Returned coordinates are dispatched only inside the local surface; a move emits no click. The page records actual button events independently of the requested target and never uses expected coordinates to correct model output.
+The captured PNG excludes success colors and pointer/result markers. Each result's **View image** opens the exact transmitted image. Returned coordinates are dispatched only inside the local surface; a move emits no click. The page records actual button events independently of the requested target and never uses expected coordinates to correct model output.
 
 Automatic scoring requires one recognized button label. Unrecognized or ambiguous instructions are unscored. **Scoring and request details** allows an explicit expected button and action; those values are only used by the local scorer and the separate result log. No target list, expected rectangle, prior request, or history is sent to the model. Layout changes are disabled during a trial or comparison, and the executor rejects stale captures.
 
@@ -72,3 +72,47 @@ Timing samples include wrong-target clicks. An API error, invalid output, out-of
 Per-trial `/api/result` records include local `run` metadata. A separate `record_type: click_all_summary` record stores the completed/stopped summary. Export schema version 2 adds `click_all_runs`. `ClickLab.restoreData(exportedData)` restores local results and run summaries without sending or executing anything; it supports previous schema-1 exports and marks imported in-progress runs interrupted. The model catalog is always refreshed separately. This supports preserving the current window through a frontend reload.
 
 The global event history retains its latest 5,000 events. Each controlled action has a separate current-dispatch buffer, so history rollover cannot remove that action’s click/move evidence or latency measurement.
+
+
+## Connection and speed tiers
+
+The model panel has independent **Connection**, **Speed tier**, and **Model** choices. Codex login reads the existing Codex credentials; API key mode uses the configured key or a session key entered in the masked field. A session key lives in the local server memory until it stops. The field is cleared after a connection update, no key is placed in browser storage or result exports, and **Forget session key** restores use of the configured key. Missing API credentials leave the controls available so a key can be entered or Codex can be selected again.
+
+Normal, Fast, Ultrafast, and Flex remain selectable for both connections. Their request values are `default`, `priority`, `ultrafast`, and `flex`. Support depends on the model, endpoint, and account. Codex Flex remains selectable as an experiment. Realtime has no tier field, so a non-normal selection records an explicit unsupported result without a fallback model or a misleading standard request.
+
+Each test freezes `auth_mode`, `speed_tier`, and the server's `connection_revision`. The request adds only `speed_tier` and `connection_revision` to the screenshot protocol; authentication remains server-side. A click-all run or all-model comparison captures these values once and uses that snapshot throughout. Connection and tier controls stay disabled until the complete run ends, even during gaps between requests. A response claiming a different connection or selection is rejected before any local action.
+
+The results table and details show the selected tier, `requested_service_tier`, `actual_service_tier`, `tier_status`, and `tier_note`. A provider omission is shown as **not reported**, and an actual tier differing from the request is shown explicitly. Aggregate comparison cards group by connection, model, and selected tier. Mixed configurations have no pooled hit-rate or latency number. Click-all summaries keep the selected connection/tier plus per-attempt provider observations.
+
+Export schema 3 retains this evidence, grouped metrics, and the current nonsecret `test_configuration`. Importing schema 1 or 2 is still supported; older trials without tier/authentication evidence are labeled **Tier not recorded** / **Connection not recorded**, never assigned the current selection. Restoring historical results does not change the server connection.
+
+Additional local QA hooks:
+
+- `ClickLab.setSpeedTier('normal' | 'fast' | 'ultrafast' | 'flex')` (alias `selectSpeedTier`); rejects changes during a run.
+- `ClickLab.changeConnection('codex' | 'api', optionalKey)`; absent key preserves the session key, explicit empty string clears it.
+- `ClickLab.refreshConnection()` reads safe connection metadata and rejects use during a run.
+- `ClickLab.getState()` includes `speedTier`, `authMode`, `connection`, `switching`, and `loadingModels` without exposing credentials.
+- `ClickLab.getLastRequest()` shows the exact screenshot/trial payload, including tier and connection revision.
+
+
+## Correct-click feedback and request measurements
+
+A **scored correct model click** turns that button black with white text. The scorer must observe exactly one click on the expected button, a matching action, and a point inside its rectangle. A correct pointer move, wrong button, manual click, unscored action, request error, or invalid response does not mark a button complete.
+
+A standalone **Send test**, **Click all buttons**, or **Test all available models** starts with the original colors. Successful buttons remain black through the current top-level run, including successive click-all requests. The next run, a layout change, **Randomize**, **Clear**, or restoring an export resets this feedback. Imported results are never replayed as clicks or painted onto the current layout.
+
+Success colors are local presentation feedback on the separate `#successes` canvas. It uses the same pixel rectangles, rounded corners, font, and label positions as the original buttons; the pointer/expected-region markers remain on their own higher layer. The `#board` canvas, source target colors, and captured PNG never change because of a result. Therefore every trial on the same layout still receives the identical clean screenshot, even while the user can see previously completed buttons in black. `.target-hitbox.completed` and `ClickLab.getState().completedTargetIds` expose this local state for QA.
+
+After capture, a compact request timeline appears below the run status and is repeated for each result. While waiting, image size is known and provider stages remain **—**. Completed measurements come from the provider adapter; the browser does not substitute total latency or loopback transfer timing for a missing stage.
+
+| Display | Evidence and meaning |
+| --- | --- |
+| **Image N MB** | Raw captured PNG byte count, divided by 1,000,000. Adaptive precision keeps small files visible. The tooltip includes exact bytes and the separately measured provider request body size; base64/JSON overhead is not counted as PNG size. |
+| **Upload +N s** | `timing.upload_complete_ms`: offset from provider-request start until the client finishes dispatching the request body. It does not prove provider receipt. The tooltip/details retain `upload_duration_ms`, the time spent sending the body, and the adapter's `upload_measurement` description. |
+| **First reply +N s** | `timing.first_token_ms`: the first nonempty streamed text or tool-argument delta. Empty events or response headers are not treated as model output. |
+| **First output (final only) +N s** | When `first_output_source` is `final_only`, the adapter observed only the final output. The UI shows `first_output_ms` with this explicit label; it does not present it as a first-token measurement. |
+| **Finished +N s** / **Ended +N s** | `timing.finish_ms`: response completion or failure offset. Error results use **Ended**, retain available partial measurements, and leave unavailable stages as **—**. Local click execution and result logging happen later. |
+
+All displayed offsets have `timing.origin: provider_request_start`. Provider requests that never start have `status: not_started` and no fabricated stages. The latest-response details include the complete measurement definitions and adapter note. The existing API total and send-to-click measurements remain separate.
+
+Per-trial schema-3 results and click-all attempt summaries preserve `request_image_bytes`, `request_payload_bytes`, and the backend's nested `timing` object. Older imports without provider timing display unknown stages; a stored PNG still allows its exact image size to be calculated. `ClickLab.getState().requestTimeline` exposes the currently displayed measurements without credentials. `#request-image-size` exposes its exact bytes via `data-bytes`; `#request-upload`, `#request-first-reply`, and `#request-finished` expose measured values via `data-value` only when available.

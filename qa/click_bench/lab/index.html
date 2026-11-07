@@ -27,6 +27,7 @@
       <div class="board-well">
         <div id="board-frame" class="board-frame">
           <canvas id="board" width="1280" height="480" aria-label="Randomized buttons. Ask a model to click a named button or move its pointer to it."></canvas>
+          <canvas id="successes" width="1280" height="480" aria-hidden="true"></canvas>
           <div id="hit-layer" class="hit-layer"></div>
           <canvas id="markers" width="1280" height="480" aria-hidden="true"></canvas>
         </div>
@@ -47,11 +48,36 @@
           <div class="run-row"><button id="send" class="button primary" type="submit">Send test <span aria-hidden="true">↗</span></button><button id="click-all" class="button secondary" type="button">Click all buttons</button><button id="batch" class="button secondary" type="button">Test all available models</button><button id="stop" class="button secondary" type="button" hidden>Stop after this request</button></div>
         </form>
         <div id="run-status" class="run-status" role="status" aria-live="polite">Choose a model, then send a test.</div>
+        <section id="request-timeline" class="request-progress" aria-label="Latest request measurements" hidden>
+          <div id="request-timeline-state" class="timeline-caption">Latest request</div>
+          <div id="request-timeline-values" class="timeline-values"></div>
+          <p id="request-timeline-note" class="timeline-note"></p>
+        </section>
         <details class="scoring-details"><summary>Scoring and request details</summary><div class="scoring-grid"><label>Expected button<select id="expected-target"><option value="auto">Detect from instruction</option><option value="none">Do not score</option></select></label><label>Expected action<select id="expected-action"><option value="auto">Detect from instruction</option><option value="click">Click</option><option value="move">Move pointer</option></select></label><label>Layout seed<input id="seed" type="number" min="0" max="4294967295" inputmode="numeric"></label><button id="apply-seed" type="button" class="button secondary">Apply seed</button></div><p>Only the screenshot, its dimensions, screen metadata, and your current instruction are sent to the selected model. Expected buttons and previous trials stay out of the model request. A move sends no click events.</p><p id="score-preview"></p></details>
       </section>
 
       <section class="panel model-panel" aria-labelledby="model-title">
-        <div class="panel-top"><div class="section-label"><h2 id="model-title">Model</h2><span id="model-count" class="muted"></span></div><button id="refresh-models" class="text-button" type="button">Refresh</button></div>
+        <div class="panel-top"><div class="section-label"><h2 id="model-title">Connection &amp; model</h2><span id="model-count" class="muted"></span></div><button id="refresh-models" class="text-button" type="button">Refresh</button></div>
+        <div class="test-configuration">
+          <fieldset class="connection-options"><legend>Connection</legend><div class="segmented connection-segments">
+            <label><input type="radio" name="auth-mode" value="codex" checked><span>Codex login</span></label>
+            <label><input type="radio" name="auth-mode" value="api"><span>API key</span></label>
+          </div></fieldset>
+          <p id="connection-status" class="configuration-note" role="status">Checking the configured connection…</p>
+          <div id="api-key-panel" class="api-key-panel" hidden>
+            <label for="api-key">API key <span>optional when already configured</span></label>
+            <div class="api-key-row"><input id="api-key" type="password" placeholder="Paste a key for this lab session" autocomplete="new-password" spellcheck="false" autocapitalize="off" aria-describedby="api-key-note"><button id="save-api-key" type="button" class="button secondary">Use key</button></div>
+            <button id="clear-api-key" type="button" class="text-button" hidden>Forget session key · use configured key</button>
+            <p id="api-key-note" class="configuration-note">Kept in this local server’s memory until it stops. Never included in exported results.</p>
+          </div>
+          <fieldset class="speed-options"><legend>Speed tier <span id="speed-selection">Normal</span></legend><div class="segmented speed-segments">
+            <label><input type="radio" name="speed-tier" value="normal" checked><span>Normal</span></label>
+            <label><input type="radio" name="speed-tier" value="fast"><span>Fast</span></label>
+            <label><input type="radio" name="speed-tier" value="ultrafast"><span>Ultrafast</span></label>
+            <label><input type="radio" name="speed-tier" value="flex"><span>Flex</span></label>
+          </div></fieldset>
+          <p id="speed-tier-note" class="configuration-note" aria-live="polite">The requested and provider-reported tiers are recorded with every test.</p>
+        </div>
         <label class="sr-only" for="model-filter">Filter models</label><input id="model-filter" class="model-filter" placeholder="Filter models…" type="search" autocomplete="off">
         <div id="models" class="models" aria-live="polite"><div class="empty-models">Loading the account’s model catalog…</div></div>
         <p id="catalog-source" class="catalog-source">Audio models receive the same text instruction and screenshot.</p>
@@ -74,12 +100,13 @@
         <p id="button-run-failures" class="button-run-note"></p><p id="button-run-timing-note" class="button-run-note"></p>
       </section>
       <div id="metrics" class="metrics" hidden></div>
+      <div id="comparison-groups" class="comparison-groups" hidden aria-label="Results grouped by connection, model, and speed tier"></div>
       <div id="results-empty" class="results-empty"><span class="empty-cross" aria-hidden="true">⌖</span><p>The model’s point will appear on the surface.<br>Each result keeps the exact image sent for that trial.</p></div>
-      <div class="table-scroll"><table id="results-table" hidden><thead><tr><th>Model</th><th>Outcome</th><th>Action / point</th><th>Expected button</th><th>API time</th><th>Send → click</th><th>Capture</th></tr></thead><tbody id="results-body"></tbody></table></div>
-      <details id="last-detail" class="response-details" hidden><summary>Latest response details</summary><p id="response-image-detail" class="muted"></p><pre id="raw-response"></pre></details>
+      <div class="table-scroll"><table id="results-table" hidden><thead><tr><th>Model</th><th>Speed tier</th><th>Outcome</th><th>Action / point</th><th>Expected button</th><th>Request timeline</th><th>Send → click</th><th>Capture</th></tr></thead><tbody id="results-body"></tbody></table></div>
+      <details id="last-detail" class="response-details" hidden><summary>Latest response details</summary><p id="response-tier-detail" class="muted"></p><p id="response-image-detail" class="muted"></p><p id="response-timing-detail" class="muted"></p><pre id="raw-response"></pre></details>
     </section>
     <footer class="app-footer"><span>Woi · controlled screenshot test</span><span>Actions run inside this test surface.</span></footer>
   </main>
-  <dialog id="capture-dialog"><div class="dialog-top"><h2 id="capture-title">Exact image sent</h2><button id="close-capture" class="button secondary" type="button">Close</button></div><p id="capture-description"></p><div class="capture-scroll"><img id="capture-image" alt="Exact clean screenshot transmitted for this trial"></div><p class="muted">No result markers or expected-target highlight are included in this image.</p></dialog>
+  <dialog id="capture-dialog"><div class="dialog-top"><h2 id="capture-title">Exact image sent</h2><button id="close-capture" class="button secondary" type="button">Close</button></div><p id="capture-description"></p><div class="capture-scroll"><img id="capture-image" alt="Exact clean screenshot transmitted for this trial"></div><p class="muted">Success colors, result markers, and expected-target highlights are excluded from this image.</p></dialog>
 </body>
 </html>

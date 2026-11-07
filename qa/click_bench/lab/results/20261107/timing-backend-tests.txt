@@ -1,0 +1,66 @@
+COMMAND: /mnt/p3/project/claude/woi-click-lab-gpt-6-astra-pro/../woi/research/.venv/bin/python qa/click_bench/lab/test_lab.py
+test_endpoint_rejects_ground_truth_and_previous_messages (__main__.EndpointIsolationChecks.test_endpoint_rejects_ground_truth_and_previous_messages) ... ok
+test_new_realtime_connection_is_closed_for_each_trial (__main__.EndpointIsolationChecks.test_new_realtime_connection_is_closed_for_each_trial) ... ok
+test_provider_payloads_have_one_current_message_and_no_history (__main__.EndpointIsolationChecks.test_provider_payloads_have_one_current_message_and_no_history) ... ok
+test_matched_cases_are_deterministic_balanced_and_varied (__main__.IsolationChecks.test_matched_cases_are_deterministic_balanced_and_varied) ... ok
+test_request_contains_only_current_trial_inputs (__main__.IsolationChecks.test_request_contains_only_current_trial_inputs) ... ok
+test_screenshot_header_is_validated (__main__.IsolationChecks.test_screenshot_header_is_validated) ... ok
+test_summary_exposes_error_denominator (__main__.IsolationChecks.test_summary_exposes_error_denominator) ... ok
+test_action_mismatch_is_failure_despite_hit (__main__.PredictionChecks.test_action_mismatch_is_failure_despite_hit) ... ok
+test_boolean_nan_string_and_infinite_rejected (__main__.PredictionChecks.test_boolean_nan_string_and_infinite_rejected) ... ok
+test_correct_coordinates_and_real_click_required (__main__.PredictionChecks.test_correct_coordinates_and_real_click_required) ... ok
+test_error_categories_are_not_misses (__main__.PredictionChecks.test_error_categories_are_not_misses) ... ok
+test_move_never_counts_a_click (__main__.PredictionChecks.test_move_never_counts_a_click) ... ok
+test_native_to_css_mapping_is_not_double_scaled (__main__.PredictionChecks.test_native_to_css_mapping_is_not_double_scaled) ... ok
+test_out_of_range_never_clamped (__main__.PredictionChecks.test_out_of_range_never_clamped) ... ok
+test_target_bounds_are_half_open (__main__.PredictionChecks.test_target_bounds_are_half_open) ... ok
+
+----------------------------------------------------------------------
+Ran 15 tests in 0.022s
+
+OK
+
+
+COMMAND: /mnt/p3/project/claude/woi-click-lab-gpt-6-astra-pro/../woi/research/.venv/bin/python qa/click_bench/lab/test_speed_tiers.py
+test_all_four_wire_values_and_fresh_context (__main__.TierTests.test_all_four_wire_values_and_fresh_context) ... ok
+test_catalog_cache_is_scoped_to_connection_and_key (__main__.TierTests.test_catalog_cache_is_scoped_to_connection_and_key) ... ok
+test_codex_flex_attempted_without_fallback (__main__.TierTests.test_codex_flex_attempted_without_fallback) ... ok
+test_connection_cannot_change_during_trial_and_stale_guard_rejects (__main__.TierTests.test_connection_cannot_change_during_trial_and_stale_guard_rejects) ... ok
+test_header_injection_and_unexpected_connection_fields_rejected (__main__.TierTests.test_header_injection_and_unexpected_connection_fields_rejected) ... ok
+test_invalid_tier_and_connection_revision_rejected (__main__.TierTests.test_invalid_tier_and_connection_revision_rejected) ... ok
+test_legacy_omission_is_explicit_normal (__main__.TierTests.test_legacy_omission_is_explicit_normal) ... ok
+test_loopback_connection_endpoint_and_scrub (__main__.TierTests.test_loopback_connection_endpoint_and_scrub) ... ok
+test_missing_key_can_be_selected_then_configured (__main__.TierTests.test_missing_key_can_be_selected_then_configured) ... ok
+test_realtime_non_normal_is_visible_and_does_not_make_call (__main__.TierTests.test_realtime_non_normal_is_visible_and_does_not_make_call) ... ok
+test_rejected_tier_does_not_poison_normal_status (__main__.TierTests.test_rejected_tier_does_not_poison_normal_status) ... ok
+test_requested_and_reported_values_stay_distinct (__main__.TierTests.test_requested_and_reported_values_stay_distinct) ... ok
+test_runtime_key_is_memory_only_and_never_returned (__main__.TierTests.test_runtime_key_is_memory_only_and_never_returned) ... ok
+test_sse_captures_actual_tier_and_flex_timeout (__main__.TierTests.test_sse_captures_actual_tier_and_flex_timeout) ... ok
+test_tier_access_denied_is_distinct_from_credentials (__main__.TierTests.test_tier_access_denied_is_distinct_from_credentials) ... ok
+
+----------------------------------------------------------------------
+Ran 15 tests in 0.551s
+
+OK
+
+
+COMMAND: /mnt/p3/project/claude/woi-click-lab-gpt-6-astra-pro/../woi/research/.venv/bin/python qa/click_bench/lab/test_timing.py
+test_empty_body_does_not_invent_upload_completion (__main__.TimingTests.test_empty_body_does_not_invent_upload_completion) ... ok
+test_failed_body_send_keeps_upload_unknown (__main__.TimingTests.test_failed_body_send_keeps_upload_unknown) ... ok
+test_http_error_keeps_uploaded_bytes_but_no_first_token (__main__.TimingTests.test_http_error_keeps_uploaded_bytes_but_no_first_token) ... ok
+test_local_log_error_preserves_measured_provider_timing (__main__.TimingTests.test_local_log_error_preserves_measured_provider_timing) ... ok
+test_local_validation_error_returns_not_started_metadata (__main__.TimingTests.test_local_validation_error_returns_not_started_metadata) ... ok
+test_real_http_send_loop_preserves_bytes_length_and_single_use (__main__.TimingTests.test_real_http_send_loop_preserves_bytes_length_and_single_use) ... ok
+test_realtime_connection_session_setup_and_body_send_are_distinct (__main__.TimingTests.test_realtime_connection_session_setup_and_body_send_are_distinct) ... ok
+test_realtime_failure_preserves_observed_stages (__main__.TimingTests.test_realtime_failure_preserves_observed_stages) ... ok
+test_realtime_final_only_is_not_a_measured_token (__main__.TimingTests.test_realtime_final_only_is_not_a_measured_token) ... ok
+test_setup_reasoning_empty_deltas_ignored_and_completed_tier_wins (__main__.TimingTests.test_setup_reasoning_empty_deltas_ignored_and_completed_tier_wins) ... ok
+test_stream_error_preserves_partial_timing_in_api_result (__main__.TimingTests.test_stream_error_preserves_partial_timing_in_api_result) ... ok
+test_text_delta_is_first_output_and_final_only_keeps_token_unknown (__main__.TimingTests.test_text_delta_is_first_output_and_final_only_keeps_token_unknown) ... ok
+test_unsupported_transport_never_starts_timing (__main__.TimingTests.test_unsupported_transport_never_starts_timing) ... ok
+
+----------------------------------------------------------------------
+Ran 13 tests in 1.056s
+
+OK
+

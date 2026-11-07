@@ -5,14 +5,34 @@ Run `python qa/click_bench/lab/server.py --port 8766` after installing
 `qa/click_bench/lab/requirements.txt` in a virtual environment. The existing Woi
 research environment also works. No frontend dependencies or asset downloads.
 
+## GET /api/connection and POST /api/connection
+
+The page can select Codex login or API-key authentication without restarting the
+lab. GET returns `auth_mode` (also `mode`), `configured`, `source`, `revision`,
+`session_key` (a boolean), and `speed_tiers`. When credentials are missing,
+`configured:false` and `reason` explain what is needed. Availability here means
+credentials are present, not proof of provider acceptance.
+
+POST accepts only `auth_mode:"codex"|"api"` and optional `api_key`. A nonempty key
+is held in server process memory. Omitting `api_key` keeps the temporary key;
+sending an empty string clears it and returns to the existing configured key.
+No key is returned, written to Woi/Codex settings, or added to evidence logs.
+Switching to Codex keeps the temporary API key available for switching back.
+Restarting the server clears both runtime overrides.
+
+The endpoint uses the same loopback, Host, Origin, and JSON protections as trials.
+Changes are rejected with `connection_busy` (HTTP 409) while a trial or catalog
+lookup is running. The model catalog is scoped to the connection and credential;
+changing the connection never reuses another account's cached model list.
+
 ## GET /api/models
 
-Returns `models`, `auth`, `source`, `warnings`, and `discovered_at`. Every model has
+Returns `models`, `auth`, `connection`, `speed_tiers`, `source`, `warnings`, and `discovered_at`. Every model has
 `id`, `name`, `kind` (`audio`, `text`, `other`), `transport`, `available`, `reason`,
 `source`, `availability`, `test_status`, `reasoning_effort`, `image_detail`, and
 `supports_image_detail_original` (true, false, or unknown/null). `available` means
 eligible to attempt, not a claim that the current account has proven access.
-`test_status` and `last_error` update after real calls. Refresh with `?refresh=1`.
+`test_status` and `last_error` describe Normal-tier calls. Per-tier outcomes are returned in `tier_results`, so a rejected experimental tier does not mark the model itself unavailable. Refresh with `?refresh=1`.
 
 The live Codex catalog is queried with the current Woi credentials. Public API
 model discovery is also attempted. When that scope is unavailable, audio
@@ -31,11 +51,17 @@ model is silently substituted or credited to Live.
   "width": 1280,
   "height": 720,
   "screen": {"width": 1920, "height": 1080, "devicePixelRatio": 1},
-  "request_id": "unique-request-id"
+  "request_id": "unique-request-id",
+  "speed_tier": "normal",
+  "connection_revision": 0
 }
 ```
 
-Only these fields are allowed. PNG dimensions and checksums are verified.
+Only these fields are allowed. `speed_tier` and `connection_revision` are
+optional for existing clients. Omitted speed means Normal. A supplied revision
+must match the current connection, otherwise the server returns
+`connection_changed` (HTTP 409) before sending a model request. PNG dimensions
+and checksums are verified.
 The screenshot is the controlled target surface, not the whole operating system.
 `screen.width/height` report browser Screen CSS dimensions; screenshot `width`
 and `height` are authoritative for coordinates. DPR is reported, not multiplied.
@@ -56,6 +82,116 @@ low reasoning are tested with low effort; no tiny output-token cap can consume
 the reasoning budget before the tool call. API rejection, timeout, rate limits,
 unsupported image input, invalid output, and wrong coordinates remain distinct.
 No coordinate correction, accessibility lookup, or real OS input occurs here.
+
+## Speed tiers and provider evidence
+
+All four choices remain selectable for both connection types. Responses requests
+send the exact `service_tier` below, with no retry or fallback to another tier.
+
+| UI choice | Responses `service_tier` | Behavior |
+| --- | --- | --- |
+| Normal | `default` | Explicit standard processing; omission would be provider Auto. |
+| Fast | `priority` | Fast/Priority processing; provider may report `priority` or `fast`. |
+| Ultrafast | `ultrafast` | Attempted on the selected model/account; rejection remains visible. |
+| Flex | `flex` | Attempted on Codex and API alike; up to 600 seconds for slower processing. |
+
+Normal/Fast/Ultrafast have a 120-second request deadline. `timeout_ms` records the
+chosen deadline. Flex is never silently retried as Standard if unavailable.
+Realtime currently has no documented service-tier field: Normal uses its normal
+session without a tier field; the other choices return
+`tier_unsupported_transport` visibly without sending a model request. No model or
+transport substitution occurs.
+
+Every structured result includes `speed_tier`, `requested_service_tier`,
+`actual_service_tier`, `tier_status`, `tier_note`, `auth_mode`, and
+`connection_revision`. `actual_service_tier` comes only from provider response
+events; missing reporting stays null. `tier_status` is `reported` when confirmed
+(`priority` and `fast` are accepted Fast aliases), `different` when the provider
+reports another tier, `unreported` when absent, `rejected` for explicit provider
+tier errors, or `unsupported` when the transport has no tier control. A successful
+model response alone does not establish that a requested faster tier was used.
+
+This change uses protocol `screenshot-only-v3-tiers`. Older v1/v2 benchmark records
+retain their original implicit-tier behavior and must not be combined into a
+speed comparison without labeling that difference.
+
+## Request size and measured timeline
+
+Timing fields are additive to `screenshot-only-v3-tiers`; the model prompt,
+screenshot, speed-tier mapping, and fresh-session rules are unchanged. These
+fields describe the server-to-provider request. They do not measure the browser's
+upload to the local lab server, screenshot rendering, or the final local click.
+
+`request_image_bytes` is the exact decoded PNG size and aliases existing
+`image_bytes`. `request_payload_bytes` is the actual serialized UTF-8 JSON byte
+count sent to the provider: it includes the base64 image and request instructions,
+but excludes transport headers, WebSocket framing, and TLS overhead. For Responses
+it is the one HTTP request body. For Realtime it is the sum of the
+`session.update` and `response.create` message bodies. No byte count is estimated
+from elapsed time. A request that never constructs a provider payload returns
+`request_payload_bytes: null`.
+
+Every structured trial response includes a `timing` object:
+
+```json
+{
+  "origin": "provider_request_start",
+  "upload_complete_ms": 410.125,
+  "upload_duration_ms": 6.25,
+  "first_token_ms": 1800.75,
+  "first_output_ms": 1800.75,
+  "first_output_source": "stream_delta",
+  "finish_ms": 2400.5,
+  "status": "completed",
+  "upload_measurement": "http.client.body_send_returned",
+  "note": "Client-side upload completion is not provider receipt."
+}
+```
+
+These example values are illustrative. All measured milestones use the same
+monotonic client clock, in milliseconds relative to the start of the actual
+provider call. Request discovery and JSON encoding happen before this origin.
+The UI can display `Upload +0.410 s`, `First reply +1.801 s`, and
+`Finished +2.401 s`; the stages are offsets, not durations to add together.
+
+| Field | Meaning |
+| --- | --- |
+| `upload_complete_ms` | Time when the client's request-body send has returned. It includes preceding connection setup; it does not establish provider receipt. |
+| `upload_duration_ms` | Time spent dispatching the request body itself, separate from the upload milestone offset. For Realtime it covers only the image/prompt `response.create` send. |
+| `first_token_ms` | Time when the client observes the first nonempty streamed output text or tool-argument delta. It is a received delta measurement, not the provider's internal token-generation timestamp. |
+| `first_output_ms` | First observed meaningful output, whether streamed or supplied only as a completed output item. |
+| `first_output_source` | `stream_delta`, `final_only`, or null when no meaningful output was observed. |
+| `finish_ms` | Time of the terminal provider response, or the observed request failure. It excludes local prediction parsing and click dispatch. |
+| `status` | `completed`, `error`, or `not_started`. An unsupported tier or local validation error has no provider timings. |
+
+For Responses, a single-use iterable supplies the unchanged JSON bytes to
+Python's normal `urllib` path with an explicit `Content-Length`. The upload
+milestone is recorded when the real `http.client` send loop resumes after sending
+that body chunk; its `socket.sendall` has returned. Existing proxy and TLS
+behavior is preserved. The iterator cannot replay the body. For Realtime, the
+origin is before opening the fresh WebSocket, and the upload milestone is after
+`await ws.send(response.create)` returns. Its offset includes connection and
+session setup. This measures client dispatch/flow control, not a provider
+acknowledgement. `upload_measurement` identifies the method as
+`http.client.body_send_returned` or `websocket.send_returned`; `note` explains the
+scope in every started request.
+
+Session creation, response creation/in-progress, reasoning events, audio data,
+and empty output deltas never count as the first token. If the provider only
+returns a final output item, `first_token_ms` stays null and `first_output_ms` is
+recorded with `first_output_source: "final_only"`. The UI must label that as
+**First output (final only)**. Unknown stages remain null, rather than using zero,
+API latency, or the first setup event as a substitute. Errors preserve any
+completed upload or output milestones; failed sends leave upload completion
+unknown. A measured `finish_ms` on an error is the failure end, not a successful
+response. Local pre-request errors retain `status: "not_started"` and null stages.
+
+The existing `latency_ms` and browser `send_to_click_ms` remain separate metrics
+with their original scopes. In particular, the provider `finish_ms` precedes
+WebSocket teardown; API total and send-to-click time can include that teardown
+and therefore exceed the provider completion offset. Timeline measurements are returned when the trial
+finishes; they are not live streamed to the browser. The UI may show its own
+pending elapsed clock without asserting unobserved provider stages.
 
 ## POST /api/result
 
@@ -95,11 +231,11 @@ must keep each configuration labeled rather than silently correcting points.
 
 ## Authentication and boundaries
 
-Default authentication follows Woi's `~/.local/share/woi/settings.json` selected
+On server start, default authentication follows Woi's `~/.local/share/woi/settings.json` selected
 backend. Codex login uses `~/.codex/auth.json` read-only. API mode uses Woi's key,
 `OPENAI_API_KEY`, or the existing Codex API key in that order. Explicit overrides
 are `WOI_LAB_AUTH=codex|api`, `WOI_LAB_SETTINGS`, `CODEX_HOME`, and
-`WOI_LAB_API_BASE` (HTTPS only). Secrets never enter the page or evidence logs.
+`WOI_LAB_API_BASE` (HTTPS only). Saved secrets never enter the page or evidence logs. A key entered by the user is sent only to the loopback connection endpoint, then remains in server memory; the UI clears its entry field.
 
 The server binds only to loopback. It validates Host, Origin, Sec-Fetch-Site,
 JSON content type, request length, and request IDs; rejects cross-origin CORS

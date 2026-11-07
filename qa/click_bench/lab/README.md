@@ -27,6 +27,39 @@ Automatic scoring recognizes a unique named button in the instruction. For other
 
 Model entries come from the account catalog when available, with app-registry candidates as a labeled fallback. An eligible entry may still reject access, screenshots or a requested capability; those failures remain visible. Image detail defaults to original for catalog-supported text models and high for Realtime. The actual setting is recorded under **Latest response details**.
 
+## Connection and speed
+
+Choose **Codex login** or **API key** in the Model panel. Codex uses the existing login. API mode can reuse an existing Woi/environment key or accept a password-masked key in the lab. A key entered here stays in the local server process until it is cleared or the server restarts; it is not saved to Woi settings, browser storage, or trial exports. Switching connections refreshes the model catalog.
+
+Choose a speed for the selected model before sending a test:
+
+| Choice | Responses request value | Behavior |
+| --- | --- | --- |
+| Normal | `default` | Explicit standard processing, independent of a project's automatic default. |
+| Fast | `priority` | Codex's Fast tier; the provider can report `priority` or `fast`. |
+| Ultrafast | `ultrafast` | Attempt the selected model/account's Ultrafast service. |
+| Flex | `flex` | Attempt Flex processing; also selectable with Codex login. |
+
+All four choices remain selectable. Account/model restrictions are shown in the result. The lab never retries a rejected tier at another speed or substitutes another model. The result table, click-all summaries, and JSON exports retain the selected tier, actual wire value, and provider-reported tier separately. Missing provider metadata stays **unreported**. Comparisons are grouped by connection, model, and selected speed.
+
+Native Realtime does not expose a service-tier parameter. Its Normal option uses the existing session; another speed returns an explicit unsupported result without sending an undocumented field or delegating to a text model. Connection and speed controls are frozen during tests and batches. A connection revision check also rejects stale requests from another window.
+
+Official references: [Codex speed](https://learn.chatgpt.com/docs/agent-configuration/speed), [configuration mapping](https://learn.chatgpt.com/docs/config-file/config-reference), [API Fast](https://developers.openai.com/api/docs/guides/fast-mode), [API Ultrafast](https://developers.openai.com/api/docs/guides/ultrafast-mode), and [API Flex](https://developers.openai.com/api/docs/guides/flex-processing).
+
+## Successful clicks and request timing
+
+A correctly scored click turns its button **black with white text**. Correct pointer moves, wrong-button clicks, and failed requests do not mark a button completed. A new single test, click-all run, or model comparison resets the colors; successes remain visible throughout a click-all run. Randomizing or resizing the surface also resets them.
+
+Completed-button colors are local feedback on a separate display layer. The PNG sent to the model keeps the original button colors and excludes previous success and pointer markers, preserving identical inputs for comparisons.
+
+Each request reports the source PNG size and a provider-request timeline:
+
+- **Upload:** elapsed time until the client finishes dispatching the request body containing the image and prompt. This observes local send completion, not an acknowledgment that the provider received every byte.
+- **First reply:** elapsed time to the first nonempty streamed text or tool-argument output. Session/response-created events do not count. If only a final result is observed, the UI identifies that final-only output and leaves the true first-token measurement unavailable.
+- **Finished:** elapsed time until the provider response completes, or the request ends in an error.
+
+These offsets share the provider-request start time. The browser's existing send-to-click timing remains separate and includes the local request/response path and click execution. Missing measurements stay unavailable. Evidence includes raw image bytes, serialized provider payload bytes, upload dispatch duration, and the measurement method; API keys and image base64 are excluded from server JSON logs.
+
 ## Click-all score and timing
 
 A click-all run freezes the current layout and model until it finishes or you choose **Stop after this request**. The current request completes before stopping, and partial progress stays visible.
@@ -37,6 +70,7 @@ Average, fastest and slowest **send → click** times begin immediately before e
 
 ## Results and details
 
+- [Speed tiers, click feedback, and request timing validation](results/20261107/SPEED_TIERS_VALIDATION.md)
 - [Final model comparison and actual-window confirmation](results/20261107/RESULTS.md)
 - [Click-all workflow validation and live timing](results/20261107/CLICK_ALL_VALIDATION.md)
 - [Corrected 16-model screening data](results/20261107/corrected-screening-summary.json)
