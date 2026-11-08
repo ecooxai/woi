@@ -1,0 +1,1586 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-11-07T20:56:48Z",
+  "all_passed": true,
+  "source": "independent headless Chromium/CDP browser observations",
+  "model_api_calls": 0,
+  "mocked_trial_requests": 12,
+  "external_result_writes": 0,
+  "scope": "Batch sequencing, stable screenshot/model, payload isolation, actual DOM click observation, accounting, end-to-end timestamps, stop/partial/error handling, persistence timing, export/restore. Synthetic app clicks are intentionally not OS input.",
+  "raw_evidence_path": "qa/out/click_lab/click_all/independent_qa/independent-click-all-qa.json",
+  "raw_evidence_sha256": "fc3c774ce5479f59d07bba3618ed1c96b2621de3589b74fe947d51dddd6f9af1",
+  "scenarios": [
+    {
+      "name": "mixed-six",
+      "summary": {
+        "id": "click-all-1794085004788-a53e4ac8",
+        "name": "gpt-6-luna \u00b7 all 6 buttons \u00b7 seed 7441",
+        "type": "click_all_buttons",
+        "model": "gpt-6-luna",
+        "status": "completed",
+        "started_at": "2026-11-07T20:56:44.788Z",
+        "started_perf_ms": 3468.2999999523163,
+        "timing_clock_origin_ms": 1794085001320.3,
+        "finished_at": "2026-11-07T20:56:46.113Z",
+        "elapsed_ms": 1325.2000000476837,
+        "layout": {
+          "seed": 7441,
+          "width": 1280,
+          "height": 480,
+          "revision": 2
+        },
+        "ordered_target_ids": [
+          "button-1",
+          "button-2",
+          "button-3",
+          "button-4",
+          "button-5",
+          "button-6"
+        ],
+        "ordered_target_labels": [
+          "Kite",
+          "Dune",
+          "Teal",
+          "Maple",
+          "Quartz",
+          "Aspen"
+        ],
+        "trials": [
+          {
+            "position": 1,
+            "target_id": "button-1",
+            "target_label": "Kite",
+            "request_id": "trial-1794085004836-e5fb9982",
+            "category": "hit",
+            "outcome": "hit",
+            "hit": true,
+            "error_code": null,
+            "error": null,
+            "returned_action": "click",
+            "returned_x": 1107,
+            "returned_y": 166,
+            "observed_target_id": "button-1",
+            "click_count": 1,
+            "api_latency_ms": 999999,
+            "response_wall_ms": 31.5,
+            "send_to_click_ms": 33.800000071525574,
+            "request_sent_at": "2026-11-07T20:56:44.837Z",
+            "click_dispatched_at": "2026-11-07T20:56:44.870Z",
+            "request_sent_perf_ms": 3516.6999999284744,
+            "click_dispatched_perf_ms": 3550.5,
+            "timing_clock_origin_ms": 1794085001320.3,
+            "capture_id": "capture-1794085004791-7fb4a148",
+            "image_sha256": null,
+            "events": [
+              {
+                "type": "pointermove",
+                "source": "model",
+                "request_id": "trial-1794085004836-e5fb9982",
+                "x": 1107,
+                "y": 166,
+                "target_id": "button-1",
+                "at": 1794085004870,
+                "performance_ms": 3549.899999976158,
+                "event_timestamp_ms": 3549.6999999284744,
+                "button": 0,
+                "isTrusted": false
+              },
+              {
+                "type": "mousedown",
+                "source": "model",
+                "request_id": "trial-1794085004836-e5fb9982",
+                "x": 1106.804558638268,
+                "y": 165.60646900269543,
+                "target_id": "button-1",
+                "at": 1794085004870,
+                "performance_ms": 3550,
+                "event_timestamp_ms": 3549.899999976158,
+                "button": 0,
+                "isTrusted": false
+              },
+              {
+                "type": "mouseup",
+                "source": "model",
+                "request_id": "trial-1794085004836-e5fb9982",
+                "x": 1106.804558638268,
+                "y": 165.60646900269543,
+                "target_id": "button-1",
+                "at": 1794085004870,
+                "performance_ms": 3550.100000023842,
+                "event_timestamp_ms": 3550,
+                "button": 0,
+                "isTrusted": false
+              },
+              {
+                "type": "click",
+                "source": "model",
+                "request_id": "trial-1794085004836-e5fb9982",
+                "x": 1106.804558638268,
+                "y": 165.60646900269543,
+                "target_id": "button-1",
+                "at": 1794085004870,
+                "performance_ms": 3550.5,
+                "event_timestamp_ms": 3550.100000023842,
+                "button": 0,
+                "isTrusted": false
+              }
+            ]
+          },
+          {
+            "position": 2,
+            "target_id": "button-2",
+            "target_label": "Dune",
+            "request_id": "trial-1794085005009-66479fe4",
+            "category": "miss",
+            "outcome": "miss",
+            "hit": false,
+            "error_code": null,
+            "error": null,
+            "returned_action": "click",
+            "returned_x": 5,
+            "returned_y": 5,
+            "observed_target_id": null,
+            "click_count": 1,
+            "api_latency_ms": 999999,
+            "response_wall_ms": 70.5,
+            "send_to_click_ms": 70.80000007152557,
+            "request_sent_at": "2026-11-07T20:56:45.009Z",
+            "click_dispatched_at": "2026-11-07T20:56:45.080Z",
+            "request_sent_perf_ms": 3689.2999999523163,
+            "click_dispatched_perf_ms": 3760.100000023842,
+            "timing_clock_origin_ms": 1794085001320.3,
+            "capture_id": "capture-1794085004953-66423b23",
+            "image_sha256": null,
+            "events": [
+              {
+                "type": "pointermove",
+                "source": "model",
+                "request_id": "trial-1794085005009-66479fe4",
+                "x": 5,
+                "y": 5,
+                "target_id": null,
+                "at": 1794085005080,
+                "performance_ms": 3760,
+                "event_timestamp_ms": 3759.899999976158,
+                "button": 0,
+                "isTrusted": false
+              },
+              {
+                "type": "mousedown",
+                "source": "model",
+                "request_id": "trial-1794085005009-66479fe4",
+                "x": 3.9937890018457214,
+                "y": 4.800187507324505,
+                "target_id": null,
+                "at": 1794085005080,
+                "performance_ms": 3760,
+                "event_timestamp_ms": 3760,
+                "button": 0,
+                "isTrusted": false
+              },
+              {
+                "type": "mouseup",
+                "source": "model",
+                "request_id": "trial-1794085005009-66479fe4",
+                "x": 3.9937890018457214,
+                "y": 4.800187507324505,
+                "target_id": null,
+                "at": 1794085005080,
+                "performance_ms": 3760,
+                "event_timestamp_ms": 3760,
+                "button": 0,
+                "isTrusted": false
+              },
+              {
+                "type": "click",
+                "source": "model",
+                "request_id": "trial-1794085005009-66479fe4",
+                "x": 3.9937890018457214,
+                "y": 4.800187507324505,
+                "target_id": null,
+                "at": 1794085005080,
+                "performance_ms": 3760.100000023842,
+                "event_timestamp_ms": 3760,
+                "button": 0,
+                "isTrusted": false
+              }
+            ]
+          },
+          {
+            "position": 3,
+            "target_id": "button-3",
+            "target_label": "Teal",
+            "request_id": "trial-1794085005207-69e26919",
+            "category": "request_error",
+            "outcome": "error",
+            "hit": false,
+            "error_code": "api_error",
+            "error": "Independent QA simulated upstream failure",
+            "returned_action": null,
+            "returned_x": null,
+            "returned_y": null,
+            "observed_target_id": null,
+            "click_count": 0,
+            "api_latency_ms": null,
+            "response_wall_ms": 110.5,
+            "send_to_click_ms": null,
+            "request_sent_at": "2026-11-07T20:56:45.207Z",
+            "click_dispatched_at": null,
+            "request_sent_perf_ms": 3887.1999999284744,
+            "click_dispatched_perf_ms": null,
+            "timing_clock_origin_ms": 1794085001320.3,
+            "capture_id": "capture-1794085005162-109c0b01",
+            "image_sha256": null,
+            "events": []
+          },
+          {
+            "position": 4,
+            "target_id": "button-4",
+            "target_label": "Maple",
+            "request_id": "trial-1794085005446-e0eb0e7d",
+            "category": "invalid_action",
+            "outcome": "miss",
+            "hit": false,
+            "error_code": null,
+            "error": null,
+            "returned_action": "move",
+            "returned_x": 435.5,
+            "returned_y": 92,
+            "observed_target_id": "button-4",
+            "click_count": 0,
+            "api_latency_ms": 999999,
+            "response_wall_ms": 150.39999997615814,
+            "send_to_click_ms": null,
+            "request_sent_at": "2026-11-07T20:56:45.447Z",
+            "click_dispatched_at": null,
+            "request_sent_perf_ms": 4126.899999976158,
+            "click_dispatched_perf_ms": null,
+            "timing_clock_origin_ms": 1794085001320.3,
+            "capture_id": "capture-1794085005400-4d86f883",
+            "image_sha256": null,
+            "events": [
+              {
+                "type": "pointermove",
+                "source": "model",
+                "request_id": "trial-1794085005446-e0eb0e7d",
+                "x": 435.5,
+                "y": 92,
+                "target_id": "button-4",
+                "at": 1794085005597,
+                "performance_ms": 4277.600000023842,
+                "event_timestamp_ms": 4277.600000023842,
+                "button": 0,
+                "isTrusted": false
+              }
+            ]
+          },
+          {
+            "position": 5,
+            "target_id": "button-5",
+            "target_label": "Quartz",
+            "request_id": "trial-1794085005774-e8f4b3ae",
+            "category": "invalid_action",
+            "outcome": "miss",
+            "hit": false,
+            "error_code": null,
+            "error": "The returned point is outside the captured image.",
+            "returned_action": "click",
+            "returned_x": 1281,
+            "returned_y": 368,
+            "observed_target_id": null,
+            "click_count": 0,
+            "api_latency_ms": 999999,
+            "response_wall_ms": 50.60000002384186,
+            "send_to_click_ms": null,
+            "request_sent_at": "2026-11-07T20:56:45.774Z",
+            "click_dispatched_at": null,
+            "request_sent_perf_ms": 4454,
+            "click_dispatched_perf_ms": null,
+            "timing_clock_origin_ms": 1794085001320.3,
+            "capture_id": "capture-1794085005684-f839408c",
+            "image_sha256": null,
+            "events": []
+          },
+          {
+            "position": 6,
+            "target_id": "button-6",
+            "target_label": "Aspen",
+            "request_id": "trial-1794085005957-e7611260",
+            "category": "local_error",
+            "outcome": "error",
+            "hit": false,
+            "error_code": "response_mismatch",
+            "error": "The response does not match this trial; no action was executed.",
+            "returned_action": null,
+            "returned_x": null,
+            "returned_y": null,
+            "observed_target_id": null,
+            "click_count": 0,
+            "api_latency_ms": 999999,
+            "response_wall_ms": 55.10000002384186,
+            "send_to_click_ms": null,
+            "request_sent_at": "2026-11-07T20:56:45.958Z",
+            "click_dispatched_at": null,
+            "request_sent_perf_ms": 4637.899999976158,
+            "click_dispatched_perf_ms": null,
+            "timing_clock_origin_ms": 1794085001320.3,
+            "capture_id": "capture-1794085005911-e3d54d85",
+            "image_sha256": null,
+            "events": []
+          }
+        ],
+        "current_target": null,
+        "stop_requested": false,
+        "error": null,
+        "summary_persisted": true,
+        "planned_buttons": 6,
+        "completed_attempts": 6,
+        "successful_clicks": 1,
+        "failed_attempts": 5,
+        "accuracy": 0.16666666666666666,
+        "missed_clicks": 1,
+        "invalid_actions": 2,
+        "request_errors": 1,
+        "local_errors": 1,
+        "latency_sample_count": 2,
+        "latency_excluded_attempts": 4,
+        "mean_send_to_click_ms": 52.300000071525574,
+        "min_send_to_click_ms": 33.800000071525574,
+        "max_send_to_click_ms": 70.80000007152557,
+        "total_wall_ms": 1325.2000000476837,
+        "timing_definition": "Monotonic time immediately before fetch through completion of an observed local click dispatch. Includes wrong-target clicks; excludes attempts with no click and later result persistence.",
+        "wall_time_definition": "Run start through completion or stop of the last attempted target, including image capture, all request waits, gaps, and per-trial result persistence. Summary-file persistence happens after the run timer ends."
+      },
+      "ui": {
+        "button-run-score": "1 / 6",
+        "button-run-completed": "6 / 6",
+        "button-run-total": "1.33 s",
+        "button-run-mean": "52.3 ms",
+        "button-run-min": "33.8 ms",
+        "button-run-max": "70.8 ms",
+        "button-run-timing-note": "Timing samples: 2 executed clicks / 6 completed attempts; 4 without a click excluded. Missed clicks are included. Per-click timing excludes result logging; total wall time includes it.",
+        "button-run-failures": "Failed attempts: 5 \u00b7 1 missed clicks \u00b7 2 invalid / non-click replies \u00b7 1 request errors \u00b7 1 local errors. Unattempted buttons are excluded from the score.",
+        "button-run-badge": "Completed"
+      },
+      "clicks": [
+        {
+          "request_id": "trial-1794085004836-e5fb9982",
+          "perf_ms": 3550.100000023842,
+          "target_id": "button-1",
+          "isTrusted": false
+        },
+        {
+          "request_id": "trial-1794085005009-66479fe4",
+          "perf_ms": 3760.100000023842,
+          "target_id": null,
+          "isTrusted": false
+        }
+      ],
+      "locks": {
+        "layout": true,
+        "model": true,
+        "instruction": true,
+        "restore": true,
+        "controls": true,
+        "radios": true,
+        "active": true,
+        "overlapping_batch": true,
+        "overlapping_trial": true
+      },
+      "independent_send_to_click_ms": [
+        33.40000009536743,
+        70.80000007152557
+      ],
+      "checks_passed": true,
+      "initial_layout": {
+        "seed": 7441,
+        "width": 1280,
+        "height": 480,
+        "count": 6,
+        "revision": 2,
+        "targets": [
+          {
+            "id": "button-1",
+            "label": "Kite",
+            "x": 1064,
+            "y": 153,
+            "w": 86,
+            "h": 26,
+            "font": 12,
+            "size": "small",
+            "fill": "#fff2e5",
+            "border": "#edcfb0",
+            "color": "#9b682e"
+          },
+          {
+            "id": "button-2",
+            "label": "Dune",
+            "x": 1122,
+            "y": 270,
+            "w": 117,
+            "h": 38,
+            "font": 14,
+            "size": "medium",
+            "fill": "#e8f5f8",
+            "border": "#b8dce4",
+            "color": "#347c8d"
+          },
+          {
+            "id": "button-3",
+            "label": "Teal",
+            "x": 655,
+            "y": 364,
+            "w": 166,
+            "h": 50,
+            "font": 16,
+            "size": "large",
+            "fill": "#eaf2ff",
+            "border": "#bdd3f2",
+            "color": "#2b5e9a"
+          },
+          {
+            "id": "button-4",
+            "label": "Maple",
+            "x": 399,
+            "y": 79,
+            "w": 73,
+            "h": 26,
+            "font": 12,
+            "size": "small",
+            "fill": "#eaf2ff",
+            "border": "#bdd3f2",
+            "color": "#2b5e9a"
+          },
+          {
+            "id": "button-5",
+            "label": "Quartz",
+            "x": 124,
+            "y": 349,
+            "w": 118,
+            "h": 38,
+            "font": 14,
+            "size": "medium",
+            "fill": "#f4edff",
+            "border": "#d9c5ee",
+            "color": "#78539e"
+          },
+          {
+            "id": "button-6",
+            "label": "Aspen",
+            "x": 430,
+            "y": 274,
+            "w": 157,
+            "h": 50,
+            "font": 16,
+            "size": "large",
+            "fill": "#ebf6f0",
+            "border": "#b7d9c9",
+            "color": "#34735b"
+          }
+        ]
+      },
+      "clean_screenshot_sha256": "31ee45c974fe6177ef1f2d6a3b6558060bed2dacba91f03cee3556ce6e9610f8",
+      "request_isolation": {
+        "unique_ids": true,
+        "one_current_payload_per_attempt": true,
+        "one_screenshot_hash": true,
+        "no_history_or_target_fields": true,
+        "payload_field_names": [
+          "model",
+          "instruction",
+          "screenshot",
+          "width",
+          "height",
+          "screen",
+          "request_id"
+        ]
+      },
+      "requests": [
+        {
+          "request_id": "trial-1794085004836-e5fb9982",
+          "instruction": "Click the Kite button.",
+          "screenshot_sha256": "31ee45c974fe6177ef1f2d6a3b6558060bed2dacba91f03cee3556ce6e9610f8",
+          "sent_perf_ms": 3516.6999999284744,
+          "returned_perf_ms": 3548
+        },
+        {
+          "request_id": "trial-1794085005009-66479fe4",
+          "instruction": "Click the Dune button.",
+          "screenshot_sha256": "31ee45c974fe6177ef1f2d6a3b6558060bed2dacba91f03cee3556ce6e9610f8",
+          "sent_perf_ms": 3689.2999999523163,
+          "returned_perf_ms": 3759.600000023842
+        },
+        {
+          "request_id": "trial-1794085005207-69e26919",
+          "instruction": "Click the Teal button.",
+          "screenshot_sha256": "31ee45c974fe6177ef1f2d6a3b6558060bed2dacba91f03cee3556ce6e9610f8",
+          "sent_perf_ms": 3887.1999999284744,
+          "returned_perf_ms": 3997.600000023842
+        },
+        {
+          "request_id": "trial-1794085005446-e0eb0e7d",
+          "instruction": "Click the Maple button.",
+          "screenshot_sha256": "31ee45c974fe6177ef1f2d6a3b6558060bed2dacba91f03cee3556ce6e9610f8",
+          "sent_perf_ms": 4126.899999976158,
+          "returned_perf_ms": 4277.199999928474
+        },
+        {
+          "request_id": "trial-1794085005774-e8f4b3ae",
+          "instruction": "Click the Quartz button.",
+          "screenshot_sha256": "31ee45c974fe6177ef1f2d6a3b6558060bed2dacba91f03cee3556ce6e9610f8",
+          "sent_perf_ms": 4454,
+          "returned_perf_ms": 4504.399999976158
+        },
+        {
+          "request_id": "trial-1794085005957-e7611260",
+          "instruction": "Click the Aspen button.",
+          "screenshot_sha256": "31ee45c974fe6177ef1f2d6a3b6558060bed2dacba91f03cee3556ce6e9610f8",
+          "sent_perf_ms": 4637.899999976158,
+          "returned_perf_ms": 4692.699999928474
+        }
+      ],
+      "captures": [
+        {
+          "start": 3471,
+          "end": 3516.2999999523163,
+          "error": false
+        },
+        {
+          "start": 3633.2999999523163,
+          "end": 3689,
+          "error": false
+        },
+        {
+          "start": 3842.600000023842,
+          "end": 3887,
+          "error": false
+        },
+        {
+          "start": 4080,
+          "end": 4126.399999976158,
+          "error": false
+        },
+        {
+          "start": 4364.600000023842,
+          "end": 4453.699999928474,
+          "error": false
+        },
+        {
+          "start": 4591,
+          "end": 4637.5,
+          "error": false
+        }
+      ],
+      "persistence": [
+        {
+          "request_id": "trial-1794085004836-e5fb9982",
+          "record_type": "trial",
+          "sent_perf_ms": 3551.6999999284744,
+          "finished_perf_ms": 3631.899999976158
+        },
+        {
+          "request_id": "trial-1794085005009-66479fe4",
+          "record_type": "trial",
+          "sent_perf_ms": 3761,
+          "finished_perf_ms": 3841.1999999284744
+        },
+        {
+          "request_id": "trial-1794085005207-69e26919",
+          "record_type": "trial",
+          "sent_perf_ms": 3998.5,
+          "finished_perf_ms": 4078.600000023842
+        },
+        {
+          "request_id": "trial-1794085005446-e0eb0e7d",
+          "record_type": "trial",
+          "sent_perf_ms": 4278.699999928474,
+          "finished_perf_ms": 4358.899999976158
+        },
+        {
+          "request_id": "trial-1794085005774-e8f4b3ae",
+          "record_type": "trial",
+          "sent_perf_ms": 4505.699999928474,
+          "finished_perf_ms": 4585.899999976158
+        },
+        {
+          "request_id": "trial-1794085005957-e7611260",
+          "record_type": "trial",
+          "sent_perf_ms": 4710.899999976158,
+          "finished_perf_ms": 4791.100000023842
+        },
+        {
+          "request_id": "click-all-1794085004788-a53e4ac8",
+          "record_type": "click_all_summary",
+          "sent_perf_ms": 4794.799999952316,
+          "finished_perf_ms": 4915
+        }
+      ],
+      "unchanged_layout": true,
+      "unlocked": true,
+      "schema2_export_restore_preserved": true
+    },
+    {
+      "name": "stop-during-first-request",
+      "summary": {
+        "id": "click-all-1794085006526-1bf78222",
+        "name": "gpt-6-luna \u00b7 all 5 buttons \u00b7 seed 7441",
+        "type": "click_all_buttons",
+        "model": "gpt-6-luna",
+        "status": "stopped",
+        "started_at": "2026-11-07T20:56:46.526Z",
+        "started_perf_ms": 170.60000002384186,
+        "timing_clock_origin_ms": 1794085006355.4,
+        "finished_at": "2026-11-07T20:56:47.110Z",
+        "elapsed_ms": 584.3000000715256,
+        "layout": {
+          "seed": 7441,
+          "width": 1280,
+          "height": 480,
+          "revision": 2
+        },
+        "ordered_target_ids": [
+          "button-1",
+          "button-2",
+          "button-3",
+          "button-4",
+          "button-5"
+        ],
+        "ordered_target_labels": [
+          "Kite",
+          "Dune",
+          "Teal",
+          "Maple",
+          "Quartz"
+        ],
+        "trials": [
+          {
+            "position": 1,
+            "target_id": "button-1",
+            "target_label": "Kite",
+            "request_id": "trial-1794085006574-9a5191f4",
+            "category": "hit",
+            "outcome": "hit",
+            "hit": true,
+            "error_code": null,
+            "error": null,
+            "returned_action": "click",
+            "returned_x": 607,
+            "returned_y": 419,
+            "observed_target_id": "button-1",
+            "click_count": 1,
+            "api_latency_ms": 999999,
+            "response_wall_ms": 451,
+            "send_to_click_ms": 452.5,
+            "request_sent_at": "2026-11-07T20:56:46.574Z",
+            "click_dispatched_at": "2026-11-07T20:56:47.027Z",
+            "request_sent_perf_ms": 219.5,
+            "click_dispatched_perf_ms": 672,
+            "timing_clock_origin_ms": 1794085006355.4,
+            "capture_id": "capture-1794085006528-7b8d83c7",
+            "image_sha256": null,
+            "events": [
+              {
+                "type": "pointermove",
+                "source": "model",
+                "request_id": "trial-1794085006574-9a5191f4",
+                "x": 607,
+                "y": 419,
+                "target_id": "button-1",
+                "at": 1794085007026,
+                "performance_ms": 671.3000000715256,
+                "event_timestamp_ms": 671.1000000238419,
+                "button": 0,
+                "isTrusted": false
+              },
+              {
+                "type": "mousedown",
+                "source": "model",
+                "request_id": "trial-1794085006574-9a5191f4",
+                "x": 606.3996718717956,
+                "y": 418.8163600140631,
+                "target_id": "button-1",
+                "at": 1794085007026,
+                "performance_ms": 671.4000000953674,
+                "event_timestamp_ms": 671.4000000953674,
+                "button": 0,
+                "isTrusted": false
+              },
+              {
+                "type": "mouseup",
+                "source": "model",
+                "request_id": "trial-1794085006574-9a5191f4",
+                "x": 606.3996718717956,
+                "y": 418.8163600140631,
+                "target_id": "button-1",
+                "at": 1794085007026,
+                "performance_ms": 671.5,
+                "event_timestamp_ms": 671.5,
+                "button": 0,
+                "isTrusted": false
+              },
+              {
+                "type": "click",
+                "source": "model",
+                "request_id": "trial-1794085006574-9a5191f4",
+                "x": 606.3996718717956,
+                "y": 418.8163600140631,
+                "target_id": "button-1",
+                "at": 1794085007027,
+                "performance_ms": 672,
+                "event_timestamp_ms": 671.5,
+                "button": 0,
+                "isTrusted": false
+              }
+            ]
+          }
+        ],
+        "current_target": null,
+        "stop_requested": true,
+        "error": null,
+        "summary_persisted": true,
+        "planned_buttons": 5,
+        "completed_attempts": 1,
+        "successful_clicks": 1,
+        "failed_attempts": 0,
+        "accuracy": 1,
+        "missed_clicks": 0,
+        "invalid_actions": 0,
+        "request_errors": 0,
+        "local_errors": 0,
+        "latency_sample_count": 1,
+        "latency_excluded_attempts": 0,
+        "mean_send_to_click_ms": 452.5,
+        "min_send_to_click_ms": 452.5,
+        "max_send_to_click_ms": 452.5,
+        "total_wall_ms": 584.3000000715256,
+        "timing_definition": "Monotonic time immediately before fetch through completion of an observed local click dispatch. Includes wrong-target clicks; excludes attempts with no click and later result persistence.",
+        "wall_time_definition": "Run start through completion or stop of the last attempted target, including image capture, all request waits, gaps, and per-trial result persistence. Summary-file persistence happens after the run timer ends."
+      },
+      "ui": {
+        "button-run-score": "1 / 1",
+        "button-run-completed": "1 / 5",
+        "button-run-total": "584.3 ms",
+        "button-run-mean": "452.5 ms",
+        "button-run-min": "452.5 ms",
+        "button-run-max": "452.5 ms",
+        "button-run-timing-note": "Timing samples: 1 executed clicks. Missed clicks are included. Per-click timing excludes result logging; total wall time includes it.",
+        "button-run-failures": "Failed attempts: 0. Unattempted buttons are excluded from the score.",
+        "button-run-badge": "Stopped"
+      },
+      "clicks": [
+        {
+          "request_id": "trial-1794085006574-9a5191f4",
+          "perf_ms": 671.5,
+          "target_id": "button-1",
+          "isTrusted": false
+        }
+      ],
+      "locks": {
+        "layout": true,
+        "model": true,
+        "instruction": true,
+        "restore": true,
+        "controls": true,
+        "radios": true,
+        "active": true,
+        "overlapping_batch": true,
+        "overlapping_trial": true
+      },
+      "independent_send_to_click_ms": [
+        452.0
+      ],
+      "checks_passed": true,
+      "initial_layout": {
+        "seed": 7441,
+        "width": 1280,
+        "height": 480,
+        "count": 5,
+        "revision": 2,
+        "targets": [
+          {
+            "id": "button-1",
+            "label": "Kite",
+            "x": 565,
+            "y": 406,
+            "w": 84,
+            "h": 26,
+            "font": 12,
+            "size": "small",
+            "fill": "#e8f5f8",
+            "border": "#b8dce4",
+            "color": "#347c8d"
+          },
+          {
+            "id": "button-2",
+            "label": "Dune",
+            "x": 980,
+            "y": 296,
+            "w": 123,
+            "h": 38,
+            "font": 14,
+            "size": "medium",
+            "fill": "#f0f2f6",
+            "border": "#cfd6e0",
+            "color": "#586779"
+          },
+          {
+            "id": "button-3",
+            "label": "Teal",
+            "x": 988,
+            "y": 127,
+            "w": 158,
+            "h": 50,
+            "font": 16,
+            "size": "large",
+            "fill": "#eaf2ff",
+            "border": "#bdd3f2",
+            "color": "#2b5e9a"
+          },
+          {
+            "id": "button-4",
+            "label": "Maple",
+            "x": 34,
+            "y": 253,
+            "w": 84,
+            "h": 26,
+            "font": 12,
+            "size": "small",
+            "fill": "#f4edff",
+            "border": "#d9c5ee",
+            "color": "#78539e"
+          },
+          {
+            "id": "button-5",
+            "label": "Quartz",
+            "x": 448,
+            "y": 86,
+            "w": 117,
+            "h": 38,
+            "font": 14,
+            "size": "medium",
+            "fill": "#e8f5f8",
+            "border": "#b8dce4",
+            "color": "#347c8d"
+          }
+        ]
+      },
+      "clean_screenshot_sha256": "0ff1c4f1f371b8c24dcf4e837e24bc54aad1dc12435ff994f7178284ef80291d",
+      "request_isolation": {
+        "unique_ids": true,
+        "one_current_payload_per_attempt": true,
+        "one_screenshot_hash": true,
+        "no_history_or_target_fields": true,
+        "payload_field_names": [
+          "model",
+          "instruction",
+          "screenshot",
+          "width",
+          "height",
+          "screen",
+          "request_id"
+        ]
+      },
+      "requests": [
+        {
+          "request_id": "trial-1794085006574-9a5191f4",
+          "instruction": "Click the Kite button.",
+          "screenshot_sha256": "0ff1c4f1f371b8c24dcf4e837e24bc54aad1dc12435ff994f7178284ef80291d",
+          "sent_perf_ms": 219.5,
+          "returned_perf_ms": 670.2000000476837
+        }
+      ],
+      "captures": [
+        {
+          "start": 173.5,
+          "end": 219.20000004768372,
+          "error": false
+        }
+      ],
+      "persistence": [
+        {
+          "request_id": "trial-1794085006574-9a5191f4",
+          "record_type": "trial",
+          "sent_perf_ms": 673.6000000238419,
+          "finished_perf_ms": 753.8000000715256
+        },
+        {
+          "request_id": "click-all-1794085006526-1bf78222",
+          "record_type": "click_all_summary",
+          "sent_perf_ms": 755.6000000238419,
+          "finished_perf_ms": 875.7000000476837
+        }
+      ],
+      "unchanged_layout": true,
+      "unlocked": true,
+      "schema2_export_restore_preserved": true
+    },
+    {
+      "name": "capture-failure-after-one-dpr2",
+      "summary": {
+        "id": "click-all-1794085007433-131a16",
+        "name": "gpt-6-luna \u00b7 all 5 buttons \u00b7 seed 7441",
+        "type": "click_all_buttons",
+        "model": "gpt-6-luna",
+        "status": "error",
+        "started_at": "2026-11-07T20:56:47.433Z",
+        "started_perf_ms": 178,
+        "timing_clock_origin_ms": 1794085007255.6,
+        "finished_at": "2026-11-07T20:56:47.641Z",
+        "elapsed_ms": 207.79999995231628,
+        "layout": {
+          "seed": 7441,
+          "width": 2560,
+          "height": 1440,
+          "revision": 2
+        },
+        "ordered_target_ids": [
+          "button-1",
+          "button-2",
+          "button-3",
+          "button-4",
+          "button-5"
+        ],
+        "ordered_target_labels": [
+          "Kite",
+          "Dune",
+          "Teal",
+          "Maple",
+          "Quartz"
+        ],
+        "trials": [
+          {
+            "position": 1,
+            "target_id": "button-1",
+            "target_label": "Kite",
+            "request_id": "trial-1794085007503-716c0ba7",
+            "category": "hit",
+            "outcome": "hit",
+            "hit": true,
+            "error_code": null,
+            "error": null,
+            "returned_action": "click",
+            "returned_x": 1204,
+            "returned_y": 1322,
+            "observed_target_id": "button-1",
+            "click_count": 1,
+            "api_latency_ms": 999999,
+            "response_wall_ms": 52.299999952316284,
+            "send_to_click_ms": 53.799999952316284,
+            "request_sent_at": "2026-11-07T20:56:47.503Z",
+            "click_dispatched_at": "2026-11-07T20:56:47.557Z",
+            "request_sent_perf_ms": 248,
+            "click_dispatched_perf_ms": 301.7999999523163,
+            "timing_clock_origin_ms": 1794085007255.6,
+            "capture_id": "capture-1794085007436-593b8f3f",
+            "image_sha256": null,
+            "events": [
+              {
+                "type": "pointermove",
+                "source": "model",
+                "request_id": "trial-1794085007503-716c0ba7",
+                "x": 1204,
+                "y": 1322,
+                "target_id": "button-1",
+                "at": 1794085007556,
+                "performance_ms": 301.10000002384186,
+                "event_timestamp_ms": 300.89999997615814,
+                "button": 0,
+                "isTrusted": false
+              },
+              {
+                "type": "mousedown",
+                "source": "model",
+                "request_id": "trial-1794085007503-716c0ba7",
+                "x": 1201.4933333333333,
+                "y": 1320.96,
+                "target_id": "button-1",
+                "at": 1794085007556,
+                "performance_ms": 301.2999999523163,
+                "event_timestamp_ms": 301.2999999523163,
+                "button": 0,
+                "isTrusted": false
+              },
+              {
+                "type": "mouseup",
+                "source": "model",
+                "request_id": "trial-1794085007503-716c0ba7",
+                "x": 1201.4933333333333,
+                "y": 1320.96,
+                "target_id": "button-1",
+                "at": 1794085007557,
+                "performance_ms": 301.39999997615814,
+                "event_timestamp_ms": 301.39999997615814,
+                "button": 0,
+                "isTrusted": false
+              },
+              {
+                "type": "click",
+                "source": "model",
+                "request_id": "trial-1794085007503-716c0ba7",
+                "x": 1201.4933333333333,
+                "y": 1320.96,
+                "target_id": "button-1",
+                "at": 1794085007557,
+                "performance_ms": 301.7999999523163,
+                "event_timestamp_ms": 301.39999997615814,
+                "button": 0,
+                "isTrusted": false
+              }
+            ]
+          },
+          {
+            "position": 2,
+            "target_id": "button-2",
+            "target_label": "Dune",
+            "request_id": null,
+            "category": "local_error",
+            "outcome": "error",
+            "hit": false,
+            "error_code": "local_error",
+            "error": "Independent QA forced capture failure",
+            "click_count": 0,
+            "send_to_click_ms": null,
+            "api_latency_ms": null,
+            "events": []
+          }
+        ],
+        "current_target": null,
+        "stop_requested": false,
+        "error": "Independent QA forced capture failure",
+        "summary_persisted": true,
+        "planned_buttons": 5,
+        "completed_attempts": 2,
+        "successful_clicks": 1,
+        "failed_attempts": 1,
+        "accuracy": 0.5,
+        "missed_clicks": 0,
+        "invalid_actions": 0,
+        "request_errors": 0,
+        "local_errors": 1,
+        "latency_sample_count": 1,
+        "latency_excluded_attempts": 1,
+        "mean_send_to_click_ms": 53.799999952316284,
+        "min_send_to_click_ms": 53.799999952316284,
+        "max_send_to_click_ms": 53.799999952316284,
+        "total_wall_ms": 207.79999995231628,
+        "timing_definition": "Monotonic time immediately before fetch through completion of an observed local click dispatch. Includes wrong-target clicks; excludes attempts with no click and later result persistence.",
+        "wall_time_definition": "Run start through completion or stop of the last attempted target, including image capture, all request waits, gaps, and per-trial result persistence. Summary-file persistence happens after the run timer ends."
+      },
+      "ui": {
+        "button-run-score": "1 / 2",
+        "button-run-completed": "2 / 5",
+        "button-run-total": "207.8 ms",
+        "button-run-mean": "53.8 ms",
+        "button-run-min": "53.8 ms",
+        "button-run-max": "53.8 ms",
+        "button-run-timing-note": "Timing samples: 1 executed clicks / 2 completed attempts; 1 without a click excluded. Missed clicks are included. Per-click timing excludes result logging; total wall time includes it.",
+        "button-run-failures": "Failed attempts: 1 \u00b7 1 local errors. Unattempted buttons are excluded from the score.",
+        "button-run-badge": "Error"
+      },
+      "clicks": [
+        {
+          "request_id": "trial-1794085007503-716c0ba7",
+          "perf_ms": 301.5,
+          "target_id": "button-1",
+          "isTrusted": false
+        }
+      ],
+      "locks": {
+        "layout": true,
+        "model": true,
+        "instruction": true,
+        "restore": true,
+        "controls": true,
+        "radios": true,
+        "active": true,
+        "overlapping_batch": true,
+        "overlapping_trial": true
+      },
+      "independent_send_to_click_ms": [
+        53.5
+      ],
+      "checks_passed": true,
+      "initial_layout": {
+        "seed": 7441,
+        "width": 2560,
+        "height": 1440,
+        "count": 5,
+        "revision": 2,
+        "targets": [
+          {
+            "id": "button-1",
+            "label": "Kite",
+            "x": 1162,
+            "y": 1309,
+            "w": 84,
+            "h": 26,
+            "font": 12,
+            "size": "small",
+            "fill": "#e8f5f8",
+            "border": "#b8dce4",
+            "color": "#347c8d"
+          },
+          {
+            "id": "button-2",
+            "label": "Dune",
+            "x": 2029,
+            "y": 918,
+            "w": 123,
+            "h": 38,
+            "font": 14,
+            "size": "medium",
+            "fill": "#f0f2f6",
+            "border": "#cfd6e0",
+            "color": "#586779"
+          },
+          {
+            "id": "button-3",
+            "label": "Teal",
+            "x": 2080,
+            "y": 435,
+            "w": 158,
+            "h": 50,
+            "font": 16,
+            "size": "large",
+            "fill": "#eaf2ff",
+            "border": "#bdd3f2",
+            "color": "#2b5e9a"
+          },
+          {
+            "id": "button-4",
+            "label": "Maple",
+            "x": 45,
+            "y": 751,
+            "w": 84,
+            "h": 26,
+            "font": 12,
+            "size": "small",
+            "fill": "#f4edff",
+            "border": "#d9c5ee",
+            "color": "#78539e"
+          },
+          {
+            "id": "button-5",
+            "label": "Quartz",
+            "x": 887,
+            "y": 256,
+            "w": 117,
+            "h": 38,
+            "font": 14,
+            "size": "medium",
+            "fill": "#e8f5f8",
+            "border": "#b8dce4",
+            "color": "#347c8d"
+          }
+        ]
+      },
+      "clean_screenshot_sha256": "fb16b390c13d9b9b98a393daf6b3070a6df8ca1c5b5c069abd1a57b3ec056e7b",
+      "request_isolation": {
+        "unique_ids": true,
+        "one_current_payload_per_attempt": true,
+        "one_screenshot_hash": true,
+        "no_history_or_target_fields": true,
+        "payload_field_names": [
+          "model",
+          "instruction",
+          "screenshot",
+          "width",
+          "height",
+          "screen",
+          "request_id"
+        ]
+      },
+      "requests": [
+        {
+          "request_id": "trial-1794085007503-716c0ba7",
+          "instruction": "Click the Kite button.",
+          "screenshot_sha256": "fb16b390c13d9b9b98a393daf6b3070a6df8ca1c5b5c069abd1a57b3ec056e7b",
+          "sent_perf_ms": 248,
+          "returned_perf_ms": 299.2999999523163
+        }
+      ],
+      "captures": [
+        {
+          "start": 181.10000002384186,
+          "end": 247.39999997615814,
+          "error": false
+        },
+        {
+          "start": 385.60000002384186,
+          "end": 385.60000002384186,
+          "error": true
+        }
+      ],
+      "persistence": [
+        {
+          "request_id": "trial-1794085007503-716c0ba7",
+          "record_type": "trial",
+          "sent_perf_ms": 302.89999997615814,
+          "finished_perf_ms": 384.39999997615814
+        },
+        {
+          "request_id": "click-all-1794085007433-131a16",
+          "record_type": "click_all_summary",
+          "sent_perf_ms": 386.7000000476837,
+          "finished_perf_ms": 506.7999999523163
+        }
+      ],
+      "unchanged_layout": true,
+      "unlocked": true,
+      "schema2_export_restore_preserved": true
+    },
+    {
+      "name": "no-click-samples",
+      "summary": {
+        "id": "click-all-1794085007931-87c74795",
+        "name": "gpt-6-luna \u00b7 all 4 buttons \u00b7 seed 7441",
+        "type": "click_all_buttons",
+        "model": "gpt-6-luna",
+        "status": "completed",
+        "started_at": "2026-11-07T20:56:47.931Z",
+        "started_perf_ms": 123.59999990463257,
+        "timing_clock_origin_ms": 1794085007807.8,
+        "finished_at": "2026-11-07T20:56:48.568Z",
+        "elapsed_ms": 637.2000000476837,
+        "layout": {
+          "seed": 7441,
+          "width": 1280,
+          "height": 480,
+          "revision": 2
+        },
+        "ordered_target_ids": [
+          "button-1",
+          "button-2",
+          "button-3",
+          "button-4"
+        ],
+        "ordered_target_labels": [
+          "Kite",
+          "Dune",
+          "Teal",
+          "Maple"
+        ],
+        "trials": [
+          {
+            "position": 1,
+            "target_id": "button-1",
+            "target_label": "Kite",
+            "request_id": "trial-1794085007979-ae5538a5",
+            "category": "request_error",
+            "outcome": "error",
+            "hit": false,
+            "error_code": "api_error",
+            "error": "Independent QA simulated upstream failure",
+            "returned_action": null,
+            "returned_x": null,
+            "returned_y": null,
+            "observed_target_id": null,
+            "click_count": 0,
+            "api_latency_ms": null,
+            "response_wall_ms": 30.800000071525574,
+            "send_to_click_ms": null,
+            "request_sent_at": "2026-11-07T20:56:47.980Z",
+            "click_dispatched_at": null,
+            "request_sent_perf_ms": 172.19999992847443,
+            "click_dispatched_perf_ms": null,
+            "timing_clock_origin_ms": 1794085007807.8,
+            "capture_id": "capture-1794085007933-122d5e61",
+            "image_sha256": null,
+            "events": []
+          },
+          {
+            "position": 2,
+            "target_id": "button-2",
+            "target_label": "Dune",
+            "request_id": "trial-1794085008140-88725263",
+            "category": "request_error",
+            "outcome": "error",
+            "hit": false,
+            "error_code": "api_error",
+            "error": "Independent QA simulated upstream failure",
+            "returned_action": null,
+            "returned_x": null,
+            "returned_y": null,
+            "observed_target_id": null,
+            "click_count": 0,
+            "api_latency_ms": null,
+            "response_wall_ms": 30.5,
+            "send_to_click_ms": null,
+            "request_sent_at": "2026-11-07T20:56:48.140Z",
+            "click_dispatched_at": null,
+            "request_sent_perf_ms": 333,
+            "click_dispatched_perf_ms": null,
+            "timing_clock_origin_ms": 1794085007807.8,
+            "capture_id": "capture-1794085008093-96fe1c1b",
+            "image_sha256": null,
+            "events": []
+          },
+          {
+            "position": 3,
+            "target_id": "button-3",
+            "target_label": "Teal",
+            "request_id": "trial-1794085008298-c76c6d3c",
+            "category": "request_error",
+            "outcome": "error",
+            "hit": false,
+            "error_code": "api_error",
+            "error": "Independent QA simulated upstream failure",
+            "returned_action": null,
+            "returned_x": null,
+            "returned_y": null,
+            "observed_target_id": null,
+            "click_count": 0,
+            "api_latency_ms": null,
+            "response_wall_ms": 30.299999952316284,
+            "send_to_click_ms": null,
+            "request_sent_at": "2026-11-07T20:56:48.298Z",
+            "click_dispatched_at": null,
+            "request_sent_perf_ms": 490.39999997615814,
+            "click_dispatched_perf_ms": null,
+            "timing_clock_origin_ms": 1794085007807.8,
+            "capture_id": "capture-1794085008253-e91446a7",
+            "image_sha256": null,
+            "events": []
+          },
+          {
+            "position": 4,
+            "target_id": "button-4",
+            "target_label": "Maple",
+            "request_id": "trial-1794085008455-103907a",
+            "category": "request_error",
+            "outcome": "error",
+            "hit": false,
+            "error_code": "api_error",
+            "error": "Independent QA simulated upstream failure",
+            "returned_action": null,
+            "returned_x": null,
+            "returned_y": null,
+            "observed_target_id": null,
+            "click_count": 0,
+            "api_latency_ms": null,
+            "response_wall_ms": 30.5,
+            "send_to_click_ms": null,
+            "request_sent_at": "2026-11-07T20:56:48.455Z",
+            "click_dispatched_at": null,
+            "request_sent_perf_ms": 647.6999999284744,
+            "click_dispatched_perf_ms": null,
+            "timing_clock_origin_ms": 1794085007807.8,
+            "capture_id": "capture-1794085008410-eeadfad7",
+            "image_sha256": null,
+            "events": []
+          }
+        ],
+        "current_target": null,
+        "stop_requested": false,
+        "error": null,
+        "summary_persisted": true,
+        "planned_buttons": 4,
+        "completed_attempts": 4,
+        "successful_clicks": 0,
+        "failed_attempts": 4,
+        "accuracy": 0,
+        "missed_clicks": 0,
+        "invalid_actions": 0,
+        "request_errors": 4,
+        "local_errors": 0,
+        "latency_sample_count": 0,
+        "latency_excluded_attempts": 4,
+        "mean_send_to_click_ms": null,
+        "min_send_to_click_ms": null,
+        "max_send_to_click_ms": null,
+        "total_wall_ms": 637.2000000476837,
+        "timing_definition": "Monotonic time immediately before fetch through completion of an observed local click dispatch. Includes wrong-target clicks; excludes attempts with no click and later result persistence.",
+        "wall_time_definition": "Run start through completion or stop of the last attempted target, including image capture, all request waits, gaps, and per-trial result persistence. Summary-file persistence happens after the run timer ends."
+      },
+      "ui": {
+        "button-run-score": "0 / 4",
+        "button-run-completed": "4 / 4",
+        "button-run-total": "637.2 ms",
+        "button-run-mean": "\u2014",
+        "button-run-min": "\u2014",
+        "button-run-max": "\u2014",
+        "button-run-timing-note": "Timing samples: 0 executed clicks / 4 completed attempts; 4 without a click excluded. Missed clicks are included. Per-click timing excludes result logging; total wall time includes it.",
+        "button-run-failures": "Failed attempts: 4 \u00b7 4 request errors. Unattempted buttons are excluded from the score.",
+        "button-run-badge": "Completed"
+      },
+      "clicks": [],
+      "locks": {
+        "layout": true,
+        "model": true,
+        "instruction": true,
+        "restore": true,
+        "controls": true,
+        "radios": true,
+        "active": true,
+        "overlapping_batch": true,
+        "overlapping_trial": true
+      },
+      "independent_send_to_click_ms": [],
+      "checks_passed": true,
+      "initial_layout": {
+        "seed": 7441,
+        "width": 1280,
+        "height": 480,
+        "count": 4,
+        "revision": 2,
+        "targets": [
+          {
+            "id": "button-1",
+            "label": "Kite",
+            "x": 565,
+            "y": 406,
+            "w": 84,
+            "h": 26,
+            "font": 12,
+            "size": "small",
+            "fill": "#e8f5f8",
+            "border": "#b8dce4",
+            "color": "#347c8d"
+          },
+          {
+            "id": "button-2",
+            "label": "Dune",
+            "x": 980,
+            "y": 296,
+            "w": 123,
+            "h": 38,
+            "font": 14,
+            "size": "medium",
+            "fill": "#f0f2f6",
+            "border": "#cfd6e0",
+            "color": "#586779"
+          },
+          {
+            "id": "button-3",
+            "label": "Teal",
+            "x": 988,
+            "y": 127,
+            "w": 158,
+            "h": 50,
+            "font": 16,
+            "size": "large",
+            "fill": "#eaf2ff",
+            "border": "#bdd3f2",
+            "color": "#2b5e9a"
+          },
+          {
+            "id": "button-4",
+            "label": "Maple",
+            "x": 34,
+            "y": 253,
+            "w": 84,
+            "h": 26,
+            "font": 12,
+            "size": "small",
+            "fill": "#f4edff",
+            "border": "#d9c5ee",
+            "color": "#78539e"
+          }
+        ]
+      },
+      "clean_screenshot_sha256": "fb68bb9b129e554a6119d7e3db2c823fe19b8791c0af027eb959f816fad003b2",
+      "request_isolation": {
+        "unique_ids": true,
+        "one_current_payload_per_attempt": true,
+        "one_screenshot_hash": true,
+        "no_history_or_target_fields": true,
+        "payload_field_names": [
+          "model",
+          "instruction",
+          "screenshot",
+          "width",
+          "height",
+          "screen",
+          "request_id"
+        ]
+      },
+      "requests": [
+        {
+          "request_id": "trial-1794085007979-ae5538a5",
+          "instruction": "Click the Kite button.",
+          "screenshot_sha256": "fb68bb9b129e554a6119d7e3db2c823fe19b8791c0af027eb959f816fad003b2",
+          "sent_perf_ms": 172.19999992847443,
+          "returned_perf_ms": 202.89999997615814
+        },
+        {
+          "request_id": "trial-1794085008140-88725263",
+          "instruction": "Click the Dune button.",
+          "screenshot_sha256": "fb68bb9b129e554a6119d7e3db2c823fe19b8791c0af027eb959f816fad003b2",
+          "sent_perf_ms": 333,
+          "returned_perf_ms": 363.2999999523163
+        },
+        {
+          "request_id": "trial-1794085008298-c76c6d3c",
+          "instruction": "Click the Teal button.",
+          "screenshot_sha256": "fb68bb9b129e554a6119d7e3db2c823fe19b8791c0af027eb959f816fad003b2",
+          "sent_perf_ms": 490.39999997615814,
+          "returned_perf_ms": 520.5
+        },
+        {
+          "request_id": "trial-1794085008455-103907a",
+          "instruction": "Click the Maple button.",
+          "screenshot_sha256": "fb68bb9b129e554a6119d7e3db2c823fe19b8791c0af027eb959f816fad003b2",
+          "sent_perf_ms": 647.6999999284744,
+          "returned_perf_ms": 678
+        }
+      ],
+      "captures": [
+        {
+          "start": 126,
+          "end": 171.79999995231628,
+          "error": false
+        },
+        {
+          "start": 285.5,
+          "end": 332.59999990463257,
+          "error": false
+        },
+        {
+          "start": 445.5,
+          "end": 490.09999990463257,
+          "error": false
+        },
+        {
+          "start": 603.0999999046326,
+          "end": 647.5999999046326,
+          "error": false
+        }
+      ],
+      "persistence": [
+        {
+          "request_id": "trial-1794085007979-ae5538a5",
+          "record_type": "trial",
+          "sent_perf_ms": 204,
+          "finished_perf_ms": 284.09999990463257
+        },
+        {
+          "request_id": "trial-1794085008140-88725263",
+          "record_type": "trial",
+          "sent_perf_ms": 364.5,
+          "finished_perf_ms": 444.6999999284744
+        },
+        {
+          "request_id": "trial-1794085008298-c76c6d3c",
+          "record_type": "trial",
+          "sent_perf_ms": 521.1999999284744,
+          "finished_perf_ms": 601.5
+        },
+        {
+          "request_id": "trial-1794085008455-103907a",
+          "record_type": "trial",
+          "sent_perf_ms": 679.0999999046326,
+          "finished_perf_ms": 759.3999999761581
+        },
+        {
+          "request_id": "click-all-1794085007931-87c74795",
+          "record_type": "click_all_summary",
+          "sent_perf_ms": 762.0999999046326,
+          "finished_perf_ms": 882.1999999284744
+        }
+      ],
+      "unchanged_layout": true,
+      "unlocked": true,
+      "schema2_export_restore_preserved": true
+    }
+  ]
+}

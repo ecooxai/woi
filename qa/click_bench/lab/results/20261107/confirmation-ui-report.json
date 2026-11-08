@@ -1,0 +1,278 @@
+{
+  "generated_at_utc": "2026-11-07T20:42:46Z",
+  "phase": "confirmation-ui",
+  "fixture": "interactive",
+  "trials_per_model_requested": 30,
+  "case_offset": 12,
+  "model_ids": [
+    "gpt-5.6-luna",
+    "gpt-6-luna",
+    "gpt-realtime-2.1",
+    "gpt-realtime-2"
+  ],
+  "request_fields": [
+    "height",
+    "instruction",
+    "model",
+    "request_id",
+    "screen",
+    "screenshot",
+    "width"
+  ],
+  "expected_protocol": "screenshot-only-v2",
+  "expected_text_image_detail": "original",
+  "observed_protocols": [
+    "screenshot-only-v2"
+  ],
+  "observed_prompt_hashes": [
+    "318bb45e72ab96b61be356b5d3a9a0c2ee1f390ecbeb0834363df2f4c2e9fc2f"
+  ],
+  "matched_case_reference": "qa/out/click_lab/benchmark/20261107/confirmation-ui-oracle/cases",
+  "reported_model_alias_changes": [],
+  "observed_image_details": [
+    "high",
+    "original"
+  ],
+  "fresh_request": true,
+  "history_included": false,
+  "ground_truth_sent_to_model": false,
+  "execution": "Chromium CDP real trusted pointer events in isolated synthetic page; no OS input",
+  "input_mode": "Text instruction plus screenshot for every model, including audio models",
+  "scoring": "Correct action and actual event inside target; out-of-range predictions rejected, never clamped",
+  "summary": [
+    {
+      "model": "gpt-6-luna",
+      "kind": "text",
+      "trials": 30,
+      "valid_predictions": 30,
+      "hits": 30,
+      "operational_hit_rate": 1.0,
+      "accuracy_given_prediction": 1.0,
+      "accuracy_wilson_95": [
+        0.8865,
+        1.0
+      ],
+      "click_hits": 15,
+      "click_trials": 15,
+      "move_hits": 15,
+      "move_trials": 15,
+      "median_error_px": 0.452,
+      "error_p90_px": 0.569,
+      "latency_median_ms": 1952.65,
+      "latency_p90_ms": 2269.46,
+      "wall_time_median_ms": 1956.35,
+      "wall_time_p90_ms": 2273.078,
+      "by_capture_resolution": {
+        "1280x480": {
+          "trials": 12,
+          "hits": 12,
+          "errors": 0
+        },
+        "960x720": {
+          "trials": 10,
+          "hits": 10,
+          "errors": 0
+        },
+        "2560x1440": {
+          "trials": 8,
+          "hits": 8,
+          "errors": 0
+        }
+      },
+      "by_target_size": {
+        "small": {
+          "trials": 15,
+          "hits": 15,
+          "errors": 0
+        },
+        "large": {
+          "trials": 8,
+          "hits": 8,
+          "errors": 0
+        },
+        "medium": {
+          "trials": 7,
+          "hits": 7,
+          "errors": 0
+        }
+      },
+      "errors": {}
+    },
+    {
+      "model": "gpt-5.6-luna",
+      "kind": "text",
+      "trials": 30,
+      "valid_predictions": 30,
+      "hits": 29,
+      "operational_hit_rate": 0.9667,
+      "accuracy_given_prediction": 0.9667,
+      "accuracy_wilson_95": [
+        0.8333,
+        0.9941
+      ],
+      "click_hits": 15,
+      "click_trials": 15,
+      "move_hits": 14,
+      "move_trials": 15,
+      "median_error_px": 0.4665,
+      "error_p90_px": 0.528,
+      "latency_median_ms": 2303.1499999999996,
+      "latency_p90_ms": 2955.19,
+      "wall_time_median_ms": 2309.21,
+      "wall_time_p90_ms": 2963.141,
+      "by_capture_resolution": {
+        "1280x480": {
+          "trials": 12,
+          "hits": 12,
+          "errors": 0
+        },
+        "960x720": {
+          "trials": 10,
+          "hits": 9,
+          "errors": 0
+        },
+        "2560x1440": {
+          "trials": 8,
+          "hits": 8,
+          "errors": 0
+        }
+      },
+      "by_target_size": {
+        "small": {
+          "trials": 15,
+          "hits": 14,
+          "errors": 0
+        },
+        "large": {
+          "trials": 8,
+          "hits": 8,
+          "errors": 0
+        },
+        "medium": {
+          "trials": 7,
+          "hits": 7,
+          "errors": 0
+        }
+      },
+      "errors": {}
+    },
+    {
+      "model": "gpt-realtime-2",
+      "kind": "audio",
+      "trials": 30,
+      "valid_predictions": 30,
+      "hits": 11,
+      "operational_hit_rate": 0.3667,
+      "accuracy_given_prediction": 0.3667,
+      "accuracy_wilson_95": [
+        0.2187,
+        0.5449
+      ],
+      "click_hits": 5,
+      "click_trials": 15,
+      "move_hits": 6,
+      "move_trials": 15,
+      "median_error_px": 50.718,
+      "error_p90_px": 211.848,
+      "latency_median_ms": 4880.85,
+      "latency_p90_ms": 5167.3,
+      "wall_time_median_ms": 4884.76,
+      "wall_time_p90_ms": 5170.398,
+      "by_capture_resolution": {
+        "1280x480": {
+          "trials": 12,
+          "hits": 6,
+          "errors": 0
+        },
+        "960x720": {
+          "trials": 10,
+          "hits": 5,
+          "errors": 0
+        },
+        "2560x1440": {
+          "trials": 8,
+          "hits": 0,
+          "errors": 0
+        }
+      },
+      "by_target_size": {
+        "small": {
+          "trials": 15,
+          "hits": 2,
+          "errors": 0
+        },
+        "large": {
+          "trials": 8,
+          "hits": 5,
+          "errors": 0
+        },
+        "medium": {
+          "trials": 7,
+          "hits": 4,
+          "errors": 0
+        }
+      },
+      "errors": {}
+    },
+    {
+      "model": "gpt-realtime-2.1",
+      "kind": "audio",
+      "trials": 30,
+      "valid_predictions": 30,
+      "hits": 11,
+      "operational_hit_rate": 0.3667,
+      "accuracy_given_prediction": 0.3667,
+      "accuracy_wilson_95": [
+        0.2187,
+        0.5449
+      ],
+      "click_hits": 4,
+      "click_trials": 15,
+      "move_hits": 7,
+      "move_trials": 15,
+      "median_error_px": 50.061,
+      "error_p90_px": 221.405,
+      "latency_median_ms": 4987.2,
+      "latency_p90_ms": 5823.05,
+      "wall_time_median_ms": 4992.905000000001,
+      "wall_time_p90_ms": 5828.538,
+      "by_capture_resolution": {
+        "1280x480": {
+          "trials": 12,
+          "hits": 6,
+          "errors": 0
+        },
+        "960x720": {
+          "trials": 10,
+          "hits": 5,
+          "errors": 0
+        },
+        "2560x1440": {
+          "trials": 8,
+          "hits": 0,
+          "errors": 0
+        }
+      },
+      "by_target_size": {
+        "small": {
+          "trials": 15,
+          "hits": 3,
+          "errors": 0
+        },
+        "large": {
+          "trials": 8,
+          "hits": 5,
+          "errors": 0
+        },
+        "medium": {
+          "trials": 7,
+          "hits": 3,
+          "errors": 0
+        }
+      },
+      "errors": {}
+    }
+  ],
+  "phase_label": "confirmation-ui",
+  "raw_rows_sha256": "8b0434cc2ebbbaa54b0f4b0a95e0c27a11c7ff63f2bacd3a96579540dda1baa0"
+}

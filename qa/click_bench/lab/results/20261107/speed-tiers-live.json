@@ -1,0 +1,2514 @@
+{
+  "schema_version": 1,
+  "started_at": "2026-11-07T21:57:17.052117+00:00",
+  "status": "completed",
+  "url": "http://127.0.0.1:38229",
+  "mode": "LIVE Codex, real UI controls, isolated headless browser profile",
+  "models": [
+    "gpt-6-astra",
+    "gpt-6.1-sol"
+  ],
+  "tiers": {
+    "normal": "default",
+    "fast": "priority",
+    "ultrafast": "ultrafast",
+    "flex": "flex"
+  },
+  "planned_trial_requests": 8,
+  "trial_requests_started": 8,
+  "provider_retries": 0,
+  "fallbacks": 0,
+  "api_key_live_tested": false,
+  "scope": "One clean current screenshot and current instruction per request. No prior messages or expected target is sent to the model.",
+  "limits": "One sample per model/tier verifies forwarding and reported behavior; it does not establish latency rankings or general account/model tier availability.",
+  "trials": [
+    {
+      "request_id": "trial-1794088639301-498df605",
+      "at": "2026-11-07T21:57:21.455Z",
+      "model": "gpt-6-astra",
+      "instruction": "Click the Kite button.",
+      "capture_id": "capture-1794088639297-faa74b6",
+      "auth_mode": "codex",
+      "speed_tier": "normal",
+      "connection_revision": 0,
+      "requested_service_tier": "default",
+      "actual_service_tier": "default",
+      "tier_status": "reported",
+      "tier_note": "Provider reported the requested tier.",
+      "expected_target": {
+        "id": "button-1",
+        "label": "Kite",
+        "x": 373,
+        "y": 180,
+        "w": 81,
+        "h": 26,
+        "font": 12,
+        "size": "small",
+        "fill": "#fff0f2",
+        "border": "#e9c4cd",
+        "color": "#a85d71"
+      },
+      "expected_action": "click",
+      "latency_ms": 2145.7,
+      "api_latency_ms": 2145.7,
+      "wall_ms": 2153.1999999284744,
+      "response_wall_ms": 2153.1999999284744,
+      "request_sent_perf_ms": 1946.3000000715256,
+      "request_sent_at": "2026-11-07T21:57:19.302Z",
+      "timing_clock_origin_ms": 1794088637355.9,
+      "send_to_click_ms": 2155,
+      "click_dispatched_at": "2026-11-07T21:57:21.457Z",
+      "click_dispatched_perf_ms": 4101.300000071526,
+      "run": null,
+      "usage": {
+        "input_tokens": 1069,
+        "input_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0
+        },
+        "output_tokens": 26,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 1095,
+        "attribution": {
+          "items": {
+            "fc_0aae36a60c951eb2016aef9ec117f887d2a6ee387ada5c53f1": {
+              "input_tokens": 2,
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 26
+            },
+            "msg_0aae36a60c951eb2016aef9ebfe92487d2958e60850fd99665": {
+              "input_tokens": 791,
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 0,
+              "content": [
+                {
+                  "input_tokens": 724,
+                  "cached_tokens": 0,
+                  "cache_write_tokens": 0,
+                  "output_tokens": 0
+                },
+                {
+                  "input_tokens": 67,
+                  "cached_tokens": 0,
+                  "cache_write_tokens": 0,
+                  "output_tokens": 0
+                }
+              ]
+            }
+          },
+          "request_fields": {
+            "instructions": {
+              "input_tokens": 131,
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 0
+            },
+            "tools": {
+              "input_tokens": 145,
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 0
+            }
+          }
+        }
+      },
+      "prediction": {
+        "action": "click",
+        "x": 413,
+        "y": 193
+      },
+      "execution": {
+        "events": [
+          {
+            "type": "pointermove",
+            "source": "model",
+            "request_id": "trial-1794088639301-498df605",
+            "x": 413,
+            "y": 192.99999999999997,
+            "target_id": "button-1",
+            "at": 1794088641456,
+            "performance_ms": 4100.900000095367,
+            "event_timestamp_ms": 4100.600000023842,
+            "button": 0,
+            "isTrusted": false
+          },
+          {
+            "type": "mousedown",
+            "source": "model",
+            "request_id": "trial-1794088639301-498df605",
+            "x": 411.99777341575606,
+            "y": 192.00750029298018,
+            "target_id": "button-1",
+            "at": 1794088641456,
+            "performance_ms": 4100.900000095367,
+            "event_timestamp_ms": 4100.900000095367,
+            "button": 0,
+            "isTrusted": false
+          },
+          {
+            "type": "mouseup",
+            "source": "model",
+            "request_id": "trial-1794088639301-498df605",
+            "x": 411.99777341575606,
+            "y": 192.00750029298018,
+            "target_id": "button-1",
+            "at": 1794088641456,
+            "performance_ms": 4100.900000095367,
+            "event_timestamp_ms": 4100.900000095367,
+            "button": 0,
+            "isTrusted": false
+          },
+          {
+            "type": "click",
+            "source": "model",
+            "request_id": "trial-1794088639301-498df605",
+            "x": 411.99777341575606,
+            "y": 192.00750029298018,
+            "target_id": "button-1",
+            "at": 1794088641457,
+            "performance_ms": 4101.300000071526,
+            "event_timestamp_ms": 4100.900000095367,
+            "button": 0,
+            "isTrusted": false
+          }
+        ],
+        "target_id": "button-1",
+        "click_count": 1,
+        "executed": true,
+        "click_dispatched_perf_ms": 4101.300000071526,
+        "click_dispatched_at": "2026-11-07T21:57:21.457Z"
+      },
+      "outcome": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_match": true,
+      "center_error_px": 0.5,
+      "error": null,
+      "persisted": true,
+      "response": {
+        "request_id": "trial-1794088639301-498df605",
+        "model": "gpt-6-astra",
+        "resolved_model": "gpt-6-astra",
+        "action": "click",
+        "x": 413,
+        "y": 193,
+        "latency_ms": 2145.7,
+        "usage": {
+          "input_tokens": 1069,
+          "input_tokens_details": {
+            "cached_tokens": 0,
+            "cache_write_tokens": 0
+          },
+          "output_tokens": 26,
+          "output_tokens_details": {
+            "reasoning_tokens": 0
+          },
+          "total_tokens": 1095,
+          "attribution": {
+            "items": {
+              "fc_0aae36a60c951eb2016aef9ec117f887d2a6ee387ada5c53f1": {
+                "input_tokens": 2,
+                "cached_tokens": 0,
+                "cache_write_tokens": 0,
+                "output_tokens": 26
+              },
+              "msg_0aae36a60c951eb2016aef9ebfe92487d2958e60850fd99665": {
+                "input_tokens": 791,
+                "cached_tokens": 0,
+                "cache_write_tokens": 0,
+                "output_tokens": 0,
+                "content": [
+                  {
+                    "input_tokens": 724,
+                    "cached_tokens": 0,
+                    "cache_write_tokens": 0,
+                    "output_tokens": 0
+                  },
+                  {
+                    "input_tokens": 67,
+                    "cached_tokens": 0,
+                    "cache_write_tokens": 0,
+                    "output_tokens": 0
+                  }
+                ]
+              }
+            },
+            "request_fields": {
+              "instructions": {
+                "input_tokens": 131,
+                "cached_tokens": 0,
+                "cache_write_tokens": 0,
+                "output_tokens": 0
+              },
+              "tools": {
+                "input_tokens": 145,
+                "cached_tokens": 0,
+                "cache_write_tokens": 0,
+                "output_tokens": 0
+              }
+            }
+          }
+        },
+        "error": null,
+        "error_code": null,
+        "transport": "responses",
+        "fresh_context": true,
+        "image_sha256": "dcc6142a671079b2c8d67792880e3fc803450fd9b5b6aa4a8c3bb37eea6704bd",
+        "image_bytes": 33772,
+        "width": 1280,
+        "height": 480,
+        "screen": {
+          "width": 1440,
+          "height": 1100,
+          "devicePixelRatio": 1
+        },
+        "reasoning_effort": "low",
+        "prompt_sha256": "318bb45e72ab96b61be356b5d3a9a0c2ee1f390ecbeb0834363df2f4c2e9fc2f",
+        "endpoint": "https://chatgpt.com/backend-api/codex/responses",
+        "protocol": "screenshot-only-v3-tiers",
+        "image_detail_policy": "auto",
+        "image_detail": "original",
+        "speed_tier": "normal",
+        "requested_service_tier": "default",
+        "actual_service_tier": "default",
+        "tier_status": "reported",
+        "tier_note": "Provider reported the requested tier.",
+        "connection_revision": 0,
+        "auth_mode": "codex",
+        "timeout_ms": 120000,
+        "provider_status": "completed",
+        "raw_output": {
+          "calls": [
+            {
+              "name": "screen_action",
+              "arguments": "{\"action\":\"click\",\"x\":413,\"y\":193}"
+            }
+          ],
+          "resolved_model": "gpt-6-astra",
+          "actual_service_tier": "default",
+          "provider_status": "completed"
+        }
+      },
+      "capture": {
+        "id": "capture-1794088639297-faa74b6",
+        "captured_at": "2026-11-07T21:57:19.297Z",
+        "width": 1280,
+        "height": 480,
+        "seed": 7441,
+        "revision": 2,
+        "screen": {
+          "width": 1440,
+          "height": 1100,
+          "devicePixelRatio": 1
+        },
+        "viewport": {
+          "width": 1440,
+          "height": 1100
+        }
+      },
+      "request_evidence": {
+        "model": "gpt-6-astra",
+        "instruction": "Click the Kite button.",
+        "width": 1280,
+        "height": 480,
+        "screen": {
+          "width": 1440,
+          "height": 1100,
+          "devicePixelRatio": 1
+        },
+        "request_id": "trial-1794088639301-498df605",
+        "speed_tier": "normal",
+        "connection_revision": 0
+      },
+      "request_fields": [
+        "connection_revision",
+        "height",
+        "instruction",
+        "model",
+        "request_id",
+        "screen",
+        "screenshot",
+        "speed_tier",
+        "width"
+      ],
+      "image_sha256": "dcc6142a671079b2c8d67792880e3fc803450fd9b5b6aa4a8c3bb37eea6704bd",
+      "ui_row": "gpt-6-astraCodex login1280 \u00d7 480 \u00b7 seed 7441NormalRequested: defaultReported: defaultProvider reported the requested tier.reportedHITclick \u00b7 413, 193Kite2.15 s2.15 sView image",
+      "ui_tier_detail": "Codex login \u00b7 Normal selected \u00b7 requested: default \u00b7 provider reported: default \u00b7 reported \u00b7 Provider reported the requested tier.",
+      "checks": {
+        "same_clean_png": true,
+        "same_instruction": true,
+        "selected_tier_forwarded": true,
+        "wire_tier_expected": true,
+        "no_credentials_or_history": true,
+        "provider_image_matches": true,
+        "fresh_context": true,
+        "connection_matches": true
+      }
+    },
+    {
+      "request_id": "trial-1794088641848-97d41906",
+      "at": "2026-11-07T21:57:23.763Z",
+      "model": "gpt-6-astra",
+      "instruction": "Click the Kite button.",
+      "capture_id": "capture-1794088641843-4adbb31b",
+      "auth_mode": "codex",
+      "speed_tier": "fast",
+      "connection_revision": 0,
+      "requested_service_tier": "priority",
+      "actual_service_tier": "default",
+      "tier_status": "different",
+      "tier_note": "Provider reported a different tier; the requested tier was not confirmed.",
+      "expected_target": {
+        "id": "button-1",
+        "label": "Kite",
+        "x": 373,
+        "y": 180,
+        "w": 81,
+        "h": 26,
+        "font": 12,
+        "size": "small",
+        "fill": "#fff0f2",
+        "border": "#e9c4cd",
+        "color": "#a85d71"
+      },
+      "expected_action": "click",
+      "latency_ms": 1908.3,
+      "api_latency_ms": 1908.3,
+      "wall_ms": 1914.1999999284744,
+      "response_wall_ms": 1914.1999999284744,
+      "request_sent_perf_ms": 4492.900000095367,
+      "request_sent_at": "2026-11-07T21:57:21.848Z",
+      "timing_clock_origin_ms": 1794088637355.9,
+      "send_to_click_ms": 1914.8999999761581,
+      "click_dispatched_at": "2026-11-07T21:57:23.763Z",
+      "click_dispatched_perf_ms": 6407.800000071526,
+      "run": null,
+      "usage": {
+        "input_tokens": 1069,
+        "input_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0
+        },
+        "output_tokens": 26,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 1095,
+        "attribution": {
+          "items": {
+            "fc_01f0c09aff5bd83b016aef9ec37ca087d18e4911e9144c1cf4": {
+              "input_tokens": 2,
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 26
+            },
+            "msg_01f0c09aff5bd83b016aef9ec27fd487d1a45907de00c11099": {
+              "input_tokens": 791,
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 0,
+              "content": [
+                {
+                  "input_tokens": 724,
+                  "cached_tokens": 0,
+                  "cache_write_tokens": 0,
+                  "output_tokens": 0
+                },
+                {
+                  "input_tokens": 67,
+                  "cached_tokens": 0,
+                  "cache_write_tokens": 0,
+                  "output_tokens": 0
+                }
+              ]
+            }
+          },
+          "request_fields": {
+            "instructions": {
+              "input_tokens": 131,
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 0
+            },
+            "tools": {
+              "input_tokens": 145,
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 0
+            }
+          }
+        }
+      },
+      "prediction": {
+        "action": "click",
+        "x": 413,
+        "y": 193
+      },
+      "execution": {
+        "events": [
+          {
+            "type": "pointermove",
+            "source": "model",
+            "request_id": "trial-1794088641848-97d41906",
+            "x": 413,
+            "y": 192.99999999999997,
+            "target_id": "button-1",
+            "at": 1794088643763,
+            "performance_ms": 6407.5,
+            "event_timestamp_ms": 6407.400000095367,
+            "button": 0,
+            "isTrusted": false
+          },
+          {
+            "type": "mousedown",
+            "source": "model",
+            "request_id": "trial-1794088641848-97d41906",
+            "x": 411.99777341575606,
+            "y": 192.00750029298018,
+            "target_id": "button-1",
+            "at": 1794088643763,
+            "performance_ms": 6407.5,
+            "event_timestamp_ms": 6407.5,
+            "button": 0,
+            "isTrusted": false
+          },
+          {
+            "type": "mouseup",
+            "source": "model",
+            "request_id": "trial-1794088641848-97d41906",
+            "x": 411.99777341575606,
+            "y": 192.00750029298018,
+            "target_id": "button-1",
+            "at": 1794088643763,
+            "performance_ms": 6407.5,
+            "event_timestamp_ms": 6407.5,
+            "button": 0,
+            "isTrusted": false
+          },
+          {
+            "type": "click",
+            "source": "model",
+            "request_id": "trial-1794088641848-97d41906",
+            "x": 411.99777341575606,
+            "y": 192.00750029298018,
+            "target_id": "button-1",
+            "at": 1794088643763,
+            "performance_ms": 6407.800000071526,
+            "event_timestamp_ms": 6407.5,
+            "button": 0,
+            "isTrusted": false
+          }
+        ],
+        "target_id": "button-1",
+        "click_count": 1,
+        "executed": true,
+        "click_dispatched_perf_ms": 6407.800000071526,
+        "click_dispatched_at": "2026-11-07T21:57:23.763Z"
+      },
+      "outcome": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_match": true,
+      "center_error_px": 0.5,
+      "error": null,
+      "persisted": true,
+      "response": {
+        "request_id": "trial-1794088641848-97d41906",
+        "model": "gpt-6-astra",
+        "resolved_model": "gpt-6-astra",
+        "action": "click",
+        "x": 413,
+        "y": 193,
+        "latency_ms": 1908.3,
+        "usage": {
+          "input_tokens": 1069,
+          "input_tokens_details": {
+            "cached_tokens": 0,
+            "cache_write_tokens": 0
+          },
+          "output_tokens": 26,
+          "output_tokens_details": {
+            "reasoning_tokens": 0
+          },
+          "total_tokens": 1095,
+          "attribution": {
+            "items": {
+              "fc_01f0c09aff5bd83b016aef9ec37ca087d18e4911e9144c1cf4": {
+                "input_tokens": 2,
+                "cached_tokens": 0,
+                "cache_write_tokens": 0,
+                "output_tokens": 26
+              },
+              "msg_01f0c09aff5bd83b016aef9ec27fd487d1a45907de00c11099": {
+                "input_tokens": 791,
+                "cached_tokens": 0,
+                "cache_write_tokens": 0,
+                "output_tokens": 0,
+                "content": [
+                  {
+                    "input_tokens": 724,
+                    "cached_tokens": 0,
+                    "cache_write_tokens": 0,
+                    "output_tokens": 0
+                  },
+                  {
+                    "input_tokens": 67,
+                    "cached_tokens": 0,
+                    "cache_write_tokens": 0,
+                    "output_tokens": 0
+                  }
+                ]
+              }
+            },
+            "request_fields": {
+              "instructions": {
+                "input_tokens": 131,
+                "cached_tokens": 0,
+                "cache_write_tokens": 0,
+                "output_tokens": 0
+              },
+              "tools": {
+                "input_tokens": 145,
+                "cached_tokens": 0,
+                "cache_write_tokens": 0,
+                "output_tokens": 0
+              }
+            }
+          }
+        },
+        "error": null,
+        "error_code": null,
+        "transport": "responses",
+        "fresh_context": true,
+        "image_sha256": "dcc6142a671079b2c8d67792880e3fc803450fd9b5b6aa4a8c3bb37eea6704bd",
+        "image_bytes": 33772,
+        "width": 1280,
+        "height": 480,
+        "screen": {
+          "width": 1440,
+          "height": 1100,
+          "devicePixelRatio": 1
+        },
+        "reasoning_effort": "low",
+        "prompt_sha256": "318bb45e72ab96b61be356b5d3a9a0c2ee1f390ecbeb0834363df2f4c2e9fc2f",
+        "endpoint": "https://chatgpt.com/backend-api/codex/responses",
+        "protocol": "screenshot-only-v3-tiers",
+        "image_detail_policy": "auto",
+        "image_detail": "original",
+        "speed_tier": "fast",
+        "requested_service_tier": "priority",
+        "actual_service_tier": "default",
+        "tier_status": "different",
+        "tier_note": "Provider reported a different tier; the requested tier was not confirmed.",
+        "connection_revision": 0,
+        "auth_mode": "codex",
+        "timeout_ms": 120000,
+        "provider_status": "completed",
+        "raw_output": {
+          "calls": [
+            {
+              "name": "screen_action",
+              "arguments": "{\"action\":\"click\",\"x\":413,\"y\":193}"
+            }
+          ],
+          "resolved_model": "gpt-6-astra",
+          "actual_service_tier": "default",
+          "provider_status": "completed"
+        }
+      },
+      "capture": {
+        "id": "capture-1794088641843-4adbb31b",
+        "captured_at": "2026-11-07T21:57:21.843Z",
+        "width": 1280,
+        "height": 480,
+        "seed": 7441,
+        "revision": 2,
+        "screen": {
+          "width": 1440,
+          "height": 1100,
+          "devicePixelRatio": 1
+        },
+        "viewport": {
+          "width": 1440,
+          "height": 1100
+        }
+      },
+      "request_evidence": {
+        "model": "gpt-6-astra",
+        "instruction": "Click the Kite button.",
+        "width": 1280,
+        "height": 480,
+        "screen": {
+          "width": 1440,
+          "height": 1100,
+          "devicePixelRatio": 1
+        },
+        "request_id": "trial-1794088641848-97d41906",
+        "speed_tier": "fast",
+        "connection_revision": 0
+      },
+      "request_fields": [
+        "connection_revision",
+        "height",
+        "instruction",
+        "model",
+        "request_id",
+        "screen",
+        "screenshot",
+        "speed_tier",
+        "width"
+      ],
+      "image_sha256": "dcc6142a671079b2c8d67792880e3fc803450fd9b5b6aa4a8c3bb37eea6704bd",
+      "ui_row": "gpt-6-astraCodex login1280 \u00d7 480 \u00b7 seed 7441FastRequested: priorityReported: defaultProvider reported a different tier; the requested tier was not confirmed.differentHITclick \u00b7 413, 193Kite1.91 s1.91 sView image",
+      "ui_tier_detail": "Codex login \u00b7 Fast selected \u00b7 requested: priority \u00b7 provider reported: default \u00b7 different \u00b7 Provider reported a different tier; the requested tier was not confirmed.",
+      "checks": {
+        "same_clean_png": true,
+        "same_instruction": true,
+        "selected_tier_forwarded": true,
+        "wire_tier_expected": true,
+        "no_credentials_or_history": true,
+        "provider_image_matches": true,
+        "fresh_context": true,
+        "connection_matches": true
+      }
+    },
+    {
+      "request_id": "trial-1794088643888-c54191a5",
+      "at": "2026-11-07T21:57:27.207Z",
+      "model": "gpt-6-astra",
+      "instruction": "Click the Kite button.",
+      "capture_id": "capture-1794088643883-dff0910f",
+      "auth_mode": "codex",
+      "speed_tier": "ultrafast",
+      "connection_revision": 0,
+      "requested_service_tier": "ultrafast",
+      "actual_service_tier": "default",
+      "tier_status": "different",
+      "tier_note": "Provider reported a different tier; the requested tier was not confirmed.",
+      "expected_target": {
+        "id": "button-1",
+        "label": "Kite",
+        "x": 373,
+        "y": 180,
+        "w": 81,
+        "h": 26,
+        "font": 12,
+        "size": "small",
+        "fill": "#fff0f2",
+        "border": "#e9c4cd",
+        "color": "#a85d71"
+      },
+      "expected_action": "click",
+      "latency_ms": 3313.1,
+      "api_latency_ms": 3313.1,
+      "wall_ms": 3318.8000000715256,
+      "response_wall_ms": 3318.8000000715256,
+      "request_sent_perf_ms": 6532.5,
+      "request_sent_at": "2026-11-07T21:57:23.888Z",
+      "timing_clock_origin_ms": 1794088637355.9,
+      "send_to_click_ms": 3319.7000000476837,
+      "click_dispatched_at": "2026-11-07T21:57:27.208Z",
+      "click_dispatched_perf_ms": 9852.200000047684,
+      "run": null,
+      "usage": {
+        "input_tokens": 1069,
+        "input_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0
+        },
+        "output_tokens": 26,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 1095,
+        "attribution": {
+          "items": {
+            "fc_0232b1b6a73510bc016aef9ec6df9c87d19c99c0015c42a71d": {
+              "input_tokens": 2,
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 26
+            },
+            "msg_0232b1b6a73510bc016aef9ec47a9c87d192ccd1d5d7929cce": {
+              "input_tokens": 791,
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 0,
+              "content": [
+                {
+                  "input_tokens": 724,
+                  "cached_tokens": 0,
+                  "cache_write_tokens": 0,
+                  "output_tokens": 0
+                },
+                {
+                  "input_tokens": 67,
+                  "cached_tokens": 0,
+                  "cache_write_tokens": 0,
+                  "output_tokens": 0
+                }
+              ]
+            }
+          },
+          "request_fields": {
+            "instructions": {
+              "input_tokens": 131,
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 0
+            },
+            "tools": {
+              "input_tokens": 145,
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 0
+            }
+          }
+        }
+      },
+      "prediction": {
+        "action": "click",
+        "x": 413,
+        "y": 193
+      },
+      "execution": {
+        "events": [
+          {
+            "type": "pointermove",
+            "source": "model",
+            "request_id": "trial-1794088643888-c54191a5",
+            "x": 413,
+            "y": 192.99999999999997,
+            "target_id": "button-1",
+            "at": 1794088647207,
+            "performance_ms": 9851.700000047684,
+            "event_timestamp_ms": 9851.700000047684,
+            "button": 0,
+            "isTrusted": false
+          },
+          {
+            "type": "mousedown",
+            "source": "model",
+            "request_id": "trial-1794088643888-c54191a5",
+            "x": 411.99777341575606,
+            "y": 192.00750029298018,
+            "target_id": "button-1",
+            "at": 1794088647207,
+            "performance_ms": 9851.900000095367,
+            "event_timestamp_ms": 9851.800000071526,
+            "button": 0,
+            "isTrusted": false
+          },
+          {
+            "type": "mouseup",
+            "source": "model",
+            "request_id": "trial-1794088643888-c54191a5",
+            "x": 411.99777341575606,
+            "y": 192.00750029298018,
+            "target_id": "button-1",
+            "at": 1794088647207,
+            "performance_ms": 9851.900000095367,
+            "event_timestamp_ms": 9851.900000095367,
+            "button": 0,
+            "isTrusted": false
+          },
+          {
+            "type": "click",
+            "source": "model",
+            "request_id": "trial-1794088643888-c54191a5",
+            "x": 411.99777341575606,
+            "y": 192.00750029298018,
+            "target_id": "button-1",
+            "at": 1794088647208,
+            "performance_ms": 9852.200000047684,
+            "event_timestamp_ms": 9851.900000095367,
+            "button": 0,
+            "isTrusted": false
+          }
+        ],
+        "target_id": "button-1",
+        "click_count": 1,
+        "executed": true,
+        "click_dispatched_perf_ms": 9852.200000047684,
+        "click_dispatched_at": "2026-11-07T21:57:27.208Z"
+      },
+      "outcome": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_match": true,
+      "center_error_px": 0.5,
+      "error": null,
+      "persisted": true,
+      "response": {
+        "request_id": "trial-1794088643888-c54191a5",
+        "model": "gpt-6-astra",
+        "resolved_model": "gpt-6-astra",
+        "action": "click",
+        "x": 413,
+        "y": 193,
+        "latency_ms": 3313.1,
+        "usage": {
+          "input_tokens": 1069,
+          "input_tokens_details": {
+            "cached_tokens": 0,
+            "cache_write_tokens": 0
+          },
+          "output_tokens": 26,
+          "output_tokens_details": {
+            "reasoning_tokens": 0
+          },
+          "total_tokens": 1095,
+          "attribution": {
+            "items": {
+              "fc_0232b1b6a73510bc016aef9ec6df9c87d19c99c0015c42a71d": {
+                "input_tokens": 2,
+                "cached_tokens": 0,
+                "cache_write_tokens": 0,
+                "output_tokens": 26
+              },
+              "msg_0232b1b6a73510bc016aef9ec47a9c87d192ccd1d5d7929cce": {
+                "input_tokens": 791,
+                "cached_tokens": 0,
+                "cache_write_tokens": 0,
+                "output_tokens": 0,
+                "content": [
+                  {
+                    "input_tokens": 724,
+                    "cached_tokens": 0,
+                    "cache_write_tokens": 0,
+                    "output_tokens": 0
+                  },
+                  {
+                    "input_tokens": 67,
+                    "cached_tokens": 0,
+                    "cache_write_tokens": 0,
+                    "output_tokens": 0
+                  }
+                ]
+              }
+            },
+            "request_fields": {
+              "instructions": {
+                "input_tokens": 131,
+                "cached_tokens": 0,
+                "cache_write_tokens": 0,
+                "output_tokens": 0
+              },
+              "tools": {
+                "input_tokens": 145,
+                "cached_tokens": 0,
+                "cache_write_tokens": 0,
+                "output_tokens": 0
+              }
+            }
+          }
+        },
+        "error": null,
+        "error_code": null,
+        "transport": "responses",
+        "fresh_context": true,
+        "image_sha256": "dcc6142a671079b2c8d67792880e3fc803450fd9b5b6aa4a8c3bb37eea6704bd",
+        "image_bytes": 33772,
+        "width": 1280,
+        "height": 480,
+        "screen": {
+          "width": 1440,
+          "height": 1100,
+          "devicePixelRatio": 1
+        },
+        "reasoning_effort": "low",
+        "prompt_sha256": "318bb45e72ab96b61be356b5d3a9a0c2ee1f390ecbeb0834363df2f4c2e9fc2f",
+        "endpoint": "https://chatgpt.com/backend-api/codex/responses",
+        "protocol": "screenshot-only-v3-tiers",
+        "image_detail_policy": "auto",
+        "image_detail": "original",
+        "speed_tier": "ultrafast",
+        "requested_service_tier": "ultrafast",
+        "actual_service_tier": "default",
+        "tier_status": "different",
+        "tier_note": "Provider reported a different tier; the requested tier was not confirmed.",
+        "connection_revision": 0,
+        "auth_mode": "codex",
+        "timeout_ms": 120000,
+        "provider_status": "completed",
+        "raw_output": {
+          "calls": [
+            {
+              "name": "screen_action",
+              "arguments": "{\"action\":\"click\",\"x\":413,\"y\":193}"
+            }
+          ],
+          "resolved_model": "gpt-6-astra",
+          "actual_service_tier": "default",
+          "provider_status": "completed"
+        }
+      },
+      "capture": {
+        "id": "capture-1794088643883-dff0910f",
+        "captured_at": "2026-11-07T21:57:23.883Z",
+        "width": 1280,
+        "height": 480,
+        "seed": 7441,
+        "revision": 2,
+        "screen": {
+          "width": 1440,
+          "height": 1100,
+          "devicePixelRatio": 1
+        },
+        "viewport": {
+          "width": 1440,
+          "height": 1100
+        }
+      },
+      "request_evidence": {
+        "model": "gpt-6-astra",
+        "instruction": "Click the Kite button.",
+        "width": 1280,
+        "height": 480,
+        "screen": {
+          "width": 1440,
+          "height": 1100,
+          "devicePixelRatio": 1
+        },
+        "request_id": "trial-1794088643888-c54191a5",
+        "speed_tier": "ultrafast",
+        "connection_revision": 0
+      },
+      "request_fields": [
+        "connection_revision",
+        "height",
+        "instruction",
+        "model",
+        "request_id",
+        "screen",
+        "screenshot",
+        "speed_tier",
+        "width"
+      ],
+      "image_sha256": "dcc6142a671079b2c8d67792880e3fc803450fd9b5b6aa4a8c3bb37eea6704bd",
+      "ui_row": "gpt-6-astraCodex login1280 \u00d7 480 \u00b7 seed 7441UltrafastRequested: ultrafastReported: defaultProvider reported a different tier; the requested tier was not confirmed.differentHITclick \u00b7 413, 193Kite3.31 s3.32 sView image",
+      "ui_tier_detail": "Codex login \u00b7 Ultrafast selected \u00b7 requested: ultrafast \u00b7 provider reported: default \u00b7 different \u00b7 Provider reported a different tier; the requested tier was not confirmed.",
+      "checks": {
+        "same_clean_png": true,
+        "same_instruction": true,
+        "selected_tier_forwarded": true,
+        "wire_tier_expected": true,
+        "no_credentials_or_history": true,
+        "provider_image_matches": true,
+        "fresh_context": true,
+        "connection_matches": true
+      }
+    },
+    {
+      "request_id": "trial-1794088647442-7e128be4",
+      "at": "2026-11-07T21:57:28.034Z",
+      "model": "gpt-6-astra",
+      "instruction": "Click the Kite button.",
+      "capture_id": "capture-1794088647437-d1382c6b",
+      "auth_mode": "codex",
+      "speed_tier": "flex",
+      "connection_revision": 0,
+      "requested_service_tier": "flex",
+      "actual_service_tier": null,
+      "tier_status": "rejected",
+      "tier_note": "Provider rejected the selected tier; no fallback was attempted.",
+      "expected_target": {
+        "id": "button-1",
+        "label": "Kite",
+        "x": 373,
+        "y": 180,
+        "w": 81,
+        "h": 26,
+        "font": 12,
+        "size": "small",
+        "fill": "#fff0f2",
+        "border": "#e9c4cd",
+        "color": "#a85d71"
+      },
+      "expected_action": "click",
+      "latency_ms": 581.1,
+      "api_latency_ms": 581.1,
+      "wall_ms": 591.8999999761581,
+      "response_wall_ms": 591.8999999761581,
+      "request_sent_perf_ms": 10086.600000023842,
+      "request_sent_at": "2026-11-07T21:57:27.442Z",
+      "timing_clock_origin_ms": 1794088637355.9,
+      "send_to_click_ms": null,
+      "click_dispatched_at": null,
+      "click_dispatched_perf_ms": null,
+      "run": null,
+      "usage": null,
+      "prediction": {
+        "error": "HTTP 400: Unsupported service_tier: flex"
+      },
+      "execution": null,
+      "outcome": "error",
+      "hit": null,
+      "coordinate_hit": null,
+      "action_match": null,
+      "center_error_px": null,
+      "error": "HTTP 400: Unsupported service_tier: flex",
+      "error_code": "tier_rejected",
+      "persisted": true,
+      "response": {
+        "request_id": "trial-1794088647442-7e128be4",
+        "model": "gpt-6-astra",
+        "resolved_model": null,
+        "action": null,
+        "x": null,
+        "y": null,
+        "latency_ms": 581.1,
+        "usage": null,
+        "error": "HTTP 400: Unsupported service_tier: flex",
+        "error_code": "tier_rejected",
+        "transport": "responses",
+        "fresh_context": true,
+        "image_sha256": "dcc6142a671079b2c8d67792880e3fc803450fd9b5b6aa4a8c3bb37eea6704bd",
+        "image_bytes": 33772,
+        "width": 1280,
+        "height": 480,
+        "screen": {
+          "width": 1440,
+          "height": 1100,
+          "devicePixelRatio": 1
+        },
+        "reasoning_effort": "low",
+        "prompt_sha256": "318bb45e72ab96b61be356b5d3a9a0c2ee1f390ecbeb0834363df2f4c2e9fc2f",
+        "endpoint": "https://chatgpt.com/backend-api/codex/responses",
+        "protocol": "screenshot-only-v3-tiers",
+        "image_detail_policy": "auto",
+        "image_detail": "original",
+        "speed_tier": "flex",
+        "requested_service_tier": "flex",
+        "actual_service_tier": null,
+        "tier_status": "rejected",
+        "tier_note": "Provider rejected the selected tier; no fallback was attempted.",
+        "connection_revision": 0,
+        "auth_mode": "codex",
+        "timeout_ms": 600000
+      },
+      "capture": {
+        "id": "capture-1794088647437-d1382c6b",
+        "captured_at": "2026-11-07T21:57:27.437Z",
+        "width": 1280,
+        "height": 480,
+        "seed": 7441,
+        "revision": 2,
+        "screen": {
+          "width": 1440,
+          "height": 1100,
+          "devicePixelRatio": 1
+        },
+        "viewport": {
+          "width": 1440,
+          "height": 1100
+        }
+      },
+      "request_evidence": {
+        "model": "gpt-6-astra",
+        "instruction": "Click the Kite button.",
+        "width": 1280,
+        "height": 480,
+        "screen": {
+          "width": 1440,
+          "height": 1100,
+          "devicePixelRatio": 1
+        },
+        "request_id": "trial-1794088647442-7e128be4",
+        "speed_tier": "flex",
+        "connection_revision": 0
+      },
+      "request_fields": [
+        "connection_revision",
+        "height",
+        "instruction",
+        "model",
+        "request_id",
+        "screen",
+        "screenshot",
+        "speed_tier",
+        "width"
+      ],
+      "image_sha256": "dcc6142a671079b2c8d67792880e3fc803450fd9b5b6aa4a8c3bb37eea6704bd",
+      "ui_row": "gpt-6-astraCodex login1280 \u00d7 480 \u00b7 seed 7441HTTP 400: Unsupported service_tier: flexFlexRequested: flexProvider tier not reportedProvider rejected the selected tier; no fallback was attempted.rejectedERROR\u2014Kite581.1 ms\u2014View image",
+      "ui_tier_detail": "Codex login \u00b7 Flex selected \u00b7 requested: flex \u00b7 provider reported: not reported \u00b7 rejected \u00b7 Provider rejected the selected tier; no fallback was attempted.",
+      "checks": {
+        "same_clean_png": true,
+        "same_instruction": true,
+        "selected_tier_forwarded": true,
+        "wire_tier_expected": true,
+        "no_credentials_or_history": true,
+        "provider_image_matches": true,
+        "fresh_context": true,
+        "connection_matches": true
+      }
+    },
+    {
+      "request_id": "trial-1794088648499-ddafd3fa",
+      "at": "2026-11-07T21:57:30.965Z",
+      "model": "gpt-6.1-sol",
+      "instruction": "Click the Kite button.",
+      "capture_id": "capture-1794088648493-190d3b74",
+      "auth_mode": "codex",
+      "speed_tier": "normal",
+      "connection_revision": 0,
+      "requested_service_tier": "default",
+      "actual_service_tier": "default",
+      "tier_status": "reported",
+      "tier_note": "Provider reported the requested tier.",
+      "expected_target": {
+        "id": "button-1",
+        "label": "Kite",
+        "x": 373,
+        "y": 180,
+        "w": 81,
+        "h": 26,
+        "font": 12,
+        "size": "small",
+        "fill": "#fff0f2",
+        "border": "#e9c4cd",
+        "color": "#a85d71"
+      },
+      "expected_action": "click",
+      "latency_ms": 2460.6,
+      "api_latency_ms": 2460.6,
+      "wall_ms": 2466.3000000715256,
+      "response_wall_ms": 2466.3000000715256,
+      "request_sent_perf_ms": 11143.600000023842,
+      "request_sent_at": "2026-11-07T21:57:28.499Z",
+      "timing_clock_origin_ms": 1794088637355.9,
+      "send_to_click_ms": 2467.100000023842,
+      "click_dispatched_at": "2026-11-07T21:57:30.966Z",
+      "click_dispatched_perf_ms": 13610.700000047684,
+      "run": null,
+      "usage": {
+        "input_tokens": 1069,
+        "input_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0
+        },
+        "output_tokens": 26,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 1095,
+        "attribution": {
+          "items": {
+            "fc_0154414666169d60016aef9eca6dd487d2b3013cf57eeeef16": {
+              "input_tokens": 2,
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 26
+            },
+            "msg_0154414666169d60016aef9ec91da087d2baded6eb9be0ba11": {
+              "input_tokens": 791,
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 0,
+              "content": [
+                {
+                  "input_tokens": 724,
+                  "cached_tokens": 0,
+                  "cache_write_tokens": 0,
+                  "output_tokens": 0
+                },
+                {
+                  "input_tokens": 67,
+                  "cached_tokens": 0,
+                  "cache_write_tokens": 0,
+                  "output_tokens": 0
+                }
+              ]
+            }
+          },
+          "request_fields": {
+            "instructions": {
+              "input_tokens": 131,
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 0
+            },
+            "tools": {
+              "input_tokens": 145,
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 0
+            }
+          }
+        }
+      },
+      "prediction": {
+        "action": "click",
+        "x": 414,
+        "y": 193
+      },
+      "execution": {
+        "events": [
+          {
+            "type": "pointermove",
+            "source": "model",
+            "request_id": "trial-1794088648499-ddafd3fa",
+            "x": 414.00000000000006,
+            "y": 192.99999999999997,
+            "target_id": "button-1",
+            "at": 1794088650966,
+            "performance_ms": 13610.300000071526,
+            "event_timestamp_ms": 13610.200000047684,
+            "button": 0,
+            "isTrusted": false
+          },
+          {
+            "type": "mousedown",
+            "source": "model",
+            "request_id": "trial-1794088648499-ddafd3fa",
+            "x": 413.19778513462046,
+            "y": 192.00750029298018,
+            "target_id": "button-1",
+            "at": 1794088650966,
+            "performance_ms": 13610.300000071526,
+            "event_timestamp_ms": 13610.300000071526,
+            "button": 0,
+            "isTrusted": false
+          },
+          {
+            "type": "mouseup",
+            "source": "model",
+            "request_id": "trial-1794088648499-ddafd3fa",
+            "x": 413.19778513462046,
+            "y": 192.00750029298018,
+            "target_id": "button-1",
+            "at": 1794088650966,
+            "performance_ms": 13610.400000095367,
+            "event_timestamp_ms": 13610.300000071526,
+            "button": 0,
+            "isTrusted": false
+          },
+          {
+            "type": "click",
+            "source": "model",
+            "request_id": "trial-1794088648499-ddafd3fa",
+            "x": 413.19778513462046,
+            "y": 192.00750029298018,
+            "target_id": "button-1",
+            "at": 1794088650966,
+            "performance_ms": 13610.700000047684,
+            "event_timestamp_ms": 13610.400000095367,
+            "button": 0,
+            "isTrusted": false
+          }
+        ],
+        "target_id": "button-1",
+        "click_count": 1,
+        "executed": true,
+        "click_dispatched_perf_ms": 13610.700000047684,
+        "click_dispatched_at": "2026-11-07T21:57:30.966Z"
+      },
+      "outcome": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_match": true,
+      "center_error_px": 0.5,
+      "error": null,
+      "persisted": true,
+      "response": {
+        "request_id": "trial-1794088648499-ddafd3fa",
+        "model": "gpt-6.1-sol",
+        "resolved_model": "gpt-6.1-sol",
+        "action": "click",
+        "x": 414,
+        "y": 193,
+        "latency_ms": 2460.6,
+        "usage": {
+          "input_tokens": 1069,
+          "input_tokens_details": {
+            "cached_tokens": 0,
+            "cache_write_tokens": 0
+          },
+          "output_tokens": 26,
+          "output_tokens_details": {
+            "reasoning_tokens": 0
+          },
+          "total_tokens": 1095,
+          "attribution": {
+            "items": {
+              "fc_0154414666169d60016aef9eca6dd487d2b3013cf57eeeef16": {
+                "input_tokens": 2,
+                "cached_tokens": 0,
+                "cache_write_tokens": 0,
+                "output_tokens": 26
+              },
+              "msg_0154414666169d60016aef9ec91da087d2baded6eb9be0ba11": {
+                "input_tokens": 791,
+                "cached_tokens": 0,
+                "cache_write_tokens": 0,
+                "output_tokens": 0,
+                "content": [
+                  {
+                    "input_tokens": 724,
+                    "cached_tokens": 0,
+                    "cache_write_tokens": 0,
+                    "output_tokens": 0
+                  },
+                  {
+                    "input_tokens": 67,
+                    "cached_tokens": 0,
+                    "cache_write_tokens": 0,
+                    "output_tokens": 0
+                  }
+                ]
+              }
+            },
+            "request_fields": {
+              "instructions": {
+                "input_tokens": 131,
+                "cached_tokens": 0,
+                "cache_write_tokens": 0,
+                "output_tokens": 0
+              },
+              "tools": {
+                "input_tokens": 145,
+                "cached_tokens": 0,
+                "cache_write_tokens": 0,
+                "output_tokens": 0
+              }
+            }
+          }
+        },
+        "error": null,
+        "error_code": null,
+        "transport": "responses",
+        "fresh_context": true,
+        "image_sha256": "dcc6142a671079b2c8d67792880e3fc803450fd9b5b6aa4a8c3bb37eea6704bd",
+        "image_bytes": 33772,
+        "width": 1280,
+        "height": 480,
+        "screen": {
+          "width": 1440,
+          "height": 1100,
+          "devicePixelRatio": 1
+        },
+        "reasoning_effort": "low",
+        "prompt_sha256": "318bb45e72ab96b61be356b5d3a9a0c2ee1f390ecbeb0834363df2f4c2e9fc2f",
+        "endpoint": "https://chatgpt.com/backend-api/codex/responses",
+        "protocol": "screenshot-only-v3-tiers",
+        "image_detail_policy": "auto",
+        "image_detail": "original",
+        "speed_tier": "normal",
+        "requested_service_tier": "default",
+        "actual_service_tier": "default",
+        "tier_status": "reported",
+        "tier_note": "Provider reported the requested tier.",
+        "connection_revision": 0,
+        "auth_mode": "codex",
+        "timeout_ms": 120000,
+        "provider_status": "completed",
+        "raw_output": {
+          "calls": [
+            {
+              "name": "screen_action",
+              "arguments": "{\"action\":\"click\",\"x\":414,\"y\":193}"
+            }
+          ],
+          "resolved_model": "gpt-6.1-sol",
+          "actual_service_tier": "default",
+          "provider_status": "completed"
+        }
+      },
+      "capture": {
+        "id": "capture-1794088648493-190d3b74",
+        "captured_at": "2026-11-07T21:57:28.493Z",
+        "width": 1280,
+        "height": 480,
+        "seed": 7441,
+        "revision": 2,
+        "screen": {
+          "width": 1440,
+          "height": 1100,
+          "devicePixelRatio": 1
+        },
+        "viewport": {
+          "width": 1440,
+          "height": 1100
+        }
+      },
+      "request_evidence": {
+        "model": "gpt-6.1-sol",
+        "instruction": "Click the Kite button.",
+        "width": 1280,
+        "height": 480,
+        "screen": {
+          "width": 1440,
+          "height": 1100,
+          "devicePixelRatio": 1
+        },
+        "request_id": "trial-1794088648499-ddafd3fa",
+        "speed_tier": "normal",
+        "connection_revision": 0
+      },
+      "request_fields": [
+        "connection_revision",
+        "height",
+        "instruction",
+        "model",
+        "request_id",
+        "screen",
+        "screenshot",
+        "speed_tier",
+        "width"
+      ],
+      "image_sha256": "dcc6142a671079b2c8d67792880e3fc803450fd9b5b6aa4a8c3bb37eea6704bd",
+      "ui_row": "gpt-6.1-solCodex login1280 \u00d7 480 \u00b7 seed 7441NormalRequested: defaultReported: defaultProvider reported the requested tier.reportedHITclick \u00b7 414, 193Kite2.46 s2.47 sView image",
+      "ui_tier_detail": "Codex login \u00b7 Normal selected \u00b7 requested: default \u00b7 provider reported: default \u00b7 reported \u00b7 Provider reported the requested tier.",
+      "checks": {
+        "same_clean_png": true,
+        "same_instruction": true,
+        "selected_tier_forwarded": true,
+        "wire_tier_expected": true,
+        "no_credentials_or_history": true,
+        "provider_image_matches": true,
+        "fresh_context": true,
+        "connection_matches": true
+      }
+    },
+    {
+      "request_id": "trial-1794088651051-493523b5",
+      "at": "2026-11-07T21:57:33.497Z",
+      "model": "gpt-6.1-sol",
+      "instruction": "Click the Kite button.",
+      "capture_id": "capture-1794088651045-761c4078",
+      "auth_mode": "codex",
+      "speed_tier": "fast",
+      "connection_revision": 0,
+      "requested_service_tier": "priority",
+      "actual_service_tier": "default",
+      "tier_status": "different",
+      "tier_note": "Provider reported a different tier; the requested tier was not confirmed.",
+      "expected_target": {
+        "id": "button-1",
+        "label": "Kite",
+        "x": 373,
+        "y": 180,
+        "w": 81,
+        "h": 26,
+        "font": 12,
+        "size": "small",
+        "fill": "#fff0f2",
+        "border": "#e9c4cd",
+        "color": "#a85d71"
+      },
+      "expected_action": "click",
+      "latency_ms": 2440.3,
+      "api_latency_ms": 2440.3,
+      "wall_ms": 2446.0999999046326,
+      "response_wall_ms": 2446.0999999046326,
+      "request_sent_perf_ms": 13695.400000095367,
+      "request_sent_at": "2026-11-07T21:57:31.051Z",
+      "timing_clock_origin_ms": 1794088637355.9,
+      "send_to_click_ms": 2446.6999999284744,
+      "click_dispatched_at": "2026-11-07T21:57:33.498Z",
+      "click_dispatched_perf_ms": 16142.100000023842,
+      "run": null,
+      "usage": {
+        "input_tokens": 1069,
+        "input_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0
+        },
+        "output_tokens": 26,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 1095,
+        "attribution": {
+          "items": {
+            "fc_0548a9f66da5ab68016aef9ecd37d487d2b8ed5ca30c197c0b": {
+              "input_tokens": 2,
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 26
+            },
+            "msg_0548a9f66da5ab68016aef9ecba7b487d2bbe0b76818b5b090": {
+              "input_tokens": 791,
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 0,
+              "content": [
+                {
+                  "input_tokens": 724,
+                  "cached_tokens": 0,
+                  "cache_write_tokens": 0,
+                  "output_tokens": 0
+                },
+                {
+                  "input_tokens": 67,
+                  "cached_tokens": 0,
+                  "cache_write_tokens": 0,
+                  "output_tokens": 0
+                }
+              ]
+            }
+          },
+          "request_fields": {
+            "instructions": {
+              "input_tokens": 131,
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 0
+            },
+            "tools": {
+              "input_tokens": 145,
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 0
+            }
+          }
+        }
+      },
+      "prediction": {
+        "action": "click",
+        "x": 413,
+        "y": 193
+      },
+      "execution": {
+        "events": [
+          {
+            "type": "pointermove",
+            "source": "model",
+            "request_id": "trial-1794088651051-493523b5",
+            "x": 413,
+            "y": 192.99999999999997,
+            "target_id": "button-1",
+            "at": 1794088653497,
+            "performance_ms": 16141.800000071526,
+            "event_timestamp_ms": 16141.800000071526,
+            "button": 0,
+            "isTrusted": false
+          },
+          {
+            "type": "mousedown",
+            "source": "model",
+            "request_id": "trial-1794088651051-493523b5",
+            "x": 411.99777341575606,
+            "y": 192.00750029298018,
+            "target_id": "button-1",
+            "at": 1794088653497,
+            "performance_ms": 16141.800000071526,
+            "event_timestamp_ms": 16141.800000071526,
+            "button": 0,
+            "isTrusted": false
+          },
+          {
+            "type": "mouseup",
+            "source": "model",
+            "request_id": "trial-1794088651051-493523b5",
+            "x": 411.99777341575606,
+            "y": 192.00750029298018,
+            "target_id": "button-1",
+            "at": 1794088653497,
+            "performance_ms": 16141.800000071526,
+            "event_timestamp_ms": 16141.800000071526,
+            "button": 0,
+            "isTrusted": false
+          },
+          {
+            "type": "click",
+            "source": "model",
+            "request_id": "trial-1794088651051-493523b5",
+            "x": 411.99777341575606,
+            "y": 192.00750029298018,
+            "target_id": "button-1",
+            "at": 1794088653498,
+            "performance_ms": 16142.100000023842,
+            "event_timestamp_ms": 16141.800000071526,
+            "button": 0,
+            "isTrusted": false
+          }
+        ],
+        "target_id": "button-1",
+        "click_count": 1,
+        "executed": true,
+        "click_dispatched_perf_ms": 16142.100000023842,
+        "click_dispatched_at": "2026-11-07T21:57:33.498Z"
+      },
+      "outcome": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_match": true,
+      "center_error_px": 0.5,
+      "error": null,
+      "persisted": true,
+      "response": {
+        "request_id": "trial-1794088651051-493523b5",
+        "model": "gpt-6.1-sol",
+        "resolved_model": "gpt-6.1-sol",
+        "action": "click",
+        "x": 413,
+        "y": 193,
+        "latency_ms": 2440.3,
+        "usage": {
+          "input_tokens": 1069,
+          "input_tokens_details": {
+            "cached_tokens": 0,
+            "cache_write_tokens": 0
+          },
+          "output_tokens": 26,
+          "output_tokens_details": {
+            "reasoning_tokens": 0
+          },
+          "total_tokens": 1095,
+          "attribution": {
+            "items": {
+              "fc_0548a9f66da5ab68016aef9ecd37d487d2b8ed5ca30c197c0b": {
+                "input_tokens": 2,
+                "cached_tokens": 0,
+                "cache_write_tokens": 0,
+                "output_tokens": 26
+              },
+              "msg_0548a9f66da5ab68016aef9ecba7b487d2bbe0b76818b5b090": {
+                "input_tokens": 791,
+                "cached_tokens": 0,
+                "cache_write_tokens": 0,
+                "output_tokens": 0,
+                "content": [
+                  {
+                    "input_tokens": 724,
+                    "cached_tokens": 0,
+                    "cache_write_tokens": 0,
+                    "output_tokens": 0
+                  },
+                  {
+                    "input_tokens": 67,
+                    "cached_tokens": 0,
+                    "cache_write_tokens": 0,
+                    "output_tokens": 0
+                  }
+                ]
+              }
+            },
+            "request_fields": {
+              "instructions": {
+                "input_tokens": 131,
+                "cached_tokens": 0,
+                "cache_write_tokens": 0,
+                "output_tokens": 0
+              },
+              "tools": {
+                "input_tokens": 145,
+                "cached_tokens": 0,
+                "cache_write_tokens": 0,
+                "output_tokens": 0
+              }
+            }
+          }
+        },
+        "error": null,
+        "error_code": null,
+        "transport": "responses",
+        "fresh_context": true,
+        "image_sha256": "dcc6142a671079b2c8d67792880e3fc803450fd9b5b6aa4a8c3bb37eea6704bd",
+        "image_bytes": 33772,
+        "width": 1280,
+        "height": 480,
+        "screen": {
+          "width": 1440,
+          "height": 1100,
+          "devicePixelRatio": 1
+        },
+        "reasoning_effort": "low",
+        "prompt_sha256": "318bb45e72ab96b61be356b5d3a9a0c2ee1f390ecbeb0834363df2f4c2e9fc2f",
+        "endpoint": "https://chatgpt.com/backend-api/codex/responses",
+        "protocol": "screenshot-only-v3-tiers",
+        "image_detail_policy": "auto",
+        "image_detail": "original",
+        "speed_tier": "fast",
+        "requested_service_tier": "priority",
+        "actual_service_tier": "default",
+        "tier_status": "different",
+        "tier_note": "Provider reported a different tier; the requested tier was not confirmed.",
+        "connection_revision": 0,
+        "auth_mode": "codex",
+        "timeout_ms": 120000,
+        "provider_status": "completed",
+        "raw_output": {
+          "calls": [
+            {
+              "name": "screen_action",
+              "arguments": "{\"action\":\"click\",\"x\":413,\"y\":193}"
+            }
+          ],
+          "resolved_model": "gpt-6.1-sol",
+          "actual_service_tier": "default",
+          "provider_status": "completed"
+        }
+      },
+      "capture": {
+        "id": "capture-1794088651045-761c4078",
+        "captured_at": "2026-11-07T21:57:31.045Z",
+        "width": 1280,
+        "height": 480,
+        "seed": 7441,
+        "revision": 2,
+        "screen": {
+          "width": 1440,
+          "height": 1100,
+          "devicePixelRatio": 1
+        },
+        "viewport": {
+          "width": 1440,
+          "height": 1100
+        }
+      },
+      "request_evidence": {
+        "model": "gpt-6.1-sol",
+        "instruction": "Click the Kite button.",
+        "width": 1280,
+        "height": 480,
+        "screen": {
+          "width": 1440,
+          "height": 1100,
+          "devicePixelRatio": 1
+        },
+        "request_id": "trial-1794088651051-493523b5",
+        "speed_tier": "fast",
+        "connection_revision": 0
+      },
+      "request_fields": [
+        "connection_revision",
+        "height",
+        "instruction",
+        "model",
+        "request_id",
+        "screen",
+        "screenshot",
+        "speed_tier",
+        "width"
+      ],
+      "image_sha256": "dcc6142a671079b2c8d67792880e3fc803450fd9b5b6aa4a8c3bb37eea6704bd",
+      "ui_row": "gpt-6.1-solCodex login1280 \u00d7 480 \u00b7 seed 7441FastRequested: priorityReported: defaultProvider reported a different tier; the requested tier was not confirmed.differentHITclick \u00b7 413, 193Kite2.44 s2.45 sView image",
+      "ui_tier_detail": "Codex login \u00b7 Fast selected \u00b7 requested: priority \u00b7 provider reported: default \u00b7 different \u00b7 Provider reported a different tier; the requested tier was not confirmed.",
+      "checks": {
+        "same_clean_png": true,
+        "same_instruction": true,
+        "selected_tier_forwarded": true,
+        "wire_tier_expected": true,
+        "no_credentials_or_history": true,
+        "provider_image_matches": true,
+        "fresh_context": true,
+        "connection_matches": true
+      }
+    },
+    {
+      "request_id": "trial-1794088653615-42cd8d64",
+      "at": "2026-11-07T21:57:35.757Z",
+      "model": "gpt-6.1-sol",
+      "instruction": "Click the Kite button.",
+      "capture_id": "capture-1794088653610-abf917d4",
+      "auth_mode": "codex",
+      "speed_tier": "ultrafast",
+      "connection_revision": 0,
+      "requested_service_tier": "ultrafast",
+      "actual_service_tier": "default",
+      "tier_status": "different",
+      "tier_note": "Provider reported a different tier; the requested tier was not confirmed.",
+      "expected_target": {
+        "id": "button-1",
+        "label": "Kite",
+        "x": 373,
+        "y": 180,
+        "w": 81,
+        "h": 26,
+        "font": 12,
+        "size": "small",
+        "fill": "#fff0f2",
+        "border": "#e9c4cd",
+        "color": "#a85d71"
+      },
+      "expected_action": "click",
+      "latency_ms": 2136,
+      "api_latency_ms": 2136,
+      "wall_ms": 2141.5,
+      "response_wall_ms": 2141.5,
+      "request_sent_perf_ms": 16259.600000023842,
+      "request_sent_at": "2026-11-07T21:57:33.615Z",
+      "timing_clock_origin_ms": 1794088637355.9,
+      "send_to_click_ms": 2142.2000000476837,
+      "click_dispatched_at": "2026-11-07T21:57:35.757Z",
+      "click_dispatched_perf_ms": 18401.800000071526,
+      "run": null,
+      "usage": {
+        "input_tokens": 1069,
+        "input_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0
+        },
+        "output_tokens": 26,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 1095,
+        "attribution": {
+          "items": {
+            "fc_0b1b7c1e23bf83ad016aef9ecf6c7c87d2a23f29b94d476f0c": {
+              "input_tokens": 2,
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 26
+            },
+            "msg_0b1b7c1e23bf83ad016aef9ece5d2c87d2bbe1a68b8202d0c5": {
+              "input_tokens": 791,
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 0,
+              "content": [
+                {
+                  "input_tokens": 724,
+                  "cached_tokens": 0,
+                  "cache_write_tokens": 0,
+                  "output_tokens": 0
+                },
+                {
+                  "input_tokens": 67,
+                  "cached_tokens": 0,
+                  "cache_write_tokens": 0,
+                  "output_tokens": 0
+                }
+              ]
+            }
+          },
+          "request_fields": {
+            "instructions": {
+              "input_tokens": 131,
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 0
+            },
+            "tools": {
+              "input_tokens": 145,
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 0
+            }
+          }
+        }
+      },
+      "prediction": {
+        "action": "click",
+        "x": 414,
+        "y": 193
+      },
+      "execution": {
+        "events": [
+          {
+            "type": "pointermove",
+            "source": "model",
+            "request_id": "trial-1794088653615-42cd8d64",
+            "x": 414.00000000000006,
+            "y": 192.99999999999997,
+            "target_id": "button-1",
+            "at": 1794088655757,
+            "performance_ms": 18401.5,
+            "event_timestamp_ms": 18401.400000095367,
+            "button": 0,
+            "isTrusted": false
+          },
+          {
+            "type": "mousedown",
+            "source": "model",
+            "request_id": "trial-1794088653615-42cd8d64",
+            "x": 413.19778513462046,
+            "y": 192.00750029298018,
+            "target_id": "button-1",
+            "at": 1794088655757,
+            "performance_ms": 18401.600000023842,
+            "event_timestamp_ms": 18401.5,
+            "button": 0,
+            "isTrusted": false
+          },
+          {
+            "type": "mouseup",
+            "source": "model",
+            "request_id": "trial-1794088653615-42cd8d64",
+            "x": 413.19778513462046,
+            "y": 192.00750029298018,
+            "target_id": "button-1",
+            "at": 1794088655757,
+            "performance_ms": 18401.600000023842,
+            "event_timestamp_ms": 18401.600000023842,
+            "button": 0,
+            "isTrusted": false
+          },
+          {
+            "type": "click",
+            "source": "model",
+            "request_id": "trial-1794088653615-42cd8d64",
+            "x": 413.19778513462046,
+            "y": 192.00750029298018,
+            "target_id": "button-1",
+            "at": 1794088655757,
+            "performance_ms": 18401.800000071526,
+            "event_timestamp_ms": 18401.600000023842,
+            "button": 0,
+            "isTrusted": false
+          }
+        ],
+        "target_id": "button-1",
+        "click_count": 1,
+        "executed": true,
+        "click_dispatched_perf_ms": 18401.800000071526,
+        "click_dispatched_at": "2026-11-07T21:57:35.757Z"
+      },
+      "outcome": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_match": true,
+      "center_error_px": 0.5,
+      "error": null,
+      "persisted": true,
+      "response": {
+        "request_id": "trial-1794088653615-42cd8d64",
+        "model": "gpt-6.1-sol",
+        "resolved_model": "gpt-6.1-sol",
+        "action": "click",
+        "x": 414,
+        "y": 193,
+        "latency_ms": 2136,
+        "usage": {
+          "input_tokens": 1069,
+          "input_tokens_details": {
+            "cached_tokens": 0,
+            "cache_write_tokens": 0
+          },
+          "output_tokens": 26,
+          "output_tokens_details": {
+            "reasoning_tokens": 0
+          },
+          "total_tokens": 1095,
+          "attribution": {
+            "items": {
+              "fc_0b1b7c1e23bf83ad016aef9ecf6c7c87d2a23f29b94d476f0c": {
+                "input_tokens": 2,
+                "cached_tokens": 0,
+                "cache_write_tokens": 0,
+                "output_tokens": 26
+              },
+              "msg_0b1b7c1e23bf83ad016aef9ece5d2c87d2bbe1a68b8202d0c5": {
+                "input_tokens": 791,
+                "cached_tokens": 0,
+                "cache_write_tokens": 0,
+                "output_tokens": 0,
+                "content": [
+                  {
+                    "input_tokens": 724,
+                    "cached_tokens": 0,
+                    "cache_write_tokens": 0,
+                    "output_tokens": 0
+                  },
+                  {
+                    "input_tokens": 67,
+                    "cached_tokens": 0,
+                    "cache_write_tokens": 0,
+                    "output_tokens": 0
+                  }
+                ]
+              }
+            },
+            "request_fields": {
+              "instructions": {
+                "input_tokens": 131,
+                "cached_tokens": 0,
+                "cache_write_tokens": 0,
+                "output_tokens": 0
+              },
+              "tools": {
+                "input_tokens": 145,
+                "cached_tokens": 0,
+                "cache_write_tokens": 0,
+                "output_tokens": 0
+              }
+            }
+          }
+        },
+        "error": null,
+        "error_code": null,
+        "transport": "responses",
+        "fresh_context": true,
+        "image_sha256": "dcc6142a671079b2c8d67792880e3fc803450fd9b5b6aa4a8c3bb37eea6704bd",
+        "image_bytes": 33772,
+        "width": 1280,
+        "height": 480,
+        "screen": {
+          "width": 1440,
+          "height": 1100,
+          "devicePixelRatio": 1
+        },
+        "reasoning_effort": "low",
+        "prompt_sha256": "318bb45e72ab96b61be356b5d3a9a0c2ee1f390ecbeb0834363df2f4c2e9fc2f",
+        "endpoint": "https://chatgpt.com/backend-api/codex/responses",
+        "protocol": "screenshot-only-v3-tiers",
+        "image_detail_policy": "auto",
+        "image_detail": "original",
+        "speed_tier": "ultrafast",
+        "requested_service_tier": "ultrafast",
+        "actual_service_tier": "default",
+        "tier_status": "different",
+        "tier_note": "Provider reported a different tier; the requested tier was not confirmed.",
+        "connection_revision": 0,
+        "auth_mode": "codex",
+        "timeout_ms": 120000,
+        "provider_status": "completed",
+        "raw_output": {
+          "calls": [
+            {
+              "name": "screen_action",
+              "arguments": "{\"action\":\"click\",\"x\":414,\"y\":193}"
+            }
+          ],
+          "resolved_model": "gpt-6.1-sol",
+          "actual_service_tier": "default",
+          "provider_status": "completed"
+        }
+      },
+      "capture": {
+        "id": "capture-1794088653610-abf917d4",
+        "captured_at": "2026-11-07T21:57:33.610Z",
+        "width": 1280,
+        "height": 480,
+        "seed": 7441,
+        "revision": 2,
+        "screen": {
+          "width": 1440,
+          "height": 1100,
+          "devicePixelRatio": 1
+        },
+        "viewport": {
+          "width": 1440,
+          "height": 1100
+        }
+      },
+      "request_evidence": {
+        "model": "gpt-6.1-sol",
+        "instruction": "Click the Kite button.",
+        "width": 1280,
+        "height": 480,
+        "screen": {
+          "width": 1440,
+          "height": 1100,
+          "devicePixelRatio": 1
+        },
+        "request_id": "trial-1794088653615-42cd8d64",
+        "speed_tier": "ultrafast",
+        "connection_revision": 0
+      },
+      "request_fields": [
+        "connection_revision",
+        "height",
+        "instruction",
+        "model",
+        "request_id",
+        "screen",
+        "screenshot",
+        "speed_tier",
+        "width"
+      ],
+      "image_sha256": "dcc6142a671079b2c8d67792880e3fc803450fd9b5b6aa4a8c3bb37eea6704bd",
+      "ui_row": "gpt-6.1-solCodex login1280 \u00d7 480 \u00b7 seed 7441UltrafastRequested: ultrafastReported: defaultProvider reported a different tier; the requested tier was not confirmed.differentHITclick \u00b7 414, 193Kite2.14 s2.14 sView image",
+      "ui_tier_detail": "Codex login \u00b7 Ultrafast selected \u00b7 requested: ultrafast \u00b7 provider reported: default \u00b7 different \u00b7 Provider reported a different tier; the requested tier was not confirmed.",
+      "checks": {
+        "same_clean_png": true,
+        "same_instruction": true,
+        "selected_tier_forwarded": true,
+        "wire_tier_expected": true,
+        "no_credentials_or_history": true,
+        "provider_image_matches": true,
+        "fresh_context": true,
+        "connection_matches": true
+      }
+    },
+    {
+      "request_id": "trial-1794088656171-db6ee52",
+      "at": "2026-11-07T21:57:36.822Z",
+      "model": "gpt-6.1-sol",
+      "instruction": "Click the Kite button.",
+      "capture_id": "capture-1794088656165-41b55a03",
+      "auth_mode": "codex",
+      "speed_tier": "flex",
+      "connection_revision": 0,
+      "requested_service_tier": "flex",
+      "actual_service_tier": null,
+      "tier_status": "rejected",
+      "tier_note": "Provider rejected the selected tier; no fallback was attempted.",
+      "expected_target": {
+        "id": "button-1",
+        "label": "Kite",
+        "x": 373,
+        "y": 180,
+        "w": 81,
+        "h": 26,
+        "font": 12,
+        "size": "small",
+        "fill": "#fff0f2",
+        "border": "#e9c4cd",
+        "color": "#a85d71"
+      },
+      "expected_action": "click",
+      "latency_ms": 645.5,
+      "api_latency_ms": 645.5,
+      "wall_ms": 650.9000000953674,
+      "response_wall_ms": 650.9000000953674,
+      "request_sent_perf_ms": 18815.5,
+      "request_sent_at": "2026-11-07T21:57:36.171Z",
+      "timing_clock_origin_ms": 1794088637355.9,
+      "send_to_click_ms": null,
+      "click_dispatched_at": null,
+      "click_dispatched_perf_ms": null,
+      "run": null,
+      "usage": null,
+      "prediction": {
+        "error": "HTTP 400: Unsupported service_tier: flex"
+      },
+      "execution": null,
+      "outcome": "error",
+      "hit": null,
+      "coordinate_hit": null,
+      "action_match": null,
+      "center_error_px": null,
+      "error": "HTTP 400: Unsupported service_tier: flex",
+      "error_code": "tier_rejected",
+      "persisted": true,
+      "response": {
+        "request_id": "trial-1794088656171-db6ee52",
+        "model": "gpt-6.1-sol",
+        "resolved_model": null,
+        "action": null,
+        "x": null,
+        "y": null,
+        "latency_ms": 645.5,
+        "usage": null,
+        "error": "HTTP 400: Unsupported service_tier: flex",
+        "error_code": "tier_rejected",
+        "transport": "responses",
+        "fresh_context": true,
+        "image_sha256": "dcc6142a671079b2c8d67792880e3fc803450fd9b5b6aa4a8c3bb37eea6704bd",
+        "image_bytes": 33772,
+        "width": 1280,
+        "height": 480,
+        "screen": {
+          "width": 1440,
+          "height": 1100,
+          "devicePixelRatio": 1
+        },
+        "reasoning_effort": "low",
+        "prompt_sha256": "318bb45e72ab96b61be356b5d3a9a0c2ee1f390ecbeb0834363df2f4c2e9fc2f",
+        "endpoint": "https://chatgpt.com/backend-api/codex/responses",
+        "protocol": "screenshot-only-v3-tiers",
+        "image_detail_policy": "auto",
+        "image_detail": "original",
+        "speed_tier": "flex",
+        "requested_service_tier": "flex",
+        "actual_service_tier": null,
+        "tier_status": "rejected",
+        "tier_note": "Provider rejected the selected tier; no fallback was attempted.",
+        "connection_revision": 0,
+        "auth_mode": "codex",
+        "timeout_ms": 600000
+      },
+      "capture": {
+        "id": "capture-1794088656165-41b55a03",
+        "captured_at": "2026-11-07T21:57:36.165Z",
+        "width": 1280,
+        "height": 480,
+        "seed": 7441,
+        "revision": 2,
+        "screen": {
+          "width": 1440,
+          "height": 1100,
+          "devicePixelRatio": 1
+        },
+        "viewport": {
+          "width": 1440,
+          "height": 1100
+        }
+      },
+      "request_evidence": {
+        "model": "gpt-6.1-sol",
+        "instruction": "Click the Kite button.",
+        "width": 1280,
+        "height": 480,
+        "screen": {
+          "width": 1440,
+          "height": 1100,
+          "devicePixelRatio": 1
+        },
+        "request_id": "trial-1794088656171-db6ee52",
+        "speed_tier": "flex",
+        "connection_revision": 0
+      },
+      "request_fields": [
+        "connection_revision",
+        "height",
+        "instruction",
+        "model",
+        "request_id",
+        "screen",
+        "screenshot",
+        "speed_tier",
+        "width"
+      ],
+      "image_sha256": "dcc6142a671079b2c8d67792880e3fc803450fd9b5b6aa4a8c3bb37eea6704bd",
+      "ui_row": "gpt-6.1-solCodex login1280 \u00d7 480 \u00b7 seed 7441HTTP 400: Unsupported service_tier: flexFlexRequested: flexProvider tier not reportedProvider rejected the selected tier; no fallback was attempted.rejectedERROR\u2014Kite645.5 ms\u2014View image",
+      "ui_tier_detail": "Codex login \u00b7 Flex selected \u00b7 requested: flex \u00b7 provider reported: not reported \u00b7 rejected \u00b7 Provider rejected the selected tier; no fallback was attempted.",
+      "checks": {
+        "same_clean_png": true,
+        "same_instruction": true,
+        "selected_tier_forwarded": true,
+        "wire_tier_expected": true,
+        "no_credentials_or_history": true,
+        "provider_image_matches": true,
+        "fresh_context": true,
+        "connection_matches": true
+      }
+    }
+  ],
+  "connection": {
+    "auth_mode": "codex",
+    "mode": null,
+    "configured": true,
+    "source": "Woi Codex login (read-only)",
+    "revision": 0,
+    "session_key": false
+  },
+  "catalog_models": [
+    {
+      "id": "gpt-6.1-sol",
+      "name": "GPT-6.1-Sol",
+      "kind": "text",
+      "transport": "responses",
+      "available": true,
+      "reason": "",
+      "source": "live Codex catalog",
+      "availability": "listed",
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "visibility": "list",
+      "supports_image_detail_original": true,
+      "reasoning_effort": "low",
+      "test_status": "untested",
+      "tier_results": {},
+      "image_detail": "original"
+    },
+    {
+      "id": "gpt-6-astra",
+      "name": "GPT-6-Astra",
+      "kind": "text",
+      "transport": "responses",
+      "available": true,
+      "reason": "",
+      "source": "live Codex catalog",
+      "availability": "listed",
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "visibility": "list",
+      "supports_image_detail_original": true,
+      "reasoning_effort": "low",
+      "test_status": "untested",
+      "tier_results": {},
+      "image_detail": "original"
+    }
+  ],
+  "fixture": {
+    "image_file": "speed-tiers-fixture.png",
+    "image_sha256": "dcc6142a671079b2c8d67792880e3fc803450fd9b5b6aa4a8c3bb37eea6704bd",
+    "image_bytes": 33772,
+    "instruction": "Click the Kite button.",
+    "layout": {
+      "seed": 7441,
+      "width": 1280,
+      "height": 480,
+      "count": 12,
+      "revision": 2,
+      "targets": [
+        {
+          "id": "button-1",
+          "label": "Kite",
+          "x": 373,
+          "y": 180,
+          "w": 81,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        },
+        {
+          "id": "button-2",
+          "label": "Dune",
+          "x": 1023,
+          "y": 346,
+          "w": 112,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#f4edff",
+          "border": "#d9c5ee",
+          "color": "#78539e"
+        },
+        {
+          "id": "button-3",
+          "label": "Teal",
+          "x": 54,
+          "y": 219,
+          "w": 156,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-4",
+          "label": "Maple",
+          "x": 288,
+          "y": 98,
+          "w": 78,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        },
+        {
+          "id": "button-5",
+          "label": "Quartz",
+          "x": 605,
+          "y": 97,
+          "w": 115,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        },
+        {
+          "id": "button-6",
+          "label": "Aspen",
+          "x": 818,
+          "y": 381,
+          "w": 156,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#eaf2ff",
+          "border": "#bdd3f2",
+          "color": "#2b5e9a"
+        },
+        {
+          "id": "button-7",
+          "label": "Moss",
+          "x": 904,
+          "y": 201,
+          "w": 77,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        },
+        {
+          "id": "button-8",
+          "label": "Pine",
+          "x": 1117,
+          "y": 211,
+          "w": 123,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#eaf2ff",
+          "border": "#bdd3f2",
+          "color": "#2b5e9a"
+        },
+        {
+          "id": "button-9",
+          "label": "Opal",
+          "x": 36,
+          "y": 334,
+          "w": 160,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-10",
+          "label": "Grove",
+          "x": 637,
+          "y": 230,
+          "w": 79,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        },
+        {
+          "id": "button-11",
+          "label": "Fern",
+          "x": 798,
+          "y": 106,
+          "w": 120,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        },
+        {
+          "id": "button-12",
+          "label": "Birch",
+          "x": 556,
+          "y": 333,
+          "w": 157,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        }
+      ]
+    },
+    "screen": {
+      "width": 1440,
+      "height": 1100,
+      "devicePixelRatio": 1
+    }
+  },
+  "screenshot_file": "speed-tiers-live-ui.png",
+  "summary": {
+    "trial_requests": 8,
+    "hits": 6,
+    "misses": 0,
+    "errors": 2,
+    "reported": 2,
+    "different": 4,
+    "unreported": 0,
+    "rejected": 2
+  },
+  "finished_at": "2026-11-07T21:57:37.310910+00:00"
+}

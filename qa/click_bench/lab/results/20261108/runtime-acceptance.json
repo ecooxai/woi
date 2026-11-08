@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "version": "0.21.0+22",
+  "date": "2026-11-08",
+  "final_source_sha256": "2ab2b3d10d80813c314abcd2ea99602404105b7b37200dd3c88c6955ce73836f",
+  "scope": "Synthetic screenshot/instruction trials only; browser-local model click events, no OS input or hardware microphone acquired by the lab. These are acceptance samples, not performance benchmarks.",
+  "full_flutter_before_navigation_fix": {
+    "passed": 1073,
+    "skipped": 15,
+    "failed": 0
+  },
+  "final_focused_tests": {
+    "passed": 23,
+    "failed": 0
+  },
+  "final_full_analyzer": "no issues",
+  "standalone_python_tests_passed": 43,
+  "browser_mock_checks_passed": 16,
+  "browser_mock_trials": 33,
+  "android_installed_version_code": 2022,
+  "android_settings_and_permissions_retained": true,
+  "android_background_healthy_seconds_since_launch_check": 178.2,
+  "android_browser_navigation_headers": {
+    "Origin": null,
+    "Sec-Fetch-Site": "cross-site",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-User": null
+  },
+  "final_linux_host_checks_passed": true,
+  "linux_trial_scope": "Real Realtime trial preceded the final document-entry fix. Only host and host-test changed; backend and all UI assets are byte-identical. The final built host was retested locally without another provider trial.",
+  "trials": [
+    {
+      "platform": "android",
+      "selected_model": "gpt-6.1-sol",
+      "resolved_model": "gpt-6.1-sol",
+      "transport": "responses",
+      "instruction": "Click the Cobalt button.",
+      "synthetic_png_sha256": "21f64a16582d0ec0299d69eb28580d7649cd4e2ad962cc21022b09fde3e53264",
+      "width": 1280,
+      "height": 480,
+      "fresh_context": true,
+      "outcome": "hit",
+      "model_click_events": 1,
+      "coordinates": {
+        "x": 228,
+        "y": 359
+      },
+      "timing": {
+        "origin": "provider_request_start",
+        "upload_complete_ms": 318.674,
+        "upload_duration_ms": 4.75,
+        "upload_enqueued_ms": null,
+        "first_token_ms": 2531.221,
+        "first_output_ms": 2531.221,
+        "first_output_source": "stream_delta",
+        "finish_ms": 2699.339,
+        "status": "completed",
+        "upload_measurement": "dart_io.request_flush_returned",
+        "note": "Offsets start before opening the provider HTTP request. Upload measures client request.flush() returning, not network transmission, TCP acknowledgement, provider receipt, or the standalone Python sendall boundary. The offset includes connection setup; duration covers adding and flushing the body to the client sink. request_payload_bytes is the actual UTF-8 JSON size, excluding HTTP/TLS overhead."
+      },
+      "viewport": {
+        "width": 540,
+        "height": 972,
+        "dpr": 2,
+        "bodyWidth": 540,
+        "documentWidth": 540
+      },
+      "api_unauthorized_status": 403,
+      "api_authorized_status": 200
+    },
+    {
+      "platform": "linux",
+      "selected_model": "gpt-realtime-2.1",
+      "resolved_model": "gpt-realtime-2.1",
+      "transport": "realtime",
+      "instruction": "Click the Cobalt button.",
+      "synthetic_png_sha256": "b12543dfaedb2c97cceff7fb046ad25eb84d6410ebadaafbed57dff55ffcf494",
+      "width": 1280,
+      "height": 480,
+      "fresh_context": true,
+      "outcome": "hit",
+      "model_click_events": 1,
+      "coordinates": {
+        "x": 230,
+        "y": 355
+      },
+      "timing": {
+        "origin": "provider_request_start",
+        "upload_complete_ms": null,
+        "upload_duration_ms": null,
+        "upload_enqueued_ms": 1026.294,
+        "first_token_ms": 1707.99,
+        "first_output_ms": 1707.99,
+        "first_output_source": "stream_delta",
+        "finish_ms": 2917.304,
+        "status": "completed",
+        "upload_measurement": "dart_io.websocket_add_enqueued",
+        "note": "Offsets start before the fresh WebSocket connection. WebSocket.add only enqueues response.create: upload_enqueued_ms records that client boundary. Upload completion and duration are unavailable, because Dart exposes no socket-send completion hook. It is not provider receipt. request_payload_bytes sums the actual UTF-8 session.update and response.create JSON sizes, excluding WebSocket/TLS overhead."
+      },
+      "viewport": {
+        "width": 1440,
+        "height": 1000,
+        "dpr": 1,
+        "bodyWidth": 1440,
+        "documentWidth": 1440
+      },
+      "api_unauthorized_status": 403,
+      "api_authorized_status": 200
+    }
+  ],
+  "artifacts": [
+    {
+      "name": "woi-0.21.0-android-arm64.apk",
+      "bytes": 101829023,
+      "sha256": "37691be23a8f576a8701f9d27280dcb34fbb009a0311502b239576b2209a96c1"
+    },
+    {
+      "name": "woi-0.21.0-linux-x64.tar.gz",
+      "bytes": 168917366,
+      "sha256": "242ff00ca91ea09693549ef1f3764ba82abb2e7bc11c870206e6fc4da3bd4829"
+    },
+    {
+      "name": "woi-0.21.0-SHA256SUMS.txt",
+      "bytes": 189,
+      "sha256": "aabc77fbd26c7d56adbe146b8b42d4bdfa522b9ca2adbd4a76cbbcf1e52695c6"
+    }
+  ]
+}

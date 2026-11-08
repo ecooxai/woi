@@ -1,0 +1,427 @@
+{
+  "oracle_hits": 12,
+  "oracle_trials": 12,
+  "trusted_event_oracle": [
+    {
+      "case_id": "case-000",
+      "dpr": 1,
+      "status": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_correct": true,
+      "center_error_px": 0.0,
+      "actual_event_hit": true,
+      "trusted_events": true,
+      "events": [
+        {
+          "type": "mousemove",
+          "x": 68,
+          "y": 93,
+          "target": "b0",
+          "isTrusted": true
+        },
+        {
+          "type": "mousedown",
+          "x": 68,
+          "y": 93,
+          "target": "b0",
+          "isTrusted": true
+        },
+        {
+          "type": "mouseup",
+          "x": 68,
+          "y": 93,
+          "target": "b0",
+          "isTrusted": true
+        },
+        {
+          "type": "click",
+          "x": 68,
+          "y": 93,
+          "target": "b0",
+          "isTrusted": true
+        }
+      ],
+      "css_x": 68.0,
+      "css_y": 93.0
+    },
+    {
+      "case_id": "case-001",
+      "dpr": 1,
+      "status": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_correct": true,
+      "center_error_px": 0.0,
+      "actual_event_hit": true,
+      "trusted_events": true,
+      "events": [
+        {
+          "type": "mousemove",
+          "x": 431,
+          "y": 258,
+          "target": "b5",
+          "isTrusted": true
+        }
+      ],
+      "css_x": 431.921875,
+      "css_y": 258.65625
+    },
+    {
+      "case_id": "case-002",
+      "dpr": 1,
+      "status": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_correct": true,
+      "center_error_px": 0.0,
+      "actual_event_hit": true,
+      "trusted_events": true,
+      "events": [
+        {
+          "type": "mousemove",
+          "x": 765,
+          "y": 420,
+          "target": "b10",
+          "isTrusted": true
+        },
+        {
+          "type": "mousedown",
+          "x": 765,
+          "y": 420,
+          "target": "b10",
+          "isTrusted": true
+        },
+        {
+          "type": "mouseup",
+          "x": 765,
+          "y": 420,
+          "target": "b10",
+          "isTrusted": true
+        },
+        {
+          "type": "click",
+          "x": 765,
+          "y": 420,
+          "target": "b10",
+          "isTrusted": true
+        }
+      ],
+      "css_x": 765.140625,
+      "css_y": 420.203125
+    },
+    {
+      "case_id": "case-003",
+      "dpr": 1,
+      "status": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_correct": true,
+      "center_error_px": 0.0,
+      "actual_event_hit": true,
+      "trusted_events": true,
+      "events": [
+        {
+          "type": "mousemove",
+          "x": 1212,
+          "y": 687,
+          "target": "b15",
+          "isTrusted": true
+        }
+      ],
+      "css_x": 1212.0,
+      "css_y": 687.0
+    },
+    {
+      "case_id": "case-004",
+      "dpr": 1,
+      "status": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_correct": true,
+      "center_error_px": 0.0,
+      "actual_event_hit": true,
+      "trusted_events": true,
+      "events": [
+        {
+          "type": "mousemove",
+          "x": 426,
+          "y": 159,
+          "target": "b1",
+          "isTrusted": true
+        },
+        {
+          "type": "mousedown",
+          "x": 426,
+          "y": 159,
+          "target": "b1",
+          "isTrusted": true
+        },
+        {
+          "type": "mouseup",
+          "x": 426,
+          "y": 159,
+          "target": "b1",
+          "isTrusted": true
+        },
+        {
+          "type": "click",
+          "x": 426,
+          "y": 159,
+          "target": "b1",
+          "isTrusted": true
+        }
+      ],
+      "css_x": 426.546875,
+      "css_y": 159.109375
+    },
+    {
+      "case_id": "case-005",
+      "dpr": 1,
+      "status": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_correct": true,
+      "center_error_px": 0.0,
+      "actual_event_hit": true,
+      "trusted_events": true,
+      "events": [
+        {
+          "type": "mousemove",
+          "x": 601,
+          "y": 335,
+          "target": "b6",
+          "isTrusted": true
+        }
+      ],
+      "css_x": 601.375,
+      "css_y": 335.96875
+    },
+    {
+      "case_id": "case-006",
+      "dpr": 1,
+      "status": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_correct": true,
+      "center_error_px": 0.0,
+      "actual_event_hit": true,
+      "trusted_events": true,
+      "events": [
+        {
+          "type": "mousemove",
+          "x": 804,
+          "y": 438,
+          "target": "b11",
+          "isTrusted": true
+        },
+        {
+          "type": "mousedown",
+          "x": 804,
+          "y": 438,
+          "target": "b11",
+          "isTrusted": true
+        },
+        {
+          "type": "mouseup",
+          "x": 804,
+          "y": 438,
+          "target": "b11",
+          "isTrusted": true
+        },
+        {
+          "type": "click",
+          "x": 804,
+          "y": 438,
+          "target": "b11",
+          "isTrusted": true
+        }
+      ],
+      "css_x": 804.734375,
+      "css_y": 438.0
+    },
+    {
+      "case_id": "case-007",
+      "dpr": 1,
+      "status": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_correct": true,
+      "center_error_px": 0.0,
+      "actual_event_hit": true,
+      "trusted_events": true,
+      "events": [
+        {
+          "type": "mousemove",
+          "x": 134,
+          "y": 573,
+          "target": "b12",
+          "isTrusted": true
+        }
+      ],
+      "css_x": 134.796875,
+      "css_y": 573.90625
+    },
+    {
+      "case_id": "case-008",
+      "dpr": 2,
+      "status": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_correct": true,
+      "center_error_px": 0.0,
+      "actual_event_hit": true,
+      "trusted_events": true,
+      "events": [
+        {
+          "type": "mousemove",
+          "x": 749,
+          "y": 156,
+          "target": "b2",
+          "isTrusted": true
+        },
+        {
+          "type": "mousedown",
+          "x": 749,
+          "y": 156,
+          "target": "b2",
+          "isTrusted": true
+        },
+        {
+          "type": "mouseup",
+          "x": 749,
+          "y": 156,
+          "target": "b2",
+          "isTrusted": true
+        },
+        {
+          "type": "click",
+          "x": 749,
+          "y": 156,
+          "target": "b2",
+          "isTrusted": true
+        }
+      ],
+      "css_x": 749.59375,
+      "css_y": 156.65625
+    },
+    {
+      "case_id": "case-009",
+      "dpr": 2,
+      "status": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_correct": true,
+      "center_error_px": 0.0,
+      "actual_event_hit": true,
+      "trusted_events": true,
+      "events": [
+        {
+          "type": "mousemove",
+          "x": 1012,
+          "y": 313,
+          "target": "b7",
+          "isTrusted": true
+        }
+      ],
+      "css_x": 1012.921875,
+      "css_y": 313.140625
+    },
+    {
+      "case_id": "case-010",
+      "dpr": 2,
+      "status": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_correct": true,
+      "center_error_px": 0.0,
+      "actual_event_hit": true,
+      "trusted_events": true,
+      "events": [
+        {
+          "type": "mousemove",
+          "x": 150,
+          "y": 498,
+          "target": "b8",
+          "isTrusted": true
+        },
+        {
+          "type": "mousedown",
+          "x": 150,
+          "y": 498,
+          "target": "b8",
+          "isTrusted": true
+        },
+        {
+          "type": "mouseup",
+          "x": 150,
+          "y": 498,
+          "target": "b8",
+          "isTrusted": true
+        },
+        {
+          "type": "click",
+          "x": 150,
+          "y": 498,
+          "target": "b8",
+          "isTrusted": true
+        }
+      ],
+      "css_x": 150.859375,
+      "css_y": 498.390625
+    },
+    {
+      "case_id": "case-011",
+      "dpr": 2,
+      "status": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_correct": true,
+      "center_error_px": 0.0,
+      "actual_event_hit": true,
+      "trusted_events": true,
+      "events": [
+        {
+          "type": "mousemove",
+          "x": 556,
+          "y": 625,
+          "target": "b13",
+          "isTrusted": true
+        }
+      ],
+      "css_x": 556.96875,
+      "css_y": 625.90625
+    }
+  ],
+  "wrong_action_rejected": true,
+  "move_generates_no_click": true,
+  "out_of_bounds_not_dispatched": true,
+  "dpr_values": [
+    1,
+    2
+  ],
+  "viewport_css_sizes": [
+    [
+      960,
+      720
+    ],
+    [
+      1280,
+      720
+    ]
+  ],
+  "screenshot_hashes": {
+    "case-000": "2bbed9b168a279ccfb0b69f7b2caf8c885134a4bb2e09dc9189019964ca2d94d",
+    "case-001": "2bbed9b168a279ccfb0b69f7b2caf8c885134a4bb2e09dc9189019964ca2d94d",
+    "case-002": "2bbed9b168a279ccfb0b69f7b2caf8c885134a4bb2e09dc9189019964ca2d94d",
+    "case-003": "2bbed9b168a279ccfb0b69f7b2caf8c885134a4bb2e09dc9189019964ca2d94d",
+    "case-004": "ee1c19ba298c4342281a2cdc998c78f44d979a3e22131fa8f696bf251c92f15b",
+    "case-005": "ee1c19ba298c4342281a2cdc998c78f44d979a3e22131fa8f696bf251c92f15b",
+    "case-006": "ee1c19ba298c4342281a2cdc998c78f44d979a3e22131fa8f696bf251c92f15b",
+    "case-007": "ee1c19ba298c4342281a2cdc998c78f44d979a3e22131fa8f696bf251c92f15b",
+    "case-008": "9b63f725105a02e3a71ae900d62a3f7b762205284351d98823571e4e16aaef56",
+    "case-009": "9b63f725105a02e3a71ae900d62a3f7b762205284351d98823571e4e16aaef56",
+    "case-010": "9b63f725105a02e3a71ae900d62a3f7b762205284351d98823571e4e16aaef56",
+    "case-011": "9b63f725105a02e3a71ae900d62a3f7b762205284351d98823571e4e16aaef56"
+  }
+}

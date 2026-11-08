@@ -1,0 +1,66 @@
+{
+  "mock_model_responses": true,
+  "paid_model_requests": 0,
+  "viewports": [
+    {
+      "viewport": [
+        1440,
+        1100
+      ],
+      "device_pixel_ratio": 1,
+      "model_radios": {
+        "total": 19,
+        "disabled": 3,
+        "checked": 1
+      },
+      "click_hit": true,
+      "move_hit_without_click": true,
+      "unique_requests": true,
+      "request_fields": [
+        "height",
+        "instruction",
+        "model",
+        "request_id",
+        "screen",
+        "screenshot",
+        "width"
+      ],
+      "markers_excluded_from_screenshot": true,
+      "layout_frozen_during_request": true,
+      "stale_capture_rejected": true,
+      "outside_prediction_not_dispatched": true,
+      "independent_cdp_click_observed": true,
+      "javascript_errors": []
+    },
+    {
+      "viewport": [
+        780,
+        1200
+      ],
+      "device_pixel_ratio": 2,
+      "model_radios": {
+        "total": 19,
+        "disabled": 3,
+        "checked": 1
+      },
+      "click_hit": true,
+      "move_hit_without_click": true,
+      "unique_requests": true,
+      "request_fields": [
+        "height",
+        "instruction",
+        "model",
+        "request_id",
+        "screen",
+        "screenshot",
+        "width"
+      ],
+      "markers_excluded_from_screenshot": true,
+      "layout_frozen_during_request": true,
+      "stale_capture_rejected": true,
+      "outside_prediction_not_dispatched": true,
+      "independent_cdp_click_observed": true,
+      "javascript_errors": []
+    }
+  ]
+}

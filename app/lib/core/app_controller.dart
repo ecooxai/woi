@@ -27,6 +27,8 @@ import 'images/image_generation.dart';
 import 'images/generated_image_context.dart';
 import 'auth/auth.dart';
 import 'auth/pkce_login.dart';
+import 'lab/model_click_lab.dart';
+import 'lab/model_click_lab_backend.dart';
 import 'context/compressor.dart';
 import 'context/context_manager.dart';
 import 'context/image_tiers.dart';
@@ -167,6 +169,19 @@ class AppController extends ChangeNotifier {
 
   /// Codex login (~/.codex/auth.json) with refresh-near-expiry.
   final CodexAuthManager authManager;
+
+  ModelClickLab? _modelClickLab;
+
+  /// Isolated benchmark host; it never receives conversation history or uses
+  /// the live assistant's pointer delegate. Start only when Advanced opens it.
+  ModelClickLab get modelClickLab => _modelClickLab ??= ModelClickLab(
+    backend: AppModelClickLabBackend(
+      credentials: (mode) => resolveCredentials(mode, _settings.apiKey, manager: authManager),
+      settings: () => _settings,
+      evidenceDirectory: Directory('${platform.paths.dataDir}/model_click_lab'),
+    ),
+    opener: platform.urlOpener ?? defaultUrlOpener(),
+  );
 
   /// Responses API (compression + delegation) with the current credentials.
   late final ResponsesClient responses = ResponsesClient(credentials: credentials);
@@ -1161,6 +1176,7 @@ class AppController extends ChangeNotifier {
 
   Future<void> shutdown() async {
     _interruptTools();
+    await _modelClickLab?.close();
     pointerDelegate.close();
     if (_ready) await backgroundTasks.shutdown();
     _pinnedTimer?.cancel();

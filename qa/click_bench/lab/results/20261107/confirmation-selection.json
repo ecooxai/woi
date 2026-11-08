@@ -1,0 +1,25 @@
+{
+  "phase": "confirmation-ui",
+  "provider_url": "http://127.0.0.1:8767",
+  "ui_url": "http://127.0.0.1:38631",
+  "models": [
+    "gpt-5.6-luna",
+    "gpt-6-luna",
+    "gpt-realtime-2.1",
+    "gpt-realtime-2"
+  ],
+  "selection_reason": "Fastest all-hit text model from original-detail screening, Luna reference, and the tied top two direct realtime candidates.",
+  "text_screening_median_ms": {
+    "gpt-5.6-luna": 2734.95,
+    "gpt-6-luna": 3028.65
+  },
+  "trials_per_model": 30,
+  "actual_ui_oracle": "30/30",
+  "protocol": "screenshot-only-v2",
+  "text_detail": "original",
+  "realtime_detail": "high",
+  "same_source_screenshot_hashes": true,
+  "no_provider_reported_alias_changes_in_high_baseline": true,
+  "execution_state": "completed",
+  "runtime_terminal_id": 34133
+}

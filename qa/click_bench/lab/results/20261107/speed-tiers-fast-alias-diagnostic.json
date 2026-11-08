@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "started_at": "2026-11-07T21:58:58.856322+00:00",
+  "kind": "separate literal-fast diagnostic, not UI matrix trial",
+  "auth_mode": "codex",
+  "model": "gpt-6-astra",
+  "requested_wire_tier": "fast",
+  "transport": "responses",
+  "image_sha256": "dcc6142a671079b2c8d67792880e3fc803450fd9b5b6aa4a8c3bb37eea6704bd",
+  "instruction": "Click the Kite button.",
+  "ui_mapping_unchanged": true,
+  "requests": 1,
+  "retries": 0,
+  "fallbacks": 0,
+  "events": [],
+  "normal_fast_mapping": "priority",
+  "outgoing": {
+    "method": "POST",
+    "model": "gpt-6-astra",
+    "service_tier": "fast",
+    "input_messages": 1,
+    "body_fields": [
+      "input",
+      "instructions",
+      "model",
+      "parallel_tool_calls",
+      "reasoning",
+      "service_tier",
+      "store",
+      "stream",
+      "tool_choice",
+      "tools"
+    ]
+  },
+  "status": "error",
+  "error": "HTTP 400: Unsupported service_tier: fast",
+  "error_code": "tier_rejected",
+  "latency_ms": 642.7,
+  "finished_at": "2026-11-07T21:58:59.499134+00:00",
+  "http_status": 400,
+  "http_status_source": "HTTP error reported by the Responses adapter"
+}

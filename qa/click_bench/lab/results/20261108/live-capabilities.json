@@ -1,0 +1,142 @@
+{
+  "schema_version": 1,
+  "model": "gpt-live-1.1",
+  "checked_at_utc": "2026-11-08T17:28:23.588761Z",
+  "finished_at_utc": "2026-11-08T17:30:00.143889Z",
+  "scope": {
+    "inputs": [
+      "synthetic PNG",
+      "synthetic prerecorded speech",
+      "synthetic text controls"
+    ],
+    "synthetic_image": {
+      "width": 256,
+      "height": 256,
+      "sha256": "6a4a41b991424b187f2ea1d4f3c84f7c7aa5b2989ec6b0587e809e5bfa6a0db6"
+    },
+    "live_microphone_used": false,
+    "private_screen_or_conversation_used": false,
+    "real_device_input_executed": false,
+    "secondary_model_called": false
+  },
+  "routes": {
+    "standard_realtime": "wss://api.openai.com/v1/realtime?model=gpt-live-1.1",
+    "avas_create": "POST https://chatgpt.com/backend-api/codex/realtime/calls?intent=quicksilver&architecture=avas",
+    "avas_sideband_prefix": "wss://api.openai.com/v1/live/",
+    "avas_sideband_note": "The generated identifier suffix is intentionally omitted."
+  },
+  "controls": [
+    {
+      "phase": "before_schema_probes",
+      "session_started": true,
+      "request_type": "session.context.append",
+      "input_type": "input_text",
+      "acknowledgment": "session.context.appended"
+    },
+    {
+      "phase": "after_schema_errors_in_fresh_session",
+      "session_started": true,
+      "request_type": "session.context.append",
+      "input_type": "input_text",
+      "acknowledgment": "session.context.appended"
+    }
+  ],
+  "native_capability_probes": {
+    "standard_realtime": {
+      "accepted": false,
+      "error": {
+        "type": "invalid_request_error",
+        "code": "invalid_model",
+        "param": null
+      }
+    },
+    "session_function_tools": {
+      "request_type": "session.update",
+      "request_shape": "session.tools contains one click_screen function schema",
+      "accepted": false,
+      "error": {
+        "type": "invalid_request_error",
+        "code": "unknown_parameter",
+        "param": "session.tools"
+      }
+    },
+    "initial_function_tools": {
+      "request_shape": "Ordinary AVAS session creation plus session.tools containing one click_screen function schema",
+      "create_http_status": 201,
+      "sideband_http_status": 404,
+      "session_started": false,
+      "note": "HTTP 201 alone did not establish a usable session or native tool support."
+    },
+    "image_session_context": {
+      "request_type": "session.context.append",
+      "request_shape": "One input_image with text and image_url fields; required text supplied",
+      "accepted": false,
+      "error": {
+        "type": "invalid_request_error",
+        "code": "unknown_parameter",
+        "param": "content[0].image_url"
+      }
+    },
+    "image_response_item": {
+      "request_type": "response.item.create",
+      "request_shape": "Exactly one input_image content part with image_url",
+      "accepted": false,
+      "error": {
+        "type": "invalid_request_error",
+        "code": "missing_required_parameter",
+        "param": "item.content[0].text"
+      }
+    },
+    "direct_response_create": {
+      "request_type": "response.create",
+      "request_shape": "response.create in client-delegated AVAS session",
+      "accepted": false,
+      "error": {
+        "type": "invalid_request_error",
+        "code": "invalid_request_error",
+        "param": "type"
+      },
+      "error_message": "response.create requires a session with Responses delegation."
+    }
+  },
+  "delegation_control": {
+    "input": "Prerecorded synthetic request to click the screen center",
+    "event": "delegation.created",
+    "target": "client",
+    "client_result_acknowledgment": "delegation.context.appended",
+    "client_result": "Capability check only; no real action executed",
+    "native_function_call_observed": false
+  },
+  "conclusion": {
+    "scope": "Exact model on the tested Woi routes at the recorded time",
+    "native_screenshot_function_tool_benchmark_supported": false,
+    "client_delegation_demonstrated": true,
+    "lab_behavior": "Keep direct native benchmark disabled; explain delegated tool use and retain the saved pointer-agent preference.",
+    "distinction": "Explicit deterministic client actions can run without another model. Screenshot targeting needs an image-capable delegate on these routes."
+  },
+  "official_documentation": [
+    {
+      "url": "https://developers.openai.com/api/docs/models/gpt-live-1",
+      "scope": "Family-level gpt-live-1 documentation, not an exact gpt-live-1.1 model page"
+    },
+    {
+      "url": "https://developers.openai.com/api/docs/guides/live-delegation",
+      "scope": "Responses/client delegation architecture"
+    }
+  ],
+  "source_hashes": [
+    {
+      "file": "qa/out/live-capabilities-20261108/capability-results.json",
+      "sha256": "a48a956a7be4d20a03659456f3d2de19fce72b5813d7bbc0d68bcc508ebbbd34"
+    },
+    {
+      "file": "qa/out/live-capabilities-20261108/capability-followup.json",
+      "sha256": "8020e5557b596ddf8d0385b1c698f5cf0fd1ed59efb9e8594df7e89fb050e24c"
+    },
+    {
+      "file": "qa/out/live-capabilities-20261108/capability-summary.json",
+      "sha256": "0885353bb8ba3eb783c882b3ab9876bea555f18fefa7028e037f2bbcf43c52bb"
+    }
+  ],
+  "publication_review": "Built from an explicit allowlist; excludes credentials, account/session/call identifiers, raw media, private content and identifier-bearing URLs."
+}

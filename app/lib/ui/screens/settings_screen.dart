@@ -12,6 +12,7 @@ import '../../platform/android/android_accessibility.dart';
 import '../../core/auth/auth.dart';
 import '../../core/settings/settings.dart';
 import '../../core/images/image_model_catalog.dart';
+import '../../core/lab/model_click_lab.dart';
 import '../../core/voice/backend_factory.dart';
 import '../theme.dart';
 import '../login/login_screen.dart';
@@ -58,6 +59,8 @@ class _SettingsViewState extends State<SettingsView> {
   int _imageCatalogRequest = 0;
 
   bool _advancedOpen = false;
+  bool _openingModelLab = false;
+  String? _modelLabError;
   final _pending = <String, Object?>{};
   late AppSettings _observedSettings;
   CodexAuthInfo? _observedAuth;
@@ -167,6 +170,8 @@ class _SettingsViewState extends State<SettingsView> {
     _s = c.settings;
     _observedSettings = c.settings;
     _observedAuth = c.codexAuth;
+    _openingModelLab = false;
+    _modelLabError = null;
     for (final entry in _editors.entries) {
       entry.value.text = _editorValue(entry.key, _s);
     }
@@ -715,6 +720,12 @@ class _SettingsViewState extends State<SettingsView> {
         ),
       ]),
     _Group('diagnostics', 'Connection & usage', [
+      _Item(
+        'Model Click Lab',
+        'Compare model accuracy and speed on a test screen.',
+        (w) => _modelClickLabButton(),
+        keywords: 'model click lab pointer mouse testing benchmark accuracy speed image tools',
+      ),
       _Item(
         'Test connection',
         'Check credentials without starting a session.',
@@ -1399,6 +1410,53 @@ class _SettingsViewState extends State<SettingsView> {
       _test = _TestState.idle;
       _apply(_s.copyWith(apiKey: v.trim()), debounce: true, field: 'apiKey');
     },
+  );
+
+  Future<void> _openModelClickLab() async {
+    if (_openingModelLab) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+    _flush();
+    final controller = c;
+    setState(() {
+      _openingModelLab = true;
+      _modelLabError = null;
+    });
+    String? error;
+    try {
+      await controller.modelClickLab.open();
+    } on ModelClickLabException catch (e) {
+      error = redactSecrets(e.message);
+    } catch (_) {
+      error = 'Woi could not open Model Click Lab. Try again.';
+    }
+    if (!mounted || !identical(controller, c)) return;
+    setState(() {
+      _openingModelLab = false;
+      _modelLabError = error;
+    });
+  }
+
+  Widget _modelClickLabButton() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      OutlinedButton.icon(
+        key: const ValueKey('open-model-click-lab'),
+        style: OutlinedButton.styleFrom(minimumSize: const Size(0, kTouchTarget)),
+        onPressed: _openingModelLab ? null : _openModelClickLab,
+        icon: _openingModelLab
+            ? const SizedBox.square(dimension: 16, child: CircularProgressIndicator(strokeWidth: 2))
+            : const Icon(Icons.open_in_new_rounded, size: 18),
+        label: Text(_openingModelLab ? 'Opening…' : 'Open Model Click Lab'),
+      ),
+      if (_modelLabError != null)
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Semantics(
+            liveRegion: true,
+            child: Text(_modelLabError!, style: body(12.5, color: WoiColors.red)),
+          ),
+        ),
+    ],
   );
 
   Widget _testButton() {

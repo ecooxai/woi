@@ -1,0 +1,859 @@
+{
+  "schema_version": 1,
+  "started_at": "2026-11-07T22:05:22.386074+00:00",
+  "status": "completed",
+  "url": "http://127.0.0.1:38229",
+  "auth_mode": "codex",
+  "planned_trial_requests": 2,
+  "trial_requests_started": 2,
+  "retries": 0,
+  "fallbacks": 0,
+  "scope": "Two live Normal-tier requests through real UI controls in a separate headless profile. Provider timeline and local click feedback; no speed ranking.",
+  "trials": [
+    {
+      "request_id": "trial-1794089125501-7f87826b",
+      "at": "2026-11-07T22:05:27.758Z",
+      "model": "gpt-6-astra",
+      "instruction": "Click the Kite button.",
+      "capture_id": "capture-1794089125493-3842fa81",
+      "auth_mode": "codex",
+      "speed_tier": "normal",
+      "connection_revision": 0,
+      "requested_service_tier": "default",
+      "actual_service_tier": "default",
+      "tier_status": "reported",
+      "tier_note": "Provider reported the requested tier.",
+      "request_image_bytes": 33772,
+      "request_payload_bytes": 46829,
+      "timing": {
+        "origin": "provider_request_start",
+        "upload_complete_ms": 180.67,
+        "upload_duration_ms": 0.048,
+        "first_token_ms": 1996.564,
+        "first_output_ms": 1996.564,
+        "first_output_source": "stream_delta",
+        "finish_ms": 2238.65,
+        "status": "completed",
+        "upload_measurement": "http.client.body_send_returned",
+        "note": "Offsets start before the provider HTTP request. Upload is client body-send completion, not provider receipt; its offset includes connection setup, while upload_duration_ms covers the body send only. request_payload_bytes is UTF-8 JSON bytes, excluding HTTP/TLS overhead."
+      },
+      "expected_target": {
+        "id": "button-1",
+        "label": "Kite",
+        "x": 373,
+        "y": 180,
+        "w": 81,
+        "h": 26,
+        "font": 12,
+        "size": "small",
+        "fill": "#fff0f2",
+        "border": "#e9c4cd",
+        "color": "#a85d71"
+      },
+      "expected_action": "click",
+      "latency_ms": 2239.4,
+      "api_latency_ms": 2239.4,
+      "wall_ms": 2246.600000023842,
+      "response_wall_ms": 2246.600000023842,
+      "request_sent_perf_ms": 2794.5,
+      "request_sent_at": "2026-11-07T22:05:25.512Z",
+      "timing_clock_origin_ms": 1794089122717.5,
+      "send_to_click_ms": 2248.5,
+      "click_dispatched_at": "2026-11-07T22:05:27.760Z",
+      "click_dispatched_perf_ms": 5043,
+      "run": null,
+      "usage": {
+        "input_tokens": 1069,
+        "input_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0
+        },
+        "output_tokens": 26,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 1095,
+        "attribution": {
+          "items": {
+            "fc_0cedd329f02f6f0d016aefa0a7637087d2bbb381d72c811ebe": {
+              "input_tokens": 2,
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 26
+            },
+            "msg_0cedd329f02f6f0d016aefa0a625c887d2b619eb6a3b383a25": {
+              "input_tokens": 791,
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 0,
+              "content": [
+                {
+                  "input_tokens": 724,
+                  "cached_tokens": 0,
+                  "cache_write_tokens": 0,
+                  "output_tokens": 0
+                },
+                {
+                  "input_tokens": 67,
+                  "cached_tokens": 0,
+                  "cache_write_tokens": 0,
+                  "output_tokens": 0
+                }
+              ]
+            }
+          },
+          "request_fields": {
+            "instructions": {
+              "input_tokens": 131,
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 0
+            },
+            "tools": {
+              "input_tokens": 145,
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 0
+            }
+          }
+        }
+      },
+      "prediction": {
+        "action": "click",
+        "x": 413,
+        "y": 193
+      },
+      "execution": {
+        "events": [
+          {
+            "type": "pointermove",
+            "source": "model",
+            "request_id": "trial-1794089125501-7f87826b",
+            "x": 413,
+            "y": 193.00000000000003,
+            "target_id": "button-1",
+            "at": 1794089127760,
+            "performance_ms": 5042.600000023842,
+            "event_timestamp_ms": 5042.300000071526,
+            "button": 0,
+            "isTrusted": false
+          },
+          {
+            "type": "mousedown",
+            "source": "model",
+            "request_id": "trial-1794089125501-7f87826b",
+            "x": 411.99777341575606,
+            "y": 192.00750029298018,
+            "target_id": "button-1",
+            "at": 1794089127760,
+            "performance_ms": 5042.600000023842,
+            "event_timestamp_ms": 5042.600000023842,
+            "button": 0,
+            "isTrusted": false
+          },
+          {
+            "type": "mouseup",
+            "source": "model",
+            "request_id": "trial-1794089125501-7f87826b",
+            "x": 411.99777341575606,
+            "y": 192.00750029298018,
+            "target_id": "button-1",
+            "at": 1794089127760,
+            "performance_ms": 5042.600000023842,
+            "event_timestamp_ms": 5042.600000023842,
+            "button": 0,
+            "isTrusted": false
+          },
+          {
+            "type": "click",
+            "source": "model",
+            "request_id": "trial-1794089125501-7f87826b",
+            "x": 411.99777341575606,
+            "y": 192.00750029298018,
+            "target_id": "button-1",
+            "at": 1794089127760,
+            "performance_ms": 5043,
+            "event_timestamp_ms": 5042.600000023842,
+            "button": 0,
+            "isTrusted": false
+          }
+        ],
+        "target_id": "button-1",
+        "click_count": 1,
+        "executed": true,
+        "click_dispatched_perf_ms": 5043,
+        "click_dispatched_at": "2026-11-07T22:05:27.760Z"
+      },
+      "outcome": "hit",
+      "hit": true,
+      "coordinate_hit": true,
+      "action_match": true,
+      "center_error_px": 0.5,
+      "error": null,
+      "persisted": true,
+      "response": {
+        "request_id": "trial-1794089125501-7f87826b",
+        "model": "gpt-6-astra",
+        "resolved_model": "gpt-6-astra",
+        "action": "click",
+        "x": 413,
+        "y": 193,
+        "latency_ms": 2239.4,
+        "usage": {
+          "input_tokens": 1069,
+          "input_tokens_details": {
+            "cached_tokens": 0,
+            "cache_write_tokens": 0
+          },
+          "output_tokens": 26,
+          "output_tokens_details": {
+            "reasoning_tokens": 0
+          },
+          "total_tokens": 1095,
+          "attribution": {
+            "items": {
+              "fc_0cedd329f02f6f0d016aefa0a7637087d2bbb381d72c811ebe": {
+                "input_tokens": 2,
+                "cached_tokens": 0,
+                "cache_write_tokens": 0,
+                "output_tokens": 26
+              },
+              "msg_0cedd329f02f6f0d016aefa0a625c887d2b619eb6a3b383a25": {
+                "input_tokens": 791,
+                "cached_tokens": 0,
+                "cache_write_tokens": 0,
+                "output_tokens": 0,
+                "content": [
+                  {
+                    "input_tokens": 724,
+                    "cached_tokens": 0,
+                    "cache_write_tokens": 0,
+                    "output_tokens": 0
+                  },
+                  {
+                    "input_tokens": 67,
+                    "cached_tokens": 0,
+                    "cache_write_tokens": 0,
+                    "output_tokens": 0
+                  }
+                ]
+              }
+            },
+            "request_fields": {
+              "instructions": {
+                "input_tokens": 131,
+                "cached_tokens": 0,
+                "cache_write_tokens": 0,
+                "output_tokens": 0
+              },
+              "tools": {
+                "input_tokens": 145,
+                "cached_tokens": 0,
+                "cache_write_tokens": 0,
+                "output_tokens": 0
+              }
+            }
+          }
+        },
+        "error": null,
+        "error_code": null,
+        "transport": "responses",
+        "fresh_context": true,
+        "image_sha256": "dcc6142a671079b2c8d67792880e3fc803450fd9b5b6aa4a8c3bb37eea6704bd",
+        "image_bytes": 33772,
+        "width": 1280,
+        "height": 480,
+        "screen": {
+          "width": 1440,
+          "height": 1550,
+          "devicePixelRatio": 1
+        },
+        "reasoning_effort": "low",
+        "prompt_sha256": "318bb45e72ab96b61be356b5d3a9a0c2ee1f390ecbeb0834363df2f4c2e9fc2f",
+        "endpoint": "https://chatgpt.com/backend-api/codex/responses",
+        "protocol": "screenshot-only-v3-tiers",
+        "image_detail_policy": "auto",
+        "image_detail": "original",
+        "request_image_bytes": 33772,
+        "speed_tier": "normal",
+        "requested_service_tier": "default",
+        "actual_service_tier": "default",
+        "tier_status": "reported",
+        "tier_note": "Provider reported the requested tier.",
+        "connection_revision": 0,
+        "auth_mode": "codex",
+        "timeout_ms": 120000,
+        "provider_status": "completed",
+        "timing": {
+          "origin": "provider_request_start",
+          "upload_complete_ms": 180.67,
+          "upload_duration_ms": 0.048,
+          "first_token_ms": 1996.564,
+          "first_output_ms": 1996.564,
+          "first_output_source": "stream_delta",
+          "finish_ms": 2238.65,
+          "status": "completed",
+          "upload_measurement": "http.client.body_send_returned",
+          "note": "Offsets start before the provider HTTP request. Upload is client body-send completion, not provider receipt; its offset includes connection setup, while upload_duration_ms covers the body send only. request_payload_bytes is UTF-8 JSON bytes, excluding HTTP/TLS overhead."
+        },
+        "request_payload_bytes": 46829,
+        "raw_output": {
+          "calls": [
+            {
+              "name": "screen_action",
+              "arguments": "{\"action\":\"click\",\"x\":413,\"y\":193}"
+            }
+          ],
+          "resolved_model": "gpt-6-astra",
+          "actual_service_tier": "default",
+          "provider_status": "completed"
+        }
+      },
+      "capture": {
+        "id": "capture-1794089125493-3842fa81",
+        "captured_at": "2026-11-07T22:05:25.493Z",
+        "width": 1280,
+        "height": 480,
+        "seed": 7441,
+        "revision": 2,
+        "screen": {
+          "width": 1440,
+          "height": 1550,
+          "devicePixelRatio": 1
+        },
+        "viewport": {
+          "width": 1440,
+          "height": 1550
+        }
+      },
+      "request_fields": [
+        "connection_revision",
+        "height",
+        "instruction",
+        "model",
+        "request_id",
+        "screen",
+        "screenshot",
+        "speed_tier",
+        "width"
+      ],
+      "image_sha256": "dcc6142a671079b2c8d67792880e3fc803450fd9b5b6aa4a8c3bb37eea6704bd",
+      "ui_timeline": "Image 0.034 MBUpload +0.181 sFirst reply +2.00 sFinished +2.24 s",
+      "ui_timing_details": "Raw PNG: 33,772 bytes \u00b7 provider request body: 46,829 bytes \u00b7 upload complete: +0.181 s \u00b7 body-send duration: 0.000 s \u00b7 first token: +2.00 s \u00b7 first output: +2.00 s (stream_delta) \u00b7 finished / ended: +2.24 s \u00b7 timing status: completed. All offsets use the provider request clock. Upload measures client dispatch, not provider receipt. Measurement: http.client.body_send_returned. Offsets start before the provider HTTP request. Upload is client body-send completion, not provider receipt; its offset includes connection setup, while upload_duration_ms covers the body send only. request_payload_bytes is UTF-8 JSON bytes, excluding HTTP/TLS overhead.",
+      "feedback_before": {
+        "completed": [],
+        "busy": false,
+        "black_pixels": 0,
+        "white_pixels": 0,
+        "opaque_pixels": 0
+      },
+      "feedback_pending": {
+        "completed": [],
+        "busy": true,
+        "black_pixels": 0,
+        "white_pixels": 0,
+        "opaque_pixels": 0
+      },
+      "feedback_after": {
+        "completed": [
+          "button-1"
+        ],
+        "busy": false,
+        "black_pixels": 1887,
+        "white_pixels": 26,
+        "opaque_pixels": 2082
+      },
+      "checks": {
+        "same_clean_image": true,
+        "feedback_excluded_from_capture": true,
+        "reset_at_start_observed": true,
+        "normal_forwarded": true,
+        "raw_image_bytes_exact": true,
+        "payload_larger_than_image": true,
+        "timing_origin": true,
+        "timing_status": true,
+        "measured_upload": true,
+        "measured_finish": true,
+        "black_white_after_hit": true,
+        "miss_keeps_success_clear": null
+      },
+      "screenshot_file": "timing-responses-ui.png"
+    },
+    {
+      "request_id": "trial-1794089128206-4d6541c0",
+      "at": "2026-11-07T22:05:33.632Z",
+      "model": "gpt-realtime-2.1",
+      "instruction": "Click the Kite button.",
+      "capture_id": "capture-1794089128201-fe225e38",
+      "auth_mode": "codex",
+      "speed_tier": "normal",
+      "connection_revision": 0,
+      "requested_service_tier": null,
+      "actual_service_tier": null,
+      "tier_status": "unreported",
+      "tier_note": "Realtime uses its standard session; the protocol does not expose a service tier.",
+      "request_image_bytes": 33772,
+      "request_payload_bytes": 48078,
+      "timing": {
+        "origin": "provider_request_start",
+        "upload_complete_ms": 1025.683,
+        "upload_duration_ms": 3.422,
+        "first_token_ms": 3059.726,
+        "first_output_ms": 3059.726,
+        "first_output_source": "stream_delta",
+        "finish_ms": 3198.657,
+        "status": "completed",
+        "upload_measurement": "websocket.send_returned",
+        "note": "Offsets start before the fresh WebSocket connection. Upload is response.create send completion, not provider receipt; its offset includes connection/session setup, while upload_duration_ms covers that image/prompt message send only. request_payload_bytes sums session.update and response.create UTF-8 JSON bytes, excluding WebSocket/TLS overhead."
+      },
+      "expected_target": {
+        "id": "button-1",
+        "label": "Kite",
+        "x": 373,
+        "y": 180,
+        "w": 81,
+        "h": 26,
+        "font": 12,
+        "size": "small",
+        "fill": "#fff0f2",
+        "border": "#e9c4cd",
+        "color": "#a85d71"
+      },
+      "expected_action": "click",
+      "latency_ms": 5420.6,
+      "api_latency_ms": 5420.6,
+      "wall_ms": 5426.200000047684,
+      "response_wall_ms": 5426.200000047684,
+      "request_sent_perf_ms": 5488.899999976158,
+      "request_sent_at": "2026-11-07T22:05:28.206Z",
+      "timing_clock_origin_ms": 1794089122717.5,
+      "send_to_click_ms": 5426.5,
+      "click_dispatched_at": "2026-11-07T22:05:33.632Z",
+      "click_dispatched_perf_ms": 10915.399999976158,
+      "run": null,
+      "usage": {
+        "total_tokens": 1203,
+        "input_tokens": 1036,
+        "output_tokens": 167,
+        "input_token_details": {
+          "text_tokens": 584,
+          "audio_tokens": 0,
+          "image_tokens": 452,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 167,
+          "audio_tokens": 0,
+          "reasoning_tokens": 141
+        }
+      },
+      "prediction": {
+        "action": "click",
+        "x": 480,
+        "y": 170
+      },
+      "execution": {
+        "events": [
+          {
+            "type": "pointermove",
+            "source": "model",
+            "request_id": "trial-1794089128206-4d6541c0",
+            "x": 480,
+            "y": 170,
+            "target_id": null,
+            "at": 1794089133632,
+            "performance_ms": 10915.399999976158,
+            "event_timestamp_ms": 10915.300000071526,
+            "button": 0,
+            "isTrusted": false
+          },
+          {
+            "type": "mousedown",
+            "source": "model",
+            "request_id": "trial-1794089128206-4d6541c0",
+            "x": 479.19842967216476,
+            "y": 169.20660963318878,
+            "target_id": null,
+            "at": 1794089133632,
+            "performance_ms": 10915.399999976158,
+            "event_timestamp_ms": 10915.399999976158,
+            "button": 0,
+            "isTrusted": false
+          },
+          {
+            "type": "mouseup",
+            "source": "model",
+            "request_id": "trial-1794089128206-4d6541c0",
+            "x": 479.19842967216476,
+            "y": 169.20660963318878,
+            "target_id": null,
+            "at": 1794089133632,
+            "performance_ms": 10915.399999976158,
+            "event_timestamp_ms": 10915.399999976158,
+            "button": 0,
+            "isTrusted": false
+          },
+          {
+            "type": "click",
+            "source": "model",
+            "request_id": "trial-1794089128206-4d6541c0",
+            "x": 479.19842967216476,
+            "y": 169.20660963318878,
+            "target_id": null,
+            "at": 1794089133632,
+            "performance_ms": 10915.399999976158,
+            "event_timestamp_ms": 10915.399999976158,
+            "button": 0,
+            "isTrusted": false
+          }
+        ],
+        "target_id": null,
+        "click_count": 1,
+        "executed": true,
+        "click_dispatched_perf_ms": 10915.399999976158,
+        "click_dispatched_at": "2026-11-07T22:05:33.632Z"
+      },
+      "outcome": "miss",
+      "hit": false,
+      "coordinate_hit": false,
+      "action_match": true,
+      "center_error_px": 70.36511919978534,
+      "error": null,
+      "persisted": true,
+      "response": {
+        "request_id": "trial-1794089128206-4d6541c0",
+        "model": "gpt-realtime-2.1",
+        "resolved_model": "gpt-realtime-2.1",
+        "action": "click",
+        "x": 480,
+        "y": 170,
+        "latency_ms": 5420.6,
+        "usage": {
+          "total_tokens": 1203,
+          "input_tokens": 1036,
+          "output_tokens": 167,
+          "input_token_details": {
+            "text_tokens": 584,
+            "audio_tokens": 0,
+            "image_tokens": 452,
+            "cached_tokens": 0,
+            "cached_tokens_details": {
+              "text_tokens": 0,
+              "audio_tokens": 0,
+              "image_tokens": 0
+            }
+          },
+          "output_token_details": {
+            "text_tokens": 167,
+            "audio_tokens": 0,
+            "reasoning_tokens": 141
+          }
+        },
+        "error": null,
+        "error_code": null,
+        "transport": "realtime",
+        "fresh_context": true,
+        "image_sha256": "dcc6142a671079b2c8d67792880e3fc803450fd9b5b6aa4a8c3bb37eea6704bd",
+        "image_bytes": 33772,
+        "width": 1280,
+        "height": 480,
+        "screen": {
+          "width": 1440,
+          "height": 1550,
+          "devicePixelRatio": 1
+        },
+        "reasoning_effort": null,
+        "prompt_sha256": "318bb45e72ab96b61be356b5d3a9a0c2ee1f390ecbeb0834363df2f4c2e9fc2f",
+        "endpoint": "wss://api.openai.com/v1/realtime",
+        "protocol": "screenshot-only-v3-tiers",
+        "image_detail_policy": "auto",
+        "image_detail": "high",
+        "request_image_bytes": 33772,
+        "speed_tier": "normal",
+        "requested_service_tier": null,
+        "actual_service_tier": null,
+        "tier_status": "unreported",
+        "tier_note": "Realtime uses its standard session; the protocol does not expose a service tier.",
+        "connection_revision": 0,
+        "auth_mode": "codex",
+        "timeout_ms": 120000,
+        "provider_status": "completed",
+        "timing": {
+          "origin": "provider_request_start",
+          "upload_complete_ms": 1025.683,
+          "upload_duration_ms": 3.422,
+          "first_token_ms": 3059.726,
+          "first_output_ms": 3059.726,
+          "first_output_source": "stream_delta",
+          "finish_ms": 3198.657,
+          "status": "completed",
+          "upload_measurement": "websocket.send_returned",
+          "note": "Offsets start before the fresh WebSocket connection. Upload is response.create send completion, not provider receipt; its offset includes connection/session setup, while upload_duration_ms covers that image/prompt message send only. request_payload_bytes sums session.update and response.create UTF-8 JSON bytes, excluding WebSocket/TLS overhead."
+        },
+        "request_payload_bytes": 48078,
+        "raw_output": {
+          "calls": [
+            {
+              "name": "screen_action",
+              "arguments": "{\"action\":\"click\",\"x\":480,\"y\":170}"
+            }
+          ],
+          "resolved_model": "gpt-realtime-2.1",
+          "provider_status": "completed"
+        }
+      },
+      "capture": {
+        "id": "capture-1794089128201-fe225e38",
+        "captured_at": "2026-11-07T22:05:28.201Z",
+        "width": 1280,
+        "height": 480,
+        "seed": 7441,
+        "revision": 2,
+        "screen": {
+          "width": 1440,
+          "height": 1550,
+          "devicePixelRatio": 1
+        },
+        "viewport": {
+          "width": 1440,
+          "height": 1550
+        }
+      },
+      "request_fields": [
+        "connection_revision",
+        "height",
+        "instruction",
+        "model",
+        "request_id",
+        "screen",
+        "screenshot",
+        "speed_tier",
+        "width"
+      ],
+      "image_sha256": "dcc6142a671079b2c8d67792880e3fc803450fd9b5b6aa4a8c3bb37eea6704bd",
+      "ui_timeline": "Image 0.034 MBUpload +1.03 sFirst reply +3.06 sFinished +3.20 s",
+      "ui_timing_details": "Raw PNG: 33,772 bytes \u00b7 provider request body: 48,078 bytes \u00b7 upload complete: +1.03 s \u00b7 body-send duration: 0.003 s \u00b7 first token: +3.06 s \u00b7 first output: +3.06 s (stream_delta) \u00b7 finished / ended: +3.20 s \u00b7 timing status: completed. All offsets use the provider request clock. Upload measures client dispatch, not provider receipt. Measurement: websocket.send_returned. Offsets start before the fresh WebSocket connection. Upload is response.create send completion, not provider receipt; its offset includes connection/session setup, while upload_duration_ms covers that image/prompt message send only. request_payload_bytes sums session.update and response.create UTF-8 JSON bytes, excluding WebSocket/TLS overhead.",
+      "feedback_before": {
+        "completed": [
+          "button-1"
+        ],
+        "busy": false,
+        "black_pixels": 1887,
+        "white_pixels": 26,
+        "opaque_pixels": 2082
+      },
+      "feedback_pending": {
+        "completed": [],
+        "busy": true,
+        "black_pixels": 0,
+        "white_pixels": 0,
+        "opaque_pixels": 0
+      },
+      "feedback_after": {
+        "completed": [],
+        "busy": false,
+        "black_pixels": 0,
+        "white_pixels": 0,
+        "opaque_pixels": 0
+      },
+      "checks": {
+        "same_clean_image": true,
+        "feedback_excluded_from_capture": true,
+        "reset_at_start_observed": true,
+        "normal_forwarded": true,
+        "raw_image_bytes_exact": true,
+        "payload_larger_than_image": true,
+        "timing_origin": true,
+        "timing_status": true,
+        "measured_upload": true,
+        "measured_finish": true,
+        "black_white_after_hit": null,
+        "miss_keeps_success_clear": true
+      },
+      "screenshot_file": "timing-realtime-ui.png"
+    }
+  ],
+  "fixture": {
+    "image_file": "timing-fixture.png",
+    "image_bytes": 33772,
+    "image_sha256": "dcc6142a671079b2c8d67792880e3fc803450fd9b5b6aa4a8c3bb37eea6704bd",
+    "layout": {
+      "seed": 7441,
+      "width": 1280,
+      "height": 480,
+      "count": 12,
+      "revision": 2,
+      "targets": [
+        {
+          "id": "button-1",
+          "label": "Kite",
+          "x": 373,
+          "y": 180,
+          "w": 81,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        },
+        {
+          "id": "button-2",
+          "label": "Dune",
+          "x": 1023,
+          "y": 346,
+          "w": 112,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#f4edff",
+          "border": "#d9c5ee",
+          "color": "#78539e"
+        },
+        {
+          "id": "button-3",
+          "label": "Teal",
+          "x": 54,
+          "y": 219,
+          "w": 156,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-4",
+          "label": "Maple",
+          "x": 288,
+          "y": 98,
+          "w": 78,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        },
+        {
+          "id": "button-5",
+          "label": "Quartz",
+          "x": 605,
+          "y": 97,
+          "w": 115,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        },
+        {
+          "id": "button-6",
+          "label": "Aspen",
+          "x": 818,
+          "y": 381,
+          "w": 156,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#eaf2ff",
+          "border": "#bdd3f2",
+          "color": "#2b5e9a"
+        },
+        {
+          "id": "button-7",
+          "label": "Moss",
+          "x": 904,
+          "y": 201,
+          "w": 77,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#ebf6f0",
+          "border": "#b7d9c9",
+          "color": "#34735b"
+        },
+        {
+          "id": "button-8",
+          "label": "Pine",
+          "x": 1117,
+          "y": 211,
+          "w": 123,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#eaf2ff",
+          "border": "#bdd3f2",
+          "color": "#2b5e9a"
+        },
+        {
+          "id": "button-9",
+          "label": "Opal",
+          "x": 36,
+          "y": 334,
+          "w": 160,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#e8f5f8",
+          "border": "#b8dce4",
+          "color": "#347c8d"
+        },
+        {
+          "id": "button-10",
+          "label": "Grove",
+          "x": 637,
+          "y": 230,
+          "w": 79,
+          "h": 26,
+          "font": 12,
+          "size": "small",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        },
+        {
+          "id": "button-11",
+          "label": "Fern",
+          "x": 798,
+          "y": 106,
+          "w": 120,
+          "h": 38,
+          "font": 14,
+          "size": "medium",
+          "fill": "#fff0f2",
+          "border": "#e9c4cd",
+          "color": "#a85d71"
+        },
+        {
+          "id": "button-12",
+          "label": "Birch",
+          "x": 556,
+          "y": 333,
+          "w": 157,
+          "h": 50,
+          "font": 16,
+          "size": "large",
+          "fill": "#fff2e5",
+          "border": "#edcfb0",
+          "color": "#9b682e"
+        }
+      ]
+    }
+  },
+  "finished_at": "2026-11-07T22:05:33.917674+00:00",
+  "summary": {
+    "trial_requests": 2,
+    "hits": 1,
+    "misses": 1,
+    "errors": 0,
+    "all_applicable_checks_passed": true
+  }
+}

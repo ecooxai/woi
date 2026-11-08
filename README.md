@@ -69,6 +69,25 @@ quality, workspace, Android routing and diagnostic controls sit in one
 advanced options. Changes persist automatically, including pending text edits
 when leaving the page. Editing a saved inactive API key does not reconnect Codex.
 
+## Model Click Lab
+
+On Linux and Android, open **Settings → Advanced → Model Click Lab** and choose
+**Open Model Click Lab**. Searching Settings for “Model Click Lab” reveals the
+same launcher. Woi serves the bundled lab in your browser on a local loopback
+address; keep Woi running while you use the lab. No separate Python service or
+ADB forwarding is required.
+
+Each attempt uses a fresh screenshot of the lab's own test screen. Returned
+pointer moves and clicks run inside that test screen. The selected model ID
+is sent exactly, and unsupported models or speed tiers are reported without a
+model substitution. Woi keeps account credentials inside the app.
+
+The current Codex live endpoint does not accept native image input or function
+tools for `gpt-live-1.1`. Its action requests use client delegation, so the lab
+marks the direct click test unavailable for that model. Woi's existing **Luna
+pointer agent** preference remains unchanged; launching the lab does not alter
+the assistant's pointer routing.
+
 ## Images and web search
 
 **Model** includes an image model selector, a custom model ID, account-model
