@@ -140,7 +140,7 @@ AndroidKeyOp? androidOpForName(String keys) => switch (keys.trim().toLowerCase()
 /// Coordinates are real screen pixels (screenshots map back with
 /// [Screenshot.toScreen]). If Woi is in front, the service sends it to the
 /// back first so the action lands in the app below.
-class AndroidInputControl implements InputControl {
+class AndroidInputControl implements InputControl, AcknowledgedTextInput {
   AndroidInputControl({AndroidBridge? bridge, this.control}) : _bridge = bridge ?? AndroidBridge.instance;
 
   final ControlGuard? control;
@@ -225,17 +225,58 @@ class AndroidInputControl implements InputControl {
 
   @override
   Future<void> typeText(String text) async {
-    if (text.isEmpty) return;
-    if (text.length > 100000) {
-      throw ArgumentError('Text insertion is limited to 100000 UTF-16 units per request');
+    await typeTextWithReceipt(text);
+  }
+
+  @override
+  Future<TextInputReceipt> typeTextWithReceipt(String text) async {
+    if (text.isEmpty) {
+      return const TextInputReceipt(
+        delivery: 'noop',
+        backend: 'android_accessibility',
+      );
     }
-    await _visible('keyboard', () async {
+    if (text.length > 100000) {
+      throw ArgumentError(
+        'Text insertion is limited to 100000 UTF-16 units per request',
+      );
+    }
+    return _visible('keyboard', () async {
       final delivery = await _call<String>('typeText', {'text': text});
-      if (delivery != 'ime_dispatched' && delivery != 'set_text') {
-        throw StateError('Android did not acknowledge text insertion; do not retry automatically');
-      }
+      return switch (delivery) {
+        'ime_dispatched' => const TextInputReceipt(
+          delivery: 'dispatched',
+          backend: 'android_accessibility_input_connection',
+        ),
+        'set_text' => const TextInputReceipt(
+          delivery: 'applied',
+          backend: 'android_accessibility_action',
+        ),
+        _ => throw StateError(
+          'Android did not acknowledge text insertion; do not retry automatically',
+        ),
+      };
     }, keys: text);
   }
+
+  /// Requests the existing keyboard without selecting or clicking an editor.
+  /// Requested and visibly shown are distinct: Android controls visibility.
+  Future<Map<String, Object?>> showKeyboard() => _visible('keyboard', () async {
+    final reply = await _call<Object?>('showKeyboard');
+    if (reply is! Map ||
+        reply['requested'] is! bool ||
+        reply['visible'] is! bool ||
+        reply['focus_changed'] != false) {
+      throw StateError(
+        'Android did not acknowledge a keyboard visibility request',
+      );
+    }
+    return {
+      'requested': reply['requested'],
+      'visible': reply['visible'],
+      'focus_changed': false,
+    };
+  }, keys: 'Show keyboard');
 
   List<AndroidKeyOp> _opsFor(List<KeyChord> chords) => [
     for (final chord in chords)

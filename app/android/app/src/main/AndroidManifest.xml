@@ -21,6 +21,13 @@
         android:label="Woi"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <activity
+            android:name=".WoiClipboardActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity="dev.woi.woi.clipboard"
+            android:theme="@android:style/Theme.Material.Light.Dialog.NoActionBar" />
         <service
             android:name=".WoiPythonService"
             android:exported="false"

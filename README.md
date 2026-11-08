@@ -35,6 +35,19 @@ On Linux, the native WebRTC microphone uses the PipeWire echo-cancelled source
 when echo cancellation is enabled. Reconnecting rebuilds missing nodes and waits
 for old capture owners to release before reusing audio resources.
 
+On Android, **Phone** retains the communication audio path. **Media** retains
+media volume. For direct realtime sessions, the assistant's streamed PCM supplies
+a packaged SpeexDSP echo canceller with the bytes accepted by its AudioTrack.
+For gpt-live, WebRTC uses software audio processing with the live call's render
+stream as its reference and explicit Android constraints. Changing the live
+audio route reconnects the call so the next output track uses the selected Media
+or Phone attributes. When cancellation is enabled, direct Media sessions keep
+microphone transmission active while Woi speaks, allowing interruptions.
+Turning cancellation off retains the previous direct-PCM half-duplex protection.
+These references cover the assistant's conversation audio. Local MediaPlayer
+clips, viewer video, and audio from unrelated Android applications are outside
+this cancellation path.
+
 ## Settings
 
 Connection begins with **Codex login** or **API**. Codex shows its sign-in status
@@ -125,13 +138,33 @@ such as `copy` use the target app's edit behavior. Quoted typing requests such
 as `type "Ctrl+C"` remain literal text.
 
 Android 13 and newer can send exact key chords through the existing accessibility
-input connection of the focused app. The assistant panel steps aside for the
-whole request, and the same route works while Woi is in the background. A focused
-input connection is required for arbitrary chords; unsupported keys or a missing
-target produce an error. Semantic copy, paste, cut and select-all also use
-supported accessibility actions when available. Plain Home/Back and established
-phone navigation aliases keep their Android meanings. System navigation and
-editor shortcuts must be separate requests.
+input connection of the selected app. The assistant panel steps aside for the
+whole request, and the same route works while Woi is in the background. Literal
+text prefers acknowledged edits on the selected readable accessibility target,
+including when the keyboard is hidden or Android retains a stale input
+connection. It preserves selection and surrounding text, and refuses edits when
+hidden content or an unsupported caret operation would make reconstruction unsafe.
+Password and opaque editors retain the input-connection path. An explicitly
+accessibility-selected editor can receive text without choosing a new field.
+The target app, window and editor stay pinned for the request.
+
+Arbitrary key chords still require an input connection. If no editor exists,
+Woi requests the keyboard once without clicking or focusing a field and reports
+whether Android actually showed it. The `show_keyboard` tool exposes that same
+request. It never claims a keyboard is visible just because its policy request
+was accepted. Semantic copy, paste, cut and select-all prefer supported
+accessibility actions when the entire requested batch can use them. Plain Home/Back and established phone navigation aliases
+keep their Android meanings. System navigation and editor shortcuts must be
+separate requests.
+
+The `clipboard` tool reads, writes or pastes text. `action: read` returns clipboard
+text; `action: write` stores exact text without typing; `action: paste` pastes the
+existing clipboard, or writes optional `text` and then pastes it. Empty strings
+are preserved. Unambiguous clipboard reads and quoted literal write/paste
+commands skip a model round trip. Clipboard text is not read speculatively. A background read on recent Android versions briefly
+shows a small Woi window to obtain permitted foreground access, then returns to
+the previous app. Non-text clips are not opened or coerced. Stop or a new user
+turn prevents a pending clipboard write from continuing into a stale paste.
 
 Android input-connection calls report that input was dispatched; this does not
 prove that the receiving app implements a particular shortcut. No new keyboard
@@ -140,12 +173,14 @@ is already enabled.
 
 ## Computer input and Python
 
-Computer input displays a light-blue mouse pointer for one second before an
-action and keeps the indicator visible for three seconds afterward. Left clicks
-turn the pointer darker blue; right clicks turn it light red. On Android, right
-click means a touch long-press. Keyboard actions show a keyboard icon and the
-keys at the top right. User takeover stops further input until a new
-user request. `move_pointer` positions the pointer without clicking. Linux uses
+Computer input displays a half-transparent light-blue mouse pointer for 120 ms
+before an action and keeps the indicator visible for three seconds afterward.
+The visual tail does not delay the tool result or the next action. Left clicks
+turn the pointer darker blue; right clicks turn it light red. Android positions
+the pointer tip at the real click coordinate, accounting for system-bar and
+window offsets. On Android, right click means a touch long-press. Keyboard
+actions show a half-transparent keyboard icon and the keys at the top right.
+User takeover stops further input until a new user request. `move_pointer` positions the pointer without clicking. Linux uses
 XInput2 to distinguish physical input from injected events; Android detects touch
 takeover through an input-transparent accessibility overlay and outside-touch
 watcher. Android external-mouse hover takeover is not currently observed globally.

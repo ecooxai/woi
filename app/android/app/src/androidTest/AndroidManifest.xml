@@ -1,6 +1,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
         <activity
+            android:name="dev.woi.woi.ClipboardSnapshotActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:label="Woi clipboard fixture cleanup"
+            android:taskAffinity="dev.woi.woi.test.clipboard"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+        <activity
             android:name="dev.woi.woi.ControlOverlayTestActivity"
             android:exported="true"
             android:excludeFromRecents="true"

@@ -18,3 +18,6 @@
 -keep class io.flutter.plugin.common.MethodCall { *; }
 -keep interface io.flutter.plugin.common.MethodChannel$Result { *; }
 -keep interface io.flutter.plugin.common.EventChannel$EventSink { *; }
+
+# Native audio instrumentation exercises the WebRTC package bridge.
+-keep class org.webrtc.audio.WoiAudioRouteAccess { *; }

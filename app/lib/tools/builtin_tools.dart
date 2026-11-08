@@ -455,7 +455,11 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
     ToolDefinition(
       spec: _spec(
         'type_text',
-        'Type text into the focused window.',
+        'Insert literal text into the user\'s target editor immediately, before replying. '
+            'The Android keyboard may be hidden; the tool recovers the input connection or uses the editable field directly. '
+            'An actual editable target is still required. Does not interpret shortcuts or modify the clipboard. '
+            'Report the returned delivery accurately: dispatched confirms input was sent, not that the app changed; '
+            'applied means the editor acknowledged its edit action.',
         {
           'text': {'type': 'string'},
         },
@@ -463,8 +467,15 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
       ),
       handler: (args, call) async {
         final text = args.str('text');
-        await p.input.typeText(text);
-        return {'ok': true, 'chars': text.length};
+        final input = p.input;
+        final TextInputReceipt receipt;
+        if (input case final AcknowledgedTextInput acknowledged) {
+          receipt = await acknowledged.typeTextWithReceipt(text);
+        } else {
+          await input.typeText(text);
+          receipt = const TextInputReceipt(delivery: 'dispatched', backend: 'platform_input');
+        }
+        return {'ok': true, 'chars': text.length, ...receipt.toJson()};
       },
     ),
     ToolDefinition(

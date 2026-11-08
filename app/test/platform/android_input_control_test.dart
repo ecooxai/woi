@@ -21,6 +21,21 @@ void main() {
   });
   tearDown(() => messenger.setMockMethodCallHandler(AndroidBridge.method, null));
 
+  test('keyboard display request reports actual visibility without selecting a field', () async {
+    messenger.setMockMethodCallHandler(AndroidBridge.method, (call) async {
+      calls.add(call);
+      return {'requested': true, 'visible': false, 'focus_changed': false};
+    });
+    final result = await AndroidInputControl().showKeyboard();
+    expect(result, {'requested': true, 'visible': false, 'focus_changed': false});
+    expect(calls.map((call) => call.method), ['showKeyboard']);
+  });
+
+  test('malformed keyboard visibility receipt cannot imply success', () async {
+    messenger.setMockMethodCallHandler(AndroidBridge.method, (_) async => {'requested': true});
+    await expectLater(AndroidInputControl().showKeyboard(), throwsStateError);
+  });
+
   test('left tap and right long press retain their actual native button', () async {
     final input = AndroidInputControl();
     await input.click(120, 230);

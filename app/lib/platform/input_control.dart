@@ -6,6 +6,24 @@ export 'key_chords.dart';
 
 enum MouseButton { left, middle, right }
 
+/// What the platform can actually acknowledge about literal text insertion.
+/// Dispatched input may still be ignored by the receiving editor. Applied
+/// means its supported edit action acknowledged the change; noop sends nothing.
+class TextInputReceipt {
+  const TextInputReceipt({required this.delivery, required this.backend});
+
+  final String delivery;
+  final String backend;
+
+  Map<String, Object?> toJson() => {'delivery': delivery, 'backend': backend};
+}
+
+/// Optional richer input contract. Existing InputControl implementations and
+/// callers keep the asynchronous typeText API without inventing acknowledgment.
+abstract interface class AcknowledgedTextInput {
+  Future<TextInputReceipt> typeTextWithReceipt(String text);
+}
+
 /// Synthetic mouse/keyboard input, in real screen coordinates.
 abstract class InputControl {
   Future<void> moveMouse(int x, int y);

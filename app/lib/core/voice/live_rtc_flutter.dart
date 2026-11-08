@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../../platform/audio_io.dart';
+import '../../platform/android/android_bridge.dart';
 import 'live_rtc_transport.dart';
 
 /// [LiveRtcTransport] on flutter_webrtc (native libwebrtc on Linux desktop).
@@ -18,6 +19,11 @@ class FlutterLiveRtcTransport implements LiveRtcTransport {
     this.options = const LiveRtcOptions(),
     this.captureDeviceProvider,
   });
+
+  // AudioSwitch and the ADM belong to the process, not an individual peer.
+  // A cancelled initializer must finish yielding before another transport can
+  // configure them, otherwise older awaited calls can overwrite a newer route.
+  static Future<void> _androidAudioConfig = Future<void>.value();
 
   final Future<EchoCaptureLease?> Function()? captureDeviceProvider;
   EchoCaptureLease? _captureLease;
@@ -103,7 +109,47 @@ class FlutterLiveRtcTransport implements LiveRtcTransport {
     );
   }
 
+  Future<void> _configureAndroidAudio() {
+    final next = _androidAudioConfig.then((_) async {
+      if (_closed) throw StateError('WebRTC transport is closed');
+      final config = options.androidAudioRoute == 'media'
+          ? AndroidAudioConfiguration.media
+          : AndroidAudioConfiguration.communication;
+      // Configure before enumerateDevices/createPeerConnection can implicitly
+      // initialize the plugin with hardware AEC and the phone route.
+      await WebRTC.initialize(
+        options: {
+          'androidUseHardwareAudioProcessing': false,
+          'androidAudioConfiguration': config.toMap(),
+        },
+      );
+      if (_closed) throw StateError('WebRTC transport is closed');
+      // This block has already selected Android; invoke the same supported
+      // plugin method directly so native channel tests exercise the real call.
+      await WebRTC.invokeMethod<void, Object?>('setAndroidAudioConfiguration', {
+        'configuration': config.toMap(),
+      });
+      if (_closed) throw StateError('WebRTC transport is closed');
+      // The ADM survives reconnects. AudioSwitch changes only routing/focus;
+      // update its next AudioTrack attributes too, after the old peer closed.
+      await AndroidBridge.instance.call<Object>('liveAudioConfigure', {
+        'route': options.androidAudioRoute,
+      });
+      if (_closed) throw StateError('WebRTC transport is closed');
+    });
+    // A cancellation/failure rejects this caller but cannot poison the queue
+    // for the next transport. Observe it immediately to avoid unhandled errors.
+    _androidAudioConfig = next.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace _) {},
+    );
+    return next;
+  }
+
   Future<String> _createOffer() async {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      await _configureAndroidAudio();
+    }
     final outputId = await _findDevice(
       'audiooutput',
       options.outputDeviceMatch,
@@ -284,16 +330,12 @@ class FlutterLiveRtcTransport implements LiveRtcTransport {
         }
         debugPrint('webrtc input: $inputId');
         _mic = await navigator.mediaDevices.getUserMedia({
-          'audio': {
-            'echoCancellation':
-                _captureLease == null && options.echoCancellation,
-            'noiseSuppression': options.noiseSuppression,
-            'autoGainControl': options.autoGainControl,
-            if (inputId != null)
-              'optional': [
-                {'sourceId': inputId},
-              ],
-          },
+          'audio': liveAudioConstraints(
+            options,
+            android: !kIsWeb && defaultTargetPlatform == TargetPlatform.android,
+            externalEchoCapture: _captureLease != null,
+            deviceId: inputId,
+          ),
           'video': false,
         });
         if (_closed || _captureSuspended) {
@@ -394,7 +436,7 @@ class FlutterLiveRtcTransport implements LiveRtcTransport {
   void _updateDescription() {
     _description =
         'flutter_webrtc (in: ${_captureSuspended ? 'suspended for recording' : _captureLease?.deviceLabel ?? options.inputDeviceMatch ?? 'default'}, '
-        'out: ${options.outputDeviceMatch ?? 'default'}, aec: ${_captureLease != null ? 'system monitor' : options.echoCancellation})';
+        'out: ${options.outputDeviceMatch ?? 'default'}${!kIsWeb && defaultTargetPlatform == TargetPlatform.android ? ', ${options.androidAudioRoute} route, software APM' : ''}, aec: ${_captureLease != null ? 'system monitor' : options.echoCancellation})';
   }
 
   @override

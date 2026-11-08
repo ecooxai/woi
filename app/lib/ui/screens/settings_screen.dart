@@ -686,7 +686,7 @@ class _SettingsViewState extends State<SettingsView> {
         ),
         _Item(
           'Audio route',
-          'Phone uses call audio with echo cancellation.',
+          'Phone uses call processing. Media keeps media volume with software echo cancellation.',
           (w) => _select<AndroidAudioRoute>(
             id: 'android-audio-route',
             options: AndroidAudioRoute.values,

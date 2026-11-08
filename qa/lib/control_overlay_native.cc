@@ -25,8 +25,20 @@ static bool verify_arrow_palette() {
     };
     // The triangular head and diagonal stem share the button color. Pixels
     // behind and above the hotspot remain transparent (a circle would fail).
-    bool good = (pixel(kPointerHotspot + 4, kPointerHotspot + 12) & 0xffffff) == sample.second &&
-                (pixel(kPointerHotspot + 16, kPointerHotspot + 32) & 0xffffff) == sample.second &&
+    auto half_opacity = [&sample](uint32_t actual) {
+      const auto alpha = (actual >> 24) & 0xff;
+      if (alpha < 127 || alpha > 128) return false;
+      // Cairo stores premultiplied channels. Check the actual resulting alpha
+      // and color, not just the configured opacity constant.
+      for (const int shift : {0, 8, 16}) {
+        const int channel = (actual >> shift) & 0xff;
+        const int expected = ((sample.second >> shift) & 0xff) / 2;
+        if (std::abs(channel - expected) > 1) return false;
+      }
+      return true;
+    };
+    bool good = half_opacity(pixel(kPointerHotspot + 4, kPointerHotspot + 12)) &&
+                half_opacity(pixel(kPointerHotspot + 16, kPointerHotspot + 32)) &&
                 pixel(kPointerHotspot - 4, kPointerHotspot + 12) == 0 &&
                 pixel(kPointerHotspot + 26, kPointerHotspot + 5) == 0;
     if (directory != nullptr) {
@@ -38,6 +50,29 @@ static bool verify_arrow_palette() {
     if (!good) { puts("ARROW_RENDER_FAILED"); return false; }
   }
   state.button.clear();
+  return true;
+}
+
+static bool verify_keyboard_opacity(GtkWidget* badge) {
+  for (bool label : {false, true}) {
+    const int width = label ? gtk_widget_get_allocated_width(badge) : 88;
+    const int height = label ? 44 : 64;
+    cairo_surface_t* surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, width, height);
+    cairo_t* cr = cairo_create(surface);
+    if (label) draw_keys(badge, cr, &state); else draw_keyboard(nullptr, cr, nullptr);
+    cairo_destroy(cr);
+    cairo_surface_flush(surface);
+    int max_alpha = 0;
+    for (int y = 0; y < height; ++y) {
+      const auto* row = reinterpret_cast<const uint32_t*>(cairo_image_surface_get_data(surface) +
+        y * cairo_image_surface_get_stride(surface));
+      for (int x = 0; x < width; ++x) max_alpha = std::max(max_alpha, static_cast<int>(row[x] >> 24));
+    }
+    cairo_surface_destroy(surface);
+    // Both the icon and its text must be half-transparent, including regions
+    // where opaque strokes overlap the translucent indicator background.
+    if (max_alpha < 127 || max_alpha > 128) return false;
+  }
   return true;
 }
 
@@ -67,6 +102,7 @@ int main(int argc, char** argv) {
   gtk_widget_show(state.pointer);
   gtk_widget_show(state.keyboard);
   gtk_widget_show(state.keys);
+  if (!verify_keyboard_opacity(state.keys)) { puts("KEYBOARD_ALPHA_FAILED"); return 4; }
   state.active = true;
   state.timer = g_timeout_add(16, tick, &state);
   g_timeout_add(100, +[](gpointer) -> gboolean {
@@ -91,9 +127,9 @@ int main(int argc, char** argv) {
     g_free(line);
     return status == G_IO_STATUS_EOF || status == G_IO_STATUS_ERROR ? G_SOURCE_REMOVE : G_SOURCE_CONTINUE;
   }, nullptr);
-  puts("READY"); fflush(stdout);
+  printf("READY composed=%d\n", gdk_screen_is_composited(gtk_widget_get_screen(target)) ? 1 : 0); fflush(stdout);
   gtk_main();
   g_io_channel_unref(input);
-  printf("RESULT arrow_palette=1 hotspot=1 cancelled=%d clicks=%d text=%s\n", state.cancelled, clicks, gtk_entry_get_text(GTK_ENTRY(entry)));
+  printf("RESULT arrow_palette=1 hotspot=1 keyboard_alpha=1 cancelled=%d clicks=%d text=%s\n", state.cancelled, clicks, gtk_entry_get_text(GTK_ENTRY(entry)));
   return 0;
 }

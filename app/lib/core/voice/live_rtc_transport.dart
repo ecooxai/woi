@@ -44,6 +44,7 @@ class LiveRtcOptions {
     this.inputDeviceMatch,
     this.outputDeviceMatch,
     this.echoCancellation = true,
+    this.androidAudioRoute = 'phone',
     this.noiseSuppression = true,
     this.autoGainControl = true,
   });
@@ -54,8 +55,38 @@ class LiveRtcOptions {
   /// Case-insensitive substring of the output device label (null = default).
   final String? outputDeviceMatch;
   final bool echoCancellation;
+
+  /// Android's saved output route. Media keeps MODE_NORMAL and media volume;
+  /// phone uses MODE_IN_COMMUNICATION and voice-call volume.
+  final String androidAudioRoute;
   final bool noiseSuppression;
   final bool autoGainControl;
 }
 
 typedef LiveRtcTransportFactory = LiveRtcTransport Function();
+
+/// Native Android's parser only reads mandatory/optional key-value lists.
+/// Keep browser-style properties too for other native/browser implementations.
+Map<String, Object> liveAudioConstraints(
+  LiveRtcOptions options, {
+  required bool android,
+  required bool externalEchoCapture,
+  String? deviceId,
+}) {
+  final aec = !externalEchoCapture && options.echoCancellation;
+  return {
+    'echoCancellation': aec,
+    'noiseSuppression': options.noiseSuppression,
+    'autoGainControl': options.autoGainControl,
+    if (deviceId != null || android)
+      'optional': [
+        if (deviceId != null) {'sourceId': deviceId},
+        if (android) ...[
+          {'googEchoCancellation': aec},
+          {'echoCancellation': aec},
+          {'googNoiseSuppression': options.noiseSuppression},
+          {'googAutoGainControl': options.autoGainControl},
+        ],
+      ],
+  };
+}

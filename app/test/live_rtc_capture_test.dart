@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:woi/core/voice/live_rtc_flutter.dart';
@@ -160,10 +161,13 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   late _NativeRtc native;
   setUp(() {
+    // These cases exercise PipeWire capture leases, not Android native audio.
+    debugDefaultTargetPlatformOverride = TargetPlatform.linux;
     native = _NativeRtc()..install();
   });
   tearDown(() async {
     await native.close();
+    debugDefaultTargetPlatformOverride = null;
   });
 
   EchoCaptureLease lease(void Function() released) => EchoCaptureLease(

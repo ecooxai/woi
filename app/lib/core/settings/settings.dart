@@ -28,7 +28,7 @@ enum AndroidAudioRoute {
   /// headset or loudspeaker.
   phone('Phone (echo cancellation)'),
 
-  /// The media path: media volume, speech-recognition capture.
+  /// Media volume, speech-recognition capture, and playback-reference software AEC.
   media('Media');
 
   const AndroidAudioRoute(this.label);
@@ -255,7 +255,7 @@ class AppSettings {
 
   /// Remove what the speakers play (Woi's voice, music, videos) from the
   /// microphone: PipeWire WebRTC echo canceller on Linux, the platform
-  /// AEC/NS/AGC on Android, libwebrtc's AEC for gpt-live.
+  /// AEC/NS/AGC for Android Phone, software AEC for Android Media, and libwebrtc for gpt-live.
   final bool echoCancellation;
 
   /// Android only: [AndroidAudioRoute.phone] (default) or media.

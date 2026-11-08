@@ -23,7 +23,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 /** Native device proof without network/AI calls or production test hooks.
- * Run the standard test runner with -e group control. The one-second warning
+ * Run the standard test runner with -e group control. The short pre-action indicator
  * and three-second native trailing holds complement Dart ControlGuard timing tests. */
 class ControlOverlayDeviceCheck(private val host: Instrumentation) {
     private lateinit var ui: UiAutomation
@@ -33,6 +33,7 @@ class ControlOverlayDeviceCheck(private val host: Instrumentation) {
     private var passed = 0
     private var width = 0
     private var height = 0
+    private lateinit var backdrop: Bitmap
     private val density get() = host.targetContext.resources.displayMetrics.density
     private val testPackage get() = host.context.packageName
 
@@ -162,17 +163,23 @@ class ControlOverlayDeviceCheck(private val host: Instrumentation) {
         bitmap.getPixels(pixels, 0, area.width(), area.left, area.top, area.width(), area.height())
         return pixels.count {
             val r = Color.red(it); val g = Color.green(it); val b = Color.blue(it)
-            if (light) b >= 245 && g in 215..240 && r in 170..208 && b - r >= 40
-            else b >= 235 && g in 150..225 && r < 150
+            if (light) b >= 245 && g in 228..250 && r in 210..240 && b - r >= 14
+            else b >= 230 && g in 190..240 && r in 130..200 && b - r >= 30
         }
     }
 
     private fun cursorAt(bitmap: Bitmap, x: Int, y: Int, expected: Int) {
         fun matches(px: Int, py: Int): Boolean {
             val actual = bitmap.getPixel(px, py)
-            return kotlin.math.abs(Color.red(actual) - Color.red(expected)) <= 3 &&
-                kotlin.math.abs(Color.green(actual) - Color.green(expected)) <= 3 &&
-                kotlin.math.abs(Color.blue(actual) - Color.blue(expected)) <= 3
+            val background = backdrop.getPixel(px, py)
+            // The complete overlay is composited at 0.5, including pointer
+            // fill/stroke and keyboard text. An opaque cursor must fail.
+            val blended = Color.rgb((Color.red(expected) + Color.red(background)) / 2,
+                (Color.green(expected) + Color.green(background)) / 2,
+                (Color.blue(expected) + Color.blue(background)) / 2)
+            return kotlin.math.abs(Color.red(actual) - Color.red(blended)) <= 3 &&
+                kotlin.math.abs(Color.green(actual) - Color.green(blended)) <= 3 &&
+                kotlin.math.abs(Color.blue(actual) - Color.blue(blended)) <= 3
         }
         // Match the arrow's triangular head and diagonal stem at the real
         // hotspot; the old centered ring cannot satisfy these samples.
@@ -212,7 +219,7 @@ class ControlOverlayDeviceCheck(private val host: Instrumentation) {
                 "The Woi service must not request touch exploration"
             }
             ok("controlReset")
-            screenshot("baseline") { }
+            screenshot("baseline") { backdrop = checkNotNull(it.copy(Bitmap.Config.ARGB_8888, false)) }
 
             verify("pointer begin, move-only update and end") {
                 val x1 = width / 5; val y1 = height * 2 / 3
@@ -238,7 +245,7 @@ class ControlOverlayDeviceCheck(private val host: Instrumentation) {
                 val box = buttonRect(); val before = touches()
                 check(ok("controlBegin", mapOf("kind" to "pointer", "x" to box.centerX(), "y" to box.centerY())) == true)
                 screenshot("left-warning") { cursorAt(it, box.centerX(), box.centerY(), Color.rgb(92, 190, 255)) }
-                SystemClock.sleep(1000)
+                SystemClock.sleep(120)
                 check(ok("click", mapOf("x" to box.centerX(), "y" to box.centerY(), "button" to "left")) == true)
                 waitFor("AI tap delivery") { touches() == before + 1 }
                 check(ok("controlInterrupted") == false) { "Injected AI tap cancelled itself" }
@@ -252,7 +259,7 @@ class ControlOverlayDeviceCheck(private val host: Instrumentation) {
                 val box = buttonRect(); val before = touches(); val longBefore = longPresses()
                 check(ok("controlBegin", mapOf("kind" to "pointer", "x" to box.centerX(), "y" to box.centerY())) == true)
                 screenshot("right-warning") { cursorAt(it, box.centerX(), box.centerY(), Color.rgb(92, 190, 255)) }
-                SystemClock.sleep(1000)
+                SystemClock.sleep(120)
                 check(ok("click", mapOf("x" to box.centerX(), "y" to box.centerY(), "button" to "right")) == true)
                 waitFor("context long press") { longPresses() == longBefore + 1 }
                 check(touches() == before) { "Right long press also emitted a left tap" }
@@ -286,7 +293,7 @@ class ControlOverlayDeviceCheck(private val host: Instrumentation) {
                 ok("controlReset")
                 val box = buttonRect(); val before = touches()
                 check(ok("controlBegin", mapOf("kind" to "pointer", "x" to box.centerX(), "y" to box.centerY())) == true)
-                SystemClock.sleep(1000)
+                SystemClock.sleep(120)
                 check(ok("click", mapOf("x" to box.centerX(), "y" to box.centerY(), "button" to "left")) == true)
                 waitFor("trailing AI tap") { touches() == before + 1 }
                 SystemClock.sleep(2300)
@@ -308,7 +315,7 @@ class ControlOverlayDeviceCheck(private val host: Instrumentation) {
                     check(blueCount(it, region(width / 2, height / 2, 110, 120), true) > 500) { "Keyboard icon missing" }
                     check(blueCount(it, Rect(width / 4, 0, width, (150 * density).toInt()), true) > 500) { "Key badge missing" }
                 }
-                SystemClock.sleep(1000)
+                SystemClock.sleep(120)
                 ok("typeText", mapOf("text" to typed))
                 waitFor("native typing") { text("woi-test-input") == typed }
                 check(ok("controlInterrupted") == false)
@@ -323,6 +330,7 @@ class ControlOverlayDeviceCheck(private val host: Instrumentation) {
         } catch (error: Throwable) {
             failure = error
         } finally {
+            if (::backdrop.isInitialized) backdrop.recycle()
             if (WoiAccessibilityService.instance != null) {
                 try { ok("controlReset") } catch (_: Throwable) {}
             }

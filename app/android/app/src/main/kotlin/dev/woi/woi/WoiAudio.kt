@@ -52,6 +52,7 @@ object WoiAudio {
     @Volatile private var micThread: Thread? = null
     @Volatile private var aec: AcousticEchoCanceler? = null
     @Volatile private var ns: NoiseSuppressor? = null
+    @Volatile private var mediaEcho: WoiMediaEchoCanceller? = null
 
     // The Dart side's mic stream: open while [micSink] is set, even when the
     // recorder itself is released because another app is recording.
@@ -378,14 +379,15 @@ object WoiAudio {
         if (!onAudioThread) syncPlayerRoute()
         val min = AudioRecord.getMinBufferSize(RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         val phone = WoiAudioRoute.isPhone
-        // Phone route: VOICE_COMMUNICATION in MODE_IN_COMMUNICATION runs the
-        // HAL's call echo canceller (referenced to the output mix). Media
-        // route: VOICE_COMMUNICATION in MODE_NORMAL plus the AEC/NS effects
-        // on the record session, and Woi's media track plays on that same
-        // session so the effect has it as its echo reference.
-        // (VOICE_RECOGNITION + AEC left most of Woi's voice in the capture
-        // on a MI 8: the effect had no reference for a separate media track.)
-        val source = if (micAec) MediaRecorder.AudioSource.VOICE_COMMUNICATION else MediaRecorder.AudioSource.MIC
+        // Media playback has no dependable platform AEC render reference in
+        // MODE_NORMAL. Use the raw recognition path and our timestamp-aligned
+        // software canceller. The phone route keeps the HAL communication path.
+        val softwareAec = micAec && !phone
+        val source = when {
+            softwareAec -> MediaRecorder.AudioSource.VOICE_RECOGNITION
+            micAec -> MediaRecorder.AudioSource.VOICE_COMMUNICATION
+            else -> MediaRecorder.AudioSource.MIC
+        }
         val rec = AudioRecord(
             source, RATE,
             AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(min, CHUNK_BYTES * 4)
@@ -398,19 +400,35 @@ object WoiAudio {
         ourSession = rec.audioSessionId
         micZeros = false
         val route = if (phone) "phone route" else "media route"
-        if (micAec) {
-            if (AcousticEchoCanceler.isAvailable()) aec = AcousticEchoCanceler.create(rec.audioSessionId)?.apply { enabled = true }
-            if (NoiseSuppressor.isAvailable()) ns = NoiseSuppressor.create(rec.audioSessionId)?.apply { enabled = true }
-            val src = if (phone) "VOICE_COMMUNICATION, call mode" else "VOICE_COMMUNICATION, media mode"
-            status = when {
-                aec?.enabled == true -> "active ($route: $src + platform AEC${if (ns?.enabled == true) " + NS" else ""})"
-                phone -> "active ($route: $src; call echo canceller, no separate AEC effect)"
-                else -> "$route: $src; no platform AEC effect on this device"
-            }
-        } else {
-            status = "off (MIC source, $route)"
+        try {
+            if (softwareAec) {
+                mediaEcho = WoiMediaEchoCanceller()
+                status = "active (media route: continuous-reference SpeexDSP software AEC + residual suppression)"
+            } else if (micAec) {
+                if (AcousticEchoCanceler.isAvailable()) aec = AcousticEchoCanceler.create(rec.audioSessionId)?.apply { enabled = true }
+                if (NoiseSuppressor.isAvailable()) ns = NoiseSuppressor.create(rec.audioSessionId)?.apply { enabled = true }
+                status = if (aec?.enabled == true) {
+                    "active ($route: VOICE_COMMUNICATION, call mode + platform AEC${if (ns?.enabled == true) " + NS" else ""})"
+                } else "active ($route: VOICE_COMMUNICATION, call mode; platform communication processing)"
+            } else status = "off (MIC source, $route)"
+        } catch (e: Throwable) {
+            mediaEcho?.close(); mediaEcho = null
+            aec?.release(); aec = null
+            ns?.release(); ns = null
+            rec.release()
+            WoiAudioRoute.leaveCommunication()
+            throw e
         }
-        rec.startRecording()
+        try {
+            rec.startRecording()
+        } catch (e: Throwable) {
+            mediaEcho?.close(); mediaEcho = null
+            aec?.release(); aec = null
+            ns?.release(); ns = null
+            rec.release()
+            WoiAudioRoute.leaveCommunication()
+            throw e
+        }
         record = rec
         if (!onAudioThread) syncPlayerRoute()
         if (!phone) WoiAudioRoute.requestListenFocus()
@@ -435,17 +453,29 @@ object WoiAudio {
             var idleZero = 0
             while (record === rec) {
                 var off = 0
+                var readError = 0
                 while (off < buf.size && record === rec) {
                     val n = rec.read(buf, off, buf.size - off)
-                    if (n <= 0) break
+                    if (n <= 0) { readError = n; break }
                     off += n
                 }
-                if (off <= 0 || record !== rec) {
-                    if (off < 0) break
-                    continue
+                if (record !== rec) break
+                // Blocking AudioRecord reads either fill this 80 ms block or
+                // terminate with an error. Never forward a terminating partial
+                // block as undelayed PCM or leave the DSP history discontinuous.
+                if (off != buf.size) {
+                    WoiBridge.main.post { failRecord(rec, "AudioRecord read failed ($readError; $off/${buf.size} bytes)") }
+                    break
                 }
-                val chunk = buf.copyOf(off)
-                val r = rms(chunk)
+                val raw = buf.copyOf()
+                val chunk = try {
+                    mediaEcho?.capture(rec, raw) ?: raw
+                } catch (e: Throwable) {
+                    WoiBridge.main.post { failRecord(rec, "Media AEC failed: ${e.message ?: e}") }
+                    break
+                }
+                val rawRms = rms(raw)
+                val r = if (chunk === raw) rawRms else rms(chunk)
                 val now = System.nanoTime()
                 if (diagSec <= 5) {
                     diagSum += r; diagN++
@@ -457,7 +487,9 @@ object WoiAudio {
                         diagSum = 0.0; diagN = 0; diagSec++
                     }
                 }
-                if (r == 0.0) {
+                // Software cancellation is allowed to produce digital silence;
+                // only raw capture zeros indicate the hardware's dead-mic bug.
+                if (rawRms == 0.0) {
                     if (zeroSince == 0L) zeroSince = now
                     else if (!zeroReported && now - zeroSince > 2_000_000_000L) {
                         zeroReported = true
@@ -554,6 +586,18 @@ object WoiAudio {
         }
     }
 
+    /** A terminating capture error closes the stream instead of leaking raw
+     *  partial audio or spinning on a dead recorder. Main thread only. */
+    private fun failRecord(rec: AudioRecord, message: String) {
+        if (record !== rec) return
+        val sink = micSink
+        Log.w(WoiBridge.TAG, message)
+        closeMic()
+        status = "failed: $message"
+        sink?.error("mic", message, null)
+        sink?.endOfStream()
+    }
+
     private fun rms(pcm: ByteArray): Double {
         var sum = 0.0
         var i = 0
@@ -572,6 +616,7 @@ object WoiAudio {
         try { rec.stop() } catch (_: Exception) {}
         micThread?.join(200)
         micThread = null
+        mediaEcho?.close(); mediaEcho = null
         aec?.release(); aec = null
         ns?.release(); ns = null
         rec.release()
@@ -579,7 +624,7 @@ object WoiAudio {
 
     // ---------------- streaming player ----------------
 
-    private var track: AudioTrack? = null
+    @Volatile private var track: AudioTrack? = null
     private var writer: Thread? = null
     private val queue = LinkedBlockingQueue<ByteArray>()
     @Volatile private var generation = 0
@@ -597,8 +642,9 @@ object WoiAudio {
         if (track != null && (trackCall != wantCallTrack() || trackSession != wantSession())) playerClose()
     }
 
-    /** The recorder's session for the track (both routes, AEC on), else 0. */
-    private fun wantSession() = if (record != null && micAec) ourSession else 0
+    /** Only the phone route shares its hardware-effect session. Media AEC
+     *  consumes the rendered PCM directly and needs no platform session tie. */
+    private fun wantSession() = if (record != null && micAec && WoiAudioRoute.isPhone) ourSession else 0
 
     fun playerOpen(): Boolean {
         if (track != null) return true
@@ -623,19 +669,33 @@ object WoiAudio {
             .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
             .build()
         track = t
+        mediaEcho?.beginOutput()
         paused = true
         writer = Thread({
             var lastData = System.nanoTime()
+            var writtenFrames = 0L
+            var writerGeneration = generation
             while (track === t) {
                 val chunk = queue.poll(250, TimeUnit.MILLISECONDS)
                 if (chunk == null) {
                     if (!paused && System.nanoTime() - lastData > 1_000_000_000L) {
-                        synchronized(trackLock) { if (track === t) { t.pause(); paused = true } }
+                        synchronized(trackLock) {
+                            if (track === t) {
+                                mediaEcho?.stopOutput(t)
+                                t.pause()
+                                paused = true
+                            }
+                        }
                         WoiAudioRoute.abandonSpeechFocus()
                     }
                     continue
                 }
                 val gen = generation
+                if (writerGeneration != gen) {
+                    writerGeneration = gen
+                    writtenFrames = 0L
+                    mediaEcho?.beginOutput()
+                }
                 synchronized(trackLock) {
                     if (track !== t) return@Thread
                     if (paused) { t.play(); paused = false; WoiAudioRoute.requestSpeechFocus() }
@@ -645,6 +705,8 @@ object WoiAudio {
                 while (off < chunk.size && gen == generation && track === t) {
                     val n = t.write(chunk, off, minOf(960, chunk.size - off))
                     if (n <= 0) break
+                    if (gen == generation && track === t) mediaEcho?.rendered(t, chunk, off, n, writtenFrames)
+                    writtenFrames += n / 2
                     off += n
                 }
                 lastData = System.nanoTime()
@@ -664,6 +726,7 @@ object WoiAudio {
         val t = track ?: return
         synchronized(trackLock) {
             try {
+                mediaEcho?.stopOutput(t)
                 t.pause()
                 t.flush()
                 paused = true
@@ -674,6 +737,7 @@ object WoiAudio {
 
     fun playerClose() {
         val t = track ?: return
+        mediaEcho?.stopOutput(t)
         track = null
         generation++
         queue.clear()

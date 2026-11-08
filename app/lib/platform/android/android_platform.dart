@@ -9,6 +9,7 @@ import '../platform_services.dart';
 import 'android_audio_io.dart';
 import 'android_bridge.dart';
 import 'android_camera.dart';
+import 'android_clipboard_access.dart';
 import 'android_elements.dart';
 import 'android_input_control.dart';
 import 'android_media_viewer.dart';
@@ -41,11 +42,7 @@ Future<PlatformServices> createAndroidPlatform({AndroidBridge? bridge}) async {
   await Directory(workspace).create(recursive: true);
   await Directory(paths.dataDir).create(recursive: true);
   final screen = AndroidScreenCapture(bridge: b);
-  return PlatformServices(
-    paths: paths,
-    audio: AndroidAudioIO(bridge: b),
-    screen: screen,
-    input: AndroidInputControl(
+  final input = AndroidInputControl(
       bridge: b,
       control: ControlGuard(
         ControlFeedback(
@@ -55,7 +52,14 @@ Future<PlatformServices> createAndroidPlatform({AndroidBridge? bridge}) async {
           ),
         ),
       ),
-    ),
+    );
+  return PlatformServices(
+    paths: paths,
+    audio: AndroidAudioIO(bridge: b),
+    screen: screen,
+    clipboard: AndroidClipboardAccess(bridge: b),
+    input: input,
+    showKeyboard: input.showKeyboard,
     pythonRunner: const AndroidPythonRunner(),
     shell: AndroidShell(
       defaultWorkingDirectory: workspace,
@@ -74,7 +78,11 @@ Future<PlatformServices> createAndroidPlatform({AndroidBridge? bridge}) async {
         'click_screen taps and type_text types into the app '
         'the user is using (Woi steps aside first; when opened by the assistant gesture Woi is a bottom panel floating over that '
         'app, which stays open); send_keys supports back/esc, home (keys "home" = launcher home screen, not back), recents, enter, '
-        'copy, paste, cut and select all only. The camera tool opens the back camera. Screenshots come from screen share (when on) or the assistant gesture. '
+        'copy, paste, cut, select all and exact Ctrl/Alt/Shift/Meta chords (Android 13+ with an external input connection). '
+        'type_text can insert in a focused editable field even when the keyboard is hidden; do not require the user to open it first. '
+        'clipboard reads/writes text and pastes; Android may require a brief visible Woi focus for a clipboard read. '
+        'show_keyboard requests the keyboard without focusing or clicking a field; requested and visible are separate results. '
+        'The camera tool opens the back camera. Screenshots come from screen share (when on) or the assistant gesture. '
         'run_bash runs /system/bin/sh (toybox) in the app sandbox; home is ${info.filesDir}. '
         'The python tool runs bundled Python 3 with its standard library in a separate app-private process.',
     isMobile: true,

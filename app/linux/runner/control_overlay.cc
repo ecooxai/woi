@@ -4,6 +4,7 @@
 #include <X11/extensions/XInput2.h>
 #include <algorithm>
 #include <cstring>
+#include <cstdint>
 #include <string>
 #include <unordered_set>
 
@@ -11,6 +12,7 @@ namespace {
 constexpr int kPointerWidth = 40;
 constexpr int kPointerHeight = 52;
 constexpr int kPointerHotspot = 6;
+constexpr double kIndicatorOpacity = 0.5;
 
 struct ControlOverlay {
   GtkWidget* pointer = nullptr;
@@ -28,11 +30,19 @@ struct ControlOverlay {
   std::unordered_set<int> synthetic;
 };
 
+void finish_indicator(cairo_t* cr) {
+  cairo_pop_group_to_source(cr);
+  cairo_paint_with_alpha(cr, kIndicatorOpacity);
+}
+
 void clear(cairo_t* cr) {
   cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
   cairo_set_source_rgba(cr, 0, 0, 0, 0);
   cairo_paint(cr);
   cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
+  // Composite the complete indicator once so overlapping strokes and fill
+  // remain uniformly 50% opaque.
+  cairo_push_group(cr);
 }
 
 gboolean draw_pointer(GtkWidget*, cairo_t* cr, gpointer data) {
@@ -61,6 +71,7 @@ gboolean draw_pointer(GtkWidget*, cairo_t* cr, gpointer data) {
   else cairo_set_source_rgb(cr, 31.0 / 255, 109.0 / 255, 170.0 / 255);
   cairo_set_line_width(cr, 1.25);
   cairo_stroke(cr);
+  finish_indicator(cr);
   return TRUE;
 }
 
@@ -80,6 +91,7 @@ gboolean draw_keyboard(GtkWidget*, cairo_t* cr, gpointer) {
   }
   cairo_rectangle(cr, 24, 45, 40, 5);
   cairo_fill(cr);
+  finish_indicator(cr);
   return TRUE;
 }
 
@@ -101,6 +113,7 @@ gboolean draw_keys(GtkWidget* widget, cairo_t* cr, gpointer data) {
   pango_cairo_show_layout(cr, layout);
   pango_font_description_free(font);
   g_object_unref(layout);
+  finish_indicator(cr);
   return TRUE;
 }
 
@@ -132,6 +145,15 @@ GtkWidget* window(ControlOverlay* state, int width, int height, GCallback draw) 
     cairo_t* cr = cairo_create(surface);
     draw_pointer(widget, cr, state);
     cairo_destroy(cr);
+    // Shape masks are binary. Keep faint antialiased edges in the input-free
+    // popup shape even though the on-screen artwork is half-transparent.
+    cairo_surface_flush(surface);
+    for (int y = 0; y < height; ++y) {
+      auto* row = reinterpret_cast<uint32_t*>(cairo_image_surface_get_data(surface) +
+        y * cairo_image_surface_get_stride(surface));
+      for (int x = 0; x < width; ++x) if ((row[x] >> 24) != 0) row[x] = 0xffffffff;
+    }
+    cairo_surface_mark_dirty(surface);
     cairo_region_t* shape = gdk_cairo_region_create_from_surface(surface);
     gdk_window_shape_combine_region(gtk_widget_get_window(widget), shape, 0, 0);
     cairo_region_destroy(shape);
@@ -232,6 +254,12 @@ void method(FlMethodChannel*, FlMethodCall* call, gpointer data) {
         if (!state->pointer) state->pointer = window(state, kPointerWidth, kPointerHeight, G_CALLBACK(draw_pointer));
         if (!state->keyboard) state->keyboard = window(state, 88, 64, G_CALLBACK(draw_keyboard));
         if (!state->keys) state->keys = window(state, 420, 44, G_CALLBACK(draw_keys));
+        // A rapid pointer action can replace a keyboard indicator before its
+        // fade deadline; remove the previous kind immediately.
+        if (state->kind != "keyboard") {
+          gtk_widget_hide(state->keyboard);
+          gtk_widget_hide(state->keys);
+        }
         tick(state);
         gtk_widget_show(state->pointer);
         gtk_widget_queue_draw(state->pointer);

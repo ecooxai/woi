@@ -35,16 +35,23 @@ class WoiControlOverlay(private val service: WoiAccessibilityService) {
         end()
         active = true
         button = ""  // Each warning begins with the neutral light-blue cursor.
-        val metrics = service.resources.displayMetrics
+        // Gestures and screenshots include system bars; app displayMetrics can
+        // exclude those areas and would clamp a valid bottom-screen target.
+        val metrics = android.util.DisplayMetrics()
+        @Suppress("DEPRECATION")
+        wm.defaultDisplay.getRealMetrics(metrics)
         if (x == 0f && y == 0f) { x = metrics.widthPixels / 2f; y = metrics.heightPixels / 2f }
         // Phones have no system mouse cursor: the marker is the touch target.
-        if (targetX != null) x = targetX.coerceIn(0f, metrics.widthPixels.toFloat())
-        if (targetY != null) y = targetY.coerceIn(0f, metrics.heightPixels.toFloat())
+        if (targetX != null) x = targetX.coerceIn(0f, (metrics.widthPixels - 1).coerceAtLeast(0).toFloat())
+        if (targetY != null) y = targetY.coerceIn(0f, (metrics.heightPixels - 1).coerceAtLeast(0).toFloat())
         if (WoiOverlay.showing) {
             WoiOverlay.stepAside(false)
             heldPanel = true
         }
-        val v = Indicator(service, kind, keys.take(180)).also { visual = it }
+        val v = Indicator(service, kind, keys.take(180)).also {
+            it.alpha = 0.5f
+            visual = it
+        }
         val lp = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
@@ -113,6 +120,7 @@ class WoiControlOverlay(private val service: WoiAccessibilityService) {
     private inner class Indicator(ctx: Context, val kind: String, var keys: String) : View(ctx) {
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         private val density = resources.displayMetrics.density
+        private val screenOrigin = IntArray(2)
         private val cursor = Path().apply {
             moveTo(0f, 0f); lineTo(0f, 30f); lineTo(8f, 23f)
             lineTo(15f, 38f); lineTo(22f, 35f); lineTo(14f, 20f); lineTo(27f, 20f)
@@ -121,9 +129,13 @@ class WoiControlOverlay(private val service: WoiAccessibilityService) {
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
             canvas.save()
-            // The arrow tip, not its center, is the requested screen point.
-            // Qualify these fields: View.x/y are the full-screen view's offsets.
-            canvas.translate(this@WoiControlOverlay.x, this@WoiControlOverlay.y)
+            // Gesture coordinates are physical screen pixels. Accessibility overlay
+            // windows can start below status bars/cutouts even with LAYOUT_IN_SCREEN.
+            // Use the actual view origin on every frame, including after rotation,
+            // instead of assuming the overlay canvas starts at screen (0, 0).
+            getLocationOnScreen(screenOrigin)
+            canvas.translate(this@WoiControlOverlay.x - screenOrigin[0],
+                this@WoiControlOverlay.y - screenOrigin[1])
             canvas.scale(density, density)
             paint.style = Paint.Style.STROKE
             paint.strokeJoin = Paint.Join.ROUND

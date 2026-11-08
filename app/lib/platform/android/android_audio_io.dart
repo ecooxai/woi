@@ -13,7 +13,7 @@ import 'android_held_mic.dart';
 /// while the mic is open (MODE_IN_COMMUNICATION, VOICE_COMMUNICATION
 /// capture, voice-call playback on the loudspeaker or a headset: the call
 /// echo canceller); 'media' plays as media and records VOICE_RECOGNITION
-/// with the AEC effect where available. With [echoCancellation] off the mic
+/// with timestamp-aligned SpeexDSP software AEC fed by AudioTrack's PCM. With [echoCancellation] off the mic
 /// records from the plain MIC source. While another app records, the mic is
 /// released ([micPaused]) and resumes when the mic is free. gpt-live does
 /// not use this: flutter_webrtc captures and plays with its own

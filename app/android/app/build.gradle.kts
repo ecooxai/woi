@@ -11,6 +11,13 @@ android {
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -85,5 +92,8 @@ chaquopy {
 }
 
 dependencies {
+    // Same SDK as flutter_webrtc 1.6.3. Woi's tiny package bridge updates the
+    // next AudioTrack's public attributes when the live route changes.
+    implementation("io.github.webrtc-sdk:android:150.7871.04")
     testImplementation("junit:junit:4.13.2")
 }

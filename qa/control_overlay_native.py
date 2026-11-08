@@ -70,10 +70,20 @@ try:
     for mode in ('synthetic', 'physical'):
         harness = subprocess.Popen([str(out / 'harness')], env=inner,
                                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        assert harness.stdout.readline().strip() == 'READY'
+        ready = harness.stdout.readline().strip()
+        assert ready in ('READY composed=0', 'READY composed=1'), ready
+        composited = ready.endswith('=1')
         target = cmd(['xdotool', 'search', '--name', 'Woi native overlay target']).splitlines()[-1]
         cmd(['xdotool', 'windowfocus', target])
         cmd(['xdotool', 'type', '--delay', '12', '--', 'overlaytest'])
+        baseline = out / f'{mode}-baseline.png'
+        cmd(['import', '-display', inner['DISPLAY'], '-window', 'root', str(baseline)])
+        def pixel(shot, x, y):
+            raw = subprocess.run(['convert', str(shot), '-crop', f'1x1+{x}+{y}',
+                                  '+repage', '-depth', '8', 'rgb:-'],
+                                 check=True, capture_output=True).stdout
+            assert len(raw) == 3, raw
+            return tuple(raw)
         cmd(['xdotool', 'mousemove', '640', '430'])
         for button, rgb in (('none', (92, 190, 255)), ('left', (52, 155, 231)),
                             ('right', (255, 166, 166)), ('none', (92, 190, 255))):
@@ -85,16 +95,17 @@ try:
             time.sleep(.15)
             shot = out / f'{mode}-pointer-{button}.png'
             cmd(['import', '-display', inner['DISPLAY'], '-window', 'root', str(shot)])
-            def pixel(x, y):
-                raw = subprocess.run(['convert', str(shot), '-crop', f'1x1+{x}+{y}',
-                                      '+repage', '-depth', '8', 'rgb:-'],
-                                     check=True, capture_output=True).stdout
-                assert len(raw) == 3, raw
-                return tuple(raw)
             for dx, dy in ((4, 12), (16, 32)):
-                actual = pixel(640 + dx, 430 + dy)
-                assert all(abs(a - b) <= 2 for a, b in zip(actual, rgb)), (button, actual, rgb)
-            assert pixel(630, 442) != rgb, 'Cursor hotspot drifted or circular marker remained'
+                background = pixel(baseline, 640 + dx, 430 + dy)
+                # Private Xephyr can run without a compositor. In that case
+                # root captures expose the premultiplied RGB values directly;
+                # the harness independently verifies real alpha on Cairo's
+                # RGBA surface. On a composited display verify the blend too.
+                expected = tuple((color + (back if composited else 0)) / 2
+                                 for color, back in zip(rgb, background))
+                actual = pixel(shot, 640 + dx, 430 + dy)
+                assert all(abs(a - b) <= 2 for a, b in zip(actual, expected)), (button, actual, expected)
+            assert pixel(shot, 630, 442) != expected, 'Cursor hotspot drifted or circular marker remained'
         if mode == 'physical':
             # Take over during the third trailing second. Outer XTEST reaches
             # Xephyr as a physical source; the app's inner XTEST stays ignored.
@@ -106,12 +117,13 @@ try:
         (out / f'{mode}.log').write_text(stdout + stderr)
         expected = 'cancelled=0' if mode == 'synthetic' else 'cancelled=1'
         assert expected in stdout, stdout + stderr
-        assert 'arrow_palette=1 hotspot=1' in stdout, stdout + stderr
+        assert 'arrow_palette=1 hotspot=1 keyboard_alpha=1' in stdout, stdout + stderr
         assert 'clicks=1' in stdout, stdout + stderr
         assert 'text=overlaytest' in stdout, stdout + stderr
         results.append({'scenario': mode, 'cancelled': mode == 'physical',
                         'click_through': True, 'typing_focus_preserved': True,
                         'arrow_palette_and_hotspot': True, 'neutral_reset': True,
+                        'pointer_and_keyboard_half_alpha': True, 'desktop_composited': composited,
                         'takeover_after_input_ms': 2300 if mode == 'physical' else None})
         time.sleep(.2)
     (out / 'result.json').write_text(json.dumps(results, indent=2) + '\n')

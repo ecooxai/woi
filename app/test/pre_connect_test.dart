@@ -372,7 +372,9 @@ void main() {
     test('closes the session after the idle time, keeps the mic, wakes on speech and sends it from the start', () async {
       final mic = h.mic;
       final first = h.scripted;
-      await waitFor(() => h.pipeline.standby, timeout: const Duration(seconds: 3));
+      // Standby is marked before the asynchronous backend close completes.
+      await waitFor(() => h.pipeline.standby && h.pipeline.status == SessionStatus.disconnected && first.closed,
+          timeout: const Duration(seconds: 3));
       expect(h.pipeline.status, SessionStatus.disconnected);
       expect(first.closed, isTrue);
       expect(identical(h.fp.audio.mic, mic), isTrue, reason: 'the mic stays open in standby');

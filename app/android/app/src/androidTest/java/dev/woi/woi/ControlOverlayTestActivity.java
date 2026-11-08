@@ -20,6 +20,11 @@ public class ControlOverlayTestActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        // Retain real system bars so the overlay must translate its local
+        // canvas origin back to the gesture's physical screen coordinates.
+        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        getWindow().setStatusBarColor(Color.rgb(30, 30, 30));
+        getWindow().setNavigationBarColor(Color.rgb(30, 30, 30));
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);

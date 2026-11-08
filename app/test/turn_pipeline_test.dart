@@ -1598,7 +1598,7 @@ void main() {
       await waitFor(() => h.scripted.toolResults.isNotEmpty);
       final (id, out) = h.scripted.toolResults.single;
       expect(id, 'c1');
-      expect(jsonDecode(out), {'ok': true, 'chars': 3});
+      expect(jsonDecode(out), {'ok': true, 'chars': 3, 'delivery': 'dispatched', 'backend': 'platform_input'});
       expect(h.fp.input.log, ['type hey']);
       final card = ofKind(h.conv, MessageKind.tool).single.tool!;
       expect(card.status, ToolStatus.success);

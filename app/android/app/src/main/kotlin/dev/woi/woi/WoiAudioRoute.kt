@@ -17,11 +17,11 @@ import android.util.Log
  *    HAL's call echo canceller (referenced to the whole output mix, other
  *    apps' media included) runs. Output goes to a headset when one is
  *    connected (Bluetooth / wired / USB), else the loudspeaker.
- *  - "media": playback is an ordinary USAGE_MEDIA stream on the recorder's
- *    session, capture uses VOICE_COMMUNICATION in MODE_NORMAL plus the
- *    AcousticEchoCanceler/NoiseSuppressor effects; other apps' media pauses
- *    while the mic is open (transient focus), and the Dart pipeline sends
- *    silence while Woi speaks unless the local barge-in detector fires.
+ *  - "media": playback remains an ordinary USAGE_MEDIA stream. Capture uses
+ *    VOICE_RECOGNITION in MODE_NORMAL with timestamp-aligned SpeexDSP software
+ *    echo cancellation against Woi's actual rendered PCM. Other apps' media
+ *    pauses while the mic is open (transient focus), because its PCM is not
+ *    available to this canceller without a separate capture permission.
  *
  * Also owns the transient audio focus (other apps' music ducks while Woi
  * speaks).
@@ -171,7 +171,7 @@ object WoiAudioRoute {
     private var focus: AudioFocusRequest? = null
 
     // Media route: other apps' media pauses while Woi's mic is open. Their
-    // audio is not in the AEC reference there (only Woi's own track is), so
+    // audio is not in the software AEC reference (only Woi's own track is), so
     // a podcast would otherwise reach the server as user speech.
     private var listenFocus: AudioFocusRequest? = null
     @Volatile private var listenLost = false

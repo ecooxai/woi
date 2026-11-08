@@ -27,7 +27,7 @@ class PythonInstrumentation : Instrumentation() {
     // Keep the target UID, but never start Flutter or a chat
     // connection during the native audio checks. This is test-APK code only.
     override fun newActivity(cl: ClassLoader, className: String, intent: Intent): Activity {
-        if (group == "audio" && className == "dev.woi.woi.MainActivity") {
+        if ((group == "audio" || group == "media_aec") && className == "dev.woi.woi.MainActivity") {
             return HeldAudioTestActivity()
         }
         return super.newActivity(cl, className, intent)
@@ -79,6 +79,10 @@ class PythonInstrumentation : Instrumentation() {
     override fun onStart() {
         if (group == "keyboard") {
             KeyboardDeviceCheck(this).run()
+            return
+        }
+        if (group == "media_aec") {
+            MediaAecDeviceCheck(this).run()
             return
         }
         if (group == "audio") {

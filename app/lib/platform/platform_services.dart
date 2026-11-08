@@ -5,6 +5,7 @@ import '../core/vision/ui_elements.dart';
 import 'app_paths.dart';
 import 'audio_io.dart';
 import 'camera.dart';
+import 'clipboard_access.dart';
 import 'files.dart';
 import 'input_control.dart';
 import 'linux/linux_platform.dart';
@@ -24,6 +25,8 @@ class PlatformServices {
     required this.audio,
     required this.screen,
     required this.input,
+    this.clipboard = const SystemClipboardAccess(),
+    this.showKeyboard,
     required this.shell,
     this.pythonRunner,
     required this.files,
@@ -42,6 +45,10 @@ class PlatformServices {
   final AudioIO audio;
   final ScreenCapture screen;
   final InputControl input;
+  final ClipboardAccess clipboard;
+
+  /// Requests a software keyboard without selecting a text field, when supported.
+  final Future<Map<String, Object?>> Function()? showKeyboard;
   final Shell shell;
   final PythonRunner? pythonRunner;
   PythonRunner get python => pythonRunner ?? ShellPythonRunner(shell);

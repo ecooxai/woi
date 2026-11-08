@@ -139,6 +139,8 @@ object WoiBridge {
             }
             // --- audio ---
             "aecStatus" -> result.success(WoiAudio.status)
+            "liveAudioConfigure" -> result.success(WoiLiveAudio.configure(call.argument<String>("route")))
+            "liveAudioStatus" -> result.success(WoiLiveAudio.status())
             "playerOpen" -> result.success(WoiAudio.playerOpen())
             "playerWrite" -> {
                 WoiAudio.playerWrite(call.arguments as ByteArray)
@@ -167,6 +169,7 @@ object WoiBridge {
                 WoiAudio.clipStop(call.argument<Int>("id")!!)
                 result.success(null)
             }
+            "readClipboard", "writeClipboard" -> WoiClipboard.handle(call, result)
             // --- accessibility input ---
             "accessibilityStatus" -> {
                 WoiA11yKeeper.ensure(ctx, "status")
@@ -178,9 +181,13 @@ object WoiBridge {
                 ctx.startActivity(i)
                 result.success(true)
             }
-            "cancelKeyboard" -> result.success(WoiAccessibilityService.cancelKeyboard())
+            "cancelKeyboard" -> {
+                val keyboard = WoiAccessibilityService.cancelKeyboard()
+                val clipboard = WoiClipboard.cancelPending()
+                result.success(keyboard || clipboard)
+            }
             "controlBegin", "controlInterrupted", "controlUpdate", "controlEnd", "controlReset",
-            "click", "doubleClick", "typeText", "sendKeys", "global", "node", "a11yScreenshot", "focusTarget", "elements" ->
+            "click", "doubleClick", "typeText", "sendKeys", "showKeyboard", "global", "node", "a11yScreenshot", "focusTarget", "elements" ->
                 WoiAccessibilityService.handle(call, result)
             // --- screen share ---
             "shareStart" -> {

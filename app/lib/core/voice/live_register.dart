@@ -13,6 +13,7 @@ void registerGptLive() {
       transportFactory: () => FlutterLiveRtcTransport(
         options: LiveRtcOptions(
           echoCancellation: ctx.settings.echoCancellation,
+          androidAudioRoute: ctx.settings.androidAudioRoute.name,
         ),
         captureDeviceProvider:
             ctx.settings.echoCancellation && ctx.audio is ExternalEchoCapture
