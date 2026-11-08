@@ -1,7 +1,11 @@
+import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../core/models/message.dart';
 import '../theme.dart';
+import 'contextual_find.dart';
 
 /// Messages rendered when a conversation opens.
 const kTranscriptInitialWindow = 50;
@@ -32,6 +36,8 @@ class ChatTranscript extends StatefulWidget {
     required this.conversationId,
     required this.messages,
     required this.tileBuilder,
+    this.find,
+    this.textChanges,
     this.onOpenHistory,
     this.padding = EdgeInsets.zero,
     this.clock = DateTime.now,
@@ -43,6 +49,10 @@ class ChatTranscript extends StatefulWidget {
   final String conversationId;
   final List<Message> messages;
   final TranscriptTileBuilder tileBuilder;
+  final ContextualFindController? find;
+
+  /// Streaming text changes do not otherwise rebuild the windowed list.
+  final Listenable? textChanges;
   final VoidCallback? onOpenHistory;
   final EdgeInsets padding;
 
@@ -89,6 +99,13 @@ class _HistoryEntry extends _Entry {
 
 class ChatTranscriptState extends State<ChatTranscript> {
   final _scroll = ScrollController();
+  final _findScroll = ScrollController();
+  final _findKeys = <String, GlobalKey>{};
+  bool _watchingText = false;
+  List<({int message, TextRange range})> _findMatches = const [];
+  Timer? _findTimer;
+  bool _searching = false;
+  double _normalOffset = 0;
 
   /// Messages rendered (the newest ones).
   late int _window;
@@ -120,11 +137,21 @@ class ChatTranscriptState extends State<ChatTranscript> {
     super.initState();
     _window = widget.initialWindow;
     _lastLength = widget.messages.length;
+    _attachFind();
   }
 
   @override
   void didUpdateWidget(ChatTranscript oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.textChanges != widget.textChanges) {
+      oldWidget.textChanges?.removeListener(_onMessageText);
+      _watchingText = false;
+      _watchTextChanges();
+    }
+    if (oldWidget.find != widget.find) {
+      oldWidget.find?.detach(this);
+      _attachFind();
+    }
     final len = widget.messages.length;
     if (widget.conversationId != oldWidget.conversationId) {
       _window = widget.initialWindow;
@@ -135,12 +162,154 @@ class ChatTranscriptState extends State<ChatTranscript> {
       _window = (_window + len - _lastLength).clamp(widget.initialWindow, widget.maxWindow);
     }
     _lastLength = len;
+    if (_searching) _refreshFind(reveal: false);
   }
 
   @override
   void dispose() {
+    widget.find?.detach(this);
+    _findTimer?.cancel();
+    widget.textChanges?.removeListener(_onMessageText);
+    _findScroll.dispose();
     _scroll.dispose();
     super.dispose();
+  }
+
+  void _attachFind() {
+    widget.find?.attach(this, onQuery: _refreshFind, onNavigate: _revealFind);
+    if (widget.find == null) _refreshFind(reveal: false);
+  }
+
+  void _watchTextChanges() {
+    if (_watchingText == _searching) return;
+    _watchingText = _searching;
+    if (_searching) {
+      widget.textChanges?.addListener(_onMessageText);
+    } else {
+      widget.textChanges?.removeListener(_onMessageText);
+    }
+  }
+
+  void _onMessageText() {
+    _findTimer ??= Timer(const Duration(milliseconds: 100), () {
+      _findTimer = null;
+      if (mounted) _refreshFind(reveal: false);
+    });
+  }
+
+  void _refreshFind({bool reveal = true}) {
+    _findTimer?.cancel();
+    _findTimer = null;
+    final query = widget.find?.query ?? '';
+    final searching = query.trim().isNotEmpty;
+    final wasSearching = _searching;
+    if (searching && !wasSearching && _scroll.hasClients) _normalOffset = _scroll.offset;
+    setState(() {
+      _searching = searching;
+      // Search the complete conversation, not the normal 50–200-message
+      // rendering window. Newest matching messages are shown first.
+      _findMatches = [
+        if (searching)
+          for (var i = widget.messages.length - 1; i >= 0; i--)
+            for (final range in findTextRanges(widget.messages[i].text, query)) (message: i, range: range),
+      ];
+    });
+    _watchTextChanges();
+    widget.find?.setMatches(_findMatches.length, reveal: reveal);
+    if (wasSearching && !searching) {
+      _findKeys.clear();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _searching || !_scroll.hasClients) return;
+        _scroll.jumpTo(_normalOffset.clamp(0.0, _scroll.position.maxScrollExtent).toDouble());
+      });
+    }
+  }
+
+  void _revealFind(int index) {
+    if (index < 0 || index >= _findMatches.length) return;
+    final match = _findMatches[index];
+    if (match.message >= widget.messages.length || match.range.end > widget.messages[match.message].text.length) {
+      _refreshFind();
+      return;
+    }
+    final message = widget.messages[match.message];
+    setState(() {});
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_searching || widget.find?.currentMatch != index) return;
+      final context = _findKeys[message.id]?.currentContext;
+      if (context != null) {
+        Scrollable.ensureVisible(context, alignment: 0.1, duration: const Duration(milliseconds: 160));
+      }
+    });
+  }
+
+  Widget _findResults() {
+    if (_findMatches.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text('No messages match "${widget.find?.query ?? ''}"', key: const ValueKey('chat-find-empty')),
+        ),
+      );
+    }
+    final selected = _findMatches[widget.find!.currentMatch];
+    final messages = _findMatches.map((match) => match.message).toSet().toList();
+    final position = messages.indexOf(selected.message);
+    // Bound expensive message widgets while allowing navigation to every
+    // result. All rows in this small search window are mounted, making the
+    // selected result's scroll position exact even for very long messages.
+    final start = math.max(0, position - 5);
+    final end = math.min(messages.length, start + 16);
+    return SingleChildScrollView(
+      key: ValueKey('transcript-find-${widget.conversationId}'),
+      controller: _findScroll,
+      padding: widget.padding,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final index in messages.sublist(start, end))
+            Container(
+              key: _findKeys.putIfAbsent(widget.messages[index].id, () => GlobalKey()),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                border: index == selected.message ? Border.all(color: WoiColors.cyan.withValues(alpha: 0.6)) : null,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (index == selected.message) _findSnippet(widget.messages[index].text, selected.range),
+                  widget.tileBuilder(context, widget.messages[index], index),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _findSnippet(String text, TextRange range) {
+    // A streaming edit can shorten text before the throttled refresh runs.
+    range = TextRange(start: range.start.clamp(0, text.length), end: range.end.clamp(0, text.length));
+    final start = math.max(0, range.start - 60);
+    final end = math.min(text.length, range.end + 100);
+    String compact(String part) => part.replaceAll(RegExp(r'\s+'), ' ');
+    return Padding(
+      key: const ValueKey('chat-find-current'),
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
+      child: Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(text: '${start > 0 ? '…' : ''}${compact(text.substring(start, range.start))}'),
+            TextSpan(
+              text: compact(text.substring(range.start, range.end)),
+              style: TextStyle(backgroundColor: WoiColors.cyan.withValues(alpha: 0.3), fontWeight: FontWeight.w600),
+            ),
+            TextSpan(text: '${compact(text.substring(range.end, end))}${end < text.length ? '…' : ''}'),
+          ],
+        ),
+        style: body(12.5, color: WoiColors.text),
+      ),
+    );
   }
 
   /// Renders [loadStep] more older messages (capped at [maxWindow]).
@@ -155,6 +324,7 @@ class ChatTranscriptState extends State<ChatTranscript> {
   }
 
   bool _onScroll(ScrollNotification n) {
+    if (_searching) return false;
     if (n.depth != 0 || n.metrics.axis != Axis.vertical) return false;
     final nearTop = n.metrics.extentAfter <= _topSlack;
     final pushingTop = n is OverscrollNotification && n.overscroll > 0;
@@ -191,6 +361,7 @@ class ChatTranscriptState extends State<ChatTranscript> {
 
   @override
   Widget build(BuildContext context) {
+    if (_searching) return _findResults();
     final entries = _entries();
     final index = <Key, int>{for (var i = 0; i < entries.length; i++) entries[i].key: i};
     return NotificationListener<ScrollNotification>(
@@ -248,7 +419,10 @@ class DayChip extends StatelessWidget {
         ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-          child: Text(label, style: body(11.5, weight: FontWeight.w500, color: WoiColors.textDim)),
+          child: Text(
+            label,
+            style: body(11.5, weight: FontWeight.w500, color: WoiColors.textDim),
+          ),
         ),
       ),
     ),

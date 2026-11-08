@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../auth/auth.dart';
+import '../responses/reasoning.dart';
 
 enum MicMode {
   handsFree('Hands-free'),
@@ -131,6 +132,7 @@ class AppSettings {
     this.compressionThreshold = 10000,
     this.compressionModel = 'gpt-6-luna',
     this.delegateModel = 'gpt-6-luna',
+    this.textReasoningEffort = 'medium',
     this.imageModel = 'gpt-image-2.6-flare',
     this.imageQuality = 'low',
     this.imageSize = '1024x1024',
@@ -178,6 +180,11 @@ class AppSettings {
   final int compressionThreshold;
   final String compressionModel;
   final String delegateModel;
+
+  /// Thinking level for text tasks; pointer control keeps its own none effort.
+  final String textReasoningEffort;
+  static const textReasoningEffortChoices = kTextReasoningEffortChoices;
+  static List<String> textReasoningEffortChoicesFor(String model) => reasoningEffortChoices(model);
 
   /// The image model ID is sent unchanged to the selected provider.
   final String imageModel;
@@ -281,9 +288,9 @@ class AppSettings {
   /// the user stops before it answers.
   final int replyDelayMs;
 
-  /// Hands-free: after this many seconds with nothing said the session
-  /// closes, the mic keeps listening, and speech reconnects and sends what
-  /// was said (Realtime backends). 0: stay connected.
+  /// After this many idle seconds, hands-free and gpt-live push-to-talk close
+  /// the session. Hands-free wakes on speech; push-to-talk waits for a press.
+  /// Typed text wakes either mode. 0: stay connected.
   final int idleStandbySeconds;
 
   /// The voice used by the current backend mode.
@@ -358,6 +365,7 @@ class AppSettings {
     int? compressionThreshold,
     String? compressionModel,
     String? delegateModel,
+    String? textReasoningEffort,
     String? imageModel,
     String? imageQuality,
     String? imageSize,
@@ -400,6 +408,9 @@ class AppSettings {
     compressionThreshold: compressionThreshold ?? this.compressionThreshold,
     compressionModel: compressionModel ?? this.compressionModel,
     delegateModel: delegateModel ?? this.delegateModel,
+    textReasoningEffort: textReasoningEffortChoices.contains(textReasoningEffort)
+        ? textReasoningEffort!
+        : this.textReasoningEffort,
     imageModel: imageModel ?? this.imageModel,
     imageQuality: imageQuality ?? this.imageQuality,
     imageSize: imageSize ?? this.imageSize,
@@ -458,6 +469,7 @@ class AppSettings {
     'compressionThreshold': compressionThreshold,
     'compressionModel': compressionModel,
     'delegateModel': delegateModel,
+    'textReasoningEffort': textReasoningEffort,
     'imageModel': imageModel,
     'imageQuality': imageQuality,
     'imageSize': imageSize,
@@ -516,6 +528,9 @@ class AppSettings {
       compressionThreshold: i('compressionThreshold', d.compressionThreshold).clamp(1000, 1000000),
       compressionModel: s('compressionModel', d.compressionModel),
       delegateModel: s('delegateModel', d.delegateModel),
+      textReasoningEffort: textReasoningEffortChoices.contains(j['textReasoningEffort'])
+          ? j['textReasoningEffort'] as String
+          : d.textReasoningEffort,
       // Move the previous default forward without replacing custom choices.
       imageModel: savedImageModel.isEmpty || savedImageModel == 'gpt-image-flare-2.1' ? d.imageModel : savedImageModel,
       imageQuality: const ['low', 'medium', 'high', 'xhigh', 'max', 'auto'].contains(j['imageQuality'])

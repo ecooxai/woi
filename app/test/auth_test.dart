@@ -5,9 +5,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:woi/core/auth/auth.dart';
 import 'package:woi/core/settings/settings.dart';
 
-String _jwt(DateTime exp, {String sub = 'u'}) {
+String _jwt(DateTime exp, {String sub = 'u', Map<String, Object?> claims = const {}}) {
   String enc(Object o) => base64Url.encode(utf8.encode(jsonEncode(o))).replaceAll('=', '');
-  return '${enc({'alg': 'none'})}.${enc({'exp': exp.millisecondsSinceEpoch ~/ 1000, 'sub': sub})}.c2ln';
+  return '${enc({'alg': 'none'})}.${enc({'exp': exp.millisecondsSinceEpoch ~/ 1000, 'sub': sub, ...claims})}.c2ln';
 }
 
 void main() {
@@ -65,6 +65,53 @@ void main() {
     refreshUrl: Uri.parse('http://127.0.0.1:${server.port}/oauth/token'),
     now: () => now,
   );
+
+  test('login identity prefers ID-token email and never shows an account identifier', () async {
+    final access = _jwt(
+      now.add(const Duration(hours: 100)),
+      claims: {
+        'https://api.openai.com/profile': {'email': 'fallback@example.test'},
+      },
+    );
+    final id = _jwt(now.add(const Duration(hours: 100)), claims: {'email': 'member@example.test'});
+    await file.writeAsString(
+      jsonEncode({
+        'tokens': {'access_token': access, 'id_token': id, 'account_id': 'private-account-suffix'},
+      }),
+    );
+    final info = await CodexAuthInfo.load(path: file.path);
+    expect(info.email, 'member@example.test');
+    expect(info.summary, startsWith('Signed in as member@example.test'));
+    expect(info.summary, isNot(contains('private-account')));
+    expect(info.summary, isNot(contains(access)));
+    expect(info.summary, isNot(contains(id)));
+    expect(requests, isEmpty, reason: 'display metadata does not refresh or contact the provider');
+  });
+
+  test('missing or malformed ID-token email falls back safely without inventing an identity', () async {
+    final access = _jwt(
+      now.add(const Duration(hours: 100)),
+      claims: {
+        'https://api.openai.com/profile': {'email': 'fallback@example.test'},
+      },
+    );
+    for (final id in [
+      'malformed',
+      _jwt(now, claims: {'email': 3}),
+    ]) {
+      await file.writeAsString(
+        jsonEncode({
+          'tokens': {'access_token': access, 'id_token': id},
+        }),
+      );
+      expect((await CodexAuthInfo.load(path: file.path)).email, 'fallback@example.test');
+    }
+    await writeAuth(_jwt(now.add(const Duration(hours: 100))));
+    final unknown = await CodexAuthInfo.load(path: file.path);
+    expect(unknown.email, isNull);
+    expect(unknown.summary, startsWith('Signed in'));
+    expect(unknown.summary, isNot(contains('account')));
+  });
 
   test('fresh token: no refresh, Codex headers', () async {
     final access = _jwt(now.add(const Duration(hours: 100)));

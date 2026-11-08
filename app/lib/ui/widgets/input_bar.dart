@@ -1,6 +1,6 @@
 import 'dart:async';
-import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/app_controller.dart';
@@ -10,6 +10,7 @@ import '../../platform/audio_io.dart';
 import '../theme.dart';
 import 'camera_preview.dart';
 import 'context_meter.dart';
+import 'screen_share_button.dart';
 import 'controls.dart';
 import 'throttled_builder.dart';
 import 'voice_status.dart';
@@ -19,9 +20,18 @@ import 'voice_status.dart';
 /// the context meter. It listens to the pipeline itself, so nothing above
 /// it rebuilds on phase changes.
 class InputBar extends StatefulWidget {
-  const InputBar({super.key, required this.controller, this.focusNode, this.phone = false});
+  const InputBar({
+    super.key,
+    required this.controller,
+    this.focusNode,
+    this.phone = false,
+    this.allowScreenShare = true,
+  });
   final AppController controller;
   final FocusNode? focusNode;
+
+  /// The Android assist panel already owns screen sharing.
+  final bool allowScreenShare;
 
   /// Phone layout: 48dp targets, short labels, mic-mode menu.
   final bool phone;
@@ -94,7 +104,7 @@ class _InputBarState extends State<InputBar> {
             ph == AssistantPhase.speaking || ph == AssistantPhase.thinking || ph == AssistantPhase.toolRunning;
         final s = c.settings;
         final phone = widget.phone;
-        final compactControls = Platform.isLinux;
+        final compactControls = defaultTargetPlatform == TargetPlatform.linux;
         final includesSystemAudio = switch (c.platform.audio) {
           final HeldAudioCapture capture => capture.includesSystemAudio,
           _ => false,
@@ -166,6 +176,8 @@ class _InputBarState extends State<InputBar> {
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (defaultTargetPlatform == TargetPlatform.android && widget.allowScreenShare)
+                const ScreenShareButton(size: kTouchTarget),
               CameraToggle(
                 on: c.cameraOn,
                 busy: c.cameraBusy,
@@ -173,7 +185,7 @@ class _InputBarState extends State<InputBar> {
                 size: kTouchTarget,
                 visualSize: compactControls ? 44 : kTouchTarget,
               ),
-              const SizedBox(width: 6),
+              SizedBox(width: phone ? 0 : 6),
               MicButton(
                 visualSize: compactControls ? 40 : kTouchTarget,
                 mode: s.micMode,
@@ -192,7 +204,7 @@ class _InputBarState extends State<InputBar> {
         return Container(
           key: const ValueKey('input-bar'),
           decoration: surfaceDecoration(radius: WoiRadii.lg),
-          padding: EdgeInsets.fromLTRB(6, 6, 6, phone ? 0 : 6),
+          padding: EdgeInsets.fromLTRB(phone ? 4 : 6, 6, phone ? 4 : 6, phone ? 0 : 6),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,

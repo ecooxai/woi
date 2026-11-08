@@ -21,7 +21,9 @@ const kCodexRefreshUrl = 'https://auth.openai.com/oauth/token';
 String codexUserAgent() {
   String release = '';
   try {
-    release = Platform.operatingSystemVersion.split(' ').firstWhere((s) => RegExp(r'^\d').hasMatch(s), orElse: () => '');
+    release = Platform.operatingSystemVersion
+        .split(' ')
+        .firstWhere((s) => RegExp(r'^\d').hasMatch(s), orElse: () => '');
   } catch (_) {}
   final os = Platform.isLinux ? 'Linux' : Platform.operatingSystem;
   return '$kCodexOriginator/$kCodexVersion ($os $release; ${_arch()}) woi';
@@ -108,6 +110,7 @@ class CodexAuthInfo {
     required this.path,
     this.accessToken,
     this.accountId,
+    this.email,
     this.lastRefresh,
     this.expiresAt,
     this.error,
@@ -116,6 +119,9 @@ class CodexAuthInfo {
   final String path;
   final String? accessToken;
   final String? accountId;
+
+  /// Display-only identity from the login token; never used for authorization.
+  final String? email;
   final DateTime? lastRefresh;
   final DateTime? expiresAt;
   final String? error;
@@ -126,10 +132,8 @@ class CodexAuthInfo {
   String get summary {
     if (error != null) return error!;
     if (!isAvailable) return 'No Codex login found at $path';
-    final acct = accountId == null || accountId!.length < 6
-        ? ''
-        : ' · account\u00a0…\u2060${accountId!.substring(accountId!.length - 6)}';
-    // No-break spaces keep "account …abc123", the date-time and "valid 7 d" whole when the chip wraps.
+    final identity = email == null ? 'Signed in' : 'Signed in as $email';
+    // Keep the date-time and validity duration together when the chip wraps.
     final stamp = lastRefresh?.toLocal().toString().split('.').first.replaceFirst(' ', '\u00a0');
     final when = stamp == null ? '' : ' · refreshed $stamp';
     final exp = expiresAt;
@@ -138,7 +142,21 @@ class CodexAuthInfo {
       final left = exp.difference(DateTime.now().toUtc());
       valid = left.isNegative ? ' · token expired (will refresh)' : ' · valid\u00a0${_fmtLeft(left)}';
     }
-    return 'Codex login found$acct$when$valid';
+    return '$identity$when$valid';
+  }
+
+  static String? _loginEmail(String? idToken, String? accessToken) {
+    for (final token in [idToken, accessToken]) {
+      if (token == null) continue;
+      final claims = jwtClaims(token);
+      final profile = claims?['https://api.openai.com/profile'];
+      for (final value in [claims?['email'], if (profile is Map) profile['email']]) {
+        if (value is! String) continue;
+        final email = value.trim();
+        if (RegExp(r'^[^\s@]+@[^\s@]+$').hasMatch(email)) return email;
+      }
+    }
+    return null;
   }
 
   static String _fmtLeft(Duration d) => d.inHours >= 48 ? '${d.inDays}\u00a0d' : '${d.inHours}\u00a0h';
@@ -162,16 +180,20 @@ class CodexAuthInfo {
       final tokens = json['tokens'];
       String? access;
       String? account;
+      String? idToken;
       if (tokens is Map) {
         access = tokens['access_token'] as String?;
         account = tokens['account_id'] as String?;
+        idToken = tokens['id_token'] is String ? tokens['id_token'] as String : null;
       }
       _remember(access);
+      _remember(idToken);
       final lr = json['last_refresh'];
       return CodexAuthInfo(
         path: file.path,
         accessToken: access,
         accountId: account,
+        email: _loginEmail(idToken, access),
         lastRefresh: lr is String ? DateTime.tryParse(lr) : null,
         expiresAt: access == null ? null : jwtExpiry(access),
       );
@@ -283,7 +305,9 @@ class CodexAuthManager {
       req.headers.contentType = ContentType.json;
       req.headers.set('User-Agent', codexUserAgent());
       req.headers.set('originator', kCodexOriginator);
-      req.write(jsonEncode({'client_id': kCodexClientId, 'grant_type': 'refresh_token', 'refresh_token': refreshToken}));
+      req.write(
+        jsonEncode({'client_id': kCodexClientId, 'grant_type': 'refresh_token', 'refresh_token': refreshToken}),
+      );
       final res = await req.close().timeout(const Duration(seconds: 45));
       final body = await utf8.decodeStream(res);
       if (res.statusCode != 200) {

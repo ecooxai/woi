@@ -15,12 +15,13 @@ void registerGptLive() {
           echoCancellation: ctx.settings.echoCancellation,
           androidAudioRoute: ctx.settings.androidAudioRoute.name,
         ),
-        captureDeviceProvider:
-            ctx.settings.echoCancellation && ctx.audio is ExternalEchoCapture
+        captureDeviceProvider: ctx.settings.echoCancellation && ctx.audio is ExternalEchoCapture
             ? (ctx.audio! as ExternalEchoCapture).acquireEchoCapture
             : null,
       ),
       credentialsProvider: ctx.credentials,
+      delegationReasoningEffort: ctx.settings.textReasoningEffort,
+      delegationReasoningEffortProvider: ctx.textReasoningEffort,
     ),
   );
 }

@@ -227,6 +227,7 @@ class AppController extends ChangeNotifier {
           ],
           environment: environmentNote,
           cancellationEpoch: () => _delegateCancellationEpoch,
+          reasoningEffortProvider: () => _settings.textReasoningEffort,
         ),
     _guard,
     onChoice: (c) {
@@ -387,6 +388,7 @@ class AppController extends ChangeNotifier {
       sel = createVoiceBackend(
         BackendContext(
           settings: _settings.copyWith(backendMode: BackendMode.direct),
+          textReasoningEffort: () => _settings.textReasoningEffort,
           credentials: credentials,
           audio: platform.audio,
         ),
@@ -398,7 +400,14 @@ class AppController extends ChangeNotifier {
         notice: 'gpt-live: ${limit.message}. Using Direct realtime (${_settings.realtimeModel}) until then.',
       );
     } else {
-      sel = createVoiceBackend(BackendContext(settings: _settings, credentials: credentials, audio: platform.audio));
+      sel = createVoiceBackend(
+        BackendContext(
+          settings: _settings,
+          credentials: credentials,
+          audio: platform.audio,
+          textReasoningEffort: () => _settings.textReasoningEffort,
+        ),
+      );
       _selection = sel;
     }
     final notice = _selection!.notice;
@@ -722,8 +731,10 @@ class AppController extends ChangeNotifier {
     bargeInFloor: platform.isMobile && _settings.echoCancellation ? 0.05 : 0.02,
     // Media now has a playback-reference software AEC. Keep full-duplex
     // speech/interruptions while it is enabled; gate only uncancelled media.
-    halfDuplexWhileSpeaking: platform.audio is AudioRouted &&
-        _settings.androidAudioRoute == AndroidAudioRoute.media && !_settings.echoCancellation,
+    halfDuplexWhileSpeaking:
+        platform.audio is AudioRouted &&
+        _settings.androidAudioRoute == AndroidAudioRoute.media &&
+        !_settings.echoCancellation,
     stopWordDetection: _settings.stopWordDetection,
     stopWords: _settings.stopWords,
     idleStandby: Duration(seconds: _settings.idleStandbySeconds),

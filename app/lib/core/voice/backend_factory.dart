@@ -6,15 +6,14 @@ import 'voice_backend.dart';
 
 /// What a backend builder gets from the app.
 class BackendContext {
-  const BackendContext({
-    required this.settings,
-    required this.credentials,
-    this.audio,
-  });
+  const BackendContext({required this.settings, required this.credentials, this.audio, this.textReasoningEffort});
 
   final AudioIO? audio;
 
   final AppSettings settings;
+
+  /// Read at each text task so editing thinking does not restart voice.
+  final String Function()? textReasoningEffort;
 
   /// Fresh credentials for the mode's auth (Codex token refreshed when
   /// close to expiry, or the API key). Call on every (re)connect.
@@ -42,12 +41,7 @@ class GptLiveHook {
 }
 
 class BackendSelection {
-  const BackendSelection({
-    required this.backend,
-    required this.mode,
-    required this.model,
-    this.notice,
-  });
+  const BackendSelection({required this.backend, required this.mode, required this.model, this.notice});
 
   final VoiceBackend backend;
 
@@ -62,26 +56,16 @@ class BackendSelection {
 }
 
 /// Builds the voice backend for [BackendContext.settings].
-BackendSelection createVoiceBackend(
-  BackendContext ctx, {
-  VoiceBackend Function(BackendContext ctx)? realtimeBuilder,
-}) {
+BackendSelection createVoiceBackend(BackendContext ctx, {VoiceBackend Function(BackendContext ctx)? realtimeBuilder}) {
   final s = ctx.settings;
   VoiceBackend realtime() =>
       realtimeBuilder?.call(ctx) ??
-      RealtimeWsBackend(
-        credentialsProvider: ctx.credentials,
-        vadSilenceMs: s.replyDelayMs,
-      );
+      RealtimeWsBackend(credentialsProvider: ctx.credentials, vadSilenceMs: s.replyDelayMs);
   switch (s.backendMode) {
     case BackendMode.gptLive:
       final live = GptLiveHook.builder;
       if (live != null) {
-        return BackendSelection(
-          backend: live(ctx),
-          mode: BackendMode.gptLive,
-          model: s.voiceModel,
-        );
+        return BackendSelection(backend: live(ctx), mode: BackendMode.gptLive, model: s.voiceModel);
       }
       return BackendSelection(
         backend: realtime(),
@@ -93,10 +77,6 @@ BackendSelection createVoiceBackend(
       );
     case BackendMode.direct:
     case BackendMode.apiKey:
-      return BackendSelection(
-        backend: realtime(),
-        mode: s.backendMode,
-        model: s.realtimeModel,
-      );
+      return BackendSelection(backend: realtime(), mode: s.backendMode, model: s.realtimeModel);
   }
 }

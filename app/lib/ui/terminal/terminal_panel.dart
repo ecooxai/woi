@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -5,6 +7,7 @@ import 'package:xterm/xterm.dart';
 
 import '../../core/app_actions.dart';
 import '../../core/terminal/terminal_hub.dart';
+import '../widgets/contextual_find.dart';
 
 /// True while keyboard focus is inside a terminal view (the home screen then
 /// leaves Space, Esc, Ctrl+K etc. to the shell).
@@ -106,8 +109,16 @@ bool get _desktop => switch (defaultTargetPlatform) {
 };
 
 class TerminalPanel extends StatefulWidget {
-  const TerminalPanel({super.key, required this.hub, this.actions, this.fontSize = 13.5, this.hardwareKeyboardOnly});
+  const TerminalPanel({
+    super.key,
+    required this.hub,
+    this.actions,
+    this.fontSize = 13.5,
+    this.hardwareKeyboardOnly,
+    this.find,
+  });
   final TerminalHub hub;
+  final ContextualFindController? find;
 
   /// The tab strip's buttons, shortcuts and menu go through these (the same
   /// paths voice uses); without them they act on [hub] directly (tests).
@@ -128,12 +139,21 @@ class TerminalPanel extends StatefulWidget {
 
 class _TerminalPanelState extends State<TerminalPanel> {
   final _focus = <int, FocusNode>{};
+  final _findScroll = <int, ScrollController>{};
+  final _terminalHostKey = GlobalKey(debugLabel: 'terminal-find-host');
+  Terminal? _observedTerminal;
+  TerminalHighlight? _findHighlight;
+  Timer? _findTimer;
+  List<({CellOffset start, CellOffset end})> _findMatches = const [];
 
   TerminalHub get hub => widget.hub;
 
   @override
   void initState() {
     super.initState();
+    hub.addListener(_observeTerminal);
+    _observeTerminal();
+    _attachFind();
     // Opening the view starts the first shell (after this frame: the hub
     // notifies listeners that may be mid-build).
     if (hub.sessions.isEmpty) {
@@ -144,7 +164,29 @@ class _TerminalPanelState extends State<TerminalPanel> {
   }
 
   @override
+  void didUpdateWidget(TerminalPanel old) {
+    super.didUpdateWidget(old);
+    if (old.hub != hub) {
+      old.hub.removeListener(_observeTerminal);
+      hub.addListener(_observeTerminal);
+      _observeTerminal();
+    }
+    if (old.find != widget.find) {
+      old.find?.detach(this);
+      _attachFind();
+    }
+  }
+
+  @override
   void dispose() {
+    widget.find?.detach(this);
+    hub.removeListener(_observeTerminal);
+    _observedTerminal?.removeListener(_onTerminalText);
+    _findTimer?.cancel();
+    _clearFindHighlight();
+    for (final scroll in _findScroll.values) {
+      scroll.dispose();
+    }
     for (final f in _focus.values) {
       f.dispose();
     }
@@ -153,8 +195,101 @@ class _TerminalPanelState extends State<TerminalPanel> {
 
   FocusNode _nodeFor(TerminalSession s) => _focus.putIfAbsent(s.id, () => FocusNode(debugLabel: 'terminal-${s.id}'));
 
+  void _attachFind() {
+    widget.find?.attach(this, onQuery: _refreshFind, onNavigate: _revealFind);
+    if (widget.find == null) _refreshFind(reveal: false);
+  }
+
+  void _observeTerminal() {
+    final terminal = hub.active?.terminal;
+    if (identical(terminal, _observedTerminal)) return;
+    _observedTerminal?.removeListener(_onTerminalText);
+    _observedTerminal = terminal;
+    terminal?.addListener(_onTerminalText);
+    _refreshFind();
+  }
+
+  void _onTerminalText() {
+    if (widget.find?.query.trim().isEmpty ?? true) return;
+    _findTimer ??= Timer(const Duration(milliseconds: 80), () {
+      _findTimer = null;
+      if (mounted) _refreshFind(reveal: false);
+    });
+  }
+
+  void _clearFindHighlight() {
+    final highlight = _findHighlight;
+    _findHighlight = null;
+    if (highlight == null) return;
+    highlight.dispose();
+    highlight.p1.dispose();
+    highlight.p2.dispose();
+  }
+
+  void _refreshFind({bool reveal = true}) {
+    _findTimer?.cancel();
+    _findTimer = null;
+    _clearFindHighlight();
+    final terminal = hub.active?.terminal;
+    _findMatches = terminal == null ? const [] : findTerminalMatches(terminal, widget.find?.query ?? '');
+    widget.find?.setMatches(_findMatches.length, reveal: false);
+    final index = widget.find?.currentMatch ?? -1;
+    if (index < 0) return;
+    if (reveal) {
+      _revealFind(index);
+    } else {
+      _highlightFind(index);
+    }
+  }
+
+  void _highlightFind(int index) {
+    _clearFindHighlight();
+    final active = hub.active;
+    if (active == null || index < 0 || index >= _findMatches.length) return;
+    final match = _findMatches[index];
+    final buffer = active.terminal.buffer;
+    _findHighlight = active.controller.highlight(
+      p1: buffer.createAnchor(match.start.x, match.start.y),
+      p2: buffer.createAnchor(match.end.x, match.end.y),
+      color: const Color(0x668ACBFF),
+    );
+  }
+
+  ScrollController _scrollFor(TerminalSession session) => _findScroll.putIfAbsent(session.id, () => ScrollController());
+
+  void _revealFind(int index) {
+    if (index < 0 || index >= _findMatches.length) return;
+    _highlightFind(index);
+    final session = hub.active;
+    final match = _findMatches[index];
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || hub.active != session || widget.find?.currentMatch != index) return;
+      TerminalViewState? view;
+      void visit(Element element) {
+        if (element is StatefulElement && element.state is TerminalViewState) {
+          view = element.state as TerminalViewState;
+        } else {
+          element.visitChildren(visit);
+        }
+      }
+
+      _terminalHostKey.currentContext?.visitChildElements(visit);
+      final scroll = _findScroll[session?.id];
+      if (view == null || scroll == null || !scroll.hasClients) return;
+      final offset = match.start.y * view!.renderTerminal.lineHeight - scroll.position.viewportDimension * 0.3;
+      // Find navigation is an exact jump; moving away from the bottom also
+      // stops xterm following new output while the user reads this result.
+      scroll.jumpTo(offset.clamp(0.0, scroll.position.maxScrollExtent).toDouble());
+    });
+  }
+
   void _prune() {
     final ids = hub.sessions.map((s) => s.id).toSet();
+    _findScroll.removeWhere((id, scroll) {
+      if (ids.contains(id)) return false;
+      scroll.dispose();
+      return true;
+    });
     _focus.removeWhere((id, f) {
       if (ids.contains(id)) return false;
       f.dispose();
@@ -228,10 +363,7 @@ class _TerminalPanelState extends State<TerminalPanel> {
         if (text != null) s.terminal.paste(text);
       case 'all':
         final t = s.terminal;
-        s.controller.setSelection(
-          t.buffer.createAnchor(0, 0),
-          t.buffer.createAnchor(t.viewWidth, t.buffer.height - 1),
-        );
+        s.controller.setSelection(t.buffer.createAnchor(0, 0), t.buffer.createAnchor(t.viewWidth, t.buffer.height - 1));
       case 'clear':
         s.controller.clearSelection();
         s.terminal.eraseScrollbackOnly();
@@ -291,6 +423,7 @@ class _TerminalPanelState extends State<TerminalPanel> {
                         ),
                       )
                     : Actions(
+                        key: _terminalHostKey,
                         actions: {
                           _NewTabIntent: CallbackAction<_NewTabIntent>(onInvoke: (_) => _newTab()),
                           _CloseTabIntent: CallbackAction<_CloseTabIntent>(onInvoke: (_) => _close(active)),
@@ -306,6 +439,7 @@ class _TerminalPanelState extends State<TerminalPanel> {
                           active.terminal,
                           key: ValueKey('terminal-view-${active.id}'),
                           controller: active.controller,
+                          scrollController: _scrollFor(active),
                           focusNode: _nodeFor(active),
                           autofocus: true,
                           hardwareKeyboardOnly: widget.hardwareKeyboardOnly ?? _desktop,
@@ -314,7 +448,12 @@ class _TerminalPanelState extends State<TerminalPanel> {
                             fontSize: widget.fontSize,
                             height: 1.25,
                             fontFamily: 'JetBrainsMono',
-                            fontFamilyFallback: const ['DejaVu Sans Mono', 'Noto Sans Mono', 'monospace', 'Noto Color Emoji'],
+                            fontFamilyFallback: const [
+                              'DejaVu Sans Mono',
+                              'Noto Sans Mono',
+                              'monospace',
+                              'Noto Color Emoji',
+                            ],
                           ),
                           padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
                           shortcuts: _shortcuts,
@@ -331,6 +470,40 @@ class _TerminalPanelState extends State<TerminalPanel> {
       },
     );
   }
+}
+
+/// Search scrollback and the visible buffer. Wrapped rows are joined, and
+/// UTF-16 offsets are mapped back to cells so wide Unicode characters do not
+/// shift the highlighted result.
+@visibleForTesting
+List<({CellOffset start, CellOffset end})> findTerminalMatches(Terminal terminal, String query) {
+  if (query.trim().isEmpty) return const [];
+  final text = StringBuffer();
+  final starts = <CellOffset>[];
+  final ends = <CellOffset>[];
+  final lines = terminal.buffer.lines;
+  for (var y = 0; y < lines.length; y++) {
+    final line = lines[y];
+    if (y > 0 && !line.isWrapped) {
+      text.write('\n');
+      starts.add(CellOffset(0, y));
+      ends.add(CellOffset(0, y));
+    }
+    for (var x = 0; x < line.length;) {
+      final code = line.getCodePoint(x);
+      final width = line.getWidth(x) > 0 ? line.getWidth(x) : 1;
+      final character = code == 0 ? ' ' : String.fromCharCode(code);
+      text.write(character);
+      for (var unit = 0; unit < character.length; unit++) {
+        starts.add(CellOffset(x, y));
+        ends.add(CellOffset(x + width, y));
+      }
+      x += width;
+    }
+  }
+  return [
+    for (final range in findTextRanges(text.toString(), query)) (start: starts[range.start], end: ends[range.end - 1]),
+  ];
 }
 
 class _RenameDialog extends StatefulWidget {

@@ -31,6 +31,7 @@ class FakeLiveTransport implements LiveRtcTransport {
     captureSuspendedAtOffer = captureSuspended;
     return 'v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n';
   }
+
   @override
   Future<void> setAnswer(String sdp) async => answer = sdp;
   @override
@@ -163,6 +164,7 @@ class FakeDelegationModel extends DelegationModel {
   final List<DelegationModelTurn> turns;
   final Duration latency;
   final requests = <({String model, List<Map<String, Object?>> input, List<Map<String, Object?>> tools})>[];
+  final reasoningEfforts = <String?>[];
   bool closed = false;
 
   @override
@@ -175,6 +177,7 @@ class FakeDelegationModel extends DelegationModel {
     void Function(DelegationToolCall call)? onToolCall,
   }) async {
     requests.add((model: model, input: List.of(input), tools: tools));
+    reasoningEfforts.add(reasoningEffort);
     await Future<void>.delayed(latency);
     final t = turns.isEmpty ? const DelegationModelTurn(text: 'Nothing to do.', calls: []) : turns.removeAt(0);
     for (final c in t.calls) {

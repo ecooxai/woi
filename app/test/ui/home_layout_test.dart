@@ -1,9 +1,11 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:woi/core/app_controller.dart';
+import 'package:woi/platform/android/android_bridge.dart';
 import 'package:woi/core/auth/auth.dart';
 import 'package:woi/core/context/compressor.dart';
 import 'package:woi/core/models/message.dart';
@@ -20,6 +22,7 @@ import 'package:woi/ui/theme.dart';
 import 'package:woi/ui/widgets/tab_strip.dart';
 import 'package:woi/ui/widgets/voice_status.dart';
 import 'package:woi/ui/widgets/input_bar.dart';
+import 'package:woi/ui/widgets/contextual_find.dart';
 
 import '../fakes/fakes.dart';
 
@@ -151,6 +154,184 @@ ConversationSummary _sum(String id, int minutesAgo) => ConversationSummary(
 String? _err(Object? e) => e == null ? null : (e is FlutterError ? e.toStringDeep() : '$e');
 
 void main() {
+  testWidgets('Android screen share sits immediately before camera and keeps native start-stop behavior', (t) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    final calls = <String>[];
+    final bridge = AndroidBridge.instance;
+    bridge.sharing.value = false;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(AndroidBridge.method, (
+      call,
+    ) async {
+      calls.add(call.method);
+      if (call.method == 'shareStart') {
+        bridge.sharing.value = true;
+        return true;
+      }
+      return null;
+    });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+        AndroidBridge.method,
+        null,
+      );
+      bridge.sharing.value = false;
+    });
+    final env = _Env();
+    await env.start(t, savedSettings: const AppSettings(micMode: MicMode.muted));
+    for (final width in [320.0, 360.0, 600.0, 1200.0]) {
+      await _pumpHome(t, env.c, Size(width, 850));
+      final share = find.byKey(const ValueKey('screen-share'));
+      final camera = find.byKey(const ValueKey('camera-toggle'));
+      expect(share, findsOneWidget);
+      expect(find.ancestor(of: share, matching: find.byKey(const ValueKey('input-bar'))), findsOneWidget);
+      expect(t.getRect(share).right, closeTo(t.getRect(camera).left, 0.1));
+      expect(t.getCenter(share).dy, closeTo(t.getCenter(camera).dy, 0.1));
+      expect(t.getSize(share).width, greaterThanOrEqualTo(48));
+      expect(find.byKey(const ValueKey('contextual-find-button')), findsOneWidget);
+      expect(t.takeException(), isNull, reason: 'Android composer must fit at $width logical pixels.');
+    }
+    await t.tap(find.byKey(const ValueKey('screen-share')));
+    await t.pump();
+    expect(calls, ['shareStart']);
+    expect(bridge.sharing.value, isTrue);
+    await t.tap(find.byKey(const ValueKey('screen-share')));
+    await t.pump();
+    expect(calls, ['shareStart', 'shareStop']);
+    expect(bridge.sharing.value, isFalse);
+
+    await t.pumpWidget(
+      MaterialApp(
+        theme: buildWoiTheme(),
+        home: Scaffold(body: WoiTabs(controller: env.c, embedded: true)),
+      ),
+    );
+    await _settle(t);
+    expect(
+      find.byKey(const ValueKey('screen-share')),
+      findsNothing,
+      reason: 'The assist panel keeps its existing gate.',
+    );
+    await env.stop(t);
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('filtered Settings controls remain usable when the find input loses focus', (t) async {
+    final env = _Env();
+    await env.start(t, savedSettings: const AppSettings(micMode: MicMode.muted, echoCancellation: true));
+    addTearDown(() => env.stop(t));
+    await _pumpHome(t, env.c, const Size(390, 850));
+    env.c.actions.showView(HomeView.settings);
+    await _settle(t);
+    await t.tap(find.byKey(const ValueKey('contextual-find-button')));
+    await t.pump();
+    final input = find.byKey(const ValueKey('contextual-find-input'));
+    await t.enterText(input, 'echo cancellation');
+    await _settle(t);
+    final settings = t.widget<SettingsView>(find.byType(SettingsView));
+    final toggle = find.byType(Switch);
+    expect(toggle.hitTestable(), findsOneWidget);
+    await t.tap(toggle);
+    await _settle(t);
+    expect(env.c.settings.echoCancellation, isFalse);
+    expect(settings.find!.query, 'echo cancellation');
+    expect(find.text('Echo cancellation'), findsOneWidget);
+    expect(input, findsOneWidget);
+    final editable = t.widget<EditableText>(find.descendant(of: input, matching: find.byType(EditableText)));
+    expect(editable.focusNode.hasFocus, isFalse);
+    await t.sendKeyEvent(LogicalKeyboardKey.escape);
+    await t.pump();
+    expect(input, findsNothing);
+    expect(settings.find!.query, isEmpty);
+    expect(t.takeException(), isNull);
+  });
+
+  testWidgets('top-bar find follows the current tab with Ctrl+F and no duplicate Settings field', (t) async {
+    final env = _Env();
+    await env.start(t, savedSettings: const AppSettings(micMode: MicMode.muted));
+    env.c.notes.setText('# Plan\nunique note target');
+    env.c.pipeline.conversation.messages.add(Message(kind: MessageKind.user, text: 'unique chat target'));
+    await _pumpHome(t, env.c, const Size(320, 850));
+    env.c.actions.showView(HomeView.settings);
+    await _settle(t);
+    expect(find.byKey(const ValueKey('settings-search')), findsNothing);
+    expect(find.byKey(const ValueKey('contextual-find-button')), findsOneWidget);
+
+    await t.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await t.sendKeyEvent(LogicalKeyboardKey.keyF);
+    await t.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await t.pump();
+    final input = find.byKey(const ValueKey('contextual-find-input'));
+    expect(input, findsOneWidget);
+    await t.enterText(input, 'stop words');
+    await _settle(t);
+    final settings = t.widget<SettingsView>(find.byType(SettingsView));
+    expect(settings.find!.matchCount, greaterThan(0));
+    expect(find.text('Stop words'), findsOneWidget);
+    final button = t.getRect(find.byKey(const ValueKey('contextual-find-button')));
+    final popup = t.getRect(find.byKey(const ValueKey('contextual-find-popover')));
+    expect(popup.top, greaterThanOrEqualTo(button.bottom));
+    expect(popup.left, greaterThanOrEqualTo(0));
+    expect(popup.right, lessThanOrEqualTo(320));
+
+    env.c.actions.showView(HomeView.note);
+    await _settle(t);
+    expect(input, findsNothing);
+    expect(settings.find!.query, isEmpty);
+    await t.tap(find.byKey(const ValueKey('contextual-find-button')));
+    await t.pump();
+    await t.enterText(input, 'unique note');
+    await _settle(t);
+    final editor = t.state<NoteEditorState>(find.byType(NoteEditor));
+    expect(editor.textController.selection.textInside(env.c.notes.text), 'unique note');
+
+    env.c.actions.showView(HomeView.chat);
+    await _settle(t);
+    expect(input, findsNothing);
+    await t.tap(find.byKey(const ValueKey('contextual-find-button')));
+    await t.pump();
+    await t.enterText(input, 'unique chat');
+    await _settle(t);
+    expect(find.byKey(const ValueKey('chat-find-current')), findsOneWidget);
+    expect(find.text('1 / 1'), findsOneWidget);
+    expect(
+      t.getRect(find.byKey(const ValueKey('chat-find-current'))).top,
+      greaterThanOrEqualTo(t.getRect(find.byKey(const ValueKey('contextual-find-popover'))).bottom),
+      reason: 'The current match is readable below the floating panel at 320px.',
+    );
+    await t.sendKeyEvent(LogicalKeyboardKey.escape);
+    await t.pump();
+    expect(input, findsNothing);
+    expect(find.byKey(const ValueKey('chat-find-current')), findsNothing);
+
+    await _pumpHome(t, env.c, const Size(1200, 850));
+    await t.tap(find.byKey(const ValueKey('note-editor-field')));
+    await t.pump();
+    await t.tap(find.byKey(const ValueKey('contextual-find-button')));
+    await t.pump();
+    await t.enterText(input, 'unique note');
+    await _settle(t);
+    expect(
+      t.state<NoteEditorState>(find.byType(NoteEditor)).textController.selection.textInside(env.c.notes.text),
+      'unique note',
+    );
+    await t.sendKeyEvent(LogicalKeyboardKey.escape);
+    await t.pump();
+    await t.tap(find.byKey(const ValueKey('composer-field')));
+    await t.pump();
+    await t.tap(find.byKey(const ValueKey('contextual-find-button')));
+    await t.pump();
+    await t.enterText(input, 'unique chat');
+    await _settle(t);
+    expect(
+      find.byKey(const ValueKey('chat-find-current')),
+      findsOneWidget,
+      reason: 'The focused split pane owns find.',
+    );
+    expect(t.takeException(), isNull);
+    await env.stop(t);
+  });
+
   group('note tabs model', () {
     test('four most recent; the rest go to More', () {
       final all = [for (var i = 0; i < 7; i++) _sum('n$i', i)];
@@ -542,13 +723,19 @@ void main() {
   });
 
   group('Settings', () {
+    late ContextualFindController settingsFind;
+
     Future<void> pumpSettings(WidgetTester t, _Env env, Size size) async {
+      settingsFind = ContextualFindController();
+      addTearDown(settingsFind.dispose);
       await t.binding.setSurfaceSize(size);
       addTearDown(() => t.binding.setSurfaceSize(null));
       await t.pumpWidget(
         MaterialApp(
           theme: buildWoiTheme(),
-          home: Scaffold(body: SettingsView(controller: env.c)),
+          home: Scaffold(
+            body: SettingsView(controller: env.c, find: settingsFind),
+          ),
         ),
       );
       await _settle(t);
@@ -564,7 +751,7 @@ void main() {
     }
 
     Future<void> search(WidgetTester t, String query) async {
-      await t.enterText(find.byKey(const ValueKey('settings-search')), query);
+      settingsFind.setQuery(query);
       await _settle(t);
     }
 

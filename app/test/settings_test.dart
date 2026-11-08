@@ -6,6 +6,23 @@ import 'package:woi/core/voice/backend_factory.dart';
 import 'package:woi/core/voice/realtime_ws_backend.dart';
 
 void main() {
+  test('text thinking defaults to medium, persists, and never reconnects voice', () {
+    const defaults = AppSettings();
+    expect(defaults.textReasoningEffort, 'medium');
+    expect(AppSettings.fromJson(const {}).textReasoningEffort, 'medium');
+    for (final effort in AppSettings.textReasoningEffortChoices) {
+      final changed = defaults.copyWith(textReasoningEffort: effort);
+      expect(AppSettings.fromJson(changed.toJson()).textReasoningEffort, effort);
+      expect(changed.sessionDiffers(defaults), isFalse);
+    }
+    expect(AppSettings.fromJson(const {'textReasoningEffort': 'bad'}).textReasoningEffort, 'medium');
+    expect(defaults.copyWith(textReasoningEffort: 'bad').textReasoningEffort, 'medium');
+    expect(AppSettings.textReasoningEffortChoicesFor('gpt-6-luna'), contains('none'));
+    expect(AppSettings.textReasoningEffortChoicesFor('gpt-6.1-sol'), isNot(contains('none')));
+    expect(AppSettings.textReasoningEffortChoicesFor('gpt-4.1'), isEmpty);
+    expect(AppSettings.fromJson(defaults.copyWith(idleStandbySeconds: 30).toJson()).idleStandbySeconds, 30);
+  });
+
   test('image output choices persist and pointer routing refreshes session tools', () {
     final d = AppSettings.fromJson(const {});
     expect(d.imageModel, 'gpt-image-2.6-flare');

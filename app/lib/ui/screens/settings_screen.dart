@@ -15,6 +15,7 @@ import '../../core/images/image_model_catalog.dart';
 import '../../core/lab/model_click_lab.dart';
 import '../../core/voice/backend_factory.dart';
 import '../theme.dart';
+import '../widgets/contextual_find.dart';
 import '../login/login_screen.dart';
 import '../widgets/context_meter.dart';
 import '../widgets/empty_state.dart' show KeyCap;
@@ -29,8 +30,9 @@ enum _TestState { idle, testing, ok, failed }
 /// Connection, models and everyday preferences, with one searchable Advanced
 /// section. Changes apply immediately; text edits save after a short pause.
 class SettingsView extends StatefulWidget {
-  const SettingsView({super.key, required this.controller});
+  const SettingsView({super.key, required this.controller, this.find});
   final AppController controller;
+  final ContextualFindController? find;
 
   @override
   State<SettingsView> createState() => _SettingsViewState();
@@ -52,8 +54,10 @@ class _SettingsViewState extends State<SettingsView> {
   Timer? _debounce;
   _TestState _test = _TestState.idle;
   String? _testMessage;
-  final _search = TextEditingController();
   String _query = '';
+  final _findKeys = <String, GlobalKey>{};
+  List<String> _findMatches = const [];
+  String? _selectedFind;
   ImageModelCatalogResult? _imageCatalog;
   bool _loadingImageModels = false;
   int _imageCatalogRequest = 0;
@@ -74,6 +78,7 @@ class _SettingsViewState extends State<SettingsView> {
     _observedAuth = c.codexAuth;
     c.addListener(_onControllerChanged);
     unawaited(_refreshImageModels());
+    _attachFind();
   }
 
   Map<String, TextEditingController> get _editors => {
@@ -164,6 +169,10 @@ class _SettingsViewState extends State<SettingsView> {
   @override
   void didUpdateWidget(SettingsView old) {
     super.didUpdateWidget(old);
+    if (old.find != widget.find) {
+      old.find?.detach(this);
+      _attachFind();
+    }
     if (identical(old.controller, c)) return;
     old.controller.removeListener(_onControllerChanged);
     _flush(controller: old.controller);
@@ -196,7 +205,7 @@ class _SettingsViewState extends State<SettingsView> {
     _imageModel.dispose();
     _workspace.dispose();
     _stopWords.dispose();
-    _search.dispose();
+    widget.find?.detach(this);
     _scroll.dispose();
     super.dispose();
   }
@@ -286,22 +295,27 @@ class _SettingsViewState extends State<SettingsView> {
       ),
       if (_s.authMode == AuthMode.codex)
         _Item(
-          'Codex account',
+          'Codex login',
           '',
-          (w) => Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _codexStatus(),
-              const SizedBox(height: 12),
-              CodexUsageMeter(controller: c),
-            ],
+          (w) => Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _codexStatus(),
+                const SizedBox(height: 8),
+                CodexUsageMeter(controller: c),
+              ],
+            ),
           ),
+          full: true,
           keywords: 'account chatgpt authentication sign in refresh usage limits quota reset',
         )
       else
         _Item(
           'API key',
-          'Stored locally. Leave empty to use OPENAI_API_KEY.',
+          '',
+          detail: 'Leave empty to use OPENAI_API_KEY.',
           (w) => _apiKeyField(),
           keywords: 'credentials access authentication reveal',
         ),
@@ -315,87 +329,30 @@ class _SettingsViewState extends State<SettingsView> {
       ),
       _Item(
         'Text model',
-        'For reasoning and delegated tasks.',
-        (w) => Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _modelControl(
-              id: 'delegate-model',
-              options: kDelegateModels,
-              value: _s.delegateModel,
-              ctl: _delegateModel,
-              fallback: 'gpt-6-luna',
-              set: (v, {debounce = false}) => _apply(
-                _s.copyWith(delegateModel: v),
-                debounce: debounce,
-                field: 'delegateModel',
-              ),
-            ),
-            _effectiveModelNotice(),
-          ],
-        ),
-        keywords: 'delegation background reasoning usage guard effective ${_s.delegateModel}',
+        '',
+        (w) => _textModelControls(),
+        full: true,
+        keywords:
+            'thinking level effort delegated delegation background reasoning usage guard effective ${_s.delegateModel}',
       ),
       _Item('Voice', '', (w) => _voices(), keywords: 'speech sound marin echo ${_s.activeVoice}'),
       _Item(
-        'Image model',
-        'Generate images in the background and show them in chat.',
-        (w) => _imageModels(),
-        keywords: 'image generation drawing picture photo flare ${_s.imageModel}',
-      ),
-      _Item(
-        'Image size',
-        'Width × height in pixels.',
-        (w) => _select<String>(
-          id: 'image-size',
-          options: AppSettings.imageSizeChoices,
-          value: _s.imageSize,
-          label: (v) => v == 'auto' ? 'Auto' : v.replaceAll('x', ' × '),
-          onChanged: (v) => _apply(_s.copyWith(imageSize: v)),
-        ),
-        keywords: 'image generation resolution dimensions square portrait landscape auto ${_s.imageSize}',
-      ),
-      _Item(
-        'Image format',
-        'Format for generated image files.',
-        (w) => _quickChoices<String>(
-          id: 'image-format',
-          options: AppSettings.imageFormatChoices,
-          value: _s.imageFormat,
-          label: (v) => switch (v) {
-            'jpeg' => 'JPG',
-            'webp' => 'WebP',
-            _ => v.toUpperCase(),
-          },
-          onChanged: (v) => _apply(_s.copyWith(imageFormat: v)),
-        ),
-        inline: true,
-        keywords: 'image generation file format jpg jpeg png webp ${_s.imageFormat}',
-      ),
-      _Item(
-        'Image quality',
-        'Low uses less time and tokens.',
-        (w) => _quickChoices<String>(
-          id: 'image-quality',
-          options: const ['low', 'medium', 'high', 'xhigh', 'max', 'auto'],
-          value: _s.imageQuality,
-          label: (v) => '${v[0].toUpperCase()}${v.substring(1)}',
-          onChanged: (v) => _apply(_s.copyWith(imageQuality: v)),
-        ),
-        inline: true,
-        keywords: 'image generation render quality fast low medium high xhigh max auto',
+        'Echo cancellation',
+        '',
+        (w) => _switch(w, _s.echoCancellation, (v) => _apply(_s.copyWith(echoCancellation: v))),
+        keywords: 'audio speakers music videos',
       ),
     ]),
     _Group('preferences', 'Preferences', [
       _Item(
         'Web search',
-        'Let the assistant search the internet for current information.',
+        '',
         (w) => _switch(w, _s.webSearchEnabled, (v) => _apply(_s.copyWith(webSearchEnabled: v))),
         keywords: 'search internet web browse online sources tools',
       ),
       _Item(
         'Luna pointer agent',
-        'Use a dedicated gpt-6-luna agent for clicks and pointer movement.',
+        '',
         (w) => _switch(
           w,
           _s.useLunaPointer,
@@ -418,20 +375,15 @@ class _SettingsViewState extends State<SettingsView> {
         keywords: 'appearance light dark system',
       ),
       _Item(
-        'Echo cancellation',
-        'Keep speaker audio out of the microphone.',
-        (w) => _switch(w, _s.echoCancellation, (v) => _apply(_s.copyWith(echoCancellation: v))),
-        keywords: 'audio speakers music videos',
-      ),
-      _Item(
         'Auto-screenshot',
-        'Include the screen with spoken turns.',
+        '',
+        detail: 'Include the screen with spoken turns.',
         (w) => _switch(w, _s.autoScreenshot, (v) => _apply(_s.copyWith(autoScreenshot: v))),
         keywords: 'screen screenshot capture when I speak',
       ),
       _Item(
         'Confirm shell commands',
-        'Ask before running commands.',
+        '',
         (w) => _switch(w, _s.confirmBeforeBash, (v) => _apply(_s.copyWith(confirmBeforeBash: v))),
         keywords: 'bash terminal safety approval command confirmation',
       ),
@@ -440,10 +392,11 @@ class _SettingsViewState extends State<SettingsView> {
 
   List<_Group> _advancedGroups() => [
     _Group('audio', 'Voice & audio', [
-      if (_s.backendMode != BackendMode.gptLive) ...[
+      if (_s.backendMode != BackendMode.gptLive)
         _Item(
           'Reply delay',
-          'Pause before ending your turn.',
+          '',
+          detail: 'Pause before ending your turn.',
           (w) => _slider(
             value: _s.replyDelayMs.toDouble(),
             min: kMinReplyDelayMs.toDouble(),
@@ -456,44 +409,39 @@ class _SettingsViewState extends State<SettingsView> {
           ),
           keywords: 'silence response timing',
         ),
-        _Item(
-          'Idle standby',
-          'Reconnect when speech starts again.',
-          detail:
-              'Disconnect after this much silence while the microphone keeps listening. Off keeps the session open.',
-          (w) => _slider(
-            value: (_s.idleStandbySeconds ~/ 15).toDouble(),
-            min: 0,
-            max: (kMaxIdleStandbySeconds ~/ 15).toDouble(),
-            divisions: kMaxIdleStandbySeconds ~/ 15,
-            label: _standbyLabel(_s.idleStandbySeconds),
-            semantic: 'Idle standby',
-            onChanged: (v) => _preview(_s.copyWith(idleStandbySeconds: v.round() * 15)),
-            onChangeEnd: (v) => _apply(_s.copyWith(idleStandbySeconds: v.round() * 15)),
-          ),
-          keywords: 'connection silence timeout power',
-        ),
-      ],
       _Item(
-        'Thinking chime',
-        'Play a soft chime while a reply is prepared.',
-        (w) => _switch(w, _s.thinkingEarcon, (v) => _apply(_s.copyWith(thinkingEarcon: v))),
+        'Idle standby',
+        '',
+        detail: 'Disconnect when idle. Wake by speech in hands-free, by pressing push-to-talk with gpt-live, or by typing. Off keeps the session open.',
+        (w) => _slider(
+          value: (_s.idleStandbySeconds ~/ 15).toDouble(),
+          min: 0,
+          max: (kMaxIdleStandbySeconds ~/ 15).toDouble(),
+          divisions: kMaxIdleStandbySeconds ~/ 15,
+          label: _standbyLabel(_s.idleStandbySeconds),
+          semantic: 'Idle standby',
+          onChanged: (v) => _preview(_s.copyWith(idleStandbySeconds: v.round() * 15)),
+          onChangeEnd: (v) => _apply(_s.copyWith(idleStandbySeconds: v.round() * 15)),
+        ),
+        keywords: 'connection silence timeout power',
       ),
+      _Item('Thinking chime', '', (w) => _switch(w, _s.thinkingEarcon, (v) => _apply(_s.copyWith(thinkingEarcon: v)))),
       _Item(
         'Stop word detection',
-        'Recognize interruption words on this device.',
+        '',
         detail: 'Listens while Woi speaks or is paused. Its own speech is ignored, and no audio leaves the device for this.',
         (w) => _switch(w, _s.stopWordDetection, (v) => _apply(_s.copyWith(stopWordDetection: v))),
         keywords: 'kws keyword spotting stop word interrupt barge-in offline',
       ),
       _Item(
         'Stop words',
-        'Comma-separated English words or phrases.',
+        '',
+        detail: 'Comma-separated English words or phrases.',
         (w) => TextField(
           key: const ValueKey('setting-stop-words'),
           controller: _stopWords,
           style: body(14),
-          decoration: const InputDecoration(hintText: 'stop', isDense: true),
+          decoration: const InputDecoration(hintText: 'stop, wait, hold on', isDense: true),
           onChanged: (v) => _apply(_s.copyWith(stopWords: parseStopWords(v)), debounce: true, field: 'stopWords'),
         ),
         keywords: 'kws keyword spotting interruption',
@@ -501,7 +449,7 @@ class _SettingsViewState extends State<SettingsView> {
       if (_s.backendMode == BackendMode.gptLive) ...[
         _Item(
           'Realtime fallback model',
-          'Used if the live audio session falls back.',
+          '',
           (w) => _select<String>(
             id: 'fallback-model',
             options: {...kRealtimeModels, _s.realtimeModel}.toList(),
@@ -513,16 +461,67 @@ class _SettingsViewState extends State<SettingsView> {
         ),
         _Item(
           'Use realtime at the usage limit',
-          'Use the fallback model until the live limit resets.',
+          '',
           (w) => _switch(w, _s.fallbackToDirectOnLimit, (v) => _apply(_s.copyWith(fallbackToDirectOnLimit: v))),
           keywords: 'direct realtime fallback 429 rate usage limit',
         ),
       ],
     ]),
+    _Group('images', 'Image generation', [
+      _Item(
+        'Image model',
+        '',
+        (w) => _imageModels(),
+        keywords: 'image generation drawing picture photo flare ${_s.imageModel}',
+      ),
+      _Item(
+        'Image size',
+        '',
+        (w) => _select<String>(
+          id: 'image-size',
+          options: AppSettings.imageSizeChoices,
+          value: _s.imageSize,
+          label: (v) => v == 'auto' ? 'Auto' : v.replaceAll('x', ' × '),
+          onChanged: (v) => _apply(_s.copyWith(imageSize: v)),
+        ),
+        keywords: 'image generation resolution dimensions square portrait landscape auto ${_s.imageSize}',
+      ),
+      _Item(
+        'Image format',
+        '',
+        (w) => _quickChoices<String>(
+          id: 'image-format',
+          options: AppSettings.imageFormatChoices,
+          value: _s.imageFormat,
+          label: (v) => switch (v) {
+            'jpeg' => 'JPG',
+            'webp' => 'WebP',
+            _ => v.toUpperCase(),
+          },
+          onChanged: (v) => _apply(_s.copyWith(imageFormat: v)),
+        ),
+        inline: true,
+        keywords: 'image generation file format jpg jpeg png webp ${_s.imageFormat}',
+      ),
+      _Item(
+        'Image quality',
+        '',
+        (w) => _quickChoices<String>(
+          id: 'image-quality',
+          options: const ['low', 'medium', 'high', 'xhigh', 'max', 'auto'],
+          value: _s.imageQuality,
+          label: (v) => '${v[0].toUpperCase()}${v.substring(1)}',
+          onChanged: (v) => _apply(_s.copyWith(imageQuality: v)),
+        ),
+        inline: true,
+        keywords: 'image generation render quality fast low medium high xhigh max auto',
+      ),
+    ]),
     _Group('screen', 'Screen & camera', [
       _Item(
         'Screenshot delay',
-        'Wait for menus or pages to finish opening.',
+        '',
+        detail: 'Wait for menus or pages to finish opening.',
         (w) => _slider(
           value: _s.screenshotDelayMs.clamp(0, 4000).toDouble(),
           min: 0,
@@ -536,7 +535,7 @@ class _SettingsViewState extends State<SettingsView> {
       ),
       _Item(
         'Screenshot size',
-        'Scale images sent to the model.',
+        '',
         detail: 'Screen width uses the device width in dp. Other choices use a share of the original pixels; images are never enlarged.',
         (w) {
           final idx = _scaleIndex(_s.screenshotScale);
@@ -555,7 +554,7 @@ class _SettingsViewState extends State<SettingsView> {
       ),
       _Item(
         'Screenshot JPEG quality',
-        'Balance file size and text clarity.',
+        '',
         (w) => _slider(
           value: _s.screenshotJpegQuality.clamp(50, 100).toDouble(),
           min: 50,
@@ -570,7 +569,7 @@ class _SettingsViewState extends State<SettingsView> {
       ),
       _Item(
         'Camera and screenshots',
-        'Choose what accompanies a turn when the camera is on.',
+        '',
         (w) => _select<bool>(
           id: 'camera-screenshot',
           options: const [false, true],
@@ -581,7 +580,8 @@ class _SettingsViewState extends State<SettingsView> {
       ),
       _Item(
         'Screenshot tiers',
-        'Full images, then scaled images, then descriptions.',
+        '',
+        detail: 'Older screenshots are kept as full images, then scaled images, then descriptions.',
         (w) => Row(
           children: [
             for (final (label, value, options, set) in [
@@ -605,7 +605,8 @@ class _SettingsViewState extends State<SettingsView> {
     _Group('memory', 'Memory', [
       _Item(
         'Compaction threshold',
-        'Summarize older turns past this context size.',
+        '',
+        detail: 'Summarize older turns past this context size.',
         (w) => _slider(
           value: _s.compressionThreshold.clamp(2000, 100000).toDouble(),
           min: 2000,
@@ -620,7 +621,7 @@ class _SettingsViewState extends State<SettingsView> {
       ),
       _Item(
         'Compression model',
-        'Writes the context summary.',
+        '',
         (w) => Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -645,7 +646,7 @@ class _SettingsViewState extends State<SettingsView> {
     _Group('editing', 'Editing & terminal', [
       _Item(
         'AI edits',
-        'Review the diff before an edit applies.',
+        '',
         detail: 'Reject during the countdown with Esc or "reject". "Undo that" reverts the last edit.',
         (w) => _select<int>(
           id: 'edit-delay',
@@ -658,7 +659,7 @@ class _SettingsViewState extends State<SettingsView> {
       ),
       _Item(
         'Run in terminal',
-        'Show shell commands in the Terminal tab.',
+        '',
         (w) => _switch(
           w,
           _s.runBashInTerminal,
@@ -669,8 +670,9 @@ class _SettingsViewState extends State<SettingsView> {
       ),
       _Item(
         'Workspace folder',
-        'Base folder for relative paths and commands.',
-        detail: 'Leave empty to use the launch folder. Current folder: ${c.platform.files.workspaceDir}',
+        '',
+        detail:
+            'Base folder for relative paths and commands. Leave empty to use the launch folder. Current folder: ${c.platform.files.workspaceDir}',
         (w) => TextField(
           key: const ValueKey('setting-workspace'),
           controller: _workspace,
@@ -685,13 +687,14 @@ class _SettingsViewState extends State<SettingsView> {
       _Group('android', 'Android', [
         _Item(
           'Screen control',
-          'Accessibility and background access.',
+          '',
           (w) => const AndroidAccessibilityPanel(),
           keywords: 'accessibility battery background enable permissions',
         ),
         _Item(
           'Audio route',
-          'Phone uses call processing. Media keeps media volume with software echo cancellation.',
+          '',
+          detail: 'Phone uses call processing. Media keeps media volume with software echo cancellation.',
           (w) => _select<AndroidAudioRoute>(
             id: 'android-audio-route',
             options: AndroidAudioRoute.values,
@@ -703,7 +706,7 @@ class _SettingsViewState extends State<SettingsView> {
         ),
         _Item(
           'Keep connection after closing',
-          'Keep an idle session ready for the next activation.',
+          '',
           detail: 'The microphone stops when the assistant panel closes. Off drops the connection a few seconds later.',
           (w) => _select<int>(
             id: 'assistant-keep-alive',
@@ -722,25 +725,15 @@ class _SettingsViewState extends State<SettingsView> {
     _Group('diagnostics', 'Connection & usage', [
       _Item(
         'Model Click Lab',
-        'Compare model accuracy and speed on a test screen.',
+        '',
+        detail: 'Compare model accuracy and speed on a test screen.',
         (w) => _modelClickLabButton(),
         keywords: 'model click lab pointer mouse testing benchmark accuracy speed image tools',
       ),
-      _Item(
-        'Test connection',
-        'Check credentials without starting a session.',
-        (w) => _testButton(),
-        keywords: 'network authentication credentials diagnostics',
-      ),
+      _Item('Test connection', '', (w) => _testButton(), keywords: 'network authentication credentials diagnostics'),
     ]),
     _Group('about', 'Help & about', [
-      _Item(
-        'About',
-        'Runtime details for troubleshooting.',
-        (w) => _about(),
-        full: true,
-        keywords: 'backend audio data folder auth login diagnostics',
-      ),
+      _Item('About', '', (w) => _about(), full: true, keywords: 'backend audio data folder auth login diagnostics'),
       _Item(
         'Keyboard shortcuts',
         '',
@@ -763,6 +756,15 @@ class _SettingsViewState extends State<SettingsView> {
       ];
       final main = matching(_mainGroups());
       final advanced = matching(_advancedGroups());
+      _findMatches = q.isEmpty
+          ? const []
+          : [
+              for (final group in [...main, ...advanced])
+                for (final item in group.items) _findId(group, item),
+            ];
+      widget.find?.setMatches(_findMatches.length, reveal: false);
+      final current = widget.find?.currentMatch ?? -1;
+      _selectedFind = current < 0 ? null : _findMatches[current];
       final open = q.isNotEmpty || _advancedOpen;
       final children = <Widget>[
         for (final g in main) _section(g, wide),
@@ -800,30 +802,31 @@ class _SettingsViewState extends State<SettingsView> {
       return Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 860),
-          child: Column(
-            children: [
-              Padding(padding: EdgeInsets.fromLTRB(hPad, wide ? 12 : 8, hPad, 4), child: _searchField()),
-              Expanded(
-                child: ListView(
+          child: q.isEmpty
+              ? ListView(
                   key: const ValueKey('settings-list'),
                   controller: _scroll,
-                  padding: EdgeInsets.fromLTRB(hPad, 0, hPad, 24),
-                  children: [
-                    ...children,
-                    Padding(
-                      padding: const EdgeInsets.only(top: 24),
-                      child: Center(
-                        child: Text('Changes save automatically', style: body(12, color: WoiColors.textFaint)),
-                      ),
-                    ),
-                  ],
+                  padding: EdgeInsets.fromLTRB(hPad, wide ? 8 : 4, hPad, 24),
+                  children: [...children, _saveNotice()],
+                )
+              : SingleChildScrollView(
+                  key: const ValueKey('settings-list'),
+                  controller: _scroll,
+                  padding: EdgeInsets.fromLTRB(hPad, wide ? 8 : 4, hPad, 24),
+                  // Only matching settings are mounted, so every result can
+                  // be revealed exactly rather than estimating row heights.
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [...children, _saveNotice()]),
                 ),
-              ),
-            ],
-          ),
         ),
       );
     },
+  );
+
+  Widget _saveNotice() => Padding(
+    padding: const EdgeInsets.only(top: 24),
+    child: Center(
+      child: Text('Changes save automatically', style: body(12, color: WoiColors.textFaint)),
+    ),
   );
 
   bool _matches(_Group g, _Item i, String q) =>
@@ -843,46 +846,72 @@ class _SettingsViewState extends State<SettingsView> {
           ),
         ),
       ),
-      for (var i = 0; i < g.items.length; i++) ...[
-        if (i > 0) const Divider(height: 1),
-        g.items[i].full ? g.items[i].build(wide) : _wrap(wide, g.items[i]),
-      ],
+      for (var i = 0; i < g.items.length; i++) ...[if (i > 0) const Divider(height: 1), _findItem(g, g.items[i], wide)],
     ],
   );
 
-  Widget _searchField() => TextField(
-    key: const ValueKey('settings-search'),
-    controller: _search,
-    onChanged: (v) => setState(() => _query = v),
-    style: body(14),
-    decoration: InputDecoration(
-      isDense: true,
-      hintText: 'Search settings',
-      prefixIcon: const Icon(Icons.search_rounded, size: 18),
-      suffixIcon: _query.isEmpty
-          ? null
-          : IconButton(
-              tooltip: 'Clear',
-              icon: const Icon(Icons.close_rounded, size: 18),
-              onPressed: () => setState(() {
-                _search.clear();
-                _query = '';
-              }),
-            ),
-    ),
-  );
+  void _attachFind() {
+    widget.find?.attach(this, onQuery: _refreshFind, onNavigate: _revealFind);
+    if (widget.find == null) _query = '';
+  }
+
+  String _findId(_Group group, _Item item) => '${group.id}:${item.title}';
+
+  void _refreshFind() {
+    final query = widget.find?.query ?? '';
+    final q = query.trim().toLowerCase();
+    setState(() {
+      _query = query;
+      _selectedFind = null;
+      _findMatches = q.isEmpty
+          ? const []
+          : [
+              for (final group in [..._mainGroups(), ..._advancedGroups()])
+                for (final item in group.items)
+                  if (_matches(group, item, q)) _findId(group, item),
+            ];
+    });
+    widget.find?.setMatches(_findMatches.length);
+  }
+
+  void _revealFind(int index) {
+    if (index < 0 || index >= _findMatches.length) return;
+    final id = _findMatches[index];
+    setState(() => _selectedFind = id);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _selectedFind != id) return;
+      final context = _findKeys[id]?.currentContext;
+      if (context != null) {
+        Scrollable.ensureVisible(context, alignment: 0.2, duration: const Duration(milliseconds: 160));
+      }
+    });
+  }
+
+  Widget _findItem(_Group group, _Item item, bool wide) {
+    final id = _findId(group, item);
+    final selected = _query.trim().isNotEmpty && _selectedFind == id;
+    return DecoratedBox(
+      key: _findKeys.putIfAbsent(id, () => GlobalKey(debugLabel: 'settings-find-$id')),
+      decoration: BoxDecoration(
+        color: selected ? WoiColors.cyan.withValues(alpha: 0.1) : Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        border: selected ? Border.all(color: WoiColors.cyan.withValues(alpha: 0.5)) : null,
+      ),
+      child: item.full ? item.build(wide) : _wrap(wide, item),
+    );
+  }
 
   Widget _wrap(bool wide, _Item i) => _row(wide, i.title, i.hint, i.build(wide), detail: i.detail, inline: i.inline);
 
   Widget _label(String title, String desc, String? detail) {
-    final hint = Text(desc, style: body(12.5, color: WoiColors.textDim, height: 1.35));
+    final titleWidget = Text(title, style: body(14, weight: FontWeight.w500));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(title, style: body(14, weight: FontWeight.w500)),
+        if (detail == null) titleWidget else Tooltip(message: detail, waitDuration: WoiMotion.slow, child: titleWidget),
         if (desc.isNotEmpty) ...[
-          const SizedBox(height: 2),
-          detail == null ? hint : Tooltip(message: '$desc\n$detail', waitDuration: WoiMotion.slow, child: hint),
+          const SizedBox(height: 3),
+          Text(desc, style: body(12.5, color: WoiColors.textDim, height: 1.35)),
         ],
       ],
     );
@@ -892,13 +921,13 @@ class _SettingsViewState extends State<SettingsView> {
     final isSwitch = control is _SwitchBox;
     final text = _label(title, desc, detail);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
+      padding: const EdgeInsets.symmetric(vertical: 8),
       child: wide || isSwitch || inline
           ? Row(
               children: [
                 wide || isSwitch ? Expanded(child: text) : SizedBox(width: 76, child: text),
                 SizedBox(width: wide ? 24 : 12),
-                if (isSwitch) control else if (wide) SizedBox(width: 400, child: control) else Expanded(child: control),
+                if (isSwitch) control else Expanded(child: control),
               ],
             )
           : Column(
@@ -914,7 +943,7 @@ class _SettingsViewState extends State<SettingsView> {
 
   static const _shortcutItems = [
     (['Space'], 'Hold to talk (push-to-talk mode, when not typing)'),
-    (['Esc'], 'Interrupt Woi · reject a confirmation · close dialogs'),
+    (['Esc'], 'Close search · interrupt Woi · reject a confirmation · close dialogs'),
     (['Enter'], 'Approve a confirmation · send a message'),
     (['Shift', 'Enter'], 'New line in the message box'),
     (['Ctrl', '1'], 'Note tab'),
@@ -922,6 +951,9 @@ class _SettingsViewState extends State<SettingsView> {
     (['Ctrl', '3'], 'Terminal tab'),
     (['Ctrl', '4'], 'Settings tab (also Ctrl+,; Esc goes back)'),
     (['Ctrl', '\\'], 'Note and chat side by side (wide windows)'),
+    (['Ctrl', 'F'], 'Find in the current tab'),
+    (['F3'], 'Next find match (also Enter or Ctrl+G in search)'),
+    (['Shift', 'F3'], 'Previous find match (also Shift+Enter or Ctrl+Shift+G)'),
     (['Ctrl', 'K'], 'Focus the message box'),
     (['Ctrl', 'N'], 'New note / conversation'),
     (['Ctrl', 'R'], 'Run the note line or selection as a message'),
@@ -957,7 +989,7 @@ class _SettingsViewState extends State<SettingsView> {
         _kv('Voice backend', c.pipeline.backend?.runtimeType.toString() ?? '—'),
         _kv('Audio', c.platform.audio.description),
         _kv('Data folder', c.platform.paths.dataDir),
-        _kv('Codex login', c.codexAuth?.summary ?? 'Not loaded'),
+        _kv('Codex login', _codexStatusText),
       ],
     ),
   );
@@ -1029,6 +1061,7 @@ class _SettingsViewState extends State<SettingsView> {
     String Function(T)? keyFor,
     String? Function(T)? unavailable,
     bool monoText = false,
+    Widget? trailing,
   }) => RadioGroup<T>(
     groupValue: value,
     onChanged: (v) {
@@ -1036,6 +1069,8 @@ class _SettingsViewState extends State<SettingsView> {
     },
     child: Wrap(
       spacing: 8,
+      runSpacing: 4,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         for (final v in options)
           Tooltip(
@@ -1063,6 +1098,7 @@ class _SettingsViewState extends State<SettingsView> {
               ),
             ),
           ),
+        ?trailing,
       ],
     ),
   );
@@ -1077,6 +1113,7 @@ class _SettingsViewState extends State<SettingsView> {
     String? hint,
     String? fieldLabel,
     bool monoText = false,
+    bool enabled = true,
   }) {
     String name(T v) => label?.call(v) ?? '$v';
     final style = monoText ? mono(13) : body(13.5);
@@ -1084,6 +1121,7 @@ class _SettingsViewState extends State<SettingsView> {
       decoration: InputDecoration(
         isDense: true,
         labelText: fieldLabel,
+        enabled: enabled,
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       ),
       child: DropdownButtonHideUnderline(
@@ -1134,14 +1172,92 @@ class _SettingsViewState extends State<SettingsView> {
                   ),
                 ),
             ],
-            onChanged: (v) {
-              if (v != null && unavailable?.call(v) == null) onChanged(v);
-            },
+            onChanged: enabled
+                ? (v) {
+                    if (v != null && unavailable?.call(v) == null) onChanged(v);
+                  }
+                : null,
           ),
         ),
       ),
     );
   }
+
+  Widget _textModelControls() => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 10),
+    child: LayoutBuilder(
+      builder: (context, box) {
+        final efforts = AppSettings.textReasoningEffortChoicesFor(_s.delegateModel);
+        final unsupportedEffort = efforts.isNotEmpty && !efforts.contains(_s.textReasoningEffort);
+        final model = Column(
+          key: const ValueKey('settings-text-model-field'),
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _label('Text model', '', null),
+            const SizedBox(height: 8),
+            _modelControl(
+              id: 'delegate-model',
+              options: kDelegateModels,
+              value: _s.delegateModel,
+              ctl: _delegateModel,
+              fallback: 'gpt-6-luna',
+              set: (v, {debounce = false}) {
+                final supported = AppSettings.textReasoningEffortChoicesFor(v);
+                final effort = supported.isEmpty || supported.contains(_s.textReasoningEffort)
+                    ? _s.textReasoningEffort
+                    : supported.contains('medium')
+                    ? 'medium'
+                    : supported.first;
+                _apply(
+                  _s.copyWith(delegateModel: v, textReasoningEffort: effort),
+                  debounce: debounce,
+                  field: 'delegateModel',
+                );
+              },
+            ),
+            _effectiveModelNotice(),
+          ],
+        );
+        final thinking = Column(
+          key: const ValueKey('settings-thinking-level-field'),
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _label('Thinking level', '', efforts.isEmpty ? 'This model does not expose configurable thinking.' : null),
+            const SizedBox(height: 8),
+            _select<String>(
+              id: 'text-reasoning-effort',
+              options: [...efforts, if (unsupportedEffort) _s.textReasoningEffort],
+              value: efforts.isEmpty ? null : _s.textReasoningEffort,
+              label: _cap,
+              unavailable: (v) => efforts.contains(v) ? null : 'Unsupported by this model.',
+              hint: efforts.isEmpty ? 'Not configurable' : null,
+              enabled: efforts.isNotEmpty,
+              onChanged: (v) => _apply(_s.copyWith(textReasoningEffort: v)),
+            ),
+            if (unsupportedEffort)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text('Choose a supported thinking level.', style: body(12, color: WoiColors.amber)),
+              ),
+          ],
+        );
+        if (box.maxWidth < 520) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [model, const SizedBox(height: 16), thinking],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: model),
+            const SizedBox(width: 24),
+            Expanded(child: thinking),
+          ],
+        );
+      },
+    ),
+  );
 
   Widget _audioModels() {
     const quick = [(AudioModelFamily.realtime, 'gpt-realtime-2.1'), (AudioModelFamily.live, 'gpt-live-1.1')];
@@ -1208,15 +1324,18 @@ class _SettingsViewState extends State<SettingsView> {
           label: _cap,
           unavailable: unavailable,
           onChanged: (v) => _apply(_s.withActiveVoice(v)),
-        ),
-        _select<String>(
-          id: 'voice',
-          options: more,
-          value: more.contains(_s.activeVoice) ? _s.activeVoice : null,
-          label: _cap,
-          unavailable: unavailable,
-          hint: 'More voices',
-          onChanged: (v) => _apply(_s.withActiveVoice(v)),
+          trailing: SizedBox(
+            width: 148,
+            child: _select<String>(
+              id: 'voice',
+              options: more,
+              value: more.contains(_s.activeVoice) ? _s.activeVoice : null,
+              label: _cap,
+              unavailable: unavailable,
+              hint: 'More',
+              onChanged: (v) => _apply(_s.withActiveVoice(v)),
+            ),
+          ),
         ),
         if (live)
           Padding(
@@ -1269,7 +1388,7 @@ class _SettingsViewState extends State<SettingsView> {
               style: mono(13.5),
               autocorrect: false,
               enableSuggestions: false,
-              decoration: InputDecoration(hintText: 'Model ID', helperText: 'Empty uses $fallback.', isDense: true),
+              decoration: const InputDecoration(hintText: 'Model ID', isDense: true),
               onChanged: (v) => set(v.trim().isEmpty ? fallback : v.trim(), debounce: true),
             ),
           ),
@@ -1531,19 +1650,19 @@ class _SettingsViewState extends State<SettingsView> {
     );
   }
 
+  String get _codexStatusText {
+    final info = c.codexAuth;
+    if (info?.error != null) return 'Login needs attention';
+    if (!(info?.isAvailable ?? false)) return 'Not signed in';
+    final email = info?.email?.trim();
+    return email == null || email.isEmpty ? 'Signed in' : 'Signed in as $email';
+  }
+
   Widget _codexStatus() {
     final info = c.codexAuth;
     final ok = info?.isAvailable ?? false;
     final color = ok ? WoiColors.mint : WoiColors.amber;
-    final account = info?.accountId;
-    final suffix = account == null || account.isEmpty
-        ? ''
-        : ' · account …${account.substring(account.length > 6 ? account.length - 6 : 0)}';
-    final status = info?.error != null
-        ? 'Login needs attention'
-        : ok
-        ? 'Signed in$suffix'
-        : 'Not signed in';
+    final status = _codexStatusText;
     return Container(
       key: const ValueKey('codex-login-status'),
       padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),

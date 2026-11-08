@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -24,7 +23,7 @@ import '../widgets/empty_state.dart';
 import '../widgets/glass.dart';
 import '../widgets/message_tile.dart';
 import '../widgets/input_bar.dart';
-import '../widgets/screen_share_button.dart';
+import '../widgets/contextual_find.dart';
 import '../widgets/tab_strip.dart';
 import '../widgets/throttled_builder.dart';
 import 'history_drawer.dart';
@@ -163,6 +162,17 @@ class WoiTabs extends StatefulWidget {
 class WoiTabsState extends State<WoiTabs> {
   final _composerFocus = FocusNode(debugLabel: 'composer');
   final _banners = BannerController();
+  final _find = {for (final view in HomeView.values) view: ContextualFindController()};
+  final _findButtonKey = GlobalKey<ContextualFindButtonState>();
+  late HomeView _findView;
+
+  ContextualFindController get _activeFind => _find[_findView]!;
+  String get _findLabel => switch (_findView) {
+    HomeView.note => 'note',
+    HomeView.chat => 'messages',
+    HomeView.terminal => 'terminal',
+    HomeView.settings => 'settings',
+  };
   StreamSubscription<ContextCompacted>? _compactSub;
 
   SessionStatus? _lastStatus;
@@ -220,6 +230,7 @@ class WoiTabsState extends State<WoiTabs> {
       // A new (empty) conversation opens on its note.
       _view = pipeline.conversation.messages.isEmpty ? HomeView.note : HomeView.chat;
     }
+    _findView = _view;
     _viewN.addListener(_onViewChanged);
     _compactSub = pipeline.compactionEvents.listen(_onCompacted);
     pipeline.addListener(_onPipeline);
@@ -244,12 +255,41 @@ class WoiTabsState extends State<WoiTabs> {
     _compactSub?.cancel();
     _composerFocus.dispose();
     _banners.dispose();
+    for (final find in _find.values) {
+      find.dispose();
+    }
     super.dispose();
   }
 
   /// Selects a top-level tab (Ctrl+1..4). In the wide layout the chat is
   /// always shown, so "Chat" just focuses the composer.
-  void setView(HomeView v) => widget.embedded ? _view = v : c.actions.showView(v);
+  void setView(HomeView v) {
+    _setFindView(v);
+    widget.embedded ? _view = v : c.actions.showView(v);
+  }
+
+  void _setFindView(HomeView view) {
+    if (!mounted || _findView == view) return;
+    _findButtonKey.currentState?.close();
+    setState(() => _findView = view);
+  }
+
+  /// In a split window, the pane last used is the contextual find target.
+  /// The shared narrow composer leaves the selected tab as the target.
+  Widget _findPane(HomeView view, Widget child) => Focus(
+    canRequestFocus: false,
+    skipTraversal: true,
+    onFocusChange: (focused) {
+      if (_wide && focused) _setFindView(view);
+    },
+    child: Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (_) {
+        if (_wide) _setFindView(view);
+      },
+      child: child,
+    ),
+  );
 
   /// Embedded: voice (or the app) switched the tab.
   void _followActions() => _view = c.actions.view.value;
@@ -258,6 +298,7 @@ class WoiTabsState extends State<WoiTabs> {
   /// whatever is visible now.
   void _onViewChanged() {
     if (!mounted) return;
+    _setFindView(_view);
     widget.onViewChanged?.call(_view);
     setState(() {
       if (_view != HomeView.chat) {
@@ -295,6 +336,9 @@ class WoiTabsState extends State<WoiTabs> {
     final conv = pipeline.conversation;
     if (conv.id != _convId) {
       _convId = conv.id;
+      for (final find in _find.values) {
+        find.clear();
+      }
       _seenMessages = conv.messages.length;
       _noteBadge = false;
       if (conv.messages.isEmpty && _view != HomeView.note && !widget.embedded) {
@@ -353,6 +397,20 @@ class WoiTabsState extends State<WoiTabs> {
       return true;
     }
     if (e is! KeyDownEvent) return false;
+    if (ctrl && key == LogicalKeyboardKey.keyF) {
+      _findButtonKey.currentState?.open();
+      return true;
+    }
+    if (_findButtonKey.currentState?.isOpen ?? false) {
+      if (key == LogicalKeyboardKey.escape) {
+        _findButtonKey.currentState?.close();
+        return true;
+      }
+      if (key == LogicalKeyboardKey.f3 || (anyCtrl && !kb.isAltPressed && key == LogicalKeyboardKey.keyG)) {
+        _activeFind.move(kb.isShiftPressed ? -1 : 1);
+        return true;
+      }
+    }
     final inTerminal = terminalHasFocus();
     if (ctrl && key == LogicalKeyboardKey.keyK && !inTerminal) {
       if (_view == HomeView.terminal && !_wide) setView(HomeView.chat);
@@ -502,12 +560,25 @@ class WoiTabsState extends State<WoiTabs> {
         ),
         const Divider(height: 1),
         Expanded(
-          child: switch (_view) {
-            HomeView.note => _notePanel(),
-            HomeView.chat => _chatPanel(maxBubble: phone ? box.maxWidth * 0.86 : 720),
-            HomeView.settings => _settingsPanel(),
-            HomeView.terminal => _terminalPanel(),
-          },
+          child: ListenableBuilder(
+            listenable: _activeFind,
+            child: switch (_view) {
+              HomeView.note => _notePanel(),
+              HomeView.chat => _chatPanel(maxBubble: phone ? box.maxWidth * 0.86 : 720),
+              HomeView.settings => _settingsPanel(),
+              HomeView.terminal => _terminalPanel(),
+            },
+            builder: (context, child) => Padding(
+              // Keep every tab's reveal viewport below the floating input and
+              // navigation row while a narrow-window search has results.
+              padding: EdgeInsets.only(
+                top: _activeFind.query.trim().isEmpty
+                    ? 0
+                    : 112 * math.max(1.0, MediaQuery.textScalerOf(context).scale(14) / 14),
+              ),
+              child: child,
+            ),
+          ),
         ),
         Padding(
           padding: EdgeInsets.fromLTRB(pad, phone ? 4 : 8, pad, pad),
@@ -583,21 +654,35 @@ class WoiTabsState extends State<WoiTabs> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         EditReviewCard(review: c.review, maxDiffHeight: phone ? 160 : 220),
-        InputBar(controller: c, focusNode: _composerFocus, phone: phone),
+        _findPane(
+          HomeView.chat,
+          InputBar(controller: c, focusNode: _composerFocus, phone: phone, allowScreenShare: !widget.embedded),
+        ),
       ],
     ),
   );
 
   Widget _settingsPanel() => KeyedSubtree(
     key: _settingsKey,
-    child: SettingsView(key: const ValueKey('settings-view'), controller: c),
+    child: _findPane(
+      HomeView.settings,
+      SettingsView(key: const ValueKey('settings-view'), controller: c, find: _find[HomeView.settings]),
+    ),
   );
 
   Widget _terminalPanel() => KeyedSubtree(
     key: _terminalKey,
     child: KeyedSubtree(
       key: const ValueKey('terminal-view'),
-      child: TerminalPanel(hub: c.terminals, actions: c.actions, fontSize: _phone ? 12 : 13.5),
+      child: _findPane(
+        HomeView.terminal,
+        TerminalPanel(
+          hub: c.terminals,
+          actions: c.actions,
+          fontSize: _phone ? 12 : 13.5,
+          find: _find[HomeView.terminal],
+        ),
+      ),
     ),
   );
 
@@ -607,8 +692,11 @@ class WoiTabsState extends State<WoiTabs> {
       key: const ValueKey('chat-panel'),
       // Hard-edge clip: an anti-aliased rounded clip over the scrolling
       // list is redrawn with coverage every frame (expensive on software GL).
-      child: ClipRect(
-        child: _transcriptArea(maxBubble: maxBubble, wide: !_phone),
+      child: _findPane(
+        HomeView.chat,
+        ClipRect(
+          child: _transcriptArea(maxBubble: maxBubble, wide: !_phone),
+        ),
       ),
     ),
   );
@@ -621,29 +709,33 @@ class WoiTabsState extends State<WoiTabs> {
         key: const ValueKey('note-panel'),
         // A short panel (a 70%-height freeform window with the keyboard up)
         // leaves the tabs out so the text keeps the room.
-        child: LayoutBuilder(
-          builder: (context, box) => Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (box.maxHeight >= kNoteTabsMinHeight) ...[
-                Padding(
-                  padding: EdgeInsets.symmetric(horizontal: phone ? 4 : 8),
-                  child: NoteTabsBar(controller: c, compact: phone),
+        child: _findPane(
+          HomeView.note,
+          LayoutBuilder(
+            builder: (context, box) => Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (box.maxHeight >= kNoteTabsMinHeight) ...[
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: phone ? 4 : 8),
+                    child: NoteTabsBar(controller: c, compact: phone),
+                  ),
+                  const Divider(height: 1),
+                ],
+                Expanded(
+                  child: NoteEditor(
+                    key: const ValueKey('note-editor'),
+                    notes: c.notes,
+                    find: _find[HomeView.note],
+                    compact: phone,
+                    onOpenLink: _openLink,
+                    onRun: _run,
+                    onCopy: c.actions.copyNote,
+                    copied: c.actions.copied,
+                  ),
                 ),
-                const Divider(height: 1),
               ],
-              Expanded(
-                child: NoteEditor(
-                  key: const ValueKey('note-editor'),
-                  notes: c.notes,
-                  compact: phone,
-                  onOpenLink: _openLink,
-                  onRun: _run,
-                  onCopy: c.actions.copyNote,
-                  copied: c.actions.copied,
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -717,7 +809,7 @@ class WoiTabsState extends State<WoiTabs> {
               ),
             ),
           ),
-          if (Platform.isAndroid && !widget.embedded) ScreenShareButton(size: t),
+          ContextualFindButton(key: _findButtonKey, find: _activeFind, label: _findLabel, size: t),
           if (!wide) widget.menuItems.isEmpty ? _historyButton(t) : _moreMenu(t),
           if (!wide) ...widget.headerTrailing,
           SizedBox(width: phone ? 0 : 4),
@@ -834,6 +926,8 @@ class WoiTabsState extends State<WoiTabs> {
     // up, then live in History); the conversation itself is untouched.
     return SelectionArea(
       child: ChatTranscript(
+        find: _find[HomeView.chat],
+        textChanges: pipeline,
         conversationId: pipeline.conversation.id,
         messages: msgs,
         padding: EdgeInsets.fromLTRB(wide ? 22 : 10, 16, wide ? 22 : 10, 8),

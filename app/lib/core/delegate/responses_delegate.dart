@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../tools/tool_registry.dart';
 import '../responses/responses_client.dart';
+import '../responses/reasoning.dart';
 import 'delegate_backend.dart';
 
 const kDelegateInstructions = '''
@@ -84,6 +85,7 @@ class ResponsesDelegate implements DelegateBackend {
     this.imageContext,
     this.maxSteps = 12,
     this.reasoningEffort = 'medium',
+    this.reasoningEffortProvider,
     this.excludedTools = const {'delegate_task'},
     this.onStep,
     this.environment,
@@ -100,6 +102,7 @@ class ResponsesDelegate implements DelegateBackend {
   final Future<List<ContextImage>> Function()? imageContext;
   final int maxSteps;
   final String? reasoningEffort;
+  final String? Function()? reasoningEffortProvider;
   final Set<String> excludedTools;
 
   /// Progress callback (tool name, args) for UI/tests.
@@ -120,6 +123,7 @@ class ResponsesDelegate implements DelegateBackend {
   @override
   Future<DelegateResult> runTask(String task, {required String model, String? context}) async {
     final epoch = cancellationEpoch?.call();
+    final effort = reasoningEffortProvider == null ? reasoningEffort : reasoningEffortProvider!();
     bool cancelled() => cancellationEpoch?.call() != epoch;
     DelegateResult cancellationResult(int tokens) => DelegateResult(
       success: false,
@@ -207,7 +211,7 @@ class ResponsesDelegate implements DelegateBackend {
           instructions: _instructions,
           input: input,
           tools: specs,
-          reasoning: reasoningEffort == null ? null : {'effort': reasoningEffort},
+          reasoning: textReasoning(model, effort),
           onFunctionCall: enqueue,
         );
         if (response.status != 'completed') {

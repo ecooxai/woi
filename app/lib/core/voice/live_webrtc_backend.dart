@@ -106,7 +106,8 @@ class LiveWebRtcBackend extends VoiceBackend
     this.sidebandBase = 'wss://api.openai.com/v1/live',
     this.sessionStartTimeout = const Duration(seconds: 15),
     this.delegationFastModel = 'gpt-6-luna',
-    this.delegationReasoningEffort = 'low',
+    this.delegationReasoningEffort = 'medium',
+    this.delegationReasoningEffortProvider,
     this.vadStopMs = 550,
     this.swapQuiet = const Duration(milliseconds: 1500),
     this.swapPoll = const Duration(milliseconds: 250),
@@ -133,8 +134,9 @@ class LiveWebRtcBackend extends VoiceBackend
   final Duration sessionStartTimeout;
   final String delegationFastModel;
 
-  /// Reasoning effort of the delegation model (`none` is ~0.2 s faster).
+  /// Thinking for text delegations. Pointer control has its own none effort.
   final String? delegationReasoningEffort;
+  final String? Function()? delegationReasoningEffortProvider;
   final int vadStopMs;
 
   /// Compaction swap ([applySummary]): how long the call must have been idle,
@@ -318,6 +320,7 @@ class LiveWebRtcBackend extends VoiceBackend
       pinnedNote: () => _pinnedNote,
       fastModel: delegationFastModel,
       reasoningEffort: delegationReasoningEffort,
+      reasoningEffortProvider: delegationReasoningEffortProvider,
       speculativeCapture: !config.phone,
     );
   }
@@ -1062,7 +1065,8 @@ class LiveWebRtcBackend extends VoiceBackend
   Future<MicStream> openManagedMic() async {
     final m = _ManagedMic(this);
     _mics.add(m);
-    setInputEnabled(true);
+    // Opening the observation stream must preserve the current PTT/mute gate,
+    // including a release while native capture is asynchronously resuming.
     try {
       // Resume may need a new native stream after exclusive held capture.
       // Do not report an open managed mic before that operation completes.

@@ -9,6 +9,7 @@ import '../auth/auth.dart';
 import '../media/media_context.dart' show isMediaQuestion, cameraCommand;
 import '../notes/pinned_note.dart';
 import '../responses/responses_client.dart';
+import '../responses/reasoning.dart';
 import '../util/image_mime.dart';
 import 'voice_backend.dart';
 
@@ -97,7 +98,7 @@ class ResponsesDelegationModel implements DelegationModel {
         instructions: instructions,
         input: input,
         tools: tools,
-        reasoning: reasoningEffort == null ? null : {'effort': reasoningEffort},
+        reasoning: textReasoning(model, reasoningEffort),
         parallelToolCalls: true,
         onFunctionCall: onToolCall == null
             ? null
@@ -215,6 +216,7 @@ class DelegationExecutor {
     this.pinnedNote,
     this.fastModel = 'gpt-6-luna',
     this.reasoningEffort = 'low',
+    this.reasoningEffortProvider,
     this.maxSteps = 4,
     this.freshScreenshotAfter = const Duration(seconds: 20),
     this.maxResultChars = 2400,
@@ -246,6 +248,7 @@ class DelegationExecutor {
   /// through `delegate_task` (the app's DelegateBackend, gpt-6-luna by default).
   final String fastModel;
   final String? reasoningEffort;
+  final String? Function()? reasoningEffortProvider;
   final int maxSteps;
   final Duration freshScreenshotAfter;
   final int maxResultChars;
@@ -406,6 +409,7 @@ class DelegationExecutor {
     r'^\s*(?:(?:ok(?:ay)?|please|now|so|and|then|hey|woi|can you|could you|would you)[\s,]+)*',
     caseSensitive: false,
   );
+
   /// Exact clipboard commands skip a model round trip. Writes/pastes require
   /// quoted literal text; questions about clipboard use and compound tasks do not.
   static Map<String, Object?>? clipboardFastPath(String request) {
@@ -432,14 +436,7 @@ class DelegationExecutor {
         ),
         'write',
       ),
-      (
-        RegExp(
-          r'^paste\s+(.+?)(?:\s+here)?[.!]?$',
-          caseSensitive: false,
-          dotAll: true,
-        ),
-        'paste',
-      ),
+      (RegExp(r'^paste\s+(.+?)(?:\s+here)?[.!]?$', caseSensitive: false, dotAll: true), 'paste'),
     ];
     const quotes = {'"': '"', "'": "'", '“': '”', '‘': '’'};
     for (final (pattern, action) in patterns) {
@@ -484,7 +481,8 @@ class DelegationExecutor {
     t = t.replaceFirst(RegExp(r"^(?:(?:ok(?:ay)?|hey|woi|please|now|so|and|then)[\s,]+)*"), '');
     t = t.replaceFirst(RegExp(r"^(?:(?:can|could|would|will)\s+you\s+(?:please\s+)?|go\s+ahead\s+and\s+)"), '');
     t = t.replaceFirst(RegExp(r'\s+please$'), '').trim();
-    if (RegExp(r'^(?:show|open|bring up)(?:\s+(?:the|my))?\s+(?:(?:on[- ]screen|soft|software)\s+)?keyboard$').hasMatch(t)) {
+    if (RegExp(r'^(?:show|open|bring up)(?:\s+(?:the|my))?\s+(?:(?:on[- ]screen|soft|software)\s+)?keyboard$')
+        .hasMatch(t)) {
       return [('show_keyboard', <String, Object?>{})];
     }
     if (RegExp(
@@ -740,13 +738,7 @@ class DelegationExecutor {
     // Clipboard actions do not need a screenshot or an extra language model.
     final clip = clipboardFastPath(request);
     if (clip != null && tools.any((t) => t.name == 'clipboard')) {
-      await _exec(
-        report,
-        sw,
-        'clipboard',
-        jsonEncode(clip),
-        'fast_${report.id}',
-      );
+      await _exec(report, sw, 'clipboard', jsonEncode(clip), 'fast_${report.id}');
       final run = report.tools.last;
       report
         ..model = 'fast-path'
@@ -886,7 +878,7 @@ class DelegationExecutor {
           instructions: _instructions,
           input: input,
           tools: specs,
-          reasoningEffort: reasoningEffort,
+          reasoningEffort: reasoningEffortProvider == null ? reasoningEffort : reasoningEffortProvider!(),
           onToolCall: enqueue,
         );
         for (final call in turn.calls) {
@@ -1022,10 +1014,15 @@ class DelegationExecutor {
         try {
           final result = jsonDecode(run.resultJson!);
           return result is Map && predicate(result);
-        } catch (_) { return false; }
+        } catch (_) {
+          return false;
+        }
       }
-      final keyboardPending = runs.any((run) => run.name == 'show_keyboard' &&
-          resultMatches(run, (r) => r['requested'] == true && r['visible'] != true));
+
+      final keyboardPending = runs.any(
+        (run) =>
+            run.name == 'show_keyboard' && resultMatches(run, (r) => r['requested'] == true && r['visible'] != true),
+      );
       final inputDispatched = runs.any((run) => resultMatches(run, (r) => r['delivery'] == 'dispatched'));
       b.write(
         !runs.every((t) => t.ok)

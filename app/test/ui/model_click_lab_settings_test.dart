@@ -8,6 +8,7 @@ import 'package:woi/core/lab/model_click_lab.dart';
 import 'package:woi/core/settings/settings.dart';
 import 'package:woi/ui/screens/settings_screen.dart';
 import 'package:woi/ui/theme.dart';
+import 'package:woi/ui/widgets/contextual_find.dart';
 
 import '../fakes/fakes.dart';
 
@@ -126,16 +127,19 @@ void main() {
       addTearDown(() => _stop(tester, controller, platform));
       await tester.binding.setSurfaceSize(const Size(360, 740));
       addTearDown(() => tester.binding.setSurfaceSize(null));
+      final search = ContextualFindController();
+      addTearDown(search.dispose);
       await tester.pumpWidget(
         MaterialApp(
           theme: buildWoiTheme(),
-          home: Scaffold(body: SettingsView(controller: controller)),
+          home: Scaffold(
+            body: SettingsView(controller: controller, find: search),
+          ),
         ),
       );
       await tester.pump(const Duration(milliseconds: 400));
       final launch = find.byKey(const ValueKey('open-model-click-lab'));
       final advanced = find.byKey(const ValueKey('advanced-settings'));
-      final search = find.byKey(const ValueKey('settings-search'));
       expect(launch, findsNothing);
       await _show(tester, advanced);
       await tester.tap(advanced);
@@ -148,12 +152,12 @@ void main() {
         reason: 'The Advanced launcher fits a phone-width screen.',
       );
 
-      await tester.enterText(search, 'API key');
+      search.setQuery('API key');
       await tester.pump();
       final key = find.byKey(const ValueKey('setting-api-key'));
       await _show(tester, key);
       await tester.enterText(key, '  qa-new-key  ');
-      await tester.enterText(search, 'Model Click Lab');
+      search.setQuery('Model Click Lab');
       await tester.pump();
       await _show(tester, launch);
       expect(

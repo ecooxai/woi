@@ -64,10 +64,10 @@ class PipelineOptions {
     this.idleStandby = Duration.zero,
   });
 
-  /// Hands-free with a platform mic: after this long with nothing said or
-  /// played the session closes ("standby"), the mic keeps listening and
-  /// speech (or typed text) connects again and sends what was said, like
-  /// at launch. Zero: never.
+  /// After this long with no activity, hands-free and managed Live push-to-talk
+  /// close the session. Hands-free listens locally for speech; push-to-talk
+  /// keeps capture closed until a press. Typed text wakes either mode.
+  /// Realtime replays buffered speech; WebRTC resumes live capture. Zero: off.
   final Duration idleStandby;
 
   /// Offline stop-word spotting while Woi speaks or is paused: a hit on the
@@ -623,10 +623,11 @@ class TurnPipeline extends ChangeNotifier {
 
   // ---- standby (see [PipelineOptions.idleStandby])
 
-  /// The session was closed for idleness; the mic listens and speech
-  /// (or typed text) connects again.
+  /// The session was closed for idleness. Speech wakes hands-free; a press
+  /// wakes push-to-talk. Typed text reconnects either mode.
   bool get standby => _standby;
   bool _standby = false;
+  Future<void>? _standbyTransition;
   DateTime _lastActivity = DateTime.now();
   EnergyVad? _wakeVad;
   // Typed while in standby or connecting: sent once connected.
@@ -643,34 +644,128 @@ class TurnPipeline extends ChangeNotifier {
 
   void _maybeStandby() {
     final after = options().idleStandby;
-    if (after <= Duration.zero || _standby || _disposed || _suspended || _idleWarm || _reconnecting) return;
+    if (after <= Duration.zero ||
+        _standby ||
+        _standbyTransition != null ||
+        _disposed ||
+        _suspended ||
+        _idleWarm ||
+        _reconnecting ||
+        _recordingHold) {
+      return;
+    }
     final b = _backend;
-    if (_status != SessionStatus.connected || b == null || b is ManagedAudioBackend) return;
-    if (_mic == null || _micManaged || _micMode != MicMode.handsFree) return;
-    if (_userSpeaking ||
-        _toolsRunning > 0 ||
-        _assistantAudible ||
-        _awaitingResponse ||
-        _assistantMsg != null ||
-        _holding ||
-        _paused != null ||
-        b.busy ||
-        cameraImage?.call() != null) {
+    if (_status != SessionStatus.connected || b == null) return;
+    final managedPtt = _micMode == MicMode.pushToTalk && b is ManagedAudioBackend;
+    if (!managedPtt && (_mic == null || _micMode != MicMode.handsFree)) return;
+    if (_standbyBusy(b)) {
       _noteActivity();
       return;
     }
     if (DateTime.now().difference(_lastActivity) < after) return;
-    unawaited(_enterStandby(after));
+    final transition = _standbyTransition = _enterStandby(after);
+    unawaited(
+      transition.whenComplete(() {
+        if (!identical(_standbyTransition, transition)) return;
+        _standbyTransition = null;
+        // Activity can cancel standby while capture restoration is still pending.
+        // Clear the transition first so queued text is delivered instead of requeued.
+        if (!_standby &&
+            !_suspended &&
+            !_disposed &&
+            !_idleWarm &&
+            _status == SessionStatus.connected &&
+            _backend != null) {
+          _sendQueuedTexts();
+        }
+      }),
+    );
   }
 
+  bool _standbyBusy(VoiceBackend b) =>
+      _pttHeld ||
+      _userSpeaking ||
+      _toolsRunning > 0 ||
+      _assistantAudible ||
+      _awaitingResponse ||
+      _assistantMsg != null ||
+      _holding ||
+      _paused != null ||
+      _recordingHold ||
+      b.busy ||
+      cameraImage?.call() != null;
+
   Future<void> _enterStandby(Duration after) async {
-    debugPrint('voice: standby after ${after.inSeconds} s idle (session closed, mic listening)');
+    final b = _backend!;
+    final managed = _managed;
+    final idleAt = _lastActivity;
+    debugPrint('voice: standby after ${after.inSeconds} s idle (closing session)');
     _standby = true;
     _wakeVad = EnergyVad(minThreshold: standbyWakeThreshold, startMs: 240, stopMs: 800, calibrationMs: 300);
     _pending.clear();
     _preShot = null;
-    await _disconnectBackend(keepMic: true);
-    _changed();
+    try {
+      if (managed != null) {
+        // General transport close is best-effort; exclusive capture release
+        // reports failures and waits for any late native device opens.
+        managed.setInputEnabled(false);
+        await managed.setCaptureSuspended(true);
+        final configured = options().idleStandby;
+        if (_standby &&
+            identical(_backend, b) &&
+            (_lastActivity != idleAt ||
+                _standbyBusy(b) ||
+                configured <= Duration.zero ||
+                DateTime.now().difference(_lastActivity) < configured)) {
+          // Activity arrived while native capture was being released. Keep
+          // the call and its in-flight work; no local wake capture is opened.
+          _leaveStandby();
+          _noteActivity();
+          managed.setInputEnabled(_forwarding && !_idleWarm);
+          await managed.setCaptureSuspended(_recordingHold);
+          return;
+        }
+      }
+      // WebRTC capture is released before a local wake mic opens, including
+      // the optional onset/raw capture streams that close with the session.
+      await _disconnectBackend(keepMic: true, requireClosed: true);
+      if (!_standby ||
+          _disposed ||
+          _suspended ||
+          _idleWarm ||
+          _recordingHold ||
+          _micMode != MicMode.handsFree ||
+          _backend != null) {
+        return;
+      }
+      await _openMic();
+      if (_standby && _mic == null && !_recordingHold && _micMode == MicMode.handsFree) {
+        _leaveStandby();
+        _status = SessionStatus.error;
+        statusDetail = 'Standby microphone is unavailable. Reconnect to resume listening.';
+      }
+    } catch (e) {
+      // A failed native close cannot safely be followed by another capture.
+      _leaveStandby();
+      try {
+        await _disconnectBackend();
+      } catch (_) {}
+      _status = SessionStatus.error;
+      statusDetail = 'Could not release voice capture for standby: $e';
+    } finally {
+      _syncPhaseTicker();
+      _changed();
+    }
+  }
+
+  /// Cancels an in-flight handoff before a newer lifecycle action proceeds.
+  /// A slow local mic open is invalidated now and closed when it completes.
+  Future<void> _cancelStandbyTransition() async {
+    _leaveStandby();
+    final transition = _standbyTransition;
+    if (transition == null) return;
+    await _closeMic();
+    await transition;
   }
 
   /// Standby mic audio: a rolling lead-in, and the wake detector.
@@ -809,17 +904,23 @@ class TurnPipeline extends ChangeNotifier {
   bool get suspended => _suspended;
   bool _suspended = false;
 
+  int _connectGeneration = 0;
+
   Future<void> connect() => _connect(allowFallback: true);
 
   Future<void> _connect({required bool allowFallback}) async {
+    if (_disposed) return;
+    final generation = ++_connectGeneration;
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
     _suspended = false;
     _leaveStandby();
-    // A platform mic stays open across the reconnect (its audio is buffered
-    // meanwhile); a backend-owned one (WebRTC) goes with its session.
-    if (_micManaged) await _closeMic();
+    if (_standbyTransition != null) await _cancelStandbyTransition();
+    if (generation != _connectGeneration || _disposed || _suspended) return;
+    // A platform mic stays open across reconnect; WebRTC capture is released
+    // with its old session. Concurrent connects wait for that native close.
     await _disconnectBackend(keepMic: true);
+    if (generation != _connectGeneration || _disposed || _suspended) return;
     _status = SessionStatus.connecting;
     statusDetail = null;
     _changed();
@@ -924,23 +1025,63 @@ class TurnPipeline extends ChangeNotifier {
 
   /// Closes the backend without touching the status (a failed or fatally
   /// broken session keeps showing its error).
-  Future<void> _releaseBackend({bool keepMic = false}) async {
-    if (!keepMic || _micManaged) await _closeMic();
-    await _eventSub?.cancel();
-    _eventSub = null;
+  Future<void>? _backendClosing;
+
+  Future<void> _releaseBackend({bool keepMic = false, bool requireClosed = false}) {
+    final previous = _backendClosing;
+    // Detach synchronously: a retiring backend cannot clear a newer session
+    // or send a connection-lost event that wakes an intentional standby.
     final b = _backend;
+    final sub = _eventSub;
     _backend = null;
-    if (b != null) {
-      try {
-        await b.close();
-      } catch (_) {}
-    }
+    _eventSub = null;
+    final eventsClosed = sub?.cancel();
+    final micClosed = !keepMic || _micManaged ? _closeMic() : null;
+    final closing = () async {
+      Object? failure;
+      StackTrace? stack;
+      Future<void> finish(Future<void>? operation) async {
+        try {
+          await operation;
+        } catch (e, st) {
+          failure ??= e;
+          stack ??= st;
+        }
+      }
+
+      if (previous != null) await finish(previous);
+      if (eventsClosed != null) await finish(eventsClosed);
+      if (micClosed != null) await finish(micClosed);
+      if (b != null) {
+        try {
+          await b.close();
+        } catch (e, st) {
+          if (requireClosed) {
+            failure ??= e;
+            stack ??= st;
+          }
+        }
+      }
+      if (failure != null) Error.throwWithStackTrace(failure!, stack!);
+    }();
+    _backendClosing = closing;
+    unawaited(
+      closing.then(
+        (_) {
+          if (identical(_backendClosing, closing)) _backendClosing = null;
+        },
+        onError: (Object _, StackTrace _) {
+          if (identical(_backendClosing, closing)) _backendClosing = null;
+        },
+      ),
+    );
+    return closing;
   }
 
-  Future<void> _disconnectBackend({bool keepMic = false}) async {
+  Future<void> _disconnectBackend({bool keepMic = false, bool requireClosed = false}) async {
     _resetTurnState();
-    await _releaseBackend(keepMic: keepMic);
-    _status = SessionStatus.disconnected;
+    await _releaseBackend(keepMic: keepMic, requireClosed: requireClosed);
+    if (_backend == null) _status = SessionStatus.disconnected;
     _syncPhaseTicker();
   }
 
@@ -953,9 +1094,10 @@ class TurnPipeline extends ChangeNotifier {
     _reconnectTimer = null;
     _reconnecting = false;
     _reconnectAttempt = 0;
-    _leaveStandby();
-    await _disconnectBackend();
     _suspended = true;
+    _connectGeneration++;
+    await _cancelStandbyTransition();
+    await _disconnectBackend();
     _changed();
   }
 
@@ -997,6 +1139,7 @@ class TurnPipeline extends ChangeNotifier {
   // Brings the mic and session in line with [_idleWarm]; after each await a
   // newer enter/leave wins (a quick dismiss + show keeps the mic open).
   Future<void> _syncWarm() async {
+    if (_standbyTransition != null) await _cancelStandbyTransition();
     if (_disposed || _suspended) return;
     if (_idleWarm) {
       if (_reconnecting || _status == SessionStatus.error) {
@@ -1404,6 +1547,12 @@ class TurnPipeline extends ChangeNotifier {
   Future<void> setMicMode(MicMode mode) async {
     _micMode = mode;
     _pttHeld = false;
+    final transition = _standbyTransition;
+    if (transition != null) {
+      if (mode == MicMode.muted) await _closeMic();
+      await transition;
+      if (_disposed || _suspended || _micMode != mode) return;
+    }
     if (mode == MicMode.muted) {
       await _closeMic();
       if (_userSpeaking) _onSpeechStopped();
@@ -1412,8 +1561,11 @@ class TurnPipeline extends ChangeNotifier {
       await _openMic();
       _managed?.setInputEnabled(_forwarding);
     } else if (_standby) {
-      // Standby keeps listening (or waits for the talk button).
-      await _openMic();
+      if (_micMode == MicMode.handsFree) {
+        await _openMic();
+      } else {
+        await _closeMic();
+      }
     }
     if (_userSpeaking && !_forwarding) {
       // Switched to push-to-talk mid-utterance: no more audio reaches the
@@ -1458,7 +1610,15 @@ class TurnPipeline extends ChangeNotifier {
   int _micGen = 0;
 
   Future<void> _openMic() {
-    if (_mic != null || _idleWarm || _recordingHold) return Future.value();
+    if (_mic != null ||
+        _disposed ||
+        _suspended ||
+        _idleWarm ||
+        _recordingHold ||
+        (_standby && _micMode != MicMode.handsFree) ||
+        (_managed != null && _micMode == MicMode.pushToTalk && !_pttHeld)) {
+      return Future.value();
+    }
     final pending = _micOpening;
     if (pending != null) return pending;
     final f = _micOpening = _doOpenMic();
@@ -1475,7 +1635,10 @@ class TurnPipeline extends ChangeNotifier {
     try {
       final managed = _managed;
       final mic = managed != null ? await managed.openManagedMic() : await audio.openMic();
-      if (gen != _micGen || _disposed) {
+      if (gen != _micGen ||
+          _disposed ||
+          (managed != null && _micMode == MicMode.pushToTalk && !_pttHeld) ||
+          (_standby && _micMode != MicMode.handsFree)) {
         await mic.close();
         return;
       }
@@ -1749,10 +1912,17 @@ class TurnPipeline extends ChangeNotifier {
 
   /// Push-to-talk pressed.
   void pttDown() {
-    if (_micMode != MicMode.pushToTalk || _pttHeld) return;
+    if (_micMode != MicMode.pushToTalk || _pttHeld || _recordingHold) return;
     _pttHeld = true;
-    if (_standby) _wake('push-to-talk');
-    _managed?.setInputEnabled(true);
+    _noteActivity();
+    if (_standby) {
+      // The retiring managed session must remain muted while wake waits for it.
+      _wake('push-to-talk');
+      _changed();
+      return;
+    }
+    _managed?.setInputEnabled(_forwarding);
+    if (_managed != null && _status == SessionStatus.connected) unawaited(_openMic());
     // Holding the talk button is an explicit interruption.
     _bargeIn();
     if (!(_backend?.hasServerVad ?? true)) _onSpeechStarted();
@@ -1763,6 +1933,7 @@ class TurnPipeline extends ChangeNotifier {
   void pttUp() {
     if (!_pttHeld) return;
     _pttHeld = false;
+    _noteActivity();
     _managed?.setInputEnabled(false);
     final b = _backend;
     if (b != null && _status == SessionStatus.connected) {
@@ -2480,7 +2651,7 @@ class TurnPipeline extends ChangeNotifier {
   void sendText(String text, {AudioClip? audioClip, bool includesSystemAudio = false}) {
     final t = text.trim();
     if (t.isEmpty) return;
-    if (_standby || (_status == SessionStatus.connecting && _backend != null)) {
+    if (_standby || _standbyTransition != null || (_status == SessionStatus.connecting && _backend != null)) {
       // Sent once the session is up (standby: it wakes now).
       _queuedTexts.add((text: t, audio: audioClip, includesSystemAudio: includesSystemAudio));
       if (_standby) _wake('typed text');
@@ -3058,6 +3229,9 @@ class TurnPipeline extends ChangeNotifier {
   }
 
   Future<void> shutdown() async {
+    _disposed = true;
+    _connectGeneration++;
+    await _cancelStandbyTransition();
     await _kwsStop();
     await _qaDump?.close();
     await _qaDumpTimes?.close();

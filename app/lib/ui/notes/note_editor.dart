@@ -10,6 +10,7 @@ import '../../core/notes/note_copy.dart';
 import '../../core/notes/note_ops.dart';
 import '../theme.dart';
 import '../widgets/throttled_builder.dart';
+import '../widgets/contextual_find.dart';
 import 'markdown_syntax.dart';
 import 'markdown_view.dart';
 
@@ -149,6 +150,7 @@ class NoteEditor extends StatefulWidget {
   const NoteEditor({
     super.key,
     required this.notes,
+    this.find,
     this.compact = false,
     this.onOpenLink,
     this.initialMode,
@@ -158,6 +160,7 @@ class NoteEditor extends StatefulWidget {
   });
 
   final NoteController notes;
+  final ContextualFindController? find;
 
   /// Copies the note or the line / paragraph / H1 section at the cursor and
   /// returns the confirmation label (AppActions.copyNote, shared with voice).
@@ -185,7 +188,11 @@ class NoteEditor extends StatefulWidget {
 class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMixin {
   static NoteViewMode _lastMode = NoteViewMode.edit;
 
-  late final MarkdownEditingController _ctrl = MarkdownEditingController(text: widget.notes.text);
+  late final _ctrl = _FindMarkdownController(text: widget.notes.text);
+  List<TextRange> _findMatches = const [];
+  String? _findText;
+  bool _findSelection = false;
+  NoteViewMode? _modeBeforeFind;
   final _focus = FocusNode(debugLabel: 'note-editor');
   final _previewFocus = FocusNode(debugLabel: 'note-preview');
   final _editScroll = ScrollController();
@@ -223,11 +230,16 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
     widget.copied?.addListener(_onCopied);
     _syncAi();
     _chromeSig = _chromeSignature();
+    _attachFind();
   }
 
   @override
   void didUpdateWidget(NoteEditor oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.find != widget.find) {
+      oldWidget.find?.detach(this);
+      _attachFind();
+    }
     if (oldWidget.notes != widget.notes) {
       oldWidget.notes.removeListener(_onNotes);
       widget.notes.addListener(_onNotes);
@@ -242,6 +254,7 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
   @override
   void dispose() {
     notes.removeListener(_onNotes);
+    widget.find?.detach(this);
     widget.copied?.removeListener(_onCopied);
     _copyTimer?.cancel();
     _ctrl.removeListener(_onText);
@@ -270,6 +283,64 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
     }
   }
 
+  void _attachFind() {
+    widget.find?.attach(this, onQuery: _refreshFind, onNavigate: _revealFind);
+    if (widget.find == null) _refreshFind(reveal: false);
+  }
+
+  void _refreshFind({bool reveal = true}) {
+    final find = widget.find;
+    _findText = _ctrl.text;
+    _findMatches = findTextRanges(_ctrl.text, find?.query ?? '');
+    find?.setMatches(_findMatches.length, reveal: reveal);
+    final current = find?.currentMatch ?? -1;
+    _ctrl.findRange = current < 0 ? null : _findMatches[current];
+    if (_findMatches.isEmpty && _findSelection) {
+      _findSelection = false;
+      final selection = _ctrl.selection;
+      if (selection.isValid && !selection.isCollapsed) {
+        _ctrl.selection = TextSelection.collapsed(offset: selection.extentOffset);
+      }
+    }
+    if (find?.query.trim().isEmpty ?? true) {
+      final mode = _modeBeforeFind;
+      if (mode != null) {
+        _modeBeforeFind = null;
+        setState(() => _mode = mode);
+      }
+    }
+  }
+
+  void _revealFind(int index) {
+    if (index < 0 || index >= _findMatches.length) return;
+    final range = _findMatches[index];
+    if (_mode == NoteViewMode.preview) {
+      _modeBeforeFind ??= _mode;
+      // Reveal the exact source match without requesting editor focus or
+      // changing the user's saved editing/preview preference.
+      setState(() => _mode = NoteViewMode.edit);
+    }
+    _findSelection = true;
+    _ctrl.findRange = range;
+    _ctrl.selection = TextSelection(baseOffset: range.start, extentOffset: range.end);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _ctrl.findRange != range) return;
+      EditableTextState? editable;
+      void visit(Element element) {
+        if (element is StatefulElement &&
+            element.state is EditableTextState &&
+            (element.state as EditableTextState).widget.controller == _ctrl) {
+          editable = element.state as EditableTextState;
+        } else {
+          element.visitChildren(visit);
+        }
+      }
+
+      context.visitChildElements(visit);
+      editable?.bringIntoView(TextPosition(offset: range.start));
+    });
+  }
+
   // ------------------------------------------------------------------ sync
 
   void _onText() {
@@ -278,6 +349,7 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
     notes.cursor = sel.isValid ? sel.extentOffset : -1;
     if (_syncing) return;
     if (_ctrl.text != notes.text) notes.setText(_ctrl.text);
+    if (_findText != _ctrl.text) _refreshFind(reveal: false);
   }
 
   void _onNotes() {
@@ -320,6 +392,7 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
       _syncing = false;
     }
     _syncAi();
+    if (_findText != _ctrl.text) _refreshFind(reveal: false);
     // Typing notifies on every key; only rebuild the editor's chrome (toolbar,
     // AI chip, preview) when something it shows changed. The text field
     // follows its own controller, the footer has its own throttled listener.
@@ -1221,4 +1294,58 @@ class _ToolButton extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// Keep the current find result visible while keyboard focus stays in the
+/// floating input. Existing Markdown, composing, and AI-edit styles survive.
+class _FindMarkdownController extends MarkdownEditingController {
+  _FindMarkdownController({super.text});
+
+  TextRange? _findRange;
+  TextRange? get findRange => _findRange;
+  set findRange(TextRange? value) {
+    if (_findRange == value) return;
+    _findRange = value;
+    notifyListeners();
+  }
+
+  @override
+  TextSpan buildTextSpan({required BuildContext context, TextStyle? style, required bool withComposing}) {
+    final source = super.buildTextSpan(context: context, style: style, withComposing: withComposing);
+    final range = _findRange;
+    if (range == null || range.end > text.length) return source;
+    var offset = 0;
+    InlineSpan highlight(InlineSpan span) {
+      if (span is! TextSpan) {
+        offset += span.toPlainText().length;
+        return span;
+      }
+      final children = <InlineSpan>[];
+      final content = span.text;
+      if (content != null) {
+        final start = offset;
+        offset += content.length;
+        final from = (range.start - start).clamp(0, content.length);
+        final to = (range.end - start).clamp(0, content.length);
+        if (from >= to) {
+          children.add(TextSpan(text: content));
+        } else {
+          if (from > 0) children.add(TextSpan(text: content.substring(0, from)));
+          children.add(
+            TextSpan(
+              text: content.substring(from, to),
+              style: TextStyle(backgroundColor: WoiColors.cyan.withValues(alpha: 0.3)),
+            ),
+          );
+          if (to < content.length) children.add(TextSpan(text: content.substring(to)));
+        }
+      }
+      for (final child in span.children ?? const <InlineSpan>[]) {
+        children.add(highlight(child));
+      }
+      return TextSpan(style: span.style, children: children);
+    }
+
+    return highlight(source) as TextSpan;
+  }
 }
