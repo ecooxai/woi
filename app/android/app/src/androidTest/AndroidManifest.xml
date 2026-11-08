@@ -6,5 +6,11 @@
             android:excludeFromRecents="true"
             android:label="Woi control test"
             android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+        <activity
+            android:name="dev.woi.woi.KeyboardTestActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:label="Woi keyboard fixture"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
     </application>
 </manifest>

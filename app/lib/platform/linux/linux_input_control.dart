@@ -140,11 +140,11 @@ class LinuxInputControl implements InputControl {
 
   @override
   Future<void> keyCombo(String combo) async {
-    final keys = combo.trim().split(RegExp(r'\s+')).where((s) => s.isNotEmpty).map(normalizeKeyCombo).toList();
-    if (keys.isEmpty) return;
+    if (combo.trim().isEmpty) return;
+    final chords = parseKeySequence(combo);
     await _visible('keyboard', () async {
-      await _run(['key', '--clearmodifiers', ...keys]);
-    }, keys: combo);
+      await _run(sendKeysArgs(chords));
+    }, keys: chords.join(' '));
   }
 
   @override
@@ -192,56 +192,9 @@ class LinuxInputControl implements InputControl {
   }
 }
 
-const _keyAliases = {
-  'ctrl': 'ctrl',
-  'control': 'ctrl',
-  'shift': 'shift',
-  'alt': 'alt',
-  'option': 'alt',
-  'super': 'super',
-  'win': 'super',
-  'meta': 'super',
-  'cmd': 'super',
-  'command': 'super',
-  'enter': 'Return',
-  'return': 'Return',
-  'esc': 'Escape',
-  'escape': 'Escape',
-  'tab': 'Tab',
-  'space': 'space',
-  'backspace': 'BackSpace',
-  'delete': 'Delete',
-  'del': 'Delete',
-  'insert': 'Insert',
-  'home': 'Home',
-  'end': 'End',
-  'pageup': 'Prior',
-  'pgup': 'Prior',
-  'pagedown': 'Next',
-  'pgdn': 'Next',
-  'up': 'Up',
-  'down': 'Down',
-  'left': 'Left',
-  'right': 'Right',
-  'plus': 'plus',
-  'minus': 'minus',
-  'printscreen': 'Print',
-  'print': 'Print',
-};
-
-/// Converts friendly names ("Ctrl+Shift+Enter") to xdotool keysyms.
+/// Converts one friendly chord through the same parser as [InputControl.sendKeys].
 String normalizeKeyCombo(String combo) {
-  return combo
-      .split('+')
-      .where((s) => s.isNotEmpty)
-      .map((k) {
-        final lower = k.toLowerCase();
-        final alias = _keyAliases[lower];
-        if (alias != null) return alias;
-        if (RegExp(r'^f([1-9]|1[0-9]|2[0-4])$').hasMatch(lower)) {
-          return lower.toUpperCase();
-        }
-        return k.length == 1 ? k.toLowerCase() : k;
-      })
-      .join('+');
+  final chords = parseKeySequence(combo);
+  if (chords.length != 1) throw const FormatException('give one key chord');
+  return xdotoolChord(chords.single);
 }

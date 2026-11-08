@@ -77,6 +77,10 @@ class PythonInstrumentation : Instrumentation() {
     }
 
     override fun onStart() {
+        if (group == "keyboard") {
+            KeyboardDeviceCheck(this).run()
+            return
+        }
         if (group == "audio") {
             HeldAudioDeviceCheck(this).run()
             return

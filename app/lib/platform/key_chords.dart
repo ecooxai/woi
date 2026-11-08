@@ -174,6 +174,9 @@ List<KeyChord> parseKeySequence(String spec) {
     if (parts.length > 2 && parts.last.isEmpty && parts[parts.length - 2].isEmpty) {
       parts = [...parts.sublist(0, parts.length - 2), '+'];
     }
+    if (parts.any((part) => part.isEmpty)) {
+      throw FormatException('incomplete chord "$token"; give a key after the modifiers');
+    }
     final mods = <KeyModifier>{...pendingMods};
     String? key;
     for (var i = 0; i < parts.length; i++) {
@@ -199,8 +202,11 @@ List<KeyChord> parseKeySequence(String spec) {
     chords.add(KeyChord(key, mods));
   }
   if (pendingMods.isNotEmpty) {
+    if (pendingMods.length > 1) {
+      throw const FormatException('a modifier combination needs a final key, for example ctrl+alt+shift+a');
+    }
     // A lone modifier ("press shift"): press the modifier key itself.
-    final m = pendingMods.first;
+    final m = pendingMods.single;
     chords.add(KeyChord(m == KeyModifier.superKey ? 'super' : m.name));
   }
   if (chords.isEmpty) throw const FormatException('no keys given');
@@ -219,18 +225,23 @@ bool isTerminalWindowClass(String? windowClass) => windowClass != null && _termi
 /// Keys for an edit intent in a window of [windowClass].
 List<KeyChord> chordsForAction(KeyAction a, {String? windowClass}) {
   final term = isTerminalWindowClass(windowClass);
-  KeyChord c(String k, [bool shift = false]) =>
-      KeyChord(k, {KeyModifier.ctrl, if (shift || term) KeyModifier.shift});
+  KeyChord c(String k, [bool shift = false]) => KeyChord(k, {KeyModifier.ctrl, if (shift || term) KeyModifier.shift});
   return switch (a) {
     KeyAction.copy => [c('c')],
     KeyAction.paste => [c('v')],
     KeyAction.cut => [c('x')],
     KeyAction.selectAll => [c('a')],
-    KeyAction.undo => [const KeyChord('z', {KeyModifier.ctrl})],
-    KeyAction.redo => [const KeyChord('z', {KeyModifier.ctrl, KeyModifier.shift})],
+    KeyAction.undo => [
+      const KeyChord('z', {KeyModifier.ctrl}),
+    ],
+    KeyAction.redo => [
+      const KeyChord('z', {KeyModifier.ctrl, KeyModifier.shift}),
+    ],
     KeyAction.escape => const [KeyChord('escape')],
     KeyAction.enter => const [KeyChord('enter')],
-    KeyAction.back => const [KeyChord('left', {KeyModifier.alt})],
+    KeyAction.back => const [
+      KeyChord('left', {KeyModifier.alt}),
+    ],
   };
 }
 
@@ -247,7 +258,15 @@ class KeyTarget {
 
 /// What [InputControl.sendKeys] did.
 class SendKeysResult {
-  const SendKeysResult({required this.chords, this.windowTitle, this.windowClass, this.windowId, this.activated = false});
+  const SendKeysResult({
+    required this.chords,
+    this.windowTitle,
+    this.windowClass,
+    this.windowId,
+    this.activated = false,
+    this.delivery,
+    this.backend,
+  });
   final List<KeyChord> chords;
   final String? windowTitle;
   final String? windowClass;
@@ -256,10 +275,16 @@ class SendKeysResult {
   /// The target had to be focused first.
   final bool activated;
 
+  /// Whether the platform acknowledged an action or only dispatched input.
+  final String? delivery;
+  final String? backend;
+
   Map<String, Object?> toJson() => {
     'keys': chords.map((c) => '$c').join(' '),
     if (windowTitle != null && windowTitle!.isNotEmpty) 'window': windowTitle,
     if (windowClass != null && windowClass!.isNotEmpty) 'class': windowClass,
     if (activated) 'focused_first': true,
+    if (delivery != null) 'delivery': delivery,
+    if (backend != null) 'backend': backend,
   };
 }

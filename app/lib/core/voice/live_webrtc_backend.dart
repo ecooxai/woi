@@ -1004,7 +1004,12 @@ class LiveWebRtcBackend extends VoiceBackend
   /// Stop / barge-in: gpt-live is full duplex and yields by itself when the
   /// user talks; locally we silence the remote track until the next turn.
   @override
+  void cancelPendingTools() => _executor?.cancelPending();
+
+  @override
   void cancelResponse() {
+    // Ordinary speech/typed barge-in only silences narration. Explicit Stop
+    // uses cancelPendingTools, so an approval or new question keeps its task.
     // The caller heard the assistant: mute even when no turn is tracked as
     // open (turn events can lag the audio); the next turn unmutes.
     if (_assistantOpen || _player.isPlaying) _interrupted = true;
@@ -1097,6 +1102,7 @@ class LiveWebRtcBackend extends VoiceBackend
   Future<void> close() async {
     if (_closed) return;
     _closed = true;
+    _executor?.cancelPending();
     _closeTimer?.cancel();
     _applyTimer?.cancel();
     _finishApply(const ContextApplyResult(ContextApplyMethod.skipped, detail: 'closed'));

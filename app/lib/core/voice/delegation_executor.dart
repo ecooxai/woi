@@ -1,4 +1,5 @@
 import '../../tools/pointer_tools.dart';
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -105,6 +106,9 @@ class ResponsesDelegationModel implements DelegationModel {
     } on ResponsesException catch (e) {
       throw DelegationModelException(e.message, status: e.status);
     }
+    if (r.status != 'completed') {
+      throw DelegationModelException('response ${r.status}');
+    }
     return DelegationModelTurn(
       text: r.text.trim(),
       calls: [
@@ -138,7 +142,8 @@ class DelegationImage {
 typedef DelegationToolRunner = Future<String> Function(String callId, String name, String argsJson);
 
 class DelegationToolRun {
-  DelegationToolRun(this.name, this.argsJson, this.startedAt);
+  DelegationToolRun(this.name, this.argsJson, this.startedAt, {this.callId = ''});
+  final String callId;
   final String name;
   final String argsJson;
   final Duration startedAt;
@@ -162,6 +167,7 @@ class DelegationReport {
   DelegationReport({required this.id, required this.request}) : createdAt = DateTime.now();
   final String id;
   final String request;
+  int _cancellationEpoch = 0;
 
   /// Wall clock when the delegation started (≈ `delegation.created` receipt).
   final DateTime createdAt;
@@ -251,8 +257,9 @@ class DelegationExecutor {
   final DateTime Function() _now;
 
   static const instructions =
-      'You carry out a voice assistant\'s request on the user\'s Linux desktop by calling tools. '
-      'Act at once, never ask questions. Call every tool the current step needs in one reply. '
+      'You carry out a voice assistant\'s request on the user\'s device by calling tools. '
+      'Act at once, never ask questions. Emit the needed tool call before any explanation or acknowledgement. '
+      'Do not announce a plan or ask the user to wait. Call every tool the current step needs in one reply. '
       'The request is transcribed speech: "readme dot md" means README.md. Relative paths resolve against the workspace dir given below; use only the real paths given there. '
       'Show, open, view or play a file: show_file. Never change files with run_bash: read_file, then edit_file '
       '(the user approves a diff). '
@@ -262,6 +269,9 @@ class DelegationExecutor {
       'click_screen coordinates are pixels of the attached screenshot. '
       'Keys or shortcuts in another app (copy, paste, select all, "press ctrl c", escape): send_keys; it targets the '
       'app the user was using (never Woi), or `window` when the user names one ("in the xterm" -> window "xterm"). '
+      'Use action for copy/paste/cut/select_all intents, and keys for exact shortcuts such as ctrl+c or ctrl+alt+shift+a. '
+      'Preserve every requested modifier; unquoted "type Ctrl+C" means send_keys, while "type the text Ctrl+C" '
+      'or quoted text means literal type_text. Never claim a dispatched key event proves the target app acted. '
       'A live camera frame (webcam) or a media image (open in Woi\'s viewer) may be attached: they are not the '
       'screen. Answer questions about what the camera sees or what the media shows directly from that image, in '
       'one or two sentences, without tools. '
@@ -286,7 +296,16 @@ class DelegationExecutor {
   }
 
   /// Tools whose result the model must see before it can act or answer.
-  static const observeTools = {'python', 'take_screenshot', 'list_dir', 'read_file', 'read_note', 'inspect_media', 'camera', 'web_search'};
+  static const observeTools = {
+    'python',
+    'take_screenshot',
+    'list_dir',
+    'read_file',
+    'read_note',
+    'inspect_media',
+    'camera',
+    'web_search',
+  };
 
   /// Read-only shell commands (locating / inspecting files).
   static final _lookupCommand = RegExp(
@@ -350,6 +369,14 @@ class DelegationExecutor {
     r'^\s*(?:(?:ok(?:ay)?|please|can you|could you|now)[\s,]+)*type(?:\s+out)?(?:\s+(?:the\s+)?(?:text|words?))?[\s:,]+(.+?)\s*$',
     caseSensitive: false,
   );
+  static final _shortcutPrefix = RegExp(
+    r'^(?:ctrl|control|ctl|strg|shift|alt|option|opt|super|win|windows|meta|cmd|command)(?:[+-]|\s)',
+    caseSensitive: false,
+  );
+  static final _literalTyping = RegExp(
+    r'\btype(?:\s+out)?\s+(?:the\s+)?(?:literal\s+)?(?:text|words?)\b',
+    caseSensitive: false,
+  );
   static final _generative = RegExp(
     r"\b(a|an|some|the|my|your|this|that|summary|poem|email|letter|code|reply|answer|about|list|it|me)\b",
     caseSensitive: false,
@@ -363,6 +390,7 @@ class DelegationExecutor {
     if (m == null) return null;
     var body = m.group(1)!.trim();
     final quoted = RegExp('["\'“”‘’]').hasMatch(body);
+    if (!quoted && !_literalTyping.hasMatch(request) && _shortcutPrefix.hasMatch(body)) return null;
     body = body.replaceAll(RegExp('^["\'“”‘’]+|["\'“”‘’.!?]+\$'), '').trim();
     final tail = RegExp(r'\s+(?:please|for me|now)\$', caseSensitive: false);
     body = body.replaceAll(tail, '').trim();
@@ -385,7 +413,10 @@ class DelegationExecutor {
   );
   static final _keyActions = <(RegExp, List<KeyAction>)>[
     (RegExp(r'^copy\s+(?:all|everything)(?:\s+(?:the\s+)?text)?$'), [KeyAction.selectAll, KeyAction.copy]),
-    (RegExp(r'^copy(?:\s+(?:that|this|it|the\s+selection|selection|the\s+selected\s+text|the\s+text))?$'), [KeyAction.copy]),
+    (
+      RegExp(r'^copy(?:\s+(?:that|this|it|the\s+selection|selection|the\s+selected\s+text|the\s+text))?$'),
+      [KeyAction.copy],
+    ),
     (RegExp(r'^paste(?:\s+(?:that|this|it|the\s+clipboard|clipboard))?(?:\s+here)?$'), [KeyAction.paste]),
     (RegExp(r'^cut(?:\s+(?:that|this|it|the\s+selection|selection))?$'), [KeyAction.cut]),
     (RegExp(r'^(?:select|highlight|mark)\s+(?:all|everything)(?:\s+(?:the\s+)?text)?$'), [KeyAction.selectAll]),
@@ -399,14 +430,23 @@ class DelegationExecutor {
     t = t.replaceFirst(RegExp(r"^(?:(?:ok(?:ay)?|hey|woi|please|now|so|and|then)[\s,]+)*"), '');
     t = t.replaceFirst(RegExp(r"^(?:(?:can|could|would|will)\s+you\s+(?:please\s+)?|go\s+ahead\s+and\s+)"), '');
     t = t.replaceFirst(RegExp(r'\s+please$'), '').trim();
-    if (RegExp(r"^(?:undo|revert|take back|roll back)(?:\s+(?:it|that|this|the (?:last )?(?:edit|change)|your (?:last )?(?:edit|change)))?$").hasMatch(t)) {
-      return [('app_control', {'action': 'undo_edit'})];
+    if (RegExp(
+      r"^(?:undo|revert|take back|roll back)(?:\s+(?:it|that|this|the (?:last )?(?:edit|change)|your (?:last )?(?:edit|change)))?$",
+    ).hasMatch(t)) {
+      return [
+        ('app_control', {'action': 'undo_edit'}),
+      ];
     }
     if (RegExp(r'^(?:apply|accept|approve)(?:\s+(?:it|that|the (?:edit|change)))?(?:\s+now)?$').hasMatch(t)) {
-      return [('app_control', {'action': 'apply_edit'})];
+      return [
+        ('app_control', {'action': 'apply_edit'}),
+      ];
     }
-    if (RegExp(r'^(?:reject|discard|decline)(?:\s+(?:it|that|the (?:edit|change)))?$|^cancel the (?:edit|change)$').hasMatch(t)) {
-      return [('app_control', {'action': 'reject_edit'})];
+    if (RegExp(r'^(?:reject|discard|decline)(?:\s+(?:it|that|the (?:edit|change)))?$|^cancel the (?:edit|change)$')
+        .hasMatch(t)) {
+      return [
+        ('app_control', {'action': 'reject_edit'}),
+      ];
     }
     final view = RegExp(
       r'^(?:switch|go|change|flip|jump)\s+(?:back\s+)?to\s+(?:the\s+)?(terminal|chat|note|notes|settings|preferences|split|side by side)(?:\s+(?:view|tab|panel|screen|mode))?$'
@@ -415,7 +455,9 @@ class DelegationExecutor {
     ).firstMatch(t);
     if (view != null) {
       final v = view.group(1) ?? view.group(2) ?? view.group(3)!;
-      return [('app_control', {'action': 'show_view', 'view': v})];
+      return [
+        ('app_control', {'action': 'show_view', 'view': v}),
+      ];
     }
     final theme = RegExp(
       r'^(?:(?:change|set|switch|make|turn|put)\s+(?:the\s+)?(?:theme|app|woi|it|appearance|colou?rs?)?\s*(?:to|into|in)?\s*(?:the\s+)?)?'
@@ -425,12 +467,16 @@ class DelegationExecutor {
     ).firstMatch(t);
     if (theme != null && RegExp(r'theme|mode|change|set|switch|make|turn|put').hasMatch(t)) {
       final v = theme.group(1) ?? theme.group(2) ?? theme.group(3)!;
-      return [('app_control', {'action': 'set_setting', 'key': 'theme', 'value': v})];
+      return [
+        ('app_control', {'action': 'set_setting', 'key': 'theme', 'value': v}),
+      ];
     }
     final mic = RegExp(r'^(?:mute|unmute)\s+(?:the\s+)?(?:mic|microphone)$').firstMatch(t);
     if (mic != null) {
       final on = t.startsWith('un');
-      return [('app_control', {'action': 'set_setting', 'key': 'mic_mode', 'value': on ? 'hands_free' : 'muted'})];
+      return [
+        ('app_control', {'action': 'set_setting', 'key': 'mic_mode', 'value': on ? 'hands_free' : 'muted'}),
+      ];
     }
     // "copy this paragraph", "copy the current line", "copy the whole note".
     final copy = RegExp(
@@ -440,13 +486,20 @@ class DelegationExecutor {
     if (copy != null) {
       final w = copy.group(1)!;
       final what = w.contains('section') ? 'section' : w;
-      return [('note_control', {'action': 'copy', 'what': what})];
+      return [
+        ('note_control', {'action': 'copy', 'what': what}),
+      ];
     }
     if (RegExp(r'^(?:start|create|make|open)\s+(?:a\s+)?new\s+note$|^new note$').hasMatch(t)) {
-      return [('note_control', {'action': 'new'})];
+      return [
+        ('note_control', {'action': 'new'}),
+      ];
     }
-    if (RegExp(r'^(?:open|start|create)\s+(?:a\s+)?new\s+(?:terminal|shell)(?:\s+tab)?$|^new\s+terminal\s+tab$').hasMatch(t)) {
-      return [('app_control', {'action': 'terminal_new'})];
+    if (RegExp(r'^(?:open|start|create)\s+(?:a\s+)?new\s+(?:terminal|shell)(?:\s+tab)?$|^new\s+terminal\s+tab$')
+        .hasMatch(t)) {
+      return [
+        ('app_control', {'action': 'terminal_new'}),
+      ];
     }
     // "add 'buy milk' to my note" (original casing for the text).
     final add = RegExp(
@@ -457,11 +510,15 @@ class DelegationExecutor {
       var text = add.group(1)!.trim();
       final q = RegExp(r'''^["'‘“](.+)["'’”]$''').firstMatch(text);
       if (q != null) text = q.group(1)!.trim();
-      if (text.isEmpty || text.length > 200 || RegExp(r'\b(?:that|this|it|the (?:summary|result|answer|output))$').hasMatch(text.toLowerCase())) {
+      if (text.isEmpty ||
+          text.length > 200 ||
+          RegExp(r'\b(?:that|this|it|the (?:summary|result|answer|output))$').hasMatch(text.toLowerCase())) {
         return null; // refers to something: let the model write it
       }
       if (!text.contains('\n') && !RegExp(r'^[-*#]|^\d+[.)]').hasMatch(text)) text = '- $text';
-      return [('note_control', {'action': 'append', 'text': text})];
+      return [
+        ('note_control', {'action': 'append', 'text': text}),
+      ];
     }
     return null;
   }
@@ -489,28 +546,61 @@ class DelegationExecutor {
       } on FormatException {
         return null;
       }
-      return [call({'keys': keys})];
+      return [
+        call({'keys': keys}),
+      ];
+    }
+    // Explicit unquoted shortcuts need no planning round trip. In a typing
+    // request, quoted text and 'type the text ...' remain literal text.
+    final shortcut = t.replaceFirst(RegExp(r'^type\s+', caseSensitive: false), '');
+    if (_shortcutPrefix.hasMatch(shortcut)) {
+      if (shortcut == t && request.trim().endsWith('?')) return null;
+      try {
+        final chords = parseKeySequence(shortcut);
+        if (chords.any((chord) => chord.hasModifiers)) {
+          return [
+            call({'keys': shortcut}),
+          ];
+        }
+      } on FormatException {
+        return null; // mixed, incomplete, or explanatory requests need the planner
+      }
     }
     final out = <Map<String, Object?>>[];
     for (final part in t.toLowerCase().split(RegExp(r'\s*(?:,|\band then\b|\bthen\b|\band\b)\s*'))) {
       if (part.isEmpty) continue;
       final hit = _keyActions.where((a) => a.$1.hasMatch(part)).firstOrNull;
       if (hit == null) return null;
-      out.addAll([for (final a in hit.$2) call({'action': a.wire})]);
+      out.addAll([
+        for (final a in hit.$2) call({'action': a.wire}),
+      ]);
     }
     return out.isEmpty ? null : out;
   }
 
   int _seq = 0;
+  int _cancellationEpoch = 0;
+
+  /// Invalidate queued calls without retrying already dispatched input.
+  void cancelPending() => _cancellationEpoch++;
+
+  void _checkActive(DelegationReport report) {
+    if (report._cancellationEpoch != _cancellationEpoch) throw StateError('Delegation cancelled.');
+  }
 
   Future<DelegationReport> execute(String request, {String? id}) async {
     final sw = Stopwatch()..start();
-    final report = DelegationReport(id: id ?? 'dlg_${++_seq}', request: request)..model = fastModel;
+    final report = DelegationReport(id: id ?? 'dlg_${++_seq}', request: request)
+      ..model = fastModel
+      .._cancellationEpoch = _cancellationEpoch;
     try {
       await _run(request, report, sw);
     } catch (e) {
       report.error = e;
       report.resultText = 'Failed: ${_clip('$e', 300)}';
+      if (report.tools.isNotEmpty) {
+        report.resultText += '\nDo not repeat dispatched calls. Known results:\n${_summarize(report, const [])}';
+      }
     }
     report.total = sw.elapsed;
     return report;
@@ -533,7 +623,13 @@ class DelegationExecutor {
     // agent; no preliminary general-model call or unrelated context is needed.
     final pointer = pointerAction(request);
     if (pointer != null && tools.any((t) => t.name == 'control_pointer')) {
-      await _exec(report, sw, 'control_pointer', jsonEncode({'action': pointer, 'request': request}), 'pointer_${report.id}');
+      await _exec(
+        report,
+        sw,
+        'control_pointer',
+        jsonEncode({'action': pointer, 'request': request}),
+        'pointer_${report.id}',
+      );
       final run = report.tools.last;
       report
         ..model = 'gpt-6-luna'
@@ -584,6 +680,22 @@ class DelegationExecutor {
       }
       report.tools.removeRange(n, report.tools.length); // not found: let the model look
     }
+    // Fast path: "copy that", "press ctrl c", "select all and copy".
+    final keyCalls = keysFastPath(request);
+    if (keyCalls != null && tools.any((t) => t.name == 'send_keys')) {
+      final n = report.tools.length;
+      for (final (i, a) in keyCalls.indexed) {
+        await _exec(report, sw, 'send_keys', jsonEncode(a), 'fast${i}_${report.id}');
+        if (!report.tools.last.ok) break;
+      }
+      report
+        ..model = 'fast-path'
+        ..steps = 0
+        ..firstToolCall = report.tools[n].startedAt
+        ..toolsDone = report.tools.last.doneAt
+        ..resultText = _summarize(report, const []);
+      return;
+    }
     // Fast path: "type 'hello world'" goes straight to the focused window
     // (the model sometimes clicked somewhere first and never typed).
     final typed = typeFastPath(request);
@@ -614,22 +726,6 @@ class DelegationExecutor {
         ..resultText = _summarize(report, const []);
       return;
     }
-    // Fast path: "copy that", "press ctrl c", "select all and copy".
-    final keyCalls = keysFastPath(request);
-    if (keyCalls != null && tools.any((t) => t.name == 'send_keys')) {
-      final n = report.tools.length;
-      for (final (i, a) in keyCalls.indexed) {
-        await _exec(report, sw, 'send_keys', jsonEncode(a), 'fast${i}_${report.id}');
-        if (!report.tools.last.ok) break;
-      }
-      report
-        ..model = 'fast-path'
-        ..steps = 0
-        ..firstToolCall = report.tools[n].startedAt
-        ..toolsDone = report.tools.last.doneAt
-        ..resultText = _summarize(report, const []);
-      return;
-    }
     final extras = _freshContextImages();
     // A question about the open media or the camera is answered from their
     // images; the screen is only waited for when the request names it.
@@ -643,12 +739,15 @@ class DelegationExecutor {
     Future<void>? capture;
     // Questions about the open media / camera never need the screen.
     final mayCapture = !aboutContext && (visual || speculativeCapture);
-    if (mayCapture && hasScreenshotTool && (shot == null || _now().difference(shot.capturedAt) > freshScreenshotAfter)) {
+    if (mayCapture &&
+        hasScreenshotTool &&
+        (shot == null || _now().difference(shot.capturedAt) > freshScreenshotAfter)) {
       // No usable screenshot: capture through the app so it is attached to
       // the conversation and click_screen maps coordinates against it. Only
       // visual requests wait for it; the others start the model right away.
       report.freshCapture = true;
       capture = _exec(report, sw, 'take_screenshot', '{}', 'shot_${report.id}');
+      unawaited(capture.catchError((Object _, StackTrace _) {}));
       if (visual) {
         await capture;
         shot = latestScreenshot?.call();
@@ -678,34 +777,67 @@ class DelegationExecutor {
     final texts = <String>[];
 
     for (var step = 0; step < maxSteps; step++) {
+      _checkActive(report);
       report.steps = step + 1;
-      // Execute calls in arrival order as they stream in.
+      // Execute completed calls in arrival order, before the response ends.
+      // The final reply can repeat these calls; its IDs must never rerun input.
       var chain = Future<void>.value();
-      final turn = await model.respond(
-        model: fastModel,
-        instructions: _instructions,
-        input: input,
-        tools: specs,
-        reasoningEffort: reasoningEffort,
-        onToolCall: (c) {
-          report.firstToolCall ??= sw.elapsed;
-          chain = chain.then((_) => _exec(report, sw, c.name, c.arguments, c.callId));
-        },
-      );
+      final queued = <String, DelegationToolCall>{};
+      var accepting = true;
+      var streamFailed = false;
+      Object? executionError;
+      StackTrace? executionStack;
+      void enqueue(DelegationToolCall c) {
+        if (!accepting || queued.containsKey(c.callId)) return;
+        queued[c.callId] = c;
+        report.firstToolCall ??= sw.elapsed;
+        chain = chain.then((_) async {
+          if (streamFailed || executionError != null) return;
+          try {
+            _checkActive(report);
+            await _exec(report, sw, c.name, c.arguments, c.callId);
+          } catch (error, stack) {
+            executionError = error;
+            executionStack = stack;
+          }
+        });
+      }
+
+      final DelegationModelTurn turn;
+      try {
+        turn = await model.respond(
+          model: fastModel,
+          instructions: _instructions,
+          input: input,
+          tools: specs,
+          reasoningEffort: reasoningEffort,
+          onToolCall: enqueue,
+        );
+        for (final call in turn.calls) {
+          enqueue(call);
+        }
+      } catch (_) {
+        streamFailed = true;
+        rethrow;
+      } finally {
+        accepting = false;
+        await chain;
+      }
+      _checkActive(report);
+      if (executionError != null) Error.throwWithStackTrace(executionError!, executionStack!);
       report.firstModelEvent ??= turn.firstEvent;
-      await chain;
       if (turn.text.isNotEmpty) texts.add(turn.text);
-      if (turn.calls.isEmpty) break;
+      if (queued.isEmpty) break;
       report.toolsDone = sw.elapsed;
 
-      final names = turn.calls.map((c) => c.name).toSet();
-      final needsLook = turn.calls.every((c) => isObservation(c, request));
+      final names = queued.values.map((c) => c.name).toSet();
+      final needsLook = queued.values.every((c) => isObservation(c, request));
       if (!needsLook || step == maxSteps - 1) break;
 
       // Observation step: feed results (and a fresh screenshot) back.
-      for (final c in turn.calls) {
+      for (final c in queued.values) {
         final run = report.tools.lastWhere(
-          (t) => t.name == c.name,
+          (t) => t.callId == c.callId,
           orElse: () => DelegationToolRun(c.name, '', sw.elapsed),
         );
         input
@@ -760,8 +892,7 @@ class DelegationExecutor {
     ];
   }
 
-  static String _dataUrl(Uint8List b) =>
-      'data:${imageMimeOf(b)};base64,${base64Encode(b)}';
+  static String _dataUrl(Uint8List b) => 'data:${imageMimeOf(b)};base64,${base64Encode(b)}';
 
   Map<String, Object?> _userMessage(String text, DelegationImage? shot, {List<DelegationImage> extras = const []}) {
     final note = contextNote?.call()?.trim();
@@ -784,14 +915,18 @@ class DelegationExecutor {
   }
 
   Future<void> _exec(DelegationReport report, Stopwatch sw, String name, String args, String callId) async {
-    final run = DelegationToolRun(name, args, sw.elapsed);
+    _checkActive(report);
+    final run = DelegationToolRun(name, args, sw.elapsed, callId: callId);
     report.tools.add(run);
     try {
+      if (callId.isEmpty || name.isEmpty) throw const FormatException('tool call ID and name are required');
+      if (jsonDecode(args) is! Map) throw const FormatException('tool arguments must be a complete JSON object');
       run.resultJson = await runTool(callId, name, args);
     } catch (e) {
       run.resultJson = jsonEncode({'ok': false, 'error': '$e'});
     }
     run.doneAt = sw.elapsed;
+    _checkActive(report);
   }
 
   String _summarize(DelegationReport r, List<String> texts) {
@@ -806,9 +941,13 @@ class DelegationExecutor {
           return false;
         }
       });
-      b.write(!runs.every((t) => t.ok)
-          ? 'Not fully done. '
-          : queuedImage ? 'Image generation is running in the background. ' : 'Done. ');
+      b.write(
+        !runs.every((t) => t.ok)
+            ? 'Not fully done. '
+            : queuedImage
+            ? 'Image generation is running in the background. '
+            : 'Done. ',
+      );
       for (final t in runs) {
         b.write('${t.name}(${_clip(_compactArgs(t.argsJson), 200)}) -> ${_compactResult(t.resultJson)}\n');
       }
@@ -860,7 +999,10 @@ final _actionRequest = RegExp(
 
 /// Whether typed text asks the assistant to *do* something on the computer
 /// (gpt-live never delegates typed text itself, so the app runs it).
-bool looksLikeAction(String text) => _actionRequest.hasMatch(text.trim());
+bool looksLikeAction(String text) =>
+    _actionRequest.hasMatch(text.trim()) ||
+    DelegationExecutor._shortcutPrefix.hasMatch(text.trim()) ||
+    DelegationExecutor.keysFastPath(text) != null;
 
 /// Typed questions about changing facts need a lookup-capable model too. The
 /// caller only routes these here when web search is enabled for this session.

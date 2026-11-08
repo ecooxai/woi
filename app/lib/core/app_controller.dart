@@ -57,7 +57,7 @@ import 'voice/pinned_context.dart';
 import 'voice/voice_backend.dart';
 
 const kAssistantInstructions = '''
-Your name is Woi. You are a fast voice assistant running on the user's Linux desktop. If asked who you are, say
+Your name is Woi. You are a fast voice assistant running on the user's device. If asked who you are, say
 you are Woi. Never call yourself ChatGPT, Aurora, an OpenAI model or any name you see in window titles or on screen.
 Be quick and concise: answer in one or two short spoken sentences, no markdown, no lists unless asked.
 Act, don't narrate: when a request maps to a tool, call the tool directly and immediately, without asking for
@@ -67,7 +67,8 @@ the real outcome; if a tool failed, was rejected or did nothing, say that plainl
 paths or command output.
 Whenever a calculation is needed, always call python with Python code and print the result. Answer from the
 returned output; never calculate by guessing. If Python fails, report that instead of inventing a result.
-Say any acknowledgement ("on it", "one moment") at most once per request; do not repeat filler while waiting.
+Start the tool call before any acknowledgement or explanation. Do not say "on it", "one moment", or describe a
+plan before acting. Wait for the tool result, then report the outcome briefly.
 Screenshots of the user's screen are attached while they speak; use them to resolve what they refer to.
 click_screen: always describe the element in target (its visible label in quotes, kind and place, e.g.
 "'Save' button in the Profile dialog"); Woi locates it precisely. Also pass x/y, your estimate in the pixel
@@ -76,6 +77,10 @@ For a spot on the screen itself ("the center of the screen", a corner), set posi
 Tools: click_screen, type_text, send_keys, take_screenshot, run_bash, python, read_file, list_dir, edit_file,
 write_file, show_file (show a file, image, audio or video to the user inside Woi), read_note, update_note,
 note_control, app_control, delegate_task.
+Keyboard shortcuts use send_keys: use action for copy/paste/cut/select_all, and keys for an exact requested chord
+such as Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+A, or Ctrl+Alt+Shift+A. Preserve every modifier; Meta means Super.
+Unquoted "type Ctrl+C" asks for a shortcut; quoted "Ctrl+C" or "type the text Ctrl+C" asks for literal type_text.
+A dispatched key event confirms it was sent, not that the target app performed the expected effect.
 note_control runs the notes: append/insert/replace/delete_text in this note, the editor's undo/redo, copy
 (the note, or the line/paragraph/H1 section at the cursor, to the clipboard), and new, switch, rename, delete,
 list of notes. app_control runs Woi itself: show_view (tabs: note, chat, terminal, settings; split),
@@ -98,7 +103,8 @@ the whole note aloud unless asked.
 
 /// Extra rules for gpt-live, which acts only through delegation.
 const kLiveInstructions = '''
-On this connection you cannot use tools yourself: every request to do something on the computer (open, show,
+On this connection you cannot use tools yourself: start delegation immediately before speaking any acknowledgement,
+explanation or plan. Wait for its result before reporting the outcome. Every request to do something on the device (open, show,
 play, click, type, run, read, write, edit, create, delete, find, list, take a screenshot) must go to delegation,
 every time, even if a similar request was handled before. That includes controlling Woi itself: switching the
 view (note, chat, terminal), changing settings (theme, voice, mic mode), notes (add to, edit, new, switch,
@@ -199,6 +205,7 @@ class AppController extends ChangeNotifier {
             for (final item in await recentGeneratedImageContext(pipeline.conversation)) item.image,
           ],
           environment: environmentNote,
+          cancellationEpoch: () => _delegateCancellationEpoch,
         ),
     _guard,
     onChoice: (c) {
@@ -221,15 +228,11 @@ class AppController extends ChangeNotifier {
   ModelChoice get delegationChoice => _guard(_settings.delegateModel);
 
   late final LunaPointerDelegate pointerDelegate = LunaPointerDelegate(
-    client: _pointerClientOverride ?? ResponsesClient(
-      credentials: credentials,
-      reuseConnections: true,
-      timeout: const Duration(seconds: 45),
-    ),
-    capture: () => platform.screen.capture(
-      scale: _settings.screenshotScale,
-      jpegQuality: _settings.screenshotJpegQuality,
-    ),
+    client:
+        _pointerClientOverride ??
+        ResponsesClient(credentials: credentials, reuseConnections: true, timeout: const Duration(seconds: 45)),
+    capture: () =>
+        platform.screen.capture(scale: _settings.screenshotScale, jpegQuality: _settings.screenshotJpegQuality),
     input: platform.input,
     enabled: () => _settings.useLunaPointer,
     onScreenshot: (shot, callId) async {
@@ -243,6 +246,14 @@ class AppController extends ChangeNotifier {
       }
     },
   );
+
+  int _delegateCancellationEpoch = 0;
+
+  void _interruptTools() {
+    _delegateCancellationEpoch++;
+    review.rejectAll();
+    _interruptPointerControl();
+  }
 
   void _interruptPointerControl() {
     pointerDelegate.cancelPending();
@@ -525,15 +536,22 @@ class AppController extends ChangeNotifier {
         // send_keys supersedes key_combo (targets the user's app, not Woi).
         ..registerAll(builtinTools(toolEnv).where((t) => t.name != 'key_combo'))
         ..register(sendKeysTool(platform.input, phone: platform.isMobile))
-        ..register(pointerControlTool(
-          enabled: () => _settings.useLunaPointer,
-          control: (action, request, callId) => pointerDelegate.control(action: action, request: request, callId: callId),
-        ))
+        ..register(
+          pointerControlTool(
+            enabled: () => _settings.useLunaPointer,
+            control: (action, request, callId) =>
+                pointerDelegate.control(action: action, request: request, callId: callId),
+          ),
+        )
         ..registerAll(noteTools(notes, review: review, history: editHistory))
         ..registerAll(appTools(actions))
         ..register(webSearchTool(enabled: () => _settings.webSearchEnabled, search: backgroundTasks.searchWeb))
-        ..register(imageGenerationTool(generate: (prompt, size, action, sourceMessageId) =>
-            generateImage(prompt, size: size, action: action, sourceMessageId: sourceMessageId)))
+        ..register(
+          imageGenerationTool(
+            generate: (prompt, size, action, sourceMessageId) =>
+                generateImage(prompt, size: size, action: action, sourceMessageId: sourceMessageId),
+          ),
+        )
         ..registerAll(
           mediaTools(MediaToolsHost(setCamera: setCamera, cameraOn: () => cameraOn, inspectMedia: inspectMedia)),
         );
@@ -553,7 +571,7 @@ class AppController extends ChangeNotifier {
           pointerDelegate.beginTurn();
           unawaited(platform.input.rememberTargetWindow());
         },
-        onToolInterrupt: _interruptPointerControl,
+        onToolInterrupt: _interruptTools,
         localCommand: _localCommand,
         // Offline stop-word spotting (not under flutter test: native model).
         stopWordSpotter: Platform.environment.containsKey('FLUTTER_TEST')
@@ -830,7 +848,7 @@ class AppController extends ChangeNotifier {
   Future<List<ConversationSummary>> listConversations() => history.list();
 
   Future<void> newConversation() async {
-    _interruptPointerControl();
+    _interruptTools();
     if (pipeline.conversation.messages.isEmpty && notes.isEmpty) return;
     review.rejectAll();
     final c = Conversation();
@@ -840,7 +858,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> openConversation(String id) async {
-    _interruptPointerControl();
+    _interruptTools();
     if (id == pipeline.conversation.id) return;
     final retained = backgroundTasks.retainedConversation(id);
     final c = retained ?? await history.load(id);
@@ -853,7 +871,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> deleteConversation(String id) async {
-    if (id == pipeline.conversation.id) _interruptPointerControl();
+    if (id == pipeline.conversation.id) _interruptTools();
     backgroundTasks.discardConversation(id);
     await notes.deleteFor(id);
     if (id == pipeline.conversation.id) {
@@ -1124,7 +1142,7 @@ class AppController extends ChangeNotifier {
   void compactNow() => contextManager.maybeCompress(force: true);
 
   Future<void> shutdown() async {
-    _interruptPointerControl();
+    _interruptTools();
     pointerDelegate.close();
     if (_ready) await backgroundTasks.shutdown();
     _pinnedTimer?.cancel();

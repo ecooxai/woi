@@ -2,8 +2,6 @@ package dev.woi.woi
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.graphics.Bitmap
 import android.graphics.Path
 import android.os.Build
@@ -17,9 +15,10 @@ import io.flutter.plugin.common.MethodChannel
 
 /**
  * Input for click_screen / type_text / send_keys in the app the user is
- * using: taps through dispatchGesture, text through ACTION_SET_TEXT (paste as
- * fallback), keys through global actions (back, home, recents) and node
- * actions on the focused field (copy, paste, cut, select all, IME enter).
+ * using: taps through dispatchGesture; literal text and exact key chords
+ * through the public accessibility InputConnection on Android 13+; semantic
+ * edits and older-Android text use supported node actions. System navigation
+ * uses global accessibility actions. No IME selection or permission changes.
  *
  * When Woi itself is in front, it is sent to the back first so the action
  * reaches the app below; the floating assistant panel steps aside instead.
@@ -39,12 +38,14 @@ class WoiAccessibilityService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        keyboardEpoch.cancel()
         control.end()
         if (instance === this) instance = null
         super.onDestroy()
     }
 
     override fun onUnbind(intent: android.content.Intent?): Boolean {
+        keyboardEpoch.cancel()
         control.end()
         if (instance === this) instance = null
         return super.onUnbind(intent)
@@ -132,88 +133,293 @@ class WoiAccessibilityService : AccessibilityService() {
     private fun focused(): AccessibilityNodeInfo? =
         findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
 
-    private fun typeText(text: String): String {
+    private var keyboardBusy = false
+    private val keyboardEpoch = WoiKeyboardEpoch()
+    private var editorGeneration = 0L
+
+    @android.annotation.TargetApi(33)
+    override fun onCreateInputMethod(): android.accessibilityservice.InputMethod =
+        object : android.accessibilityservice.InputMethod(this) {
+            override fun onStartInput(attribute: android.view.inputmethod.EditorInfo, restarting: Boolean) {
+                editorGeneration++
+                super.onStartInput(attribute, restarting)
+            }
+            override fun onFinishInput() {
+                editorGeneration++
+                super.onFinishInput()
+            }
+        }
+
+    private data class AppFocus(val packageName: String, val title: String?)
+    private interface EditorConnection : WoiKeySink {
+        fun current(): Boolean
+        fun commitText(text: String)
+        fun contextAction(id: Int)
+    }
+    private data class KeyboardFocus(val app: AppFocus, val editor: EditorConnection?, val requestEpoch: Long)
+    private data class KeyboardReceipt(val delivery: String, val backend: String)
+
+    /** A focused application window wins over the last accessibility event:
+     * those events can lag behind the assistant panel's focus handoff. */
+    private fun foregroundApp(): AppFocus? {
+        for (window in windows.sortedByDescending { it.layer }) {
+            if (!window.isFocused || window.type != android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION) continue
+            val root = window.root ?: continue
+            try {
+                val pkg = root.packageName?.toString() ?: continue
+                if (pkg == packageName || pkg == "com.android.systemui") return null
+                return AppFocus(pkg, window.title?.toString())
+            } finally { recycle(root) }
+        }
+        val root = rootInActiveWindow ?: return null
+        return try {
+            val pkg = root.packageName?.toString()
+            if (pkg.isNullOrBlank() || pkg == packageName || pkg == "com.android.systemui") null else AppFocus(pkg, null)
+        } finally { recycle(root) }
+    }
+
+    private fun focusedIn(pkg: String): AccessibilityNodeInfo? {
+        val node = focused() ?: return null
+        if (node.packageName?.toString() == pkg && node.isFocused) return node
+        recycle(node)
+        return null
+    }
+
+    /** Captures the real editor connection. It remains pinned for a whole
+     * request so a new app/editor cannot receive the remainder of a shortcut. */
+    private fun editorFor(app: AppFocus): EditorConnection? {
+        if (Build.VERSION.SDK_INT < 33) return null
+        val method = inputMethod ?: return null
+        val info = method.currentInputEditorInfo ?: return null
+        if (!WoiKeyboard.acceptsConnection(packageName, app.packageName, info.packageName, method.currentInputStarted)) return null
+        val connection = method.currentInputConnection ?: return null
+        val generation = editorGeneration
+        val downTimes = mutableMapOf<Int, Long>()
+        return object : EditorConnection {
+            override fun current(): Boolean = editorGeneration == generation &&
+                WoiKeyboard.acceptsConnection(packageName, foregroundApp()?.packageName,
+                    method.currentInputEditorInfo?.packageName, method.currentInputStarted)
+            override fun commitText(text: String) { connection.commitText(text, 1, null) }
+            override fun contextAction(id: Int) { connection.performContextMenuAction(id) }
+            override fun clearMetaKeyStates(states: Int) { connection.clearMetaKeyStates(states) }
+            override fun send(stroke: WoiKeyStroke) {
+                val now = android.os.SystemClock.uptimeMillis()
+                val downTime = if (stroke.action == android.view.KeyEvent.ACTION_DOWN) {
+                    downTimes[stroke.keyCode] = now
+                    now
+                } else downTimes.remove(stroke.keyCode) ?: now
+                connection.sendKeyEvent(android.view.KeyEvent(
+                    downTime, now, stroke.action, stroke.keyCode,
+                    0, stroke.metaState, android.view.KeyCharacterMap.VIRTUAL_KEYBOARD, 0,
+                    android.view.KeyEvent.FLAG_SOFT_KEYBOARD or android.view.KeyEvent.FLAG_KEEP_TOUCH_MODE,
+                    android.view.InputDevice.SOURCE_KEYBOARD,
+                ))
+            }
+        }
+    }
+
+    /** Exactly one request owns the focus handoff. Every completion restores
+     * the assistant panel; input is never replayed after a failed dispatch. */
+    private fun keyboardAside(result: MethodChannel.Result, settleMs: Long = 150, block: (Long, MethodChannel.Result) -> Unit) {
+        if (keyboardBusy) return result.error("keyboard_busy", "Another keyboard request is still completing", null)
+        val requestEpoch = keyboardEpoch.capture()
+        keyboardBusy = true
+        val once = object : MethodChannel.Result {
+            private var done = false
+            private fun finish(answer: () -> Unit) {
+                if (done) return
+                done = true
+                keyboardBusy = false
+                answer()
+            }
+            override fun success(value: Any?) = finish { result.success(value) }
+            override fun error(code: String, message: String?, details: Any?) = finish { result.error(code, message, details) }
+            override fun notImplemented() = finish { result.notImplemented() }
+        }
+        try {
+            aside(settleMs, once) { r ->
+                try {
+                    keyboardEpoch.check(requestEpoch)
+                    block(requestEpoch, r)
+                } catch (error: Throwable) {
+                    r.error("keyboard_cancelled", error.message ?: "Keyboard request stopped", mapOf("completed" to 0, "retry_safe" to false))
+                }
+            }
+        } catch (error: Throwable) {
+            once.error("failed", error.message ?: "Keyboard focus handoff failed", null)
+        }
+    }
+
+    /** Retry readiness only. Nothing has been sent during this wait. On 13+
+     * prefer the editor connection; a legacy node fallback is considered only
+     * after giving the editor time to reconnect when the panel steps aside. */
+    private fun awaitKeyboardFocus(
+        requiresConnection: Boolean, requested: String?, requestEpoch: Long, result: MethodChannel.Result,
+        start: Long = android.os.SystemClock.uptimeMillis(), block: (KeyboardFocus) -> Unit,
+    ) {
+        try {
+            keyboardEpoch.check(requestEpoch)
+            check(instance === this) { "Accessibility service disconnected before keyboard input" }
+            control.check()
+            val app = foregroundApp()
+            val elapsed = android.os.SystemClock.uptimeMillis() - start
+            if (app != null && WoiKeyboard.matchesTarget(requested, app.packageName, app.title)) {
+                val editor = editorFor(app)
+                if (editor != null) return block(KeyboardFocus(app, editor, requestEpoch))
+                if (!requiresConnection && (Build.VERSION.SDK_INT < 33 || elapsed >= 1000)) {
+                    val node = focusedIn(app.packageName)
+                    if (node != null) {
+                        recycle(node)
+                        return block(KeyboardFocus(app, null, requestEpoch))
+                    }
+                }
+            }
+            if (elapsed >= 1200) {
+                val reason = if (!requested.isNullOrBlank() && (app == null || !WoiKeyboard.matchesTarget(requested, app.packageName, app.title))) {
+                    "The requested Android target '$requested' is not focused; focus that app first"
+                } else if (requiresConnection) {
+                    "No active input connection in the focused app. Focus its editor first; Android cannot inject arbitrary global shortcuts"
+                } else {
+                    "No focused editor in the app beneath Woi. Focus a text field and try again"
+                }
+                return result.error("no_input_target", reason, null)
+            }
+            WoiBridge.main.postDelayed({ awaitKeyboardFocus(requiresConnection, requested, requestEpoch, result, start, block) }, 50)
+        } catch (error: Throwable) {
+            result.error("keyboard_cancelled", error.message ?: "Keyboard request stopped", null)
+        }
+    }
+
+    private fun checkKeyboardFocus(focus: KeyboardFocus) {
+        keyboardEpoch.check(focus.requestEpoch)
+        check(instance === this) { "Accessibility service disconnected" }
         control.check()
-        val node = focused() ?: throw IllegalStateException("no focused text field in ${activePackage ?: "the app"}")
-        if (node.isEditable) {
-            val cur = if (node.isShowingHintText) "" else (node.text?.toString() ?: "")
-            var s = node.textSelectionStart
-            var e = node.textSelectionEnd
-            if (s < 0 || s > cur.length) s = cur.length
-            if (e < s || e > cur.length) e = s
-            val next = cur.substring(0, s) + text + cur.substring(e)
-            val args = Bundle().apply {
+        check(foregroundApp()?.packageName == focus.app.packageName) { "The focused app changed; keyboard input stopped" }
+        check(focus.editor == null || focus.editor.current()) { "The focused editor changed; keyboard input stopped" }
+    }
+
+    private fun typeText(text: String, focus: KeyboardFocus): String {
+        checkKeyboardFocus(focus)
+        focus.editor?.let {
+            it.commitText(text)
+            // The public accessibility IME API is asynchronous and returns
+            // void. This means dispatched, not proof the application edited.
+            return "ime_dispatched"
+        }
+        val node = focusedIn(focus.app.packageName) ?: throw IllegalStateException("No focused text field")
+        try {
+            check(node.isEditable) { "The focused view is not editable" }
+            check(!node.isPassword) { "Password fields require a live input connection; text cannot be safely reconstructed" }
+            val hint = Build.VERSION.SDK_INT >= 26 && node.isShowingHintText
+            val current = if (hint) "" else node.text?.toString().orEmpty()
+            val start = if (current.isEmpty() && node.textSelectionStart < 0) 0 else node.textSelectionStart
+            val end = if (current.isEmpty() && node.textSelectionEnd < 0) 0 else node.textSelectionEnd
+            val (next, caret) = WoiKeyboard.insertText(current, start, end, text)
+            check(node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, Bundle().apply {
                 putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, next)
-            }
-            if (node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) {
-                val caret = s + text.length
-                node.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, Bundle().apply {
-                    putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, caret)
-                    putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, caret)
-                })
-                return "set_text"
-            }
-        }
-        // Web content (WebView / Chrome inputs) often refuses set-text but has
-        // the IME connection: commit through the service's own input method
-        // (Android 13+, flagInputMethodEditor), which leaves the clipboard be.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val ic = inputMethod?.currentInputConnection
-            if (ic != null) {
-                ic.commitText(text, 1, null)
-                return "ime"
-            }
-        }
-        // Fallback: clipboard + paste.
-        val cm = getSystemService(ClipboardManager::class.java)
-        cm.setPrimaryClip(ClipData.newPlainText("woi", text))
-        if (!node.performAction(AccessibilityNodeInfo.ACTION_PASTE)) {
-            throw IllegalStateException("the focused field accepts neither set-text nor paste")
-        }
-        return "paste"
+            })) { "The focused field refused text insertion; a live Android 13+ input connection is required for this editor" }
+            node.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, Bundle().apply {
+                putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, caret)
+                putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, caret)
+            })
+            return "set_text"
+        } finally { recycle(node) }
     }
 
-    private fun nodeAction(name: String): String {
-        control.check()
-        val node = focused() ?: throw IllegalStateException("no focused field for $name")
-        val ok = when (name) {
-            "copy" -> node.performAction(AccessibilityNodeInfo.ACTION_COPY)
-            "paste" -> node.performAction(AccessibilityNodeInfo.ACTION_PASTE)
-            "cut" -> node.performAction(AccessibilityNodeInfo.ACTION_CUT)
-            "select_all" -> {
-                val len = if (node.isShowingHintText) 0 else (node.text?.length ?: 0)
-                node.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, Bundle().apply {
-                    putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, 0)
-                    putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, len)
-                })
-            }
-            "enter" -> (Build.VERSION.SDK_INT >= 30 &&
-                node.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)) || imeEnter()
-            "clear_selection" -> node.performAction(AccessibilityNodeInfo.ACTION_CLEAR_SELECTION)
-            else -> throw IllegalArgumentException("unknown node action $name")
+    private fun edit(name: String, focus: KeyboardFocus): KeyboardReceipt {
+        checkKeyboardFocus(focus)
+        val editor = focus.editor
+        val contextAction = when (name) {
+            "copy" -> android.R.id.copy
+            "paste" -> android.R.id.paste
+            "cut" -> android.R.id.cut
+            "select_all" -> android.R.id.selectAll
+            else -> null
         }
-        if (!ok) throw IllegalStateException("$name is not available in the focused field")
-        return name
+        if (editor != null && contextAction != null) {
+            editor.contextAction(contextAction)
+            return KeyboardReceipt("dispatched", "android_accessibility_input_connection")
+        }
+        val node = focusedIn(focus.app.packageName)
+        try {
+            val handled = when (name) {
+                "copy" -> node?.performAction(AccessibilityNodeInfo.ACTION_COPY) == true
+                "paste" -> node?.performAction(AccessibilityNodeInfo.ACTION_PASTE) == true
+                "cut" -> node?.performAction(AccessibilityNodeInfo.ACTION_CUT) == true
+                "select_all" -> node?.let {
+                    val length = if (Build.VERSION.SDK_INT >= 26 && it.isShowingHintText) 0 else it.text?.length ?: 0
+                    it.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, Bundle().apply {
+                        putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, 0)
+                        putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, length)
+                    })
+                } == true
+                "enter" -> Build.VERSION.SDK_INT >= 30 && node?.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id) == true
+                "clear_selection" -> node?.performAction(AccessibilityNodeInfo.ACTION_CLEAR_SELECTION) == true
+                else -> throw IllegalArgumentException("unknown edit action $name")
+            }
+            if (handled) return KeyboardReceipt("applied", "android_accessibility_action")
+        } finally { recycle(node) }
+        if (name == "enter" && editor != null) {
+            WoiKeyboard.dispatch(WoiKeyOperation.Chord("enter", emptySet()), editor) { checkKeyboardFocus(focus) }
+            return KeyboardReceipt("dispatched", "android_accessibility_input_connection")
+        }
+        throw IllegalStateException("$name is not available in the focused field")
     }
 
-    /** Enter through the service's input method (web inputs that lack
-     *  ACTION_IME_ENTER still take the key from the IME connection). */
-    private fun imeEnter(): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return false
-        val ic = inputMethod?.currentInputConnection ?: return false
-        val now = android.os.SystemClock.uptimeMillis()
-        ic.sendKeyEvent(android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_ENTER, 0))
-        ic.sendKeyEvent(android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_ENTER, 0))
-        return true
-    }
-
-    /** The app's IME connection comes back a moment after the panel steps
-     *  aside: retry Enter through it for up to 600 ms. */
-    private fun imeEnterSoon(cause: Exception, r: MethodChannel.Result, start: Long = android.os.SystemClock.uptimeMillis()) {
-        control.check()
-        if (imeEnter()) return r.success("enter")
-        if (android.os.SystemClock.uptimeMillis() - start > 600) return r.error("failed", cause.message, null)
-        WoiBridge.main.postDelayed({ imeEnterSoon(cause, r, start) }, 50)
+    private fun sendKeys(operations: List<WoiKeyOperation>, requested: String?, result: MethodChannel.Result) {
+        if (operations.all { it is WoiKeyOperation.Global }) {
+            require(requested.isNullOrBlank()) { "Android system navigation cannot target a named application" }
+            return keyboardAside(result, 450) { requestEpoch, r ->
+                var completed = 0
+                fun next() {
+                    try {
+                        keyboardEpoch.check(requestEpoch)
+                        val operation = operations[completed] as WoiKeyOperation.Global
+                        check(global(operation.name)) { "${operation.name} was refused" }
+                        completed++
+                        if (completed < operations.size) WoiBridge.main.postDelayed(::next, 350)
+                        else r.success(mapOf("completed" to completed, "delivery" to "applied", "backend" to "android_accessibility_global"))
+                    } catch (error: Throwable) {
+                        r.error("input_stopped", "Keyboard request stopped after $completed/${operations.size} operations: ${error.message}",
+                            mapOf("completed" to completed, "retry_safe" to false))
+                    }
+                }
+                next()
+            }
+        }
+        val requiresConnection = operations.any { it is WoiKeyOperation.Chord }
+        keyboardAside(result) { requestEpoch, r ->
+            awaitKeyboardFocus(requiresConnection, requested, requestEpoch, r) { focus ->
+                var completed = 0
+                val receipts = mutableListOf<KeyboardReceipt>()
+                fun next() {
+                    try {
+                        checkKeyboardFocus(focus)
+                        val receipt = when (val operation = operations[completed]) {
+                            is WoiKeyOperation.Chord -> {
+                                val editor = checkNotNull(focus.editor) { "No live editor input connection" }
+                                WoiKeyboard.dispatch(operation, editor) { checkKeyboardFocus(focus) }
+                                KeyboardReceipt("dispatched", "android_accessibility_input_connection")
+                            }
+                            is WoiKeyOperation.Edit -> edit(operation.name, focus)
+                            is WoiKeyOperation.Global -> error("System navigation cannot be mixed with editor keys")
+                        }
+                        receipts.add(receipt)
+                        completed++
+                        if (completed < operations.size) WoiBridge.main.postDelayed(::next, 40)
+                        else r.success(mapOf(
+                            "completed" to completed, "package" to focus.app.packageName,
+                            "delivery" to if (receipts.any { it.delivery == "dispatched" }) "dispatched" else "applied",
+                            "backend" to receipts.map { it.backend }.distinct().joinToString("+"),
+                        ))
+                    } catch (error: Throwable) {
+                        r.error("input_stopped", "Keyboard request stopped after $completed/${operations.size} operations; input may already have been sent: ${error.message}",
+                            mapOf("completed" to completed, "retry_safe" to false))
+                    }
+                }
+                next()
+            }
+        }
     }
 
     private fun global(name: String): Boolean {
@@ -314,6 +520,13 @@ class WoiAccessibilityService : AccessibilityService() {
     companion object {
         @Volatile var instance: WoiAccessibilityService? = null
 
+        /** Stop must not queue behind a batch or re-enable an unbound service. */
+        fun cancelKeyboard(): Boolean {
+            val service = instance ?: return false
+            service.keyboardEpoch.cancel()
+            return true
+        }
+
         /** Runs [block]; an exception is logged, never thrown into the
          *  framework (an uncaught one would kill the process and unbind the
          *  service). */
@@ -368,10 +581,25 @@ class WoiAccessibilityService : AccessibilityService() {
                     val y = (call.argument<Number>("y") ?: 0).toFloat()
                     s.aside(350, result) { r -> s.tap(x, y, if (call.method == "doubleClick") 2 else 1, button, r) }
                 }
-                "typeText" -> s.aside(150, result) { r ->
-                    try { r.success(s.typeText(call.argument<String>("text") ?: "")) } catch (e: Exception) {
-                        r.error("failed", e.message, null)
+                "typeText" -> {
+                    val text = call.argument<String>("text") ?: ""
+                    if (text.length > 100000) return result.error("invalid_text", "Text insertion is limited to 100000 UTF-16 units per request", null)
+                    if (text.isEmpty()) return result.success("empty")
+                    s.keyboardAside(result) { requestEpoch, r ->
+                        s.awaitKeyboardFocus(false, null, requestEpoch, r) { focus ->
+                            try { r.success(s.typeText(text, focus)) } catch (error: Throwable) {
+                                r.error("input_stopped", "Text insertion stopped; do not retry automatically: ${error.message}", mapOf("retry_safe" to false))
+                            }
+                        }
                     }
+                }
+                "sendKeys" -> {
+                    val operations = try {
+                        WoiKeyboard.parse(call.argument<Any>("operations")).also { WoiKeyboard.validateSdk(it, Build.VERSION.SDK_INT) }
+                    } catch (error: IllegalArgumentException) {
+                        return result.error("unsupported_keys", error.message, null)
+                    }
+                    s.sendKeys(operations, call.argument<String>("target"), result)
                 }
                 "global" -> {
                     val name = call.argument<String>("name") ?: ""
@@ -379,11 +607,10 @@ class WoiAccessibilityService : AccessibilityService() {
                     // runs can be dropped: let it finish first.
                     s.aside(450, result) { r -> r.success(s.global(name)) }
                 }
-                "node" -> s.aside(150, result) { r ->
-                    val name = call.argument<String>("name") ?: ""
-                    try { r.success(s.nodeAction(name)) } catch (e: Exception) {
-                        if (name == "enter") s.imeEnterSoon(e, r) else r.error("failed", e.message, null)
-                    }
+                "node" -> {
+                    val operations = try { WoiKeyboard.parse(listOf(mapOf("type" to "edit", "name" to call.argument<String>("name")))) }
+                    catch (error: IllegalArgumentException) { return result.error("unsupported_keys", error.message, null) }
+                    s.sendKeys(operations, null, result)
                 }
                 // Read only: no stepping aside (Woi's own windows are skipped).
                 "elements" -> WoiBridge.io.execute {

@@ -178,8 +178,9 @@ object WoiBridge {
                 ctx.startActivity(i)
                 result.success(true)
             }
+            "cancelKeyboard" -> result.success(WoiAccessibilityService.cancelKeyboard())
             "controlBegin", "controlInterrupted", "controlUpdate", "controlEnd", "controlReset",
-            "click", "doubleClick", "typeText", "global", "node", "a11yScreenshot", "focusTarget", "elements" ->
+            "click", "doubleClick", "typeText", "sendKeys", "global", "node", "a11yScreenshot", "focusTarget", "elements" ->
                 WoiAccessibilityService.handle(call, result)
             // --- screen share ---
             "shareStart" -> {

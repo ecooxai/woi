@@ -62,6 +62,28 @@ void main() {
       expect(p('shift'), 'shift');
     });
 
+    test('all shortcut modifiers and aliases are preserved', () {
+      for (final key in ['c', 'v', 'x', 'a']) {
+        expect(p('Ctrl+$key'), 'ctrl+$key');
+      }
+      expect(p('Ctrl+Alt+Shift+A'), 'ctrl+shift+alt+a');
+      expect(p('Shift-Control-Alt-F9'), 'ctrl+shift+alt+f9');
+      expect(p('control alt shift a'), 'ctrl+shift+alt+a');
+      expect(p('Meta+Control+Alt+Shift+V'), 'ctrl+shift+alt+super+v');
+      expect(p('Win+Option+Shift+X'), 'shift+alt+super+x');
+      expect(p('Command+Control+C'), 'ctrl+super+c');
+      expect(p('ctrl+alt++'), 'ctrl+alt+plus');
+      for (final modifier in ['ctrl', 'alt', 'shift', 'super']) {
+        expect(p(modifier), modifier);
+      }
+    });
+
+    test('incomplete chords reject the entire sequence before input', () {
+      for (final text in ['ctrl+', '+c', 'ctrl+++', 'ctrl+alt+shift', 'ctrl+a ctrl+shift']) {
+        expect(() => parseKeySequence(text), throwsFormatException, reason: text);
+      }
+    });
+
     test('rejects unknown keys', () {
       expect(() => parseKeySequence('ctrl+banana'), throwsFormatException);
       expect(() => parseKeySequence('the button'), throwsFormatException);
@@ -72,7 +94,10 @@ void main() {
   group('chordsForAction', () {
     test('terminals copy and paste with shift', () {
       expect(chordsForAction(KeyAction.copy, windowClass: 'xterm XTerm').join(), 'ctrl+shift+c');
-      expect(chordsForAction(KeyAction.paste, windowClass: 'gnome-terminal-server Gnome-terminal').join(), 'ctrl+shift+v');
+      expect(
+        chordsForAction(KeyAction.paste, windowClass: 'gnome-terminal-server Gnome-terminal').join(),
+        'ctrl+shift+v',
+      );
       expect(chordsForAction(KeyAction.selectAll, windowClass: 'kitty kitty').join(), 'ctrl+shift+a');
     });
     test('other apps use plain ctrl', () {
@@ -93,6 +118,8 @@ void main() {
     test('chord keysyms', () {
       expect(xdotoolChord(parseKeySequence('esc').single), 'Escape');
       expect(xdotoolChord(parseKeySequence('ctrl+shift+c').single), 'ctrl+shift+c');
+      expect(xdotoolChord(parseKeySequence('Ctrl+Alt+Shift+A').single), 'ctrl+shift+alt+a');
+      expect(xdotoolChord(parseKeySequence('Meta+Ctrl+Alt+Shift+V').single), 'ctrl+shift+alt+super+v');
       expect(xdotoolChord(parseKeySequence('enter').single), 'Return');
       expect(xdotoolChord(parseKeySequence('alt+f4').single), 'alt+F4');
       expect(xdotoolChord(parseKeySequence('page up').single), 'Prior');
@@ -146,10 +173,10 @@ WM_STATE(WM_STATE):
     });
 
     test('parse stacking list (topmost first, decimal ids)', () {
-      expect(
-        XpropWindows.parseStacking('_NET_CLIENT_LIST_STACKING(WINDOW): window id # 0x400001, 0x600003\n'),
-        ['${0x600003}', '${0x400001}'],
-      );
+      expect(XpropWindows.parseStacking('_NET_CLIENT_LIST_STACKING(WINDOW): window id # 0x400001, 0x600003\n'), [
+        '${0x600003}',
+        '${0x400001}',
+      ]);
     });
   });
 
@@ -242,6 +269,26 @@ WM_STATE(WM_STATE):
       o = await reg.dispatch('send_keys', '{"action":"copy","window":"xterm"}');
       expect(o.ok, isTrue);
       expect(input.log.last, 'keys ctrl+shift+c @xterm');
+    });
+
+    test('explicit terminal shortcuts do not acquire semantic Shift', () async {
+      input.windowClass = 'xterm XTerm';
+      final copy = await reg.dispatch('send_keys', '{"keys":"Ctrl+C"}');
+      final combo = await reg.dispatch('send_keys', '{"keys":"Ctrl+Alt+Shift+A"}');
+      expect(copy.ok, isTrue);
+      expect(combo.ok, isTrue);
+      expect(input.log, ['keys ctrl+c', 'keys ctrl+shift+alt+a']);
+    });
+
+    test('ambiguous or incomplete input never enters native control', () async {
+      for (final args in [
+        '{"keys":"ctrl+c","action":"copy"}',
+        '{"keys":"ctrl+c ctrl+alt+shift"}',
+        '{"keys":"ctrl+"}',
+      ]) {
+        expect((await reg.dispatch('send_keys', args)).ok, isFalse);
+      }
+      expect(input.log, isEmpty);
     });
 
     test('bad input is a tool error', () async {

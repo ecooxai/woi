@@ -682,7 +682,9 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
     if (!_ready) return null;
     final id = _newItemId('img');
     _send({'type': 'conversation.item.create', 'item': _imageItem(id, png, note)});
-    _log('send order: conversation.item.create input_image $id (${png.length ~/ 1024} KB) after $_audioAppends audio appends this session');
+    _log(
+      'send order: conversation.item.create input_image $id (${png.length ~/ 1024} KB) after $_audioAppends audio appends this session',
+    );
     return id;
   }
 
@@ -929,14 +931,22 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
       case 'session.updated':
         final td = (((ev['session'] as Map?)?['audio'] as Map?)?['input'] as Map?)?['turn_detection'];
         if (td is Map && td['interrupt_response'] is bool) _deferActive = td['interrupt_response'] == false;
-        if (td is Map && type == 'session.updated') _log('turn detection: prefix ${td['prefix_padding_ms']} ms, threshold ${td['threshold']}, silence ${td['silence_duration_ms']} ms');
-        if (td is Map && td['silence_duration_ms'] is num) _activeSilenceMs = (td['silence_duration_ms'] as num).toInt();
+        if (td is Map && type == 'session.updated') {
+          _log(
+            'turn detection: prefix ${td['prefix_padding_ms']} ms, threshold ${td['threshold']}, silence ${td['silence_duration_ms']} ms',
+          );
+        }
+        if (td is Map && td['silence_duration_ms'] is num) {
+          _activeSilenceMs = (td['silence_duration_ms'] as num).toInt();
+        }
         final hs = _handshake;
         if (hs != null && !hs.isCompleted) hs.complete();
         final uw = _updateWatch;
         if (type == 'session.updated' && uw != null) {
           _updateWatch = null;
-          _log('connect phase: session.updated ack ${uw.elapsedMilliseconds - _updateSentAt} ms after session.update (not awaited)');
+          _log(
+            'connect phase: session.updated ack ${uw.elapsedMilliseconds - _updateSentAt} ms after session.update (not awaited)',
+          );
         }
 
       case 'input_audio_buffer.speech_started' when _deferActive && !_deferredTurn && !_turnAccepted:

@@ -6,66 +6,121 @@ import '../input_control.dart';
 import '../control_feedback.dart';
 import 'android_bridge.dart';
 
-/// What an Android key chord does through the accessibility service.
+/// What an Android key request does through the accessibility service.
 sealed class AndroidKeyOp {
   const AndroidKeyOp(this.name);
   final String name;
+  Map<String, Object?> get wire;
 }
 
-/// performGlobalAction: back, home, recents, notifications.
+/// Public system navigation actions (phone Home, Back, recents).
 class GlobalKeyOp extends AndroidKeyOp {
   const GlobalKeyOp(super.name);
+  @override
+  Map<String, Object?> get wire => {'type': 'global', 'name': name};
 }
 
-/// Action on the focused node: copy, paste, cut, select_all, enter.
+/// A semantic edit intent, independent of an app's physical key bindings.
 class NodeKeyOp extends AndroidKeyOp {
   const NodeKeyOp(super.name);
+  @override
+  Map<String, Object?> get wire => {'type': 'edit', 'name': name};
 }
 
-/// Maps a chord to an accessibility action, or null when Android has no
-/// equivalent (arbitrary letters, function keys, ...).
-AndroidKeyOp? androidOpForChord(KeyChord c) {
-  final m = c.modifiers;
-  final ctrl = m.contains(KeyModifier.ctrl) || m.contains(KeyModifier.superKey);
-  if (ctrl && !m.contains(KeyModifier.alt)) {
-    switch (c.key) {
-      case 'c':
-        return const NodeKeyOp('copy');
-      case 'v':
-        return const NodeKeyOp('paste');
-      case 'x':
-        return const NodeKeyOp('cut');
-      case 'a':
-        return const NodeKeyOp('select_all');
-    }
-  }
-  if (m.contains(KeyModifier.alt) && c.key == 'tab') {
-    return const GlobalKeyOp('recents');
-  }
-  if (m.contains(KeyModifier.alt) && c.key == 'left') {
-    return const GlobalKeyOp('back');
-  }
-  if (m.isNotEmpty) return null;
-  return switch (c.key) {
-    'escape' => const GlobalKeyOp('back'),
-    'enter' => const NodeKeyOp('enter'),
-    'home' => const GlobalKeyOp('home'),
-    'super' => const GlobalKeyOp('home'),
-    _ => null,
+/// An exact chord, including every modifier, delivered through the public
+/// accessibility input connection on Android 13 or newer.
+class RawKeyOp extends AndroidKeyOp {
+  RawKeyOp(this.chord) : super(chord.toString());
+  final KeyChord chord;
+  @override
+  Map<String, Object?> get wire => {
+    'type': 'key',
+    'key': chord.key,
+    'modifiers': [
+      for (final modifier in KeyModifier.values)
+        if (chord.modifiers.contains(modifier)) modifier == KeyModifier.superKey ? 'super' : modifier.name,
+    ],
   };
 }
 
-AndroidKeyOp androidOpForAction(KeyAction a) => switch (a) {
+const _androidNamedKeys = {
+  'enter',
+  'escape',
+  'tab',
+  'space',
+  'backspace',
+  'delete',
+  'insert',
+  'home',
+  'end',
+  'pageup',
+  'pagedown',
+  'up',
+  'down',
+  'left',
+  'right',
+  'plus',
+  'minus',
+  'period',
+  'comma',
+  'slash',
+  'backslash',
+  'semicolon',
+  'equal',
+  'print',
+  'menu',
+  'capslock',
+  'ctrl',
+  'shift',
+  'alt',
+  'super',
+  "'",
+  '[',
+  ']',
+  '`',
+};
+
+/// Keeps established phone navigation aliases, while preserving additional
+/// modifiers and exact Ctrl+C/V/X/A shortcuts (including terminal semantics).
+AndroidKeyOp? androidOpForChord(KeyChord chord) {
+  final modifiers = chord.modifiers;
+  if (modifiers.length == 1 && modifiers.contains(KeyModifier.alt)) {
+    if (chord.key == 'tab') return const GlobalKeyOp('recents');
+    if (chord.key == 'left') return const GlobalKeyOp('back');
+  }
+  if (modifiers.isEmpty) {
+    switch (chord.key) {
+      case 'escape':
+        return const GlobalKeyOp('back');
+      case 'home':
+        return const GlobalKeyOp('home');
+      case 'enter':
+        return const NodeKeyOp('enter');
+    }
+  }
+  final key = chord.key;
+  if (!_androidNamedKeys.contains(key) && !RegExp(r'^[a-z0-9]$|^f([1-9]|1[0-2])$').hasMatch(key)) {
+    return null;
+  }
+  if (modifiers.isNotEmpty && const {'ctrl', 'shift', 'alt', 'super'}.contains(key)) {
+    return null;
+  }
+  return RawKeyOp(chord);
+}
+
+AndroidKeyOp androidOpForAction(KeyAction action) => switch (action) {
   KeyAction.copy => const NodeKeyOp('copy'),
   KeyAction.paste => const NodeKeyOp('paste'),
   KeyAction.cut => const NodeKeyOp('cut'),
   KeyAction.selectAll => const NodeKeyOp('select_all'),
   KeyAction.enter => const NodeKeyOp('enter'),
   KeyAction.escape || KeyAction.back => const GlobalKeyOp('back'),
-  KeyAction.undo || KeyAction.redo => throw UnsupportedError('${a.wire} has no accessibility action on Android'),
+  KeyAction.undo => RawKeyOp(const KeyChord('z', {KeyModifier.ctrl})),
+  KeyAction.redo => RawKeyOp(const KeyChord('z', {KeyModifier.ctrl, KeyModifier.shift})),
 };
 
-/// Spoken names that only make sense on a phone ("recents", "home screen").
+/// Spoken names that only make sense on a phone ("recents", "home screen"),
+/// plus legacy semantic edit aliases.
 AndroidKeyOp? androidOpForName(String keys) => switch (keys.trim().toLowerCase().replaceAll(RegExp(r'[\s_-]+'), '')) {
   'back' => const GlobalKeyOp('back'),
   'home' || 'homescreen' => const GlobalKeyOp('home'),
@@ -76,6 +131,8 @@ AndroidKeyOp? androidOpForName(String keys) => switch (keys.trim().toLowerCase()
   'copy' => const NodeKeyOp('copy'),
   'paste' => const NodeKeyOp('paste'),
   'cut' => const NodeKeyOp('cut'),
+  'undo' => androidOpForAction(KeyAction.undo),
+  'redo' => androidOpForAction(KeyAction.redo),
   _ => null,
 };
 
@@ -169,51 +226,74 @@ class AndroidInputControl implements InputControl {
   @override
   Future<void> typeText(String text) async {
     if (text.isEmpty) return;
+    if (text.length > 100000) {
+      throw ArgumentError('Text insertion is limited to 100000 UTF-16 units per request');
+    }
     await _visible('keyboard', () async {
-      await _call<String>('typeText', {'text': text});
+      final delivery = await _call<String>('typeText', {'text': text});
+      if (delivery != 'ime_dispatched' && delivery != 'set_text') {
+        throw StateError('Android did not acknowledge text insertion; do not retry automatically');
+      }
     }, keys: text);
   }
 
-  Future<void> _run(AndroidKeyOp op) async {
-    if (op is GlobalKeyOp) {
-      final ok = await _call<bool>('global', {'name': op.name});
-      if (ok != true) throw StateError('${op.name} was refused');
-    } else {
-      await _call<String>('node', {'name': op.name});
+  List<AndroidKeyOp> _opsFor(List<KeyChord> chords) => [
+    for (final chord in chords)
+      androidOpForChord(chord) ??
+          (throw UnsupportedError(
+            'Android cannot send "$chord". Use type_text for literal characters; function keys stop at F12.',
+          )),
+  ];
+
+  void _validateOps(List<AndroidKeyOp> ops, KeyTarget target) {
+    if (ops.isEmpty || ops.length > 64) {
+      throw ArgumentError('Send between 1 and 64 keyboard operations');
+    }
+    final hasGlobal = ops.any((op) => op is GlobalKeyOp);
+    if (hasGlobal && ops.any((op) => op is! GlobalKeyOp)) {
+      throw UnsupportedError('Send Android system navigation and editor shortcuts in separate requests');
+    }
+    if (hasGlobal && !target.isDefault) {
+      throw UnsupportedError('Android system navigation cannot target a named application');
     }
   }
 
-  List<AndroidKeyOp> _opsFor(List<KeyChord> chords) => [
-    for (final c in chords)
-      androidOpForChord(c) ??
-          (throw UnsupportedError(
-            'Android cannot press "$c". Supported: back/esc, home, recents (alt+tab), enter, '
-            'copy (ctrl+c), paste (ctrl+v), cut (ctrl+x), select all (ctrl+a).',
-          )),
-  ];
+  Future<Map<Object?, Object?>> _dispatch(List<AndroidKeyOp> ops, KeyTarget target) async {
+    final receipt = await _call<Object?>('sendKeys', {
+      'operations': [for (final op in ops) op.wire],
+      if (!target.isDefault) 'target': target.window!.trim(),
+    });
+    if (receipt is! Map<Object?, Object?> ||
+        receipt['completed'] != ops.length ||
+        !const {'applied', 'dispatched'}.contains(receipt['delivery']) ||
+        receipt['backend'] is! String) {
+      throw StateError('Android did not acknowledge the complete keyboard request; do not retry automatically');
+    }
+    return receipt;
+  }
 
   @override
   Future<void> keyCombo(String combo) async {
     final named = androidOpForName(combo);
     final ops = named == null ? _opsFor(parseKeySequence(combo)) : [named];
+    const target = KeyTarget();
+    _validateOps(ops, target);
     await _visible('keyboard', () async {
-      for (final op in ops) {
-        await _run(op);
-      }
+      await _dispatch(ops, target);
     }, keys: combo);
   }
 
   @override
   Future<SendKeysResult> sendKeys({String? keys, KeyAction? action, KeyTarget target = const KeyTarget()}) async {
-    if (keys == null && action == null) {
-      throw ArgumentError('keys or action required');
+    if ((keys == null) == (action == null)) {
+      throw ArgumentError('Provide exactly one of keys or action');
     }
     final List<AndroidKeyOp> ops;
     final List<KeyChord> chords;
     final named = keys == null ? null : androidOpForName(keys);
     if (named != null) {
       ops = [named];
-      chords = [KeyChord(named.name.replaceAll('_', ''))];
+      chords = named is RawKeyOp ? [named.chord] : [KeyChord(named.name.replaceAll('_', ''))];
     } else if (keys != null) {
       chords = parseKeySequence(keys);
       ops = _opsFor(chords);
@@ -221,21 +301,33 @@ class AndroidInputControl implements InputControl {
       ops = [androidOpForAction(action!)];
       chords = chordsForAction(action);
     }
-    await _visible('keyboard', () async {
-      for (final op in ops) {
-        await _run(op);
-      }
-    }, keys: keys ?? action?.wire ?? '');
-    String? pkg;
-    try {
-      pkg = (await _call<Map<Object?, Object?>>('focusTarget'))?['package'] as String?;
-    } catch (_) {}
-    return SendKeysResult(chords: chords, windowClass: pkg, windowTitle: pkg);
+    _validateOps(ops, target);
+    final receipt = await _visible('keyboard', () => _dispatch(ops, target), keys: keys ?? action?.wire ?? '');
+    final package = receipt['package'] as String?;
+    return SendKeysResult(
+      chords: chords,
+      windowClass: package,
+      windowTitle: package,
+      delivery: receipt['delivery'] as String,
+      backend: receipt['backend'] as String,
+    );
   }
 
   @override
   Future<void> rememberTargetWindow() async {
-    await control?.reset();
+    // Invalidate Dart's generation synchronously. A handled Apply may queue
+    // its approved continuation as soon as this call yields.
+    final reset = control?.reset();
+    try {
+      // Bypass _call: the active lease was just cancelled, so its check would
+      // prevent the native Stop signal. Native reset itself waits behind the
+      // current batch; this separate signal invalidates its delayed callbacks.
+      await _bridge.call<Object?>('cancelKeyboard');
+    } catch (_) {
+      // A detached/unavailable service cannot accept this best-effort signal.
+      // The queued guard reset still runs and remains fail-closed on failure.
+    }
+    await reset;
   }
 
   @override

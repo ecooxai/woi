@@ -104,6 +104,40 @@ validates the target and coordinates, maps them through that same screenshot,
 and cancels pending actions on interruption or chat changes. Disabling the
 setting restores the original pointer path.
 
+## Chat and quick keyboard input
+
+Assistant profile icons appear above their messages. User bubbles are white and
+assistant bubbles are very pale green in both app themes; their text, links and
+metadata use dark foregrounds for readability. User text remains above image
+attachments.
+
+Action requests instruct the assistant to call the applicable tool first,
+before acknowledgements or explanation. Explicit pointer requests keep the
+Luna route, while clear typing and shortcut requests can dispatch directly.
+Completed function calls in streamed delegated responses run as soon as their
+arguments are complete, without waiting for the final response. Calls remain
+ordered, deduplicated and cancellable.
+
+Use `type_text` for literal text and `send_keys` for shortcuts. Examples include
+`ctrl+c`, `ctrl+v`, `ctrl+x`, `ctrl+a`, `ctrl+alt+shift+a`, and the sequence
+`ctrl+a ctrl+c`. Explicit shortcuts retain every modifier; semantic actions
+such as `copy` use the target app's edit behavior. Quoted typing requests such
+as `type "Ctrl+C"` remain literal text.
+
+Android 13 and newer can send exact key chords through the existing accessibility
+input connection of the focused app. The assistant panel steps aside for the
+whole request, and the same route works while Woi is in the background. A focused
+input connection is required for arbitrary chords; unsupported keys or a missing
+target produce an error. Semantic copy, paste, cut and select-all also use
+supported accessibility actions when available. Plain Home/Back and established
+phone navigation aliases keep their Android meanings. System navigation and
+editor shortcuts must be separate requests.
+
+Android input-connection calls report that input was dispatched; this does not
+prove that the receiving app implements a particular shortcut. No new keyboard
+selection or permission grant is needed when Woi's existing accessibility service
+is already enabled.
+
 ## Computer input and Python
 
 Computer input displays a light-blue mouse pointer for one second before an

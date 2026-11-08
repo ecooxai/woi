@@ -193,6 +193,14 @@ class EntryAnimation extends StatelessWidget {
   }
 }
 
+// Message surfaces stay light in both app themes. Their text and controls use
+// dark foregrounds rather than inheriting light text from the dark app palette.
+const _bubblePalette = WoiPalette.light;
+const _assistantBubbleFill = Color(0xFFF4FAF2);
+const _userBubbleAccent = Color(0xFF1D4ED8);
+const _assistantBubbleAccent = Color(0xFF6D28D9);
+const _bubbleWarning = Color(0xFF92400E);
+
 final _placeholder = RegExp(r'^\[(\d+(?:\.\d+)?) s of speech\]$');
 
 /// Voice turns without a transcript are stored as "[2.6 s of speech]".
@@ -216,7 +224,11 @@ class _VoiceLabel extends StatelessWidget {
           const SizedBox(width: 8),
           Text(
             'Voice message',
-            style: body(14, weight: FontWeight.w500, color: WoiColors.textDim),
+            style: body(
+              14,
+              weight: FontWeight.w500,
+              color: _bubblePalette.textDim,
+            ),
           ),
         ],
       ),
@@ -247,7 +259,7 @@ class _Bubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final m = message;
-    final accent = isUser ? WoiColors.cyan : WoiColors.violet;
+    final accent = isUser ? _userBubbleAccent : _assistantBubbleAccent;
     final imageJob = m.meta['type'] == 'image_generation';
     final imageStatus = imageJob ? m.meta['status'] as String? : null;
     final generatingImage = imageStatus == 'pending';
@@ -278,9 +290,9 @@ class _Bubble extends StatelessWidget {
             ? body(
                 15,
                 height: 1.5,
-                color: WoiColors.textDim,
+                color: _bubblePalette.textDim,
               ).copyWith(fontStyle: FontStyle.italic)
-            : body(15, height: 1.5, color: WoiColors.text),
+            : body(15, height: 1.5, color: _bubblePalette.text),
       );
     }
 
@@ -307,8 +319,10 @@ class _Bubble extends StatelessWidget {
             viewer: viewer,
             tier: imageTierOf(m),
             label: m.image!.generated ? 'Generated image' : imageLabel(m),
+            palette: _bubblePalette,
           ),
-          if (m.image!.generated) _GeneratedImageInfo(image: m.image!),
+          if (m.image!.generated)
+            _GeneratedImageInfo(image: m.image!, color: _bubblePalette.textDim),
           if (!isUser && textContent != null) const SizedBox(height: 10),
         ],
         if (!isUser && textContent != null) textContent,
@@ -319,7 +333,7 @@ class _Bubble extends StatelessWidget {
           Text(
             m.meta['model'] as String? ?? 'Model not recorded',
             key: ValueKey('reply-model-${m.id}'),
-            style: body(11, color: WoiColors.textDim),
+            style: body(11, color: _bubblePalette.textDim),
           ),
         ],
         if (m.audio != null || m.interrupted || !m.streaming) ...[
@@ -335,13 +349,13 @@ class _Bubble extends StatelessWidget {
               if (m.interrupted)
                 Pill(
                   label: 'interrupted',
-                  color: WoiColors.amber,
+                  color: _bubbleWarning,
                   icon: Icons.content_cut,
                   dense: true,
                 ),
               Text(
                 _time(m.createdAt),
-                style: body(11, color: WoiColors.textFaint),
+                style: body(11, color: _bubblePalette.textFaint),
               ),
             ],
           ),
@@ -350,19 +364,14 @@ class _Bubble extends StatelessWidget {
     );
 
     final box = Container(
+      key: ValueKey('message-bubble-${m.id}'),
       constraints: BoxConstraints(maxWidth: maxWidth),
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
       decoration: BoxDecoration(
         borderRadius: radius,
-        color: isUser
-            ? WoiColors.cyan.withValues(
-                alpha: WoiColors.palette.isDark ? 0.16 : 0.08,
-              )
-            : WoiColors.bg2,
+        color: isUser ? Colors.white : _assistantBubbleFill,
         border: Border.all(
-          color: isUser
-              ? WoiColors.cyan.withValues(alpha: 0.16)
-              : WoiColors.stroke,
+          color: isUser ? _bubblePalette.stroke : const Color(0xFFD9E7D4),
         ),
       ),
       child: content,
@@ -392,11 +401,22 @@ class _Bubble extends StatelessWidget {
               : MainAxisAlignment.start,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            if (!isUser) ...[
-              _Avatar(active: m.streaming),
-              const SizedBox(width: 10),
-            ],
-            Flexible(child: bubble),
+            Flexible(
+              child: isUser
+                  ? bubble
+                  : Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _Avatar(
+                          key: ValueKey('reply-avatar-${m.id}'),
+                          active: m.streaming,
+                        ),
+                        const SizedBox(height: 6),
+                        bubble,
+                      ],
+                    ),
+            ),
           ],
         ),
       ),
@@ -514,7 +534,7 @@ class _MessageActions extends StatelessWidget {
 }
 
 class _Avatar extends StatelessWidget {
-  const _Avatar({this.active = false});
+  const _Avatar({super.key, this.active = false});
   final bool active;
   @override
   Widget build(BuildContext context) => ExcludeSemantics(
@@ -547,13 +567,16 @@ class _ImageGenerationProgress extends StatelessWidget {
         if (status == 'pending')
           const SizedBox.square(
             dimension: 16,
-            child: CircularProgressIndicator(strokeWidth: 2),
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: _userBubbleAccent,
+            ),
           )
         else
           Icon(
             Icons.image_not_supported_outlined,
             size: 18,
-            color: WoiColors.amber,
+            color: _bubbleWarning,
           ),
         const SizedBox(width: 10),
         Flexible(
@@ -564,7 +587,7 @@ class _ImageGenerationProgress extends StatelessWidget {
               _ => 'Image generation failed',
             },
             key: ValueKey('image-generation-$status'),
-            style: body(14, color: WoiColors.textDim),
+            style: body(14, color: _bubblePalette.textDim),
           ),
         ),
       ],
@@ -603,7 +626,11 @@ class _SearchSources extends StatelessWidget {
         children: [
           Text(
             'Sources',
-            style: body(11, weight: FontWeight.w600, color: WoiColors.textDim),
+            style: body(
+              11,
+              weight: FontWeight.w600,
+              color: _bubblePalette.textDim,
+            ),
           ),
           const SizedBox(height: 4),
           for (final source in links.entries)
@@ -627,7 +654,7 @@ class _SearchSources extends StatelessWidget {
                   }
                 },
                 style: TextButton.styleFrom(
-                  foregroundColor: WoiColors.cyan,
+                  foregroundColor: _userBubbleAccent,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 4,
                     vertical: 6,
@@ -638,7 +665,7 @@ class _SearchSources extends StatelessWidget {
                 icon: const Icon(Icons.open_in_new_rounded, size: 14),
                 label: Text(
                   '${source.value} · ${source.key.host}',
-                  style: body(12),
+                  style: body(12, color: _userBubbleAccent),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -651,8 +678,9 @@ class _SearchSources extends StatelessWidget {
 }
 
 class _GeneratedImageInfo extends StatelessWidget {
-  const _GeneratedImageInfo({required this.image});
+  const _GeneratedImageInfo({required this.image, this.color});
   final ImageAttachment image;
+  final Color? color;
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.only(top: 6),
@@ -665,7 +693,7 @@ class _GeneratedImageInfo extends StatelessWidget {
           '${image.generationQuality} quality',
       ].join(' · '),
       key: ValueKey('generated-image-time-${image.path}'),
-      style: body(11.5, color: WoiColors.textDim),
+      style: body(11.5, color: color ?? WoiColors.textDim),
     ),
   );
 }
@@ -682,6 +710,7 @@ class ScreenshotThumb extends StatelessWidget {
     this.maxHeight = 220,
     this.tier = ImageTier.full,
     this.label = 'Screenshot',
+    this.palette,
   });
   final ImageAttachment image;
 
@@ -690,6 +719,9 @@ class ScreenshotThumb extends StatelessWidget {
 
   /// How the model currently has it; the thumbnail is always the original.
   final ImageTier tier;
+
+  /// Optional local surface palette; defaults to the current app theme.
+  final WoiPalette? palette;
   final MediaViewer viewer;
   final Offset? marker;
   final double maxWidth;
@@ -738,6 +770,7 @@ class ScreenshotThumb extends StatelessWidget {
   ) {
     final file = File(image.path);
     final mk = marker;
+    final colors = palette ?? WoiColors.palette;
     return Semantics(
       button: true,
       image: true,
@@ -776,7 +809,7 @@ class ScreenshotThumb extends StatelessWidget {
             child: Container(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: WoiColors.strokeStrong),
+                border: Border.all(color: colors.strokeStrong),
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(11),
@@ -793,9 +826,12 @@ class ScreenshotThumb extends StatelessWidget {
                       // (medium builds mipmaps, costly on software GL).
                       filterQuality: FilterQuality.low,
                       errorBuilder: (context, e, s) => Container(
-                        color: WoiColors.glass,
+                        color: colors.glass,
                         alignment: Alignment.center,
-                        child: const Icon(Icons.broken_image_outlined),
+                        child: Icon(
+                          Icons.broken_image_outlined,
+                          color: colors.textDim,
+                        ),
                       ),
                     ),
                     if (markerAt != null && markerAt.dy <= h)

@@ -345,6 +345,78 @@ void main() {
       await r.dispose();
     });
 
+    for (final suppression in ['barge-in', 'reply suppression', 'echo suppression']) {
+      test('$suppression silences active narration without cancelling pending background work', () async {
+        final r = _Rig(
+          turns: [
+            DelegationModelTurn(
+              text: '',
+              calls: [
+                call('run_bash', {'command': 'fixture-one'}, id: 'first-work'),
+                call('run_bash', {'command': 'fixture-two'}, id: 'queued-work'),
+              ],
+            ),
+          ],
+        );
+        addTearDown(r.dispose);
+        await r.connect();
+        r.ws.delegation('pending-work', 'Run the two prepared fixture commands.');
+        await waitFor(() => r.of<ToolCall>().length == 1);
+        r.ws.outputWords('The work is still running.', 200);
+        r.ws.audio(200, pcm(200, amplitude: 4000));
+        await waitFor(() => r.of<AssistantTranscriptDelta>().isNotEmpty && r.rtc.speakerEnabled);
+        switch (suppression) {
+          case 'barge-in':
+            r.backend.cancelResponse();
+            r.backend.sendText('Thanks for the update');
+          case 'reply suppression':
+            r.backend.stopAndDrop();
+          case 'echo suppression':
+            r.backend.dropEchoTurn(itemId: 'echo-turn');
+        }
+        expect(r.rtc.speakerEnabled, isFalse, reason: 'speech still stops immediately');
+        final first = r.of<ToolCall>().single;
+        r.backend.sendToolResult(first.callId, '{"ok":true}');
+        await waitFor(() => r.of<ToolCall>().length > 1 || r.ws.ofType('delegation.context.append').isNotEmpty);
+        expect(r.of<ToolCall>(), hasLength(2), reason: 'the existing task keeps its queued continuation');
+        r.backend.sendToolResult(r.of<ToolCall>().last.callId, '{"ok":true}');
+        await waitFor(() => r.ws.ofType('delegation.context.append').isNotEmpty);
+        expect(jsonEncode(r.ws.ofType('delegation.context.append').single), isNot(contains('cancelled')));
+        expect(r.model.requests, hasLength(1), reason: 'no model retry or replacement task');
+        if (suppression == 'barge-in') {
+          expect(jsonEncode(r.ws.ofType('session.context.append')), contains('Thanks for the update'));
+        }
+      });
+    }
+
+    test('explicit tool cancellation still stops queued work while narration is active', () async {
+      final r = _Rig(
+        turns: [
+          DelegationModelTurn(
+            text: '',
+            calls: [
+              call('run_bash', {'command': 'fixture-one'}, id: 'first-work'),
+              call('run_bash', {'command': 'fixture-two'}, id: 'queued-work'),
+            ],
+          ),
+        ],
+      );
+      addTearDown(r.dispose);
+      await r.connect();
+      r.ws.delegation('pending-work', 'Run the two prepared fixture commands.');
+      await waitFor(() => r.of<ToolCall>().length == 1);
+      r.ws.outputWords('The work is still running.', 200);
+      r.ws.audio(200, pcm(200, amplitude: 4000));
+      await waitFor(() => r.of<AssistantTranscriptDelta>().isNotEmpty);
+      r.backend.cancelPendingTools();
+      r.backend.stopAndDrop();
+      r.backend.sendToolResult(r.of<ToolCall>().single.callId, '{"ok":true}');
+      await waitFor(() => r.ws.ofType('delegation.context.append').isNotEmpty);
+      expect(r.of<ToolCall>(), hasLength(1));
+      expect(jsonEncode(r.ws.ofType('delegation.context.append').single), contains('cancelled'));
+      expect(r.rtc.speakerEnabled, isFalse);
+    });
+
     test('typed chat becomes channel-less context (answered); errors surface', () async {
       final r = _Rig();
       await r.connect();
@@ -687,6 +759,89 @@ void main() {
   });
 
   group('with TurnPipeline', () {
+    test('quiet Stop cancels queued keyboard tools and accepts the next explicit request', () async {
+      final fp = await FakePlatform.create();
+      final store = HistoryStore(fp.services.paths);
+      await store.init();
+      final firstStarted = Completer<void>();
+      final releaseFirst = Completer<void>();
+      final executions = <String>[];
+      final tools = ToolRegistry()
+        ..register(
+          ToolDefinition(
+            spec: const ToolSpec(
+              name: 'send_keys',
+              description: 'keyboard',
+              parameters: {
+                'type': 'object',
+                'properties': {
+                  'keys': {'type': 'string'},
+                },
+                'required': ['keys'],
+              },
+            ),
+            handler: (args, _) async {
+              final keys = args['keys']! as String;
+              executions.add(keys);
+              if (keys == 'ctrl+c') {
+                firstStarted.complete();
+                await releaseFirst.future;
+              }
+              return {'ok': true, 'delivery': 'dispatched'};
+            },
+          ),
+        );
+      final rig = _Rig(
+        turns: [
+          DelegationModelTurn(
+            text: '',
+            calls: [
+              call('send_keys', {'keys': 'ctrl+c'}, id: 'first-key'),
+              call('send_keys', {'keys': 'ctrl+v'}, id: 'queued-key'),
+            ],
+          ),
+        ],
+      );
+      final pipeline = TurnPipeline(
+        backendFactory: () => rig.backend,
+        audio: fp.audio,
+        screen: fp.screen,
+        tools: tools,
+        context: ContextManager(compressor: StubCompressor(latency: Duration.zero), threshold: 100000),
+        store: store,
+        conversation: Conversation(),
+        sessionConfig: (c) async => SessionConfig(
+          model: 'gpt-live-1.1',
+          voice: 'cove',
+          instructions: 'test',
+          tools: tools.specs,
+          credentials: _creds,
+        ),
+        options: () => const PipelineOptions(autoScreenshot: false),
+      );
+      addTearDown(() async {
+        if (!releaseFirst.isCompleted) releaseFirst.complete();
+        await pipeline.shutdown();
+        await rig.dispose();
+        await fp.dispose();
+      });
+      await pipeline.start();
+      await waitFor(() => pipeline.status == SessionStatus.connected);
+      rig.ws.delegation('quiet-keys', 'Perform the requested keyboard task');
+      await firstStarted.future.timeout(const Duration(seconds: 5));
+      expect(pipeline.conversation.messages.where((m) => m.kind == MessageKind.assistant), isEmpty);
+      expect(fp.audio.player.written, isEmpty);
+      pipeline.interrupt();
+      releaseFirst.complete();
+      await waitFor(() => rig.ws.ofType('delegation.context.append').isNotEmpty);
+      expect(executions, ['ctrl+c']);
+      expect(jsonEncode(rig.ws.ofType('delegation.context.append').single), contains('cancelled'));
+      pipeline.sendText('Ctrl+A');
+      await waitFor(() => executions.length == 2);
+      expect(executions, ['ctrl+c', 'Ctrl+A']);
+      expect(rig.model.requests, hasLength(1), reason: 'the new explicit shortcut uses the direct path');
+    });
+
     test('pipeline uses the managed mic and routes delegated tools through the registry', () async {
       final fp = await FakePlatform.create();
       final store = HistoryStore(fp.services.paths);

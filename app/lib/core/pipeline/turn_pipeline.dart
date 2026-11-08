@@ -1180,7 +1180,7 @@ class TurnPipeline extends ChangeNotifier {
       return;
     }
     kwsCuts++;
-    onToolInterrupt?.call();
+    _interruptTools();
     final why = 'kws "${h.keyword}" threshold ${h.threshold.toStringAsFixed(2)}, lag $lag ms';
     debugPrint('barge-in: $why t=${DateTime.now().millisecondsSinceEpoch}');
     if (_userSpeaking) {
@@ -2015,9 +2015,9 @@ class TurnPipeline extends ChangeNotifier {
   /// The user said "stop" / "cancel" / "never mind": handled here, never sent
   /// on as a task. Playback stops, the running reply is cancelled and the
   /// model's answer to the stop request is dropped.
-  void _onStopPhrase(Message m) {
+  void _onStopPhrase(Message m, {bool interruptTools = true}) {
     if (!_stopHandled.add(m.id)) return;
-    onToolInterrupt?.call();
+    if (interruptTools) _interruptTools();
     stopsHandled++;
     _cutTail = null;
     debugPrint('stop phrase "${m.text.trim()}": stopping locally');
@@ -2511,7 +2511,7 @@ class TurnPipeline extends ChangeNotifier {
       return;
     }
     if (isStopPhrase(t)) {
-      onToolInterrupt?.call();
+      _interruptTools();
       // Typed "stop": handled locally, nothing is sent.
       _stopHandled.add(m.id);
       stopsHandled++;
@@ -2546,9 +2546,14 @@ class TurnPipeline extends ChangeNotifier {
     _changed();
   }
 
-  /// Stops the assistant (button / Esc).
-  void interrupt() {
+  void _interruptTools() {
+    _backend?.cancelPendingTools();
     onToolInterrupt?.call();
+  }
+
+  /// Stops the assistant (button / Esc), including silent pending tools.
+  void interrupt() {
+    _interruptTools();
     _bargeIn();
     _awaitingResponse = false;
     _changed();
@@ -2678,7 +2683,9 @@ class TurnPipeline extends ChangeNotifier {
         final local =
             !_stopHandled.contains(m.id) && _isLatestUser(m) && (localCommand?.call(m.text, typed: false) ?? false);
         if (local) {
-          _onStopPhrase(m);
+          // A handled approval/rejection suppresses its spoken reply, but it
+          // is not a Stop request and must not cancel the approved task.
+          _onStopPhrase(m, interruptTools: false);
         } else if (identical(m, _holdMsg)) {
           _checkHold(done: true);
         } else if (isStopPhrase(m.text) && !_stopHandled.contains(m.id) && _isLatestUser(m)) {
@@ -2937,12 +2944,15 @@ class TurnPipeline extends ChangeNotifier {
     if (!_generatedImageIds.add(item.message.id)) return;
     if (backend is ContextImageSink) {
       final sink = backend as ContextImageSink;
-      sink.setContextImage('generated:${item.message.id}', DelegationImage(
-        png: item.image.bytes,
-        capturedAt: item.image.capturedAt,
-        note: item.image.note,
-        persistent: true,
-      ));
+      sink.setContextImage(
+        'generated:${item.message.id}',
+        DelegationImage(
+          png: item.image.bytes,
+          capturedAt: item.image.capturedAt,
+          note: item.image.note,
+          persistent: true,
+        ),
+      );
       // Keep a small, useful set of artwork references separate from camera
       // and screen slots. These images do not expire like live camera frames.
       while (_generatedImageIds.length > 3) {
