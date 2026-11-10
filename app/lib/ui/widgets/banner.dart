@@ -12,6 +12,7 @@ class BannerData {
     required this.color,
     required this.title,
     this.message,
+    this.details,
     this.actionLabel,
     this.onAction,
     this.autoDismiss = const Duration(seconds: 8),
@@ -23,6 +24,10 @@ class BannerData {
   final Color color;
   final String title;
   final String? message;
+
+  /// Full diagnostic text, available without making the notification itself
+  /// grow to the size of a log. Opening details does not dismiss the banner.
+  final String? details;
   final String? actionLabel;
   final VoidCallback? onAction;
   final Duration? autoDismiss;
@@ -30,7 +35,8 @@ class BannerData {
 
 /// Text of the compaction banner, e.g.
 /// "Context compacted 12.4k → 2.1k — now using new context".
-String compactionBannerText(String before, String after) => 'Context compacted $before → $after — now using new context';
+String compactionBannerText(String before, String after) =>
+    'Context compacted $before → $after — now using new context';
 
 /// Holds the visible banners; widgets add to it, [BannerStack] shows them.
 class BannerController extends ChangeNotifier {
@@ -104,7 +110,10 @@ class _BannerStackState extends State<BannerStack> {
         list.removeItem(i, (context, a) => _animated(old, a), duration: WoiMotion.medium);
       }
     }
-    final kept = [for (final o in _shown) if (next.any((n) => identical(n, o))) o];
+    final kept = [
+      for (final o in _shown)
+        if (next.any((n) => identical(n, o))) o,
+    ];
     // Insertions (new items are always at the front).
     for (var i = 0; i < next.length; i++) {
       if (!kept.any((k) => identical(k, next[i]))) {
@@ -140,7 +149,9 @@ class _BannerStackState extends State<BannerStack> {
       child: AnimatedList(
         key: _listKey,
         shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
+        // Shrink to short content so the transcript below remains interactive;
+        // when the chat pane is short, longer stacks scroll within its bounds.
+        physics: const ClampingScrollPhysics(),
         initialItemCount: _shown.length,
         itemBuilder: (context, i, a) => _animated(_shown[i], a),
       ),
@@ -154,76 +165,115 @@ class WoiBanner extends StatelessWidget {
   final BannerData data;
   final VoidCallback onDismiss;
 
+  Future<void> _showDetails(BuildContext context) => showDialog<void>(
+    context: context,
+    builder: (context) => AlertDialog(
+      insetPadding: const EdgeInsets.all(16),
+      scrollable: true,
+      title: Text(data.title, style: body(16, weight: FontWeight.w600)),
+      content: SelectableText(data.details!, style: body(13, color: WoiColors.textDim)),
+      actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Close'))],
+    ),
+  );
+
+  List<Widget> _actions(BuildContext context, {required bool compact}) => [
+    if (data.actionLabel != null && data.onAction != null)
+      TextButton(
+        onPressed: () {
+          data.onAction!();
+          onDismiss();
+        },
+        style: TextButton.styleFrom(
+          foregroundColor: data.color,
+          minimumSize: compact ? const Size(kTouchTarget, kTouchTarget) : null,
+        ),
+        child: Text(data.actionLabel!),
+      ),
+    if (data.details != null)
+      TextButton(
+        onPressed: () => _showDetails(context),
+        style: TextButton.styleFrom(
+          foregroundColor: WoiColors.textDim,
+          minimumSize: compact ? const Size(kTouchTarget, kTouchTarget) : null,
+        ),
+        child: const Text('Details'),
+      ),
+    IconButton(
+      tooltip: 'Dismiss',
+      onPressed: onDismiss,
+      constraints: compact ? const BoxConstraints(minWidth: kTouchTarget, minHeight: kTouchTarget) : null,
+      icon: const Icon(Icons.close_rounded, size: 18),
+    ),
+  ];
+
+  Widget _content() => Column(
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(data.title, style: body(13.5, weight: FontWeight.w600)),
+      if (data.message != null) ...[
+        const SizedBox(height: 2),
+        Text(data.message!, style: body(12.5, color: WoiColors.textDim)),
+      ],
+    ],
+  );
+
   @override
-  Widget build(BuildContext context) {
-    final c = data.color;
-    return Semantics(
-      liveRegion: true,
-      container: true,
-      label: [data.title, ?data.message].join('. '),
-      child: Dismissible(
-        key: ValueKey('banner-${data.id}-${identityHashCode(data)}'),
-        direction: DismissDirection.horizontal,
-        onDismissed: (_) => onDismiss(),
-        child: Container(
-          decoration: BoxDecoration(
-            color: WoiColors.bg1,
-            borderRadius: BorderRadius.circular(WoiRadii.md),
-            border: Border.all(color: WoiColors.stroke),
-            boxShadow: [BoxShadow(color: WoiColors.shadow, blurRadius: 12, offset: const Offset(0, 4))],
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+  Widget build(BuildContext context) => Semantics(
+    liveRegion: true,
+    container: true,
+    label: [data.title, ?data.message].join('. '),
+    child: Dismissible(
+      key: ValueKey('banner-${data.id}-${identityHashCode(data)}'),
+      direction: DismissDirection.horizontal,
+      onDismissed: (_) => onDismiss(),
+      child: Container(
+        decoration: BoxDecoration(
+          color: WoiColors.bg1,
+          borderRadius: BorderRadius.circular(WoiRadii.md),
+          border: Border.all(color: WoiColors.stroke),
+          boxShadow: [BoxShadow(color: WoiColors.shadow, blurRadius: 12, offset: const Offset(0, 4))],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: LayoutBuilder(
+          builder: (context, box) {
+            final scale = MediaQuery.textScalerOf(context).scale(14) / 14;
+            final compact = box.maxWidth < 440 * scale;
+            return Stack(
               children: [
-                Container(width: 3, color: c),
-                const SizedBox(width: 12),
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  child: Icon(data.icon, color: c, size: 20),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 11),
+                Positioned(top: 0, bottom: 0, left: 0, width: 3, child: ColoredBox(color: data.color)),
+                if (compact)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(15, 8, 8, 4),
                     child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Text(data.title, style: body(13.5, weight: FontWeight.w600)),
-                        if (data.message != null) ...[
-                          const SizedBox(height: 2),
-                          Text(data.message!, style: body(12.5, color: WoiColors.textDim)),
-                        ],
+                        _content(),
+                        const SizedBox(height: 2),
+                        Wrap(alignment: WrapAlignment.end, children: _actions(context, compact: true)),
+                      ],
+                    ),
+                  )
+                else
+                  Padding(
+                    padding: const EdgeInsets.only(left: 15, right: 4),
+                    child: Row(
+                      children: [
+                        Icon(data.icon, color: data.color, size: 20),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Padding(padding: const EdgeInsets.symmetric(vertical: 11), child: _content()),
+                        ),
+                        ..._actions(context, compact: false),
                       ],
                     ),
                   ),
-                ),
-                if (data.actionLabel != null && data.onAction != null)
-                  Center(
-                    child: TextButton(
-                      onPressed: () {
-                        data.onAction!();
-                        onDismiss();
-                      },
-                      style: TextButton.styleFrom(foregroundColor: c),
-                      child: Text(data.actionLabel!),
-                    ),
-                  ),
-                Center(
-                  child: IconButton(
-                    tooltip: 'Dismiss',
-                    onPressed: onDismiss,
-                    icon: const Icon(Icons.close_rounded, size: 18),
-                  ),
-                ),
-                const SizedBox(width: 4),
               ],
-            ),
-          ),
+            );
+          },
         ),
       ),
-    );
-  }
+    ),
+  );
 }

@@ -7,12 +7,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:woi/core/app_controller.dart';
 import 'package:woi/platform/android/android_bridge.dart';
 import 'package:woi/platform/media_capture.dart';
+import 'package:woi/platform/file_picker.dart';
 import 'package:woi/core/auth/auth.dart';
 import 'package:woi/core/context/compressor.dart';
 import 'package:woi/core/models/message.dart';
 import 'package:woi/core/pipeline/turn_pipeline.dart';
 import 'package:woi/core/settings/settings.dart';
 import 'package:woi/core/voice/backend_factory.dart';
+import 'package:woi/core/voice/voice_backend.dart';
 import 'package:woi/core/storage/history_store.dart';
 import 'package:woi/ui/notes/note_editor.dart';
 import 'package:woi/ui/notes/note_tabs.dart';
@@ -21,6 +23,7 @@ import 'package:woi/ui/screens/settings_screen.dart';
 import 'package:woi/ui/login/login_screen.dart';
 import 'package:woi/ui/theme.dart';
 import 'package:woi/ui/widgets/tab_strip.dart';
+import 'package:woi/ui/widgets/banner.dart';
 import 'package:woi/ui/widgets/voice_status.dart';
 import 'package:woi/ui/widgets/input_bar.dart';
 import 'package:woi/ui/widgets/contextual_find.dart';
@@ -113,7 +116,7 @@ Future<void> _settle(WidgetTester t, [int ms = 300]) async {
   await t.pump(const Duration(milliseconds: 400));
 }
 
-Future<void> _pumpHome(WidgetTester t, AppController c, Size size) async {
+Future<void> _pumpHome(WidgetTester t, AppController c, Size size, {ValueListenable<double>? textScale}) async {
   await t.binding.setSurfaceSize(size);
   addTearDown(() => t.binding.setSurfaceSize(null));
   // Pumped in the real zone so the note tabs' history read (file IO)
@@ -122,6 +125,16 @@ Future<void> _pumpHome(WidgetTester t, AppController c, Size size) async {
     await t.pumpWidget(
       MaterialApp(
         theme: buildWoiTheme(),
+        builder: textScale == null
+            ? null
+            : (context, child) => ValueListenableBuilder<double>(
+                valueListenable: textScale,
+                child: child,
+                builder: (context, scale, child) => MediaQuery(
+                  data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(scale)),
+                  child: child!,
+                ),
+              ),
         home: HomeScreen(controller: c),
       ),
     );
@@ -155,6 +168,226 @@ ConversationSummary _sum(String id, int minutesAgo) => ConversationSummary(
 String? _err(Object? e) => e == null ? null : (e is FlutterError ? e.toStringDeep() : '$e');
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  // Match real compact/accessibility geometry instead of the test-only Ahem font.
+  setUpAll(() async {
+    for (final (family, asset) in [
+      ('Inter', 'assets/fonts/Inter-Variable.ttf'),
+      ('JetBrainsMono', 'assets/fonts/JetBrainsMono-Regular.ttf'),
+    ]) {
+      await (FontLoader(family)..addFont(rootBundle.load(asset))).load();
+    }
+  });
+
+  testWidgets('selected tab stays visible through viewport and text-scale changes without following manual scroll', (
+    t,
+  ) async {
+    final env = _Env();
+    await env.start(t, savedSettings: const AppSettings(micMode: MicMode.muted));
+    final scale = ValueNotifier(1.0);
+    addTearDown(scale.dispose);
+    addTearDown(() => env.stop(t));
+    await _pumpHome(t, env.c, const Size(1400, 900), textScale: scale);
+    env.c.actions.showView(HomeView.settings);
+    await _settle(t);
+    final tab = find.byKey(const ValueKey('view-settings'));
+    final viewport = find.ancestor(of: find.byType(HomeTabs), matching: find.byType(SingleChildScrollView));
+    void expectSelectedVisible() {
+      final bounds = t.getRect(viewport);
+      final selected = t.getRect(tab);
+      expect(selected.left, greaterThanOrEqualTo(bounds.left - .5));
+      expect(selected.right, lessThanOrEqualTo(bounds.right + .5));
+      expect(tab.hitTestable(), findsOneWidget);
+    }
+
+    expectSelectedVisible();
+    await t.binding.setSurfaceSize(const Size(360, 860));
+    await _settle(t, 150);
+    expectSelectedVisible();
+    scale.value = 2;
+    await _settle(t, 150);
+    expectSelectedVisible();
+
+    final scroll = t.state<ScrollableState>(find.descendant(of: viewport, matching: find.byType(Scrollable)));
+    scroll.position.jumpTo(0);
+    await t.pump();
+    expect(t.getRect(tab).right, greaterThan(t.getRect(viewport).right));
+    await t.runAsync(() => env.c.updateSettings(env.c.settings.copyWith(echoCancellation: true)));
+    await _settle(t, 150);
+    expect(scroll.position.pixels, closeTo(0, .5), reason: 'Unrelated rebuilds respect deliberate tab scrolling.');
+    for (final key in [LogicalKeyboardKey.digit1, LogicalKeyboardKey.digit4]) {
+      await t.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await t.sendKeyEvent(key);
+      await t.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await _settle(t, 150);
+    }
+    expectSelectedVisible();
+    expect(env.c.actions.view.value, HomeView.settings);
+    expect(t.takeException(), isNull);
+  });
+
+  testWidgets('short scaled chat keeps error actions reachable and diagnostics preserve draft and explicit recovery', (
+    t,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    final env = _Env();
+    await env.start(
+      t,
+      savedSettings: const AppSettings(backendMode: BackendMode.direct, micMode: MicMode.muted),
+    );
+    final scale = ValueNotifier(2.0);
+    addTearDown(scale.dispose);
+    try {
+      await _pumpHome(t, env.c, const Size(320, 400), textScale: scale);
+      env.c.actions.showView(HomeView.chat);
+      await _settle(t);
+      expect(env.c.pipeline.status, SessionStatus.connected);
+      final input = t.widget<InputBar>(find.byType(InputBar));
+      final draft = input.draft!;
+      final focus = input.focusNode!;
+      await t.enterText(find.byKey(const ValueKey('composer-field')), 'Synthetic layout draft — no dispatch.');
+      final value = draft.text.value;
+      const detail =
+          'Native capture release was not confirmed. Reconnect to recover the voice session. '
+          'Diagnostic detail: SocketException: Failed host lookup: synthetic.invalid '
+          '(OS Error: Name or service not known, errno = -2). The full diagnostic must remain available.';
+      final oldBackend = env.backend!;
+      oldBackend.emit(const BackendError(detail, fatal: true, code: 'live_capture_release_failed'));
+      await _settle(t);
+      expect(env.c.pipeline.status, SessionStatus.error);
+      final banner = find.byType(WoiBanner);
+      final pane = t.getRect(find.byKey(const ValueKey('chat-panel')));
+      expect(
+        t.getRect(banner).bottom,
+        lessThanOrEqualTo(pane.bottom),
+        reason: 'The whole banner must fit above the draft.',
+      );
+      for (final control in [find.text('Retry'), find.text('Details'), find.byTooltip('Dismiss')]) {
+        expect(control.hitTestable(), findsOneWidget);
+        expect(t.getRect(control).bottom, lessThanOrEqualTo(pane.bottom));
+      }
+      expect(focus.hasFocus, isTrue);
+      expect(await t.runAsync(() => env.c.pipeline.sendText('Must not bypass capture recovery')), isFalse);
+      expect(oldBackend.texts, isEmpty);
+
+      await t.tap(find.text('Details'));
+      await t.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(find.byWidgetPredicate((w) => w is SelectableText && w.data == detail), findsOneWidget);
+      expect(find.text('Close').hitTestable(), findsOneWidget);
+      final dialogScroll = find.descendant(of: find.byType(AlertDialog), matching: find.byType(SingleChildScrollView));
+      await t.drag(dialogScroll, const Offset(0, -160));
+      await t.pumpAndSettle();
+      final dialogPosition = t
+          .state<ScrollableState>(find.descendant(of: dialogScroll, matching: find.byType(Scrollable)).first)
+          .position;
+      expect(dialogPosition.pixels, greaterThan(0), reason: 'Long diagnostics remain scrollable at 200% text.');
+      await t.sendKeyEvent(LogicalKeyboardKey.escape);
+      await t.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(draft.text.value, value);
+      await t.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await t.sendKeyEvent(LogicalKeyboardKey.keyK);
+      await t.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await t.pumpAndSettle();
+      expect(focus.hasFocus, isTrue);
+      expect(banner, findsOneWidget, reason: 'Reading details does not dismiss the error.');
+
+      // The same route must also preserve pending attachments and keyboard
+      // navigation when the composer moves back to the wide layout.
+      await t.binding.setSurfaceSize(const Size(1400, 900));
+      draft.addFiles([
+        PickedFile(bytes: Uint8List.fromList([65, 66]), name: 'pending.txt', mimeType: 'text/plain'),
+      ]);
+      await _settle(t);
+      final attachment = draft.attachments.single;
+      Focus.of(t.element(find.text('Details'))).requestFocus();
+      await t.pump();
+      await t.sendKeyEvent(LogicalKeyboardKey.enter);
+      await t.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsOneWidget);
+      Focus.of(t.element(find.text('Close'))).requestFocus();
+      await t.pump();
+      await t.sendKeyEvent(LogicalKeyboardKey.enter);
+      await t.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(Focus.of(t.element(find.text('Details'))).hasFocus, isTrue);
+      expect(draft.attachments.single, same(attachment));
+      expect(draft.text.value, value);
+      await t.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await t.sendKeyEvent(LogicalKeyboardKey.keyK);
+      await t.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await t.pumpAndSettle();
+      expect(focus.hasFocus, isTrue);
+
+      await t.tap(find.text('Retry'));
+      await _settle(t);
+      expect(env.c.pipeline.status, SessionStatus.connected, reason: 'Retry must perform explicit capture recovery.');
+      expect(identical(env.backend, oldBackend), isFalse);
+      expect(env.backend!.texts, isEmpty);
+      expect(draft.attachments.single, same(attachment));
+      expect(banner, findsNothing);
+      expect(draft.text.value, value);
+      expect(t.takeException(), isNull);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+      await env.stop(t);
+    }
+  });
+
+  testWidgets('Android short scaled chat can scroll every error action into view above the composer', (t) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    final env = _Env();
+    await env.start(
+      t,
+      savedSettings: const AppSettings(backendMode: BackendMode.direct, micMode: MicMode.muted),
+    );
+    final scale = ValueNotifier(2.0);
+    addTearDown(scale.dispose);
+    addTearDown(() => env.stop(t));
+    await _pumpHome(t, env.c, const Size(320, 400), textScale: scale);
+    env.c.actions.showView(HomeView.chat);
+    await _settle(t);
+    final input = t.widget<InputBar>(find.byType(InputBar));
+    await t.enterText(find.byKey(const ValueKey('composer-field')), 'Synthetic layout draft — no dispatch.');
+    final value = input.draft!.text.value;
+    env.backend!.emit(const BackendError('Synthetic connection diagnostic for a short Android pane.', fatal: true));
+    await _settle(t);
+    final bounds = t.getRect(find.byType(BannerStack));
+    expect(bounds.height, greaterThanOrEqualTo(kTouchTarget));
+    for (final control in [
+      find.ancestor(of: find.text('Retry'), matching: find.byType(TextButton)),
+      find.ancestor(of: find.text('Details'), matching: find.byType(TextButton)),
+      find.byTooltip('Dismiss'),
+    ]) {
+      await t.ensureVisible(control);
+      await t.pumpAndSettle();
+      final rect = t.getRect(control);
+      expect(rect.top, greaterThanOrEqualTo(bounds.top - .5));
+      expect(rect.bottom, lessThanOrEqualTo(bounds.bottom + .5));
+      expect(control.hitTestable(), findsOneWidget);
+    }
+    expect(find.byKey(const ValueKey('composer-field')).hitTestable(), findsOneWidget);
+    expect(find.byKey(const ValueKey('send')).hitTestable(), findsOneWidget);
+    expect(find.byKey(const ValueKey('screen-share')).hitTestable(), findsOneWidget);
+    await t.tap(find.text('Details'));
+    await t.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsOneWidget);
+    await t.sendKeyEvent(LogicalKeyboardKey.escape);
+    await t.pumpAndSettle();
+    expect(input.draft!.text.value, value);
+    await t.ensureVisible(find.byTooltip('Dismiss'));
+    await t.tap(find.byTooltip('Dismiss'));
+    await t.pumpAndSettle();
+    expect(find.byType(WoiBanner), findsNothing);
+    expect(input.draft!.text.value, value);
+    expect(env.backend!.texts, isEmpty);
+    expect(t.takeException(), isNull);
+    debugDefaultTargetPlatformOverride = null;
+  });
+
   testWidgets('Android screen share and attachment controls precede camera and keep native behavior', (t) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
     addTearDown(() => debugDefaultTargetPlatformOverride = null);

@@ -206,6 +206,8 @@ class WoiTabsState extends State<WoiTabs> {
   final _terminalKey = GlobalKey(debugLabel: 'terminal-view');
   final _clipboardKey = GlobalKey(debugLabel: 'clipboard-view');
   final _selectedTabKey = GlobalKey(debugLabel: 'selected-home-tab');
+  ({double width, double labelSize, bool compact, bool wide})? _tabViewport;
+  bool _tabRevealQueued = false;
 
   /// The last non-chat tab: what the left pane shows in the wide layout.
   HomeView _leftView = HomeView.note;
@@ -334,8 +336,28 @@ class WoiTabsState extends State<WoiTabs> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && _narrowScroll.hasClients) _narrowScroll.jumpTo(0);
       if (_view == HomeView.chat) _revealFocusedComposer();
+    });
+    _queueSelectedTabReveal();
+  }
+
+  /// Resize and accessibility text changes can clip a tab without changing the
+  /// selection. Track the actual tab viewport, including space taken by header
+  /// actions; unrelated rebuilds must preserve deliberate horizontal scrolling.
+  void _trackTabViewport(BuildContext context, double width) {
+    final next = (width: width, labelSize: MediaQuery.textScalerOf(context).scale(13.5), compact: _phone, wide: _wide);
+    if (_tabViewport == next) return;
+    _tabViewport = next;
+    _queueSelectedTabReveal();
+  }
+
+  void _queueSelectedTabReveal() {
+    if (_tabRevealQueued) return;
+    _tabRevealQueued = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _tabRevealQueued = false;
+      if (!mounted) return;
       final tab = _selectedTabKey.currentContext;
-      if (mounted && tab != null) unawaited(Scrollable.ensureVisible(tab, alignment: .5));
+      if (tab != null) unawaited(Scrollable.ensureVisible(tab, alignment: .5));
     });
   }
 
@@ -388,7 +410,7 @@ class WoiTabsState extends State<WoiTabs> {
           icon: Icons.wifi_off_rounded,
           color: WoiColors.red,
           title: 'Voice session failed',
-          message: pipeline.statusDetail ?? 'The realtime connection could not be established.',
+          details: pipeline.statusDetail ?? 'The realtime connection could not be established.',
           actionLabel: 'Retry',
           onAction: pipeline.reconnect,
           autoDismiss: null,
@@ -1002,21 +1024,26 @@ class WoiTabsState extends State<WoiTabs> {
         children: [
           SizedBox(width: phone ? 0 : 4),
           Expanded(
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: HomeTabs(
-                  view: wide ? _leftView : _view,
-                  onChanged: setView,
-                  hideChat: wide,
-                  noteBadge: _noteBadge,
-                  chatBadge: _chatBadge,
-                  compact: phone,
-                  height: h,
-                  selectedTabKey: _selectedTabKey,
-                ),
-              ),
+            child: LayoutBuilder(
+              builder: (context, box) {
+                _trackTabViewport(context, box.maxWidth);
+                return Align(
+                  alignment: Alignment.centerLeft,
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: HomeTabs(
+                      view: wide ? _leftView : _view,
+                      onChanged: setView,
+                      hideChat: wide,
+                      noteBadge: _noteBadge,
+                      chatBadge: _chatBadge,
+                      compact: phone,
+                      height: h,
+                      selectedTabKey: _selectedTabKey,
+                    ),
+                  ),
+                );
+              },
             ),
           ),
           ContextualFindButton(key: _findButtonKey, find: _activeFind, label: _findLabel, size: t),
@@ -1088,12 +1115,7 @@ class WoiTabsState extends State<WoiTabs> {
             builder: (context, _) => _transcript(maxBubble: maxBubble, wide: wide),
           ),
         ),
-        Positioned(
-          top: 10,
-          left: 10,
-          right: 10,
-          child: Center(child: BannerStack(controller: _banners)),
-        ),
+        Positioned(top: 10, bottom: 10, left: 10, right: 10, child: BannerStack(controller: _banners)),
       ],
     );
   }
