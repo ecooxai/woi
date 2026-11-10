@@ -921,7 +921,11 @@ class DelegationExecutor {
     var shot = latestScreenshot?.call();
     Future<void>? capture;
     // Questions about the open media / camera never need the screen.
-    final mayCapture = !aboutContext && (visual || speculativeCapture);
+    // Explicit shell invocations do not need speculative desktop context.
+    // Preserve capture when the request also asks about the screen.
+    final mayCapture =
+        !aboutContext &&
+        (visual || (speculativeCapture && !_actionCandidates(request).any(_explicitBashInvocation.hasMatch)));
     if (mayCapture &&
         hasScreenshotTool &&
         (shot == null || _now().difference(shot.capturedAt) > freshScreenshotAfter)) {
@@ -1222,6 +1226,12 @@ const _actionLeadIn =
     r"(?:(?:can|could|would|will)\s+you\s+(?:please\s+)?|i\s+(?:want|need)\s+you\s+to\s+|"
     r"(?:i'?d\s+like\s+you\s+to|go\s+ahead\s+and|try\s+to)\s+|let'?s\s+)?";
 
+final _explicitBashInvocation = RegExp(
+  '^$_actionLeadIn'
+  r'(?:call|invoke)\s+(?:run_bash|`run_bash`)(?=\s|[.,:;!?]|$)',
+  caseSensitive: false,
+);
+
 final _actionRequest = RegExp(
   '^$_actionLeadIn'
   r"(?:open|show|display|play|pause|click|double[- ]click|right[- ]click|type|enter|run|execute|edit|write|"
@@ -1289,25 +1299,29 @@ String? _afterActionLocation(String text) {
   return null;
 }
 
-/// Whether typed text asks the assistant to *do* something on the computer
-/// (gpt-live never delegates typed text itself, so the app runs it).
-bool looksLikeAction(String text) {
+// Share one bounded location walk between action routing and shell capture.
+Iterable<String> _actionCandidates(String text) sync* {
   String? candidate = text.trim();
   var locations = 0;
   while (candidate != null && candidate.isNotEmpty) {
-    if (_actionRequest.hasMatch(candidate) ||
-        DelegationExecutor._shortcutPrefix.hasMatch(candidate) ||
-        DelegationExecutor.keysFastPath(candidate) != null ||
-        DelegationExecutor.clipboardFastPath(candidate) != null) {
-      return true;
-    }
+    yield candidate;
     // Keep pasted or pathological chains bounded while allowing ordinary
     // nested targets such as an editor, page, form and field.
-    if (locations++ == 4) return false;
+    if (locations++ == 4) return;
     candidate = _afterActionLocation(candidate);
   }
-  return false;
 }
+
+/// Whether typed text asks the assistant to *do* something on the computer
+/// (gpt-live never delegates typed text itself, so the app runs it).
+bool looksLikeAction(String text) => _actionCandidates(text).any(
+  (candidate) =>
+      _actionRequest.hasMatch(candidate) ||
+      _explicitBashInvocation.hasMatch(candidate) ||
+      DelegationExecutor._shortcutPrefix.hasMatch(candidate) ||
+      DelegationExecutor.keysFastPath(candidate) != null ||
+      DelegationExecutor.clipboardFastPath(candidate) != null,
+);
 
 /// Typed questions about changing facts need a lookup-capable model too. The
 /// caller only routes these here when web search is enabled for this session.

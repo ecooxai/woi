@@ -1,7 +1,40 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:woi/core/voice/delegation_executor.dart';
 
+import 'fakes/explicit_shell_fixture.dart';
+
 void main() {
+  group('explicit shell invocations', () {
+    for (final request in [
+      explicitShellFixtureRequest,
+      'Please call run_bash once with command pwd.',
+      'Could you please invoke run_bash with command pwd?',
+      'Call `run_bash` with command pwd.',
+      '  INVOKE RUN_BASH with command pwd.  ',
+      'In the terminal, call run_bash with command pwd.',
+      'In the editor, on the page, within the form, at the field, call run_bash with command pwd.',
+    ]) {
+      test(request, () => expect(looksLikeAction(request), isTrue));
+    }
+
+    for (final request in [
+      'Do not call run_bash.',
+      'Please do not invoke run_bash.',
+      'Could you explain how to call run_bash?',
+      '"Call run_bash with command pwd."',
+      'The prior answer said to call run_bash. What does that mean?',
+      'In the guide, "Call run_bash" is a quoted instruction.',
+      'In the guide, do not call run_bash.',
+      'In the saved analysis, what did run_bash return?',
+      'Call me run_bash.',
+      'Call run_bashful with command pwd.',
+      'Invoke run_bash_extra with command pwd.',
+      'Call run_bash-helper with command pwd.',
+      'In the editor, on the page, within the form, at the field, inside the modal, call run_bash.',
+    ]) {
+      test(request, () => expect(looksLikeAction(request), isFalse));
+    }
+  });
   group('fronted location action requests', () {
     for (final request in [
       "In the 'WOI QA Synthetic Controls' window, focus its text field, select all its text, and type exactly KEYBOARD-714. Do not click its verification button.",

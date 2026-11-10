@@ -19,6 +19,7 @@ import 'package:woi/core/voice/voice_backend.dart';
 import 'package:woi/tools/builtin_tools.dart';
 import 'package:woi/tools/tool_registry.dart';
 
+import 'fakes/explicit_shell_fixture.dart';
 import 'fakes/fakes.dart';
 import 'fakes/live_fakes.dart';
 
@@ -886,6 +887,43 @@ void main() {
   });
 
   group('typed actions and stop', () {
+    test('explicit shell request reaches one tool call before live narration', () async {
+      final args = {'command': shellFixtureCommand, 'cwd': shellFixtureCwd, 'timeout_s': 5};
+      final r = _Rig(
+        turns: [
+          DelegationModelTurn(text: '', calls: [call('run_bash', args)]),
+        ],
+      );
+      addTearDown(r.dispose);
+      await r.connect();
+      r.backend.sendText(explicitShellFixtureRequest);
+      await waitFor(() => r.model.requests.isNotEmpty || r.ws.ofType('session.context.append').isNotEmpty);
+
+      expect(r.model.requests, hasLength(1));
+      await waitFor(() => r.of<ToolCall>().isNotEmpty);
+      expect(r.of<ToolCall>(), hasLength(1));
+      final tool = r.of<ToolCall>().single;
+      expect(tool.name, 'run_bash');
+      expect(jsonDecode(tool.argsJson), args);
+      expect(r.ws.ofType('session.context.append'), isEmpty, reason: 'no acknowledgment before the tool result');
+      expect(
+        r.backend.usesWrittenReferenceAnswer(explicitShellFixtureRequest, referenceText: 'Saved analysis.'),
+        isFalse,
+      );
+      final content = (r.model.requests.single.input.single['content'] as List).cast<Map>();
+      expect(content, [
+        {'type': 'input_text', 'text': explicitShellFixtureRequest},
+      ]);
+
+      r.backend.sendToolResult(tool.callId, '{"ok":true,"stdout":"SHELL-APPROVAL-628\\n","exit_code":0}');
+      await waitFor(() => r.ws.ofType('session.context.append').isNotEmpty);
+      expect(r.of<ToolCall>(), hasLength(1), reason: 'stream and final response do not replay the command');
+      expect(r.model.requests, hasLength(1));
+      final narrated = jsonEncode(r.ws.ofType('session.context.append').map((event) => event['content']).toList());
+      expect(narrated, contains('processed the request'));
+      expect(narrated, contains('SHELL-APPROVAL-628'));
+    });
+
     test('typed action runs the executor; the model voices the real result', () async {
       final r = _Rig(
         turns: [

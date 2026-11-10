@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:woi/core/voice/delegation_executor.dart';
 import 'package:woi/core/voice/voice_backend.dart';
 
+import 'fakes/explicit_shell_fixture.dart';
 import 'fakes/live_fakes.dart';
 
 const _tools = [
@@ -37,6 +38,67 @@ class _Runner {
 }
 
 void main() {
+  group('explicit shell invocation capture', () {
+    for (final (prefix, stale) in [
+      ('', false),
+      ('', true),
+      ('In the workspace, ', false),
+      ('In the workspace, ', true),
+    ]) {
+      final request = '$prefix$explicitShellFixtureRequest';
+      test('does not add a screenshot with stale=$stale and prefix "$prefix"', () async {
+        final r = _Runner();
+        if (stale) {
+          r.shot = DelegationImage(png: Uint8List(1), capturedAt: DateTime.now().subtract(const Duration(minutes: 5)));
+        }
+        final args = {'command': shellFixtureCommand, 'cwd': shellFixtureCwd, 'timeout_s': 5};
+        final m = FakeDelegationModel([
+          DelegationModelTurn(text: '', calls: [call('run_bash', args)]),
+        ]);
+        final rep = await DelegationExecutor(
+          model: m,
+          tools: _tools,
+          runTool: r.call,
+          latestScreenshot: () => r.shot,
+        ).execute(request);
+
+        expect(r.runs.map((run) => run.$2), ['run_bash']);
+        expect(rep.tools, hasLength(1));
+        expect(jsonDecode(rep.tools.single.argsJson), args);
+        expect(rep.freshCapture, isFalse);
+        expect(rep.usedScreenshot, isFalse);
+        expect(m.requests, hasLength(1));
+        expect(m.requests.single.tools.map((tool) => tool['name']), containsAll(['run_bash', 'take_screenshot']));
+        final content = (m.requests.single.input.single['content'] as List).cast<Map>();
+        expect(content, [
+          {'type': 'input_text', 'text': request},
+        ]);
+      });
+    }
+
+    test('still captures when the explicit shell request needs the screen', () async {
+      final r = _Runner();
+      final m = FakeDelegationModel([
+        DelegationModelTurn(
+          text: '',
+          calls: [
+            call('run_bash', {'command': 'pwd'}),
+          ],
+        ),
+      ]);
+      final rep = await DelegationExecutor(
+        model: m,
+        tools: _tools,
+        runTool: r.call,
+        latestScreenshot: () => r.shot,
+      ).execute('Call run_bash with command pwd after checking the current screen.');
+
+      expect(r.runs.map((run) => run.$2), ['take_screenshot', 'run_bash']);
+      expect(rep.freshCapture, isTrue);
+      expect(rep.usedScreenshot, isTrue);
+    });
+  });
+
   test('input tools keep their order and receive one result-fed completion', () async {
     final r = _Runner()..shot = DelegationImage(png: Uint8List(4), capturedAt: DateTime.now(), note: '1280x720');
     final m = FakeDelegationModel([
