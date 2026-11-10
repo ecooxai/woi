@@ -38,6 +38,19 @@ abstract class LiveRtcTransport {
   Future<void> close();
 }
 
+/// Optional native control-event channel. A backend that uses this capability
+/// owns non-audio events exclusively through [controlEvents] for that session;
+/// merging its receipts with sideband copies can advance an uncorrelated queue
+/// twice. The sideband remains the audio source and startup fallback.
+abstract interface class LiveRtcEventSource {
+  Stream<String> get controlEvents;
+
+  /// Completes when the channel can receive control events, or fails if it
+  /// closes. The owner supplies a bounded startup timeout and must await this
+  /// before accepting input. Closing the transport releases a pending wait.
+  Future<void> waitForControlReady();
+}
+
 /// Device and processing options for a WebRTC transport.
 class LiveRtcOptions {
   const LiveRtcOptions({

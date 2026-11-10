@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
@@ -14,7 +15,7 @@ import 'live_rtc_transport.dart';
 /// WebRTC AEC/NS/AGC applied. Linux leases a separate system-monitor AEC
 /// source so all speaker audio is cancelled; native AEC is then disabled
 /// to avoid cascading filters. The transport still owns capture/playback.
-class FlutterLiveRtcTransport implements LiveRtcTransport {
+class FlutterLiveRtcTransport implements LiveRtcTransport, LiveRtcEventSource {
   FlutterLiveRtcTransport({
     this.options = const LiveRtcOptions(),
     this.captureDeviceProvider,
@@ -46,6 +47,34 @@ class FlutterLiveRtcTransport implements LiveRtcTransport {
   Timer? _detachTimer;
   Future<void> _micOp = Future.value();
   RTCDataChannel? _dc;
+  final _controlEvents = StreamController<String>.broadcast();
+  Completer<void>? _controlReady;
+  Future<void>? _controlClosing;
+  bool _controlClosed = false;
+
+  @override
+  Stream<String> get controlEvents => _controlEvents.stream;
+
+  @override
+  Future<void> waitForControlReady() {
+    if (_closed || _controlClosed) {
+      return Future.error(StateError('Live event channel is closed'));
+    }
+    if (_dc?.state == RTCDataChannelState.RTCDataChannelOpen) {
+      return Future.value();
+    }
+    return (_controlReady ??= Completer<void>()).future;
+  }
+
+  Future<void> _closeControlEvents() {
+    _controlClosed = true;
+    final ready = _controlReady;
+    if (ready != null && !ready.isCompleted) {
+      ready.completeError(StateError('Live event channel closed before ready'));
+    }
+    return _controlClosing ??= _controlEvents.close();
+  }
+
   final List<MediaStreamTrack> _remoteAudio = [];
   bool _speakerEnabled = true;
   bool _micEnabled = true;
@@ -171,6 +200,10 @@ class FlutterLiveRtcTransport implements LiveRtcTransport {
     }
     _pc = pc;
     pc.onConnectionState = (s) {
+      if (s == RTCPeerConnectionState.RTCPeerConnectionStateFailed ||
+          s == RTCPeerConnectionState.RTCPeerConnectionStateClosed) {
+        unawaited(_closeControlEvents());
+      }
       final out = _outputId;
       if (s == RTCPeerConnectionState.RTCPeerConnectionStateConnected &&
           out != null) {
@@ -224,9 +257,28 @@ class FlutterLiveRtcTransport implements LiveRtcTransport {
     });
     _updateDescription();
 
-    // Carries the same JSON events as the sideband minus audio; we use the
-    // sideband, but the server expects the channel to exist.
+    // Native calls deliver receipts, transcripts and turn events here. The
+    // sideband supplies continuous audio; the backend owns one control source
+    // per session so duplicate sideband receipts cannot advance its queue.
     _dc = await pc.createDataChannel('oai-events', RTCDataChannelInit());
+    _dc!.onDataChannelState = (state) {
+      if (state == RTCDataChannelState.RTCDataChannelOpen) {
+        final ready = _controlReady;
+        if (ready != null && !ready.isCompleted) ready.complete();
+      } else if (state == RTCDataChannelState.RTCDataChannelClosed) {
+        unawaited(_closeControlEvents());
+      }
+    };
+    _dc!.onMessage = (message) {
+      if (_closed || _controlEvents.isClosed) return;
+      try {
+        _controlEvents.add(
+          message.isBinary ? utf8.decode(message.binary) : message.text,
+        );
+      } catch (error, stack) {
+        _controlEvents.addError(error, stack);
+      }
+    };
 
     final gathered = Completer<void>();
     pc.onIceGatheringState = (s) {
@@ -452,6 +504,7 @@ class FlutterLiveRtcTransport implements LiveRtcTransport {
 
   Future<void> _close() async {
     _closed = true;
+    unawaited(_closeControlEvents());
     _detachTimer?.cancel();
     _detachTimer = null;
     try {
@@ -475,6 +528,7 @@ class FlutterLiveRtcTransport implements LiveRtcTransport {
       }
     }
     _remoteAudio.clear();
+    await _closeControlEvents();
     if (!_states.isClosed) await _states.close();
   }
 }

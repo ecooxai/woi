@@ -438,6 +438,51 @@ class LiveWebRtcBackend extends VoiceBackend
     return b.toString();
   }
 
+  void _onSessionEvent(
+    _LiveSession session,
+    String raw, {
+    required bool rtcControl,
+  }) {
+    if (_closed || session.closed || session.connectionLost) return;
+    final Map<String, Object?> event;
+    try {
+      event = (jsonDecode(raw) as Map).cast<String, Object?>();
+    } catch (_) {
+      return;
+    }
+    // Either bootstrap notification can establish startup. Native controls
+    // still wait for their own channel before this call accepts input.
+    if (event['type'] == 'session.started' && !session.started.isCompleted) {
+      session.started.complete();
+    }
+    if (!identical(_session, session)) return;
+    if (session.controlSource != null) {
+      final media =
+          event['type'] == 'session.input_audio.append' ||
+          event['type'] == 'session.output_audio.delta';
+      // Never merge uncorrelated receipts or duplicate transcripts across
+      // transports. This choice is fixed for the whole native session.
+      if (rtcControl == media) return;
+    }
+    try {
+      _onSideband(event);
+    } catch (error, stack) {
+      debugPrint('live event handler: $error\n$stack');
+    }
+  }
+
+  void _sessionConnectionLost(_LiveSession session, int? code, String? reason, {bool controlFailure = false}) {
+    if (session.closed || session.connectionLost) return;
+    session.connectionLost = true;
+    // Resolve startup without an unobserved error before its await is attached;
+    // _openSession checks the lost/closed state before accepting this call.
+    if (!session.started.isCompleted) session.started.complete();
+    if (!_closed && identical(_session, session)) {
+      _onConnectionLost(code, reason, controlFailure: controlFailure);
+    }
+    unawaited(session.close());
+  }
+
   /// Creates a call (offer → call → answer → sideband → session.started).
   /// With [activate] its events drive the backend at once; otherwise the
   /// session is prepared muted and only [_swapTo] makes it live.
@@ -450,12 +495,18 @@ class LiveWebRtcBackend extends VoiceBackend
     final creds = config.credentials!;
     final model = config.model.trim();
     final voice = config.voice.trim();
-    if (model.isEmpty) throw StateError('Choose a nonempty gpt-live audio model in Settings.');
+    if (model.isEmpty) {
+      throw StateError('Choose a nonempty gpt-live audio model in Settings.');
+    }
     if (kRealtimeModels.contains(model)) {
-      throw StateError('"$model" is a realtime audio model. Select its realtime option in Settings.');
+      throw StateError(
+        '"$model" is a realtime audio model. Select its realtime option in Settings.',
+      );
     }
     if (!kLiveVoices.contains(voice)) {
-      throw StateError('gpt-live does not support the voice "$voice". Choose a supported live voice in Settings.');
+      throw StateError(
+        'gpt-live does not support the voice "$voice". Choose a supported live voice in Settings.',
+      );
     }
     // Forward explicit custom model IDs. The provider can reject them visibly;
     // silently using another model would misrepresent the user's selection.
@@ -475,11 +526,24 @@ class LiveWebRtcBackend extends VoiceBackend
         ..setSpeakerEnabled(false);
     }
     try {
+      final rtcEvents = s.controlSource;
+      if (rtcEvents != null) {
+        // Subscribe before createOffer: the native channel can open and emit
+        // its bootstrap event while the sideband handshake is in flight.
+        s.controlSub = rtcEvents.controlEvents.listen(
+          (raw) => _onSessionEvent(s, raw, rtcControl: true),
+          onDone: () =>
+              _sessionConnectionLost(s, null, 'live event channel closed', controlFailure: true),
+          onError: (Object _) =>
+              _sessionConnectionLost(s, null, 'live event channel error', controlFailure: true),
+        );
+      }
       // A held recording can outlive a network reconnect or context swap.
       // Apply capture ownership before the new transport opens any device.
       await s.rtc.setCaptureSuspended(_captureSuspended);
       var sw = Stopwatch()..start();
       final offer = await s.rtc.createOffer();
+      if (_closed || s.closed || s.connectionLost) throw LiveCallException('live session closed while preparing offer');
       if (timed) timings.offer = sw.elapsed;
       sw = Stopwatch()..start();
       final call = await _createCall(Uri.parse(callsUrl), headers, {
@@ -502,11 +566,22 @@ class LiveWebRtcBackend extends VoiceBackend
       sw = Stopwatch()..start();
       final RealtimeSocket ws;
       try {
-        ws = await _connectSideband(Uri.parse('$sidebandBase/${call.callId}'), headers);
+        ws = await _connectSideband(
+          Uri.parse('$sidebandBase/${call.callId}'),
+          headers,
+        );
       } catch (e) {
         throw LiveCallException(
           'sideband rejected: ${redactSecrets('$e')} (an invalid session config kills the call silently)',
         );
+      }
+      if (_closed || s.closed || s.connectionLost) {
+        // This socket did not exist when the session's cached close ran.
+        // Retire the newly acquired resource before publishing it anywhere.
+        try {
+          await ws.close();
+        } catch (_) {}
+        throw LiveCallException('live session retired during sideband connection');
       }
       if (timed) timings.sideband = sw.elapsed;
       s.ws = ws;
@@ -519,47 +594,34 @@ class LiveWebRtcBackend extends VoiceBackend
             : null,
         onError: (message, code, fatal) {
           if (!_closed && identical(_session, s)) {
-            _emit(BackendError(redactSecrets(message), code: code, fatal: fatal));
+            _emit(
+              BackendError(redactSecrets(message), code: code, fatal: fatal),
+            );
           }
         },
       );
       if (s.closed) throw LiveCallException('closed while connecting');
       s.sub = ws.messages.listen(
-        (raw) {
-          Map<String, Object?> ev;
-          try {
-            ev = (jsonDecode(raw) as Map).cast<String, Object?>();
-          } catch (_) {
-            return;
-          }
-          if (ev['type'] == 'session.started' && !s.started.isCompleted) s.started.complete();
-          // A prepared or replaced session never touches the turn state.
-          if (!identical(_session, s)) return;
-          try {
-            _onSideband(ev);
-          } catch (e, st) {
-            debugPrint('live sideband handler: $e\n$st');
-          }
-        },
-        onDone: () {
-          if (!s.started.isCompleted) {
-            s.started.completeError(LiveCallException('sideband closed before session.started (${ws.closeCode})'));
-          }
-          if (!_closed && identical(_session, s)) {
-            _onConnectionLost(ws.closeCode, ws.closeReason);
-          }
-        },
-        onError: (Object e) {
-          if (!s.started.isCompleted) s.started.completeError(e);
-        },
+        (raw) => _onSessionEvent(s, raw, rtcControl: false),
+        onDone: () => _sessionConnectionLost(s, ws.closeCode, ws.closeReason),
+        onError: (Object _) =>
+            _sessionConnectionLost(s, ws.closeCode, 'sideband stream error'),
       );
-      await s.started.future.timeout(
+      await Future.wait<void>([
+        s.started.future,
+        if (rtcEvents != null) rtcEvents.waitForControlReady(),
+      ]).timeout(
         sessionStartTimeout,
-        onTimeout: () => throw LiveCallException('no session.started within ${sessionStartTimeout.inSeconds}s'),
+        onTimeout: () => throw LiveCallException(
+          'live session events not ready within ${sessionStartTimeout.inSeconds}s',
+        ),
       );
+      if (_closed || s.closed || s.connectionLost) {
+        throw LiveCallException('live session closed while connecting');
+      }
       return s;
     } catch (_) {
-      if (!activate) unawaited(s.close());
+      await s.close();
       rethrow;
     } finally {
       if (identical(_preparing, s)) _preparing = null;
@@ -570,8 +632,9 @@ class LiveWebRtcBackend extends VoiceBackend
   /// connection dropped without a close frame). Unblock everything that was
   /// in flight and report a reconnectable loss; the pipeline reconnects with
   /// backoff and restores the context (summary + recent turns).
-  void _onConnectionLost(int? code, String? reason) {
-    debugPrint('gpt-live sideband closed (${code ?? '-'} ${reason ?? ''})');
+  void _onConnectionLost(int? code, String? reason, {bool controlFailure = false}) {
+    debugPrint('gpt-live ${controlFailure ? 'control channel' : 'sideband'} closed (${code ?? '-'} ${reason ?? ''})');
+    if (controlFailure) _retirePendingReply(requireFresh: true);
     _session?.contextDelivery?.close();
     _executor?.cancelPending();
     if (_userSpeaking) _userStopped();
@@ -585,8 +648,10 @@ class LiveWebRtcBackend extends VoiceBackend
     _pendingTools.clear();
     _emit(
       BackendError(
-        'gpt-live connection lost (${code ?? '-'}${reason == null || reason.isEmpty ? '' : ' $reason'})',
-        code: 'connection_lost',
+        controlFailure
+            ? 'Live result delivery disconnected. Reconnect before sending more. Saved results were not replayed.'
+            : 'gpt-live connection lost (${code ?? '-'}${reason == null || reason.isEmpty ? '' : ' $reason'})',
+        code: controlFailure ? 'live_control_channel_lost' : 'connection_lost',
         fatal: true,
       ),
     );
@@ -702,6 +767,8 @@ class LiveWebRtcBackend extends VoiceBackend
   void _retireOwnedApply(Object owner) {
     if (!identical(_pendingApply?.owner, owner)) return;
     _applyTimer?.cancel();
+    final preparing = _preparing;
+    if (preparing != null) unawaited(preparing.close());
     _finishApply(const ContextApplyResult(ContextApplyMethod.skipped, detail: 'input context retired'));
   }
 
@@ -1557,6 +1624,8 @@ class LiveWebRtcBackend extends VoiceBackend
     }
     if (_pendingApply != null) {
       _applyTimer?.cancel();
+      final preparing = _preparing;
+      if (preparing != null) unawaited(preparing.close());
       _finishApply(const ContextApplyResult(ContextApplyMethod.skipped, detail: 'stopped'));
     }
     _pendingAttachmentImages.clear();
@@ -1762,7 +1831,9 @@ class _LiveContextApply {
 
 /// One gpt-live call: WebRTC media plus its sideband socket.
 class _LiveSession {
-  _LiveSession(this.rtc, this.model, this.voice);
+  _LiveSession(this.rtc, this.model, this.voice)
+      : controlSource = rtc is LiveRtcEventSource ? rtc as LiveRtcEventSource : null;
+  final LiveRtcEventSource? controlSource;
   final LiveRtcTransport rtc;
   final String model;
   final String voice;
@@ -1770,6 +1841,8 @@ class _LiveSession {
   LiveContextDeliveryQueue? contextDelivery;
   final delegationIds = <String>{};
   StreamSubscription<String>? sub;
+  StreamSubscription<String>? controlSub;
+  bool connectionLost = false;
   String? callId;
   final started = Completer<void>();
   bool closed = false;
@@ -1780,17 +1853,25 @@ class _LiveSession {
 
   Future<void> _close() async {
     closed = true;
+    if (!started.isCompleted) started.complete();
     contextDelivery?.close();
+    // Native release must begin even if a socket's close handshake is held.
+    // Observe each eager future immediately, and join all cleanup before the
+    // session relinquishes ownership. Capture-suspension errors are latched
+    // separately by the backend before any replacement is allowed.
+    Future<void> attempt(Future<void> Function() operation) async {
+      try {
+        await operation();
+      } catch (_) {}
+    }
+    final nativeClosed = attempt(rtc.close);
     try {
       ws?.send(jsonEncode({'type': 'session.close'}));
     } catch (_) {}
-    await sub?.cancel();
-    try {
-      await ws?.close();
-    } catch (_) {}
-    try {
-      await rtc.close();
-    } catch (_) {}
+    await attempt(() async { await sub?.cancel(); });
+    await attempt(() async { await controlSub?.cancel(); });
+    await attempt(() async { await ws?.close(); });
+    await nativeClosed;
     onClosed?.call();
   }
 }

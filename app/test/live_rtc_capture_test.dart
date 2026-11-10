@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -146,6 +147,14 @@ class _NativeRtc {
           return null;
       }
     });
+  }
+
+  Future<void> dataEvent(Map<String, Object?> event) async {
+    await messenger.handlePlatformMessage(
+      'FlutterWebRTC/dataChannelEventtest-peertest-channel',
+      const StandardMethodCodec().encodeSuccessEnvelope(event),
+      (_) {},
+    );
   }
 
   Future<void> close() async {
@@ -375,4 +384,89 @@ void main() {
       await transport.close();
     },
   );
+
+  test('native control bridge waits for open and forwards exact text and UTF-8 binary events', () async {
+    final rtc = FlutterLiveRtcTransport()..setMicEnabled(false);
+    addTearDown(rtc.close);
+    final received = <String>[];
+    final sub = rtc.controlEvents.listen(received.add);
+    addTearDown(sub.cancel);
+    await rtc.createOffer();
+    var ready = false;
+    final waiting = rtc.waitForControlReady().then((_) => ready = true);
+    await Future<void>.delayed(Duration.zero);
+    expect(ready, isFalse);
+    await native.dataEvent({
+      'event': 'dataChannelStateChanged',
+      'id': 1,
+      'state': 'open',
+    });
+    await waiting;
+    const receipt = '{"type":"session.context.appended"}';
+    const turn = '{"type":"turn.done","turn":{"transcript":"東京-714"}}';
+    await native.dataEvent({
+      'event': 'dataChannelReceiveMessage',
+      'id': 1,
+      'type': 'text',
+      'data': receipt,
+    });
+    await native.dataEvent({
+      'event': 'dataChannelReceiveMessage',
+      'id': 1,
+      'type': 'binary',
+      'data': Uint8List.fromList(utf8.encode(turn)),
+    });
+    await Future<void>.delayed(Duration.zero);
+    expect(received, [receipt, turn]);
+    expect(native.captures, 1);
+  });
+
+  test(
+    'native close releases a pending control-ready wait and capture',
+    () async {
+      final rtc = FlutterLiveRtcTransport()..setMicEnabled(false);
+      await rtc.createOffer();
+      final readyFailure = expectLater(
+        rtc.waitForControlReady(),
+        throwsStateError,
+      );
+      await rtc.close();
+      await readyFailure;
+      expect(native.calls.any((c) => c.method == 'trackDispose'), isTrue);
+      await expectLater(rtc.waitForControlReady(), throwsStateError);
+    },
+  );
+
+  test('native closed event channel finishes once and suppresses late control frames', () async {
+    final rtc = FlutterLiveRtcTransport()..setMicEnabled(false);
+    addTearDown(rtc.close);
+    final received = <String>[];
+    var done = 0;
+    final sub = rtc.controlEvents.listen(received.add, onDone: () => done++);
+    addTearDown(sub.cancel);
+    await rtc.createOffer();
+    await native.dataEvent({
+      'event': 'dataChannelStateChanged',
+      'id': 1,
+      'state': 'open',
+    });
+    await rtc.waitForControlReady();
+    await native.dataEvent({
+      'event': 'dataChannelStateChanged',
+      'id': 1,
+      'state': 'closed',
+    });
+    await Future<void>.delayed(Duration.zero);
+    await native.dataEvent({
+      'event': 'dataChannelReceiveMessage',
+      'id': 1,
+      'type': 'text',
+      'data': '{"type":"session.context.appended"}',
+    });
+    await Future<void>.delayed(Duration.zero);
+    expect(received, isEmpty);
+    expect(done, 1);
+    await rtc.close();
+    expect(done, 1);
+  });
 }
