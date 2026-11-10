@@ -2,6 +2,7 @@
     <application>
         <activity
             android:name="dev.woi.woi.ClipboardSnapshotActivity"
+            android:launchMode="singleTask"
             android:exported="true"
             android:excludeFromRecents="true"
             android:label="Woi clipboard fixture cleanup"
@@ -19,5 +20,10 @@
             android:excludeFromRecents="true"
             android:label="Woi keyboard fixture"
             android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+        <provider
+            android:name="dev.woi.woi.SyntheticClipboardProvider"
+            android:authorities="${applicationId}.fixture.clipboard"
+            android:exported="false"
+            android:grantUriPermissions="true" />
     </application>
 </manifest>

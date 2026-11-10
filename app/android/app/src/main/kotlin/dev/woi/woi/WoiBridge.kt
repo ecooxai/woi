@@ -169,7 +169,8 @@ object WoiBridge {
                 WoiAudio.clipStop(call.argument<Int>("id")!!)
                 result.success(null)
             }
-            "readClipboard", "writeClipboard" -> WoiClipboard.handle(call, result)
+            "readClipboard", "writeClipboard", "readClipboardContent", "writeClipboardContent" -> WoiClipboard.handle(call, result)
+            "pickFiles" -> WoiFilePicker.pick(result)
             // --- accessibility input ---
             "accessibilityStatus" -> {
                 WoiA11yKeeper.ensure(ctx, "status")
@@ -187,13 +188,11 @@ object WoiBridge {
                 result.success(keyboard || clipboard)
             }
             "controlBegin", "controlInterrupted", "controlUpdate", "controlEnd", "controlReset",
-            "click", "doubleClick", "typeText", "sendKeys", "showKeyboard", "global", "node", "a11yScreenshot", "focusTarget", "elements" ->
+            "click", "doubleClick", "typeText", "sendKeys", "scroll", "showKeyboard", "hideKeyboard", "global", "node", "a11yScreenshot", "focusTarget", "elements" ->
                 WoiAccessibilityService.handle(call, result)
             // --- screen share ---
-            "shareStart" -> {
-                val act = activity ?: return result.success(false)
-                act.requestProjection { ok -> result.success(ok) }
-            }
+            "shareStart" -> result.success(WoiMediaCapture.start(WoiMediaCapture.SCREEN))
+            "mediaCaptureStatus" -> result.success(WoiMediaCapture.status(call.argument<String>("kind") ?: WoiMediaCapture.CAMERA))
             "screenshotPrefs" -> {
                 ScreenshotEncoder.savePrefs(
                     ctx,
@@ -203,8 +202,7 @@ object WoiBridge {
                 result.success(true)
             }
             "shareStop" -> {
-                WoiScreen.stop(ctx)
-                result.success(true)
+                result.success(WoiMediaCapture.stop(WoiMediaCapture.SCREEN))
             }
             "shareFrame" -> {
                 val scale = call.argument<Double>("scale") ?: ScreenshotEncoder.DEFAULT_SCALE
@@ -216,12 +214,9 @@ object WoiBridge {
                 }
             }
             // --- camera ---
-            "cameraOpen" -> WoiCamera.open(ctx, call.argument<Boolean>("front") ?: false) { err ->
-                if (err == null) result.success(true) else result.error("camera", err, null)
-            }
+            "cameraOpen" -> result.success(WoiMediaCapture.start(WoiMediaCapture.CAMERA, call.argument<Boolean>("front")))
             "cameraClose" -> {
-                WoiCamera.close()
-                result.success(true)
+                result.success(WoiMediaCapture.stop(WoiMediaCapture.CAMERA))
             }
             "moveToBack" -> {
                 result.success(activity?.moveTaskToBack(true) ?: false)

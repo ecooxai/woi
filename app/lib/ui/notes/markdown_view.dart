@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 
 import '../theme.dart';
 import '../widgets/code_highlight.dart';
+import '../widgets/clipboard_selection_area.dart';
+import '../../platform/clipboard_access.dart';
+import 'note_image_preview.dart';
 
 // ------------------------------------------------------------------ parser
 
@@ -151,7 +154,7 @@ List<MdBlock> parseMarkdown(String src) {
 
 final _inline = RegExp(
   r'(?<code>`[^`\n]+`)'
-  r'|(?<link>\[(?<lt>[^\]\n]+)\]\((?<lu>[^)\s]+)\))'
+  r'|(?<link>!?\[(?<lt>[^\]\n]+)\]\((?<lu>[^)\s]+)\))'
   r'|(?<bold>\*\*(?<bt>[^*\n]+?)\*\*|__(?<bt2>[^_\n]+?)__)'
   r'|(?<strike>~~(?<st>[^~\n]+?)~~)'
   r'|(?<ital>(?<![\w*])\*(?<it>[^*\s][^*\n]*?)\*(?![\w*])|(?<![\w_])_(?<it2>[^_\s][^_\n]*?)_(?![\w_]))'
@@ -256,6 +259,7 @@ class MarkdownView extends StatefulWidget {
   const MarkdownView({
     super.key,
     required this.markdown,
+    this.clipboard,
     this.onToggleLine,
     this.onLink,
     this.padding = const EdgeInsets.fromLTRB(28, 22, 28, 40),
@@ -265,6 +269,7 @@ class MarkdownView extends StatefulWidget {
   });
 
   final String markdown;
+  final ClipboardAccess? clipboard;
   final void Function(int line)? onToggleLine;
   final void Function(String target)? onLink;
   final EdgeInsets padding;
@@ -302,7 +307,8 @@ class _MarkdownViewState extends State<MarkdownView> {
     final blocks = parseMarkdown(widget.markdown);
     if (blocks.isEmpty && widget.emptyHint != null) return widget.emptyHint!;
     final hl = widget.highlightLines;
-    return SelectionArea(
+    return ClipboardSelectionArea(
+      clipboard: widget.clipboard,
       child: ListView.builder(
         controller: widget.scrollController,
         padding: widget.padding,
@@ -328,6 +334,30 @@ class _MarkdownViewState extends State<MarkdownView> {
   }
 
   Widget _block(MdBlock b, bool first) {
+    final content = _blockBody(b, first);
+    final images = b.kind == MdBlockKind.code || b.kind == MdBlockKind.table
+        ? const <String>[]
+        : noteImageTargets(b.text);
+    if (images.isEmpty) return content;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        content,
+        Padding(
+          padding: const EdgeInsets.only(top: 4, bottom: 8),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final image in images.take(12)) NoteImagePreview(key: ValueKey('note-image-$image'), target: image),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _blockBody(MdBlock b, bool first) {
     switch (b.kind) {
       case MdBlockKind.blank:
         return const SizedBox(height: 10);
@@ -375,11 +405,7 @@ class _MarkdownViewState extends State<MarkdownView> {
           ),
         );
       case MdBlockKind.rule:
-        return Container(
-          margin: const EdgeInsets.symmetric(vertical: 16),
-          height: 1,
-          color: WoiColors.stroke,
-        );
+        return Container(margin: const EdgeInsets.symmetric(vertical: 16), height: 1, color: WoiColors.stroke);
       case MdBlockKind.code:
         return _code(b);
       case MdBlockKind.table:

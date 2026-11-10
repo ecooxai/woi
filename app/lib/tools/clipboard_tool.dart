@@ -34,11 +34,7 @@ ToolDefinition clipboardTool(
           'type': 'integer',
           'description': 'Read only: maximum returned characters, 1 to 12000; default 4000.',
         },
-        'window': {
-          'type': 'string',
-          'description':
-              'Paste only: optional target window or Android package name.',
-        },
+        'window': {'type': 'string', 'description': 'Paste only: optional target window or Android package name.'},
       },
       'required': ['action'],
     },
@@ -64,9 +60,7 @@ ToolDefinition clipboardTool(
         throw ToolFailure('max_chars must be between 1 and 12000');
       }
       final contents = await clipboard.readText();
-      var end = contents == null || contents.length <= limit
-          ? contents?.length ?? 0
-          : limit;
+      var end = contents == null || contents.length <= limit ? contents?.length ?? 0 : limit;
       // Do not split a surrogate pair at the response boundary.
       if (contents != null &&
           end > 0 &&
@@ -87,12 +81,7 @@ ToolDefinition clipboardTool(
     if (action == 'write') {
       if (text == null) throw ToolFailure('write requires text');
       await clipboard.writeText(text);
-      return {
-        'ok': true,
-        'action': action,
-        'written': true,
-        'chars': text.length,
-      };
+      return {'ok': true, 'action': action, 'written': true, 'chars': text.length};
     }
     if (action != 'paste') throw ToolFailure('Unknown clipboard action');
     if (text != null) await clipboard.writeText(text);
@@ -123,23 +112,39 @@ ToolDefinition clipboardTool(
   },
 );
 
-/// Android's visibility request is not a claim that an editor exists or that
-/// the keyboard became visible; pass the platform's measured result through.
-ToolDefinition showKeyboardTool(Future<Map<String, Object?>> Function() show) =>
-    ToolDefinition(
-      spec: const ToolSpec(
-        name: 'show_keyboard',
-        description:
-            'Request the Android software keyboard without clicking or focusing any field. '
-            'Call immediately when asked to show it; use type_text directly when asked to type. '
-            'The result separates requested from actually visible. Android may keep it hidden if no editor exists.',
-        parameters: {'type': 'object', 'properties': <String, Object?>{}},
-      ),
-      handler: (args, call) async {
-        final receipt = await show();
-        if (receipt['requested'] != true && receipt['visible'] != true) {
-          throw ToolFailure('Android refused to show the keyboard; no field was selected and no text was entered.');
-        }
-        return {'ok': true, ...receipt};
-      },
-    );
+/// A visible touch keyboard and a receiving editor are different capabilities.
+/// Only observed visibility satisfies a request to show the keyboard.
+ToolDefinition showKeyboardTool(Future<Map<String, Object?>> Function() show) => ToolDefinition(
+  spec: const ToolSpec(
+    name: 'show_keyboard',
+    description:
+        'Show the real Woi touch keyboard without clicking or focusing a field, including on non-editable pages. '
+        'It has letters, modifier keys, navigation, page scrolling, and a Hide button. '
+        'Call immediately when asked to show it; use type_text directly when asked to type. '
+        'Visibility does not create an editor: text_input_available and input_connection report the receiving capabilities. ',
+    parameters: {'type': 'object', 'properties': <String, Object?>{}},
+  ),
+  handler: (args, call) async {
+    final receipt = await show();
+    if (receipt['visible'] != true) {
+      throw ToolFailure('The touch keyboard did not become visible; no field was selected and no text was entered.');
+    }
+    return {'ok': true, ...receipt};
+  },
+);
+
+ToolDefinition hideKeyboardTool(Future<Map<String, Object?>> Function() hide) => ToolDefinition(
+  spec: const ToolSpec(
+    name: 'hide_keyboard',
+    description:
+        'Dismiss the Woi touch keyboard without changing the selected Android input method or typing anything.',
+    parameters: {'type': 'object', 'properties': <String, Object?>{}},
+  ),
+  handler: (args, call) async {
+    final receipt = await hide();
+    if (receipt['visible'] != false || receipt['hidden'] != true) {
+      throw ToolFailure('Keyboard dismissal was not acknowledged.');
+    }
+    return {'ok': true, ...receipt};
+  },
+);

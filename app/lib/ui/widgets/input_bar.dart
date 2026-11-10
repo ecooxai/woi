@@ -7,8 +7,10 @@ import '../../core/app_controller.dart';
 import '../../core/pipeline/turn_pipeline.dart';
 import '../../core/settings/settings.dart';
 import '../../platform/audio_io.dart';
+import '../../platform/clipboard_access.dart';
 import '../theme.dart';
 import 'camera_preview.dart';
+import 'chat_draft.dart';
 import 'context_meter.dart';
 import 'screen_share_button.dart';
 import 'controls.dart';
@@ -26,9 +28,11 @@ class InputBar extends StatefulWidget {
     this.focusNode,
     this.phone = false,
     this.allowScreenShare = true,
+    this.draft,
   });
   final AppController controller;
   final FocusNode? focusNode;
+  final ChatDraftController? draft;
 
   /// The Android assist panel already owns screen sharing.
   final bool allowScreenShare;
@@ -41,6 +45,73 @@ class InputBar extends StatefulWidget {
 }
 
 class _InputBarState extends State<InputBar> {
+  ChatDraftController? _ownDraft;
+  ChatDraftController get _draft => widget.draft ?? (_ownDraft ??= ChatDraftController());
+  bool _picking = false;
+  bool _pasting = false;
+
+  void _notice(String message) {
+    if (mounted) ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _pickFiles() async {
+    if (_picking || _draft.sending) return;
+    final at = _draft.capturePasteTarget();
+    setState(() => _picking = true);
+    try {
+      final files = await c.platform.filePicker.pickFiles();
+      if (!mounted || files.isEmpty) return;
+      _draft.addFiles(files, at: at);
+      widget.focusNode?.requestFocus();
+    } catch (error) {
+      _notice(error.toString().replaceFirst(RegExp(r'^(Bad state: |Exception: )'), ''));
+    } finally {
+      if (mounted) setState(() => _picking = false);
+    }
+  }
+
+  Future<void> _paste() async {
+    if (_pasting || _draft.sending) return;
+    _pasting = true;
+    final draft = _draft;
+    final at = draft.capturePasteTarget();
+    try {
+      final content = await c.platform.clipboard.readContent();
+      if (!mounted || draft != _draft) return;
+      if (content == null || content.isEmpty) {
+        _notice('No text or image is available on the clipboard.');
+        return;
+      }
+      draft.stageClipboard(content, at: at);
+      try {
+        await c.clipboardHistory.remember(content);
+      } catch (error) {
+        _notice('Pasted into your message, but history could not save the item: $error');
+      }
+    } catch (error) {
+      _notice(error.toString().replaceFirst(RegExp(r'^(Bad state: |Exception: )'), ''));
+    } finally {
+      _pasting = false;
+    }
+  }
+
+  Future<void> _send(String text) async {
+    final draft = _draft;
+    if (draft.sending) return;
+    draft.setSending(true);
+    final submitted = draft.captureSubmission();
+    try {
+      if (submitted.attachments.isNotEmpty) {
+        await c.sendAttachments(text, submitted.attachments);
+      } else if (!await pipeline.sendText(text)) {
+        throw StateError('Message was not sent. Your draft is kept so you can try again.');
+      }
+      draft.clearSubmitted(submitted);
+    } finally {
+      draft.setSending(false);
+    }
+  }
+
   void _startHold() => c.heldAudio.start();
   void _finishHold({bool cancelled = false}) {
     unawaited(cancelled ? c.heldAudio.cancel() : c.heldAudio.release());
@@ -86,6 +157,7 @@ class _InputBarState extends State<InputBar> {
   void dispose() {
     if (c.heldAudio.recording) _finishHold(cancelled: true);
     _shown.dispose();
+    _ownDraft?.dispose();
     super.dispose();
   }
 
@@ -94,14 +166,17 @@ class _InputBarState extends State<InputBar> {
     return ListenableBuilder(
       // The context manager too: "Compacting memory…" (an animation) must
       // end when the compaction does, not at the next pipeline change.
-      listenable: Listenable.merge([c, _shown, c.camera.active, c.contextManager, c.heldAudio]),
+      listenable: Listenable.merge([c, _shown, c.camera.active, c.contextManager, c.heldAudio, _draft]),
       builder: (context, _) {
         final status = pipeline.status;
         final connected = status == SessionStatus.connected;
         final standby = pipeline.standby;
         final ph = pipeline.phase;
         final canStop =
-            ph == AssistantPhase.speaking || ph == AssistantPhase.thinking || ph == AssistantPhase.toolRunning;
+            _draft.sending ||
+            ph == AssistantPhase.speaking ||
+            ph == AssistantPhase.thinking ||
+            ph == AssistantPhase.toolRunning;
         final s = c.settings;
         final phone = widget.phone;
         final compactControls = defaultTargetPlatform == TargetPlatform.linux;
@@ -141,21 +216,32 @@ class _InputBarState extends State<InputBar> {
               if (c.heldAudio.processing) 'Preparing the recorded audio for your message.',
               if (micPaused?.value != null) micPaused!.value!,
               if (pipeline.capturingWhileConnecting) 'Microphone is recording while the session connects.',
+              if (pipeline.voiceInputNeedsReconnect)
+                pipeline.canSendTypedInput
+                    ? 'Voice input is paused. Choose Reconnect before speaking, or send a typed message.'
+                    : 'Voice input is paused. Choose Reconnect before trying again.',
               if (pipeline.statusDetail?.isNotEmpty ?? false) pipeline.statusDetail!,
               if (c.platform.audio is EchoCancellable)
                 'Echo cancellation: ${(c.platform.audio as EchoCancellable).echoCancellationStatus}',
             ].join('\n'),
-            onRetry: status == SessionStatus.error || status == SessionStatus.disconnected
-                ? () => unawaited(pipeline.connect())
+            onRetry:
+                pipeline.voiceInputNeedsReconnect ||
+                    status == SessionStatus.error ||
+                    status == SessionStatus.disconnected
+                ? () => unawaited(pipeline.reconnect())
                 : null,
           ),
         );
         final composer = Composer(
           focusNode: widget.focusNode,
-          enabled: connected || standby,
+          controller: _draft.text,
+          hasAttachments: _draft.hasAttachments,
+          onPaste: () => unawaited(_paste()),
+          enabled: c.ready,
           showStop: canStop,
           onStop: pipeline.interrupt,
-          onSend: pipeline.sendText,
+          onSend: _send,
+          clearOnSend: false,
           framed: false,
           actionsBelow: true,
           actionSize: compactControls ? 40 : kTouchTarget,
@@ -178,9 +264,24 @@ class _InputBarState extends State<InputBar> {
             children: [
               if (defaultTargetPlatform == TargetPlatform.android && widget.allowScreenShare)
                 const ScreenShareButton(size: kTouchTarget),
+              IconButton(
+                key: const ValueKey('attach-files'),
+                tooltip: 'Add files',
+                onPressed: _picking || _draft.sending ? null : () => unawaited(_pickFiles()),
+                style: IconButton.styleFrom(
+                  minimumSize: const Size.square(kTouchTarget),
+                  fixedSize: const Size.square(kTouchTarget),
+                  padding: EdgeInsets.zero,
+                  foregroundColor: WoiColors.textDim,
+                ),
+                icon: _picking
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.add_rounded, size: 25),
+              ),
               CameraToggle(
                 on: c.cameraOn,
                 busy: c.cameraBusy,
+                pending: c.camera.captureState.pending,
                 onPressed: c.toggleCamera,
                 size: kTouchTarget,
                 visualSize: compactControls ? 44 : kTouchTarget,
@@ -217,6 +318,7 @@ class _InputBarState extends State<InputBar> {
                     child: CameraPreviewTile(camera: c.camera, onClose: c.toggleCamera),
                   ),
                 ),
+              ChatAttachmentTray(draft: _draft),
               composer,
             ],
           ),

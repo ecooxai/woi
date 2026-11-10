@@ -140,7 +140,7 @@ AndroidKeyOp? androidOpForName(String keys) => switch (keys.trim().toLowerCase()
 /// Coordinates are real screen pixels (screenshots map back with
 /// [Screenshot.toScreen]). If Woi is in front, the service sends it to the
 /// back first so the action lands in the app below.
-class AndroidInputControl implements InputControl, AcknowledgedTextInput {
+class AndroidInputControl implements InputControl, AcknowledgedTextInput, ScreenScrollInput, TouchKeyboardInput {
   AndroidInputControl({AndroidBridge? bridge, this.control}) : _bridge = bridge ?? AndroidBridge.instance;
 
   final ControlGuard? control;
@@ -224,6 +224,51 @@ class AndroidInputControl implements InputControl, AcknowledgedTextInput {
   }
 
   @override
+  Future<Map<String, Object?>> scroll({
+    required ScrollDirection direction,
+    double amount = 1,
+    Point<int>? at,
+    String strategy = 'auto',
+  }) async {
+    if (!amount.isFinite || amount < 0.1 || amount > 5) {
+      throw ArgumentError('Scroll amount must be between 0.1 and 5 viewports');
+    }
+    if (!const {'auto', 'gesture'}.contains(strategy)) {
+      throw ArgumentError('Scroll strategy must be auto or gesture');
+    }
+    return _visible(
+      'pointer',
+      () async {
+        final reply = await _call<Object?>('scroll', {
+          'direction': direction.name,
+          'amount': amount,
+          'strategy': strategy,
+          if (at != null) ...{'x': at.x, 'y': at.y},
+        });
+        if (reply is! Map ||
+            reply['direction'] != direction.name ||
+            reply['completed_amount'] is! num ||
+            !(reply['completed_amount'] as num).isFinite ||
+            ((reply['completed_amount'] as num) - amount).abs() > 0.0001 ||
+            !const {'accepted', 'dispatched'}.contains(reply['delivery']) ||
+            reply['backend'] is! String ||
+            (reply['backend'] as String).isEmpty ||
+            reply['scroll_event_observed'] is! bool) {
+          throw StateError('Android did not acknowledge the complete scroll; do not retry automatically');
+        }
+        if (at != null) _last = at;
+        return {
+          for (final entry in reply.entries)
+            if (entry.key is String) entry.key as String: entry.value,
+        };
+      },
+      x: at?.x,
+      y: at?.y,
+      keys: 'Scroll ${direction.name}',
+    );
+  }
+
+  @override
   Future<void> typeText(String text) async {
     await typeTextWithReceipt(text);
   }
@@ -231,15 +276,10 @@ class AndroidInputControl implements InputControl, AcknowledgedTextInput {
   @override
   Future<TextInputReceipt> typeTextWithReceipt(String text) async {
     if (text.isEmpty) {
-      return const TextInputReceipt(
-        delivery: 'noop',
-        backend: 'android_accessibility',
-      );
+      return const TextInputReceipt(delivery: 'noop', backend: 'android_accessibility');
     }
     if (text.length > 100000) {
-      throw ArgumentError(
-        'Text insertion is limited to 100000 UTF-16 units per request',
-      );
+      throw ArgumentError('Text insertion is limited to 100000 UTF-16 units per request');
     }
     return _visible('keyboard', () async {
       final delivery = await _call<String>('typeText', {'text': text});
@@ -248,35 +288,51 @@ class AndroidInputControl implements InputControl, AcknowledgedTextInput {
           delivery: 'dispatched',
           backend: 'android_accessibility_input_connection',
         ),
-        'set_text' => const TextInputReceipt(
-          delivery: 'applied',
-          backend: 'android_accessibility_action',
-        ),
-        _ => throw StateError(
-          'Android did not acknowledge text insertion; do not retry automatically',
-        ),
+        'set_text' => const TextInputReceipt(delivery: 'applied', backend: 'android_accessibility_action'),
+        _ => throw StateError('Android did not acknowledge text insertion; do not retry automatically'),
       };
     }, keys: text);
   }
 
-  /// Requests the existing keyboard without selecting or clicking an editor.
-  /// Requested and visibly shown are distinct: Android controls visibility.
+  /// Shows Woi's non-focusable touch keyboard without selecting an editor.
+  /// Visibility and the receiving editor/input connection remain distinct.
+  @override
   Future<Map<String, Object?>> showKeyboard() => _visible('keyboard', () async {
     final reply = await _call<Object?>('showKeyboard');
-    if (reply is! Map ||
-        reply['requested'] is! bool ||
-        reply['visible'] is! bool ||
-        reply['focus_changed'] != false) {
-      throw StateError(
-        'Android did not acknowledge a keyboard visibility request',
-      );
+    if (reply is! Map || reply['requested'] is! bool || reply['visible'] is! bool || reply['focus_changed'] != false) {
+      throw StateError('Android did not acknowledge a keyboard visibility request');
     }
     return {
       'requested': reply['requested'],
       'visible': reply['visible'],
       'focus_changed': false,
+      for (final name in const [
+        'backend',
+        'package',
+        'text_target',
+        'text_input_available',
+        'input_connection',
+        'exact_keys_available',
+        'navigation_without_editor',
+      ])
+        if (reply.containsKey(name)) name: reply[name],
     };
   }, keys: 'Show keyboard');
+
+  @override
+  Future<Map<String, Object?>> hideKeyboard() async {
+    // Dismissal remains available after user takeover; it sends no input.
+    final reply = await _bridge.call<Object?>('hideKeyboard');
+    if (reply is! Map || reply['hidden'] != true || reply['visible'] != false) {
+      throw StateError('Android did not acknowledge keyboard dismissal');
+    }
+    return {
+      'hidden': true,
+      'visible': false,
+      'backend': 'woi_touch_keyboard',
+      if (reply['system_keyboard_visible'] is bool) 'system_keyboard_visible': reply['system_keyboard_visible'],
+    };
+  }
 
   List<AndroidKeyOp> _opsFor(List<KeyChord> chords) => [
     for (final chord in chords)

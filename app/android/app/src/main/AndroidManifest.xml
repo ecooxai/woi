@@ -5,6 +5,7 @@
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -22,6 +23,12 @@
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
+            android:name=".WoiMediaConsentActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity="dev.woi.woi.media"
+            android:theme="@android:style/Theme.Material.Light.Dialog.NoActionBar" />
+        <activity
             android:name=".WoiClipboardActivity"
             android:exported="false"
             android:excludeFromRecents="true"
@@ -33,6 +40,17 @@
             android:exported="false"
             android:process=":woi_python"
             android:stopWithTask="true" />
+        <provider
+            android:name=".WoiClipboardProvider"
+            android:authorities="${applicationId}.clipboard"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+        <activity
+            android:name=".WoiFilePickerActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity="dev.woi.woi.filepicker"
+            android:theme="@android:style/Theme.Material.Light.Dialog.NoActionBar" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -174,10 +192,10 @@
             </intent-filter>
         </receiver>
 
-        <!-- Voice in the background, screen share, sign-in callback. -->
+        <!-- Voice and camera in the background, screen share, sign-in callback. -->
         <service
             android:name=".WoiForegroundService"
-            android:foregroundServiceType="microphone|mediaProjection|dataSync"
+            android:foregroundServiceType="microphone|camera|mediaProjection|dataSync"
             android:exported="false" />
 
         <!-- Don't delete the meta-data below.

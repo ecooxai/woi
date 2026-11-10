@@ -1,5 +1,7 @@
-
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
+
+import '../media_capture.dart';
 
 import '../screen_capture.dart';
 import 'android_bridge.dart';
@@ -10,10 +12,17 @@ import 'android_bridge.dart';
 /// Turns get a screenshot automatically only while sharing is on (Woi is
 /// usually the app in front otherwise); the assistant session attaches its
 /// own assist screenshot.
-class AndroidScreenCapture implements ScreenCapture {
+class AndroidScreenCapture implements ScreenCapture, ScreenSharingControl {
   AndroidScreenCapture({AndroidBridge? bridge}) : _bridge = bridge ?? AndroidBridge.instance;
 
   final AndroidBridge _bridge;
+
+  @override
+  ValueListenable<MediaCaptureState> get sharingState => _bridge.screenCapture;
+  @override
+  Future<MediaCaptureState> setSharing(bool on) => _bridge.controlCapture('screen', on);
+  @override
+  Future<MediaCaptureState> refreshSharing() => _bridge.refreshCapture('screen');
 
   /// Per-turn auto screenshots: only while screen share runs.
   bool get autoCapture => _bridge.sharing.value;

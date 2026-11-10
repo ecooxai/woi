@@ -8,11 +8,13 @@ import 'package:flutter/services.dart';
 import '../../core/notes/note_controller.dart';
 import '../../core/notes/note_copy.dart';
 import '../../core/notes/note_ops.dart';
+import '../../platform/clipboard_access.dart';
 import '../theme.dart';
 import '../widgets/throttled_builder.dart';
 import '../widgets/contextual_find.dart';
 import 'markdown_syntax.dart';
 import 'markdown_view.dart';
+import 'note_image_preview.dart';
 
 /// Highlighted source (the default; checklists and links work there too)
 /// or the rendered preview (Format menu or Ctrl+Shift+P; Esc goes back).
@@ -55,6 +57,15 @@ class _FormatIntent extends Intent {
 class _CopyIntent extends Intent {
   const _CopyIntent(this.scope);
   final NoteCopyScope scope;
+}
+
+class _SelectionCopyIntent extends Intent {
+  const _SelectionCopyIntent({this.cut = false});
+  final bool cut;
+}
+
+class _PasteIntent extends Intent {
+  const _PasteIntent();
 }
 
 class _PreviewIntent extends Intent {
@@ -157,9 +168,13 @@ class NoteEditor extends StatefulWidget {
     this.onRun,
     this.onCopy,
     this.copied,
+    this.clipboard,
+    this.onPasteImage,
   });
 
   final NoteController notes;
+  final ClipboardAccess? clipboard;
+  final Future<String> Function(ClipboardImage image)? onPasteImage;
   final ContextualFindController? find;
 
   /// Copies the note or the line / paragraph / H1 section at the cursor and
@@ -188,7 +203,18 @@ class NoteEditor extends StatefulWidget {
 class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMixin {
   static NoteViewMode _lastMode = NoteViewMode.edit;
 
-  late final _ctrl = _FindMarkdownController(text: widget.notes.text);
+  late final _ctrl = _FindMarkdownController(text: widget.notes.text)
+    ..selection = TextSelection(
+      baseOffset: (widget.notes.selectionStart < 0 ? widget.notes.cursorOrEnd : widget.notes.selectionStart).clamp(
+        0,
+        widget.notes.text.length,
+      ),
+      extentOffset: (widget.notes.selectionEnd < 0 ? widget.notes.cursorOrEnd : widget.notes.selectionEnd).clamp(
+        0,
+        widget.notes.text.length,
+      ),
+    );
+  ClipboardAccess get _clipboard => widget.clipboard ?? const SystemClipboardAccess();
   List<TextRange> _findMatches = const [];
   String? _findText;
   bool _findSelection = false;
@@ -346,7 +372,7 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
   void _onText() {
     // The cursor for "copy this paragraph" (voice reads it later).
     final sel = _ctrl.selection;
-    notes.cursor = sel.isValid ? sel.extentOffset : -1;
+    if (sel.isValid) notes.rememberSelection(sel.baseOffset, sel.extentOffset);
     if (_syncing) return;
     if (_ctrl.text != notes.text) notes.setText(_ctrl.text);
     if (_findText != _ctrl.text) _refreshFind(reveal: false);
@@ -570,12 +596,110 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
       } else {
         final text = noteCopyText(notes.text, notes.cursorOrEnd, scope);
         if (text.trim().isEmpty) throw StateError('nothing');
-        await Clipboard.setData(ClipboardData(text: text));
+        await _clipboard.writeText(text);
         _showCopied(noteCopyLabel(scope, text));
       }
-    } catch (_) {
-      _showCopied(scope == NoteCopyScope.note ? 'Nothing to copy' : 'No ${scope.label} here', failed: true);
+    } catch (error) {
+      final empty = noteCopyText(notes.text, notes.cursorOrEnd, scope).trim().isEmpty;
+      _showCopied(
+        empty ? (scope == NoteCopyScope.note ? 'Nothing to copy' : 'No ${scope.label} here') : 'Copy failed: $error',
+        failed: true,
+      );
     }
+  }
+
+  Future<void> copySelection({bool cut = false}) async {
+    final before = _ctrl.value;
+    final selection = before.selection;
+    if (!selection.isValid || selection.isCollapsed) return;
+    try {
+      await _clipboard.writeText(selection.textInside(before.text));
+      if (!mounted) return;
+      if (cut && _ctrl.value == before) {
+        notes.breakUndoGroup();
+        _ctrl.value = TextEditingValue(
+          text: before.text.replaceRange(selection.start, selection.end, ''),
+          selection: TextSelection.collapsed(offset: selection.start),
+        );
+        notes.breakUndoGroup();
+      }
+      _showCopied(cut ? 'Cut selection' : 'Copied selection');
+    } catch (error) {
+      _showCopied('Copy failed: $error', failed: true);
+    }
+  }
+
+  Future<void> paste() async {
+    final before = _ctrl.value;
+    final conversation = notes.conversationId;
+    final revision = notes.revision;
+    try {
+      final content = await _clipboard.readContent();
+      if (content != null && mounted) await _insertClipboardContent(content, before, conversation, revision);
+    } catch (error) {
+      if (mounted) _showCopied('Paste failed: $error', failed: true);
+    }
+  }
+
+  /// Public for history actions; the selection at invocation is replaced exactly.
+  Future<void> pasteContent(ClipboardContent content) =>
+      _insertClipboardContent(content, _ctrl.value, notes.conversationId, notes.revision);
+
+  Future<void> _insertClipboardContent(
+    ClipboardContent content,
+    TextEditingValue before,
+    String conversation,
+    int revision,
+  ) async {
+    var insertion = content.text ?? '';
+    if (content.image case final image?) {
+      final save = widget.onPasteImage;
+      if (save == null) throw UnsupportedError('Image paste is unavailable in this editor');
+      final link = await save(image);
+      insertion = insertion.isEmpty ? link : '$insertion\n$link';
+    }
+    if (!mounted || insertion.isEmpty) return;
+    final current = _ctrl.value;
+    if (conversation != notes.conversationId || revision != notes.revision || current.text != before.text) {
+      throw StateError('The note changed before the clipboard could be pasted. Try Paste again.');
+    }
+    final selection = before.selection;
+    final start = (selection.isValid ? selection.start : current.text.length).clamp(0, current.text.length);
+    final end = (selection.isValid ? selection.end : start).clamp(start, current.text.length);
+    notes.breakUndoGroup();
+    _ctrl.value = TextEditingValue(
+      text: current.text.replaceRange(start, end, insertion),
+      selection: TextSelection.collapsed(offset: start + insertion.length),
+    );
+    notes.breakUndoGroup();
+    _focus.requestFocus();
+  }
+
+  Widget _selectionMenu(BuildContext context, EditableTextState editable) {
+    final selection = _ctrl.selection;
+    final selected = selection.isValid && !selection.isCollapsed;
+    void perform(Future<void> Function() action) {
+      editable.hideToolbar();
+      unawaited(action());
+    }
+
+    return AdaptiveTextSelectionToolbar.buttonItems(
+      anchors: editable.contextMenuAnchors,
+      buttonItems: [
+        if (selected)
+          ContextMenuButtonItem(
+            type: ContextMenuButtonType.cut,
+            onPressed: () => perform(() => copySelection(cut: true)),
+          ),
+        if (selected) ContextMenuButtonItem(type: ContextMenuButtonType.copy, onPressed: () => perform(copySelection)),
+        ContextMenuButtonItem(type: ContextMenuButtonType.paste, onPressed: () => perform(paste)),
+        if (_ctrl.text.isNotEmpty)
+          ContextMenuButtonItem(
+            type: ContextMenuButtonType.selectAll,
+            onPressed: () => editable.selectAll(SelectionChangedCause.toolbar),
+          ),
+      ],
+    );
   }
 
   bool _copyFailed = false;
@@ -745,7 +869,75 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
     final footer = height >= kNoteFooterMinHeight;
     final toolbar = height >= kNoteToolbarMinHeight;
     final m = _effectiveMode;
-    final content = m == NoteViewMode.preview ? _previewPane() : _editorPane();
+    final content = m == NoteViewMode.preview
+        ? _previewPane()
+        : Column(
+            children: [
+              Expanded(child: _editorPane()),
+              if (height > 330)
+                ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: _ctrl,
+                  builder: (context, value, _) {
+                    final allTargets = noteImageTargets(value.text);
+                    if (allTargets.isEmpty) return const SizedBox.shrink();
+                    final at = value.selection.isValid ? value.selection.extentOffset.clamp(0, value.text.length) : 0;
+                    final lineStart = at == 0 ? 0 : value.text.lastIndexOf('\n', at - 1) + 1;
+                    final nextLine = value.text.indexOf('\n', at);
+                    final currentTargets = noteImageTargets(
+                      value.text.substring(lineStart, nextLine < 0 ? value.text.length : nextLine),
+                    );
+                    final targets = [
+                      ...currentTargets,
+                      ...allTargets.where((target) => !currentTargets.contains(target)),
+                    ];
+                    return Container(
+                      key: const ValueKey('note-source-image-previews'),
+                      height: 120 + MediaQuery.textScalerOf(context).scale(44),
+                      padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+                      decoration: BoxDecoration(
+                        border: Border(top: BorderSide(color: WoiColors.stroke)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Text(
+                              currentTargets.isEmpty ? 'Image previews' : 'Image previews · current line first',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: body(11, color: WoiColors.textDim),
+                            ),
+                          ),
+                          Expanded(
+                            child: ListView.separated(
+                              scrollDirection: Axis.horizontal,
+                              itemCount: targets.length.clamp(0, 8),
+                              separatorBuilder: (_, _) => const SizedBox(width: 8),
+                              itemBuilder: (context, index) {
+                                final target = targets[index];
+                                final sourceOffset = currentTargets.contains(target)
+                                    ? lineStart
+                                    : value.text.indexOf(target);
+                                final line =
+                                    '\n'
+                                        .allMatches(value.text.substring(0, sourceOffset < 0 ? 0 : sourceOffset))
+                                        .length +
+                                    1;
+                                return Align(
+                                  alignment: Alignment.topLeft,
+                                  child: NoteImagePreview(target: target, showLink: true, lineNumber: line),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+            ],
+          );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -781,6 +973,12 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
         const SingleActivator(LogicalKeyboardKey.keyY, control: true): const _RedoIntent(),
         for (final f in NoteFormat.values) f.shortcut: _FormatIntent(f),
         _copyNoteKey: const _CopyIntent(NoteCopyScope.note),
+        const SingleActivator(LogicalKeyboardKey.keyC, control: true): const _SelectionCopyIntent(),
+        const SingleActivator(LogicalKeyboardKey.keyC, meta: true): const _SelectionCopyIntent(),
+        const SingleActivator(LogicalKeyboardKey.keyX, control: true): const _SelectionCopyIntent(cut: true),
+        const SingleActivator(LogicalKeyboardKey.keyX, meta: true): const _SelectionCopyIntent(cut: true),
+        const SingleActivator(LogicalKeyboardKey.keyV, control: true): const _PasteIntent(),
+        const SingleActivator(LogicalKeyboardKey.keyV, meta: true): const _PasteIntent(),
         _previewKey: const _PreviewIntent(),
         const SingleActivator(LogicalKeyboardKey.enter): const _NewlineIntent(),
         const SingleActivator(LogicalKeyboardKey.numpadEnter): const _NewlineIntent(),
@@ -795,6 +993,8 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
           _RedoIntent: _FnAction<_RedoIntent>((_) => notes.redo()),
           _FormatIntent: _FnAction<_FormatIntent>((i) => format(i.op)),
           _CopyIntent: _FnAction<_CopyIntent>((i) => copy(i.scope)),
+          _SelectionCopyIntent: _FnAction<_SelectionCopyIntent>((i) => unawaited(copySelection(cut: i.cut))),
+          _PasteIntent: _FnAction<_PasteIntent>((_) => unawaited(paste())),
           _PreviewIntent: _FnAction<_PreviewIntent>((_) => togglePreview()),
           _NewlineIntent: _FnAction<_NewlineIntent>((_) => _newline(), enabled: _listAtCursor),
           _IndentIntent: _FnAction<_IndentIntent>((i) => _indent(i.outdent), enabled: _onListLine),
@@ -829,6 +1029,8 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
                     cursorRadius: const Radius.circular(2),
                     style: MdEditorStyle.base(),
                     onTap: _onTapEditor,
+                    contextMenuBuilder: _selectionMenu,
+                    enableInteractiveSelection: true,
                     decoration: InputDecoration(
                       border: InputBorder.none,
                       enabledBorder: InputBorder.none,
@@ -870,6 +1072,7 @@ class NoteEditorState extends State<NoteEditor> with SingleTickerProviderStateMi
       return MarkdownView(
         key: const ValueKey('note-preview'),
         markdown: notes.text,
+        clipboard: _clipboard,
         scrollController: _previewScroll,
         onToggleLine: toggleCheckAt,
         onLink: widget.onOpenLink,

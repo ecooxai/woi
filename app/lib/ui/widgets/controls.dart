@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -342,8 +344,15 @@ class Composer extends StatefulWidget {
     this.actionsBelow = false,
     this.actionsLeading,
     this.actionSize = kTouchTarget,
+    this.controller,
+    this.hasAttachments = false,
+    this.onPaste,
+    this.clearOnSend = true,
   });
-  final ValueChanged<String> onSend;
+  final FutureOr<void> Function(String) onSend;
+
+  /// Shared drafts can own their accepted-send lifecycle and clear atomically.
+  final bool clearOnSend;
   final VoidCallback? onStop;
   final bool enabled;
   final bool showStop;
@@ -365,13 +374,18 @@ class Composer extends StatefulWidget {
 
   /// Smaller desktop controls retain the full phone touch size by default.
   final double actionSize;
+  final TextEditingController? controller;
+  final bool hasAttachments;
+  final VoidCallback? onPaste;
 
   @override
   State<Composer> createState() => _ComposerState();
 }
 
 class _ComposerState extends State<Composer> {
-  final _ctrl = TextEditingController();
+  TextEditingController? _ownController;
+  TextEditingController get _ctrl => widget.controller ?? (_ownController ??= TextEditingController());
+  bool _sending = false;
   FocusNode? _own;
   FocusNode get _focus => widget.focusNode ?? (_own ??= FocusNode());
   bool _focused = false;
@@ -381,11 +395,20 @@ class _ComposerState extends State<Composer> {
     super.initState();
     _focus.onKeyEvent = _onKey;
     _focus.addListener(_onFocus);
+    _ctrl.addListener(_onTextChanged);
+  }
+
+  void _onTextChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
   void didUpdateWidget(Composer old) {
     super.didUpdateWidget(old);
+    if (old.controller != widget.controller) {
+      (old.controller ?? _ownController)?.removeListener(_onTextChanged);
+      _ctrl.addListener(_onTextChanged);
+    }
     if (old.focusNode != widget.focusNode) {
       (old.focusNode ?? _own)?.removeListener(_onFocus);
       _focus.onKeyEvent = _onKey;
@@ -401,6 +424,16 @@ class _ComposerState extends State<Composer> {
   // input action *after* committing pending IME text (handling the key event
   // here would race the last typed characters on Linux).
   KeyEventResult _onKey(FocusNode node, KeyEvent e) {
+    final keyboard = HardwareKeyboard.instance;
+    if (e is KeyDownEvent &&
+        widget.onPaste != null &&
+        (((keyboard.isControlPressed || keyboard.isMetaPressed) &&
+                !keyboard.isAltPressed &&
+                e.logicalKey == LogicalKeyboardKey.keyV) ||
+            (keyboard.isShiftPressed && e.logicalKey == LogicalKeyboardKey.insert))) {
+      if (widget.enabled && !_sending) widget.onPaste!();
+      return KeyEventResult.handled;
+    }
     if (e is KeyDownEvent && e.logicalKey == LogicalKeyboardKey.enter && HardwareKeyboard.instance.isShiftPressed) {
       final v = _ctrl.value;
       final sel = v.selection.isValid ? v.selection : TextSelection.collapsed(offset: v.text.length);
@@ -414,38 +447,68 @@ class _ComposerState extends State<Composer> {
     return KeyEventResult.ignored;
   }
 
-  void _send() {
-    final t = _ctrl.text.trim();
-    if (t.isEmpty || !widget.enabled) return;
-    widget.onSend(t);
-    _ctrl.clear();
-    setState(() {});
+  Future<void> _send() async {
+    final controller = _ctrl;
+    final original = controller.text;
+    final t = original.trim();
+    if ((t.isEmpty && !widget.hasAttachments) || !widget.enabled || _sending) return;
+    setState(() => _sending = true);
+    try {
+      await widget.onSend(t);
+      if (mounted && widget.clearOnSend && identical(_ctrl, controller) && controller.text == original) {
+        controller.clear();
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          SnackBar(content: Text(error.toString().replaceFirst(RegExp(r'^(Bad state: |Exception: )'), ''))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
   }
 
   @override
   void dispose() {
     _focus.removeListener(_onFocus);
-    _ctrl.dispose();
+    _ctrl.removeListener(_onTextChanged);
+    _ownController?.dispose();
     _own?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final empty = _ctrl.text.trim().isEmpty;
+    final empty = _ctrl.text.trim().isEmpty && !widget.hasAttachments;
     final field = TextField(
       key: const ValueKey('composer-field'),
       controller: _ctrl,
       focusNode: _focus,
-      enabled: widget.enabled,
+      enabled: widget.enabled && !_sending,
       minLines: 1,
       maxLines: 6,
       style: body(15),
       textInputAction: TextInputAction.send,
       keyboardType: TextInputType.multiline,
-      onSubmitted: (_) => _send(),
+      onSubmitted: (_) => unawaited(_send()),
       onEditingComplete: () {}, // keep focus after sending
       onChanged: (_) => setState(() {}),
+      contextMenuBuilder: (context, editable) => AdaptiveTextSelectionToolbar.buttonItems(
+        anchors: editable.contextMenuAnchors,
+        buttonItems: [
+          for (final item in editable.contextMenuButtonItems)
+            if (widget.onPaste == null || item.type != ContextMenuButtonType.paste) item,
+          if (widget.onPaste != null)
+            ContextMenuButtonItem(
+              type: ContextMenuButtonType.paste,
+              onPressed: () {
+                editable.hideToolbar();
+                if (widget.enabled && !_sending) widget.onPaste!();
+              },
+            ),
+        ],
+      ),
       decoration: InputDecoration(
         hintText: widget.enabled ? (widget.hint ?? 'Type a message…') : widget.disabledHint,
         filled: false,
@@ -457,7 +520,7 @@ class _ComposerState extends State<Composer> {
         contentPadding: const EdgeInsets.fromLTRB(10, 14, 6, 14),
       ),
     );
-    final send = widget.showStop && empty
+    final send = widget.showStop && (empty || _sending)
         ? IconButton.filled(
             key: const ValueKey('stop'),
             tooltip: 'Stop (Esc)',
@@ -485,8 +548,14 @@ class _ComposerState extends State<Composer> {
               disabledBackgroundColor: WoiColors.glassStrong,
               disabledForegroundColor: WoiColors.textFaint,
             ),
-            onPressed: empty || !widget.enabled ? null : _send,
-            icon: Icon(Icons.arrow_upward_rounded, size: widget.actionSize * 0.5),
+            onPressed: empty || !widget.enabled || _sending ? null : () => unawaited(_send()),
+            icon: _sending
+                ? SizedBox(
+                    width: widget.actionSize * .45,
+                    height: widget.actionSize * .45,
+                    child: const CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Icon(Icons.arrow_upward_rounded, size: widget.actionSize * 0.5),
           );
     final row = widget.actionsBelow
         ? Column(
@@ -494,13 +563,19 @@ class _ComposerState extends State<Composer> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               field,
-              Row(
+              OverflowBar(
                 key: const ValueKey('composer-controls'),
+                alignment: MainAxisAlignment.spaceBetween,
+                overflowAlignment: OverflowBarAlignment.end,
                 children: [
                   if (widget.actionsLeading != null) widget.actionsLeading!,
-                  const Spacer(),
-                  if (widget.trailing != null) ...[widget.trailing!, const SizedBox(width: 6)],
-                  send,
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (widget.trailing != null) ...[widget.trailing!, const SizedBox(width: 6)],
+                      send,
+                    ],
+                  ),
                 ],
               ),
             ],

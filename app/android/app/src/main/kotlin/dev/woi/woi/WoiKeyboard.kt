@@ -106,9 +106,37 @@ internal object WoiKeyboard {
     }
 
     fun validateSdk(operations: List<WoiKeyOperation>, sdk: Int) {
-        require(sdk >= 33 || operations.none { it is WoiKeyOperation.Chord }) {
+        require(sdk >= 33 || operations.none { it is WoiKeyOperation.Chord && WoiScrollPlan.fromKey(it.key, it.modifiers) == null }) {
             "Exact keyboard shortcuts require Android 13 or newer and a focused input connection; semantic edit actions remain available"
         }
+    }
+
+    data class TextEdit(val text: String, val start: Int, val end: Int)
+
+    /** Safe ordinary caret/deletion keys for readable node editors whose IME
+     * session can be invalidated by ACTION_SET_TEXT. Never approximates Ctrl,
+     * Alt or Meta shortcuts, and never splits a Unicode surrogate pair. */
+    fun textKey(text: String, start: Int, end: Int, key: String, modifiers: Set<String>): TextEdit? {
+        if (modifiers.any { it != "shift" } || key !in setOf("left", "right", "home", "end", "backspace", "delete")) return null
+        require(start in 0..text.length && end in 0..text.length) { "Editor selection is unavailable" }
+        val shift = "shift" in modifiers
+        fun previous(at: Int) = if (at == 0) 0 else Character.offsetByCodePoints(text, at, -1)
+        fun next(at: Int) = if (at == text.length) at else Character.offsetByCodePoints(text, at, 1)
+        if (key == "backspace" || key == "delete") {
+            var left = minOf(start, end)
+            var right = maxOf(start, end)
+            if (left == right) {
+                if (key == "backspace") left = previous(left) else right = next(right)
+            }
+            return TextEdit(text.removeRange(left, right), left, left)
+        }
+        val caret = when (key) {
+            "left" -> if (!shift && start != end) minOf(start, end) else previous(end)
+            "right" -> if (!shift && start != end) maxOf(start, end) else next(end)
+            "home" -> if (end == 0) 0 else text.lastIndexOf('\n', end - 1) + 1
+            else -> text.indexOf('\n', end).let { if (it < 0) text.length else it }
+        }
+        return TextEdit(text, if (shift) start else caret, caret)
     }
 
     /** Sends one real chord. Cleanup always targets the same input connection,

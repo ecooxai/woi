@@ -27,6 +27,12 @@ class PythonInstrumentation : Instrumentation() {
     // Keep the target UID, but never start Flutter or a chat
     // connection during the native audio checks. This is test-APK code only.
     override fun newActivity(cl: ClassLoader, className: String, intent: Intent): Activity {
+        if (group == "clipboard" && className == "dev.woi.woi.MainActivity") {
+            return ClipboardTestActivity()
+        }
+        if ((group == "media_capture" || group == "media_capture_screen") && className == "dev.woi.woi.MainActivity") {
+            return MediaCaptureTestActivity()
+        }
         if ((group == "audio" || group == "media_aec") && className == "dev.woi.woi.MainActivity") {
             return HeldAudioTestActivity()
         }
@@ -77,6 +83,18 @@ class PythonInstrumentation : Instrumentation() {
     }
 
     override fun onStart() {
+        if (group == "clipboard") {
+            ClipboardDeviceCheck(this).run()
+            return
+        }
+        if (group == "external_input") {
+            ExternalInputDeviceCheck(this).run()
+            return
+        }
+        if (group == "media_capture" || group == "media_capture_screen") {
+            MediaCaptureDeviceCheck(this, group == "media_capture_screen").run()
+            return
+        }
         if (group == "keyboard") {
             KeyboardDeviceCheck(this).run()
             return

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../platform/android/android_bridge.dart';
+import '../../platform/android/android_screen_capture.dart';
+import '../../platform/media_capture.dart';
 import 'glass.dart';
 
 /// Android: starts/stops screen share (MediaProjection). While on, every
@@ -14,12 +16,12 @@ class ScreenShareButton extends StatelessWidget {
   Future<void> _toggle(BuildContext context, AndroidBridge b) async {
     final messenger = ScaffoldMessenger.maybeOf(context);
     try {
-      if (b.sharing.value) {
-        await b.call<bool>('shareStop');
-        b.sharing.value = false;
-      } else {
-        final ok = await b.call<bool>('shareStart') ?? false;
-        if (!ok) messenger?.showSnackBar(const SnackBar(content: Text('Screen share was not allowed.')));
+      final state = b.screenCapture.value;
+      final result = await AndroidScreenCapture(bridge: b).setSharing(!(state.active || state.pending));
+      if (!result.ok || result.pending) {
+        messenger?.showSnackBar(
+          SnackBar(content: Text(result.error ?? result.message ?? 'Waiting for Android screen sharing consent.')),
+        );
       }
     } on PlatformException catch (e) {
       messenger?.showSnackBar(SnackBar(content: Text('Screen share failed: ${e.message}')));
@@ -29,13 +31,21 @@ class ScreenShareButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final b = bridge ?? AndroidBridge.instance;
-    return ValueListenableBuilder<bool>(
-      valueListenable: b.sharing,
-      builder: (context, on, _) => GlassIconButton(
+    return ValueListenableBuilder<MediaCaptureState>(
+      valueListenable: b.screenCapture,
+      builder: (context, state, _) => GlassIconButton(
         key: const ValueKey('screen-share'),
-        icon: on ? Icons.screen_share : Icons.screen_share_outlined,
-        tooltip: on ? 'Stop sharing the screen' : 'Share the screen with Woi',
-        active: on,
+        icon: state.pending
+            ? Icons.hourglass_top
+            : state.active
+            ? Icons.screen_share
+            : Icons.screen_share_outlined,
+        tooltip: state.pending
+            ? 'Cancel screen sharing request'
+            : state.active
+            ? 'Stop sharing the screen'
+            : 'Share the screen with Woi',
+        active: state.active,
         size: size,
         onPressed: () => _toggle(context, b),
       ),

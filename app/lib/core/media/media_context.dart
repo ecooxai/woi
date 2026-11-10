@@ -110,6 +110,73 @@ bool? cameraCommand(String text) {
   return const {'open', 'start', 'turn on', 'switch on', 'enable', 'activate', 'show'}.contains(verb);
 }
 
+/// Only complete, explicit screen sharing requests take the local fast path.
+/// Questions, quotations and conditional/negated speech must not start capture.
+bool? screenShareCommand(String text) {
+  final t = _captureCommandText(text);
+  if (RegExp(
+    r'^(?:share (?:my|the) screen(?: with (?:woi|you|the ai))?|(?:open|start|enable|activate|turn on) (?:the |my )?screen shar(?:e|ing)|start sharing (?:my|the) screen)$',
+  ).hasMatch(t)) {
+    return true;
+  }
+  if (RegExp(
+    r'^(?:(?:close|stop|disable|deactivate|turn off) (?:the |my )?screen shar(?:e|ing)|stop sharing (?:my|the) screen|stop sharing)$',
+  ).hasMatch(t)) {
+    return false;
+  }
+  return null;
+}
+
+String _captureCommandText(String text) => text
+    .trim()
+    .toLowerCase()
+    .replaceAll(RegExp(r'[.!?]+$'), '')
+    .replaceFirst(RegExp(r'^(?:(?:ok(?:ay)?|hey|woi|please|now|so|and|then|can you|could you)[\s,]+)*'), '')
+    .replaceFirst(RegExp(r'\s+please$'), '');
+
+class MediaCaptureCommand {
+  const MediaCaptureCommand(this.tool, this.arguments);
+  final String tool;
+  final Map<String, Object?> arguments;
+}
+
+/// Native-tool models see the same schema; gpt-live delegates these commands
+/// to the production tool registry without a second provider request.
+MediaCaptureCommand? mediaCaptureCommand(String text) {
+  final camera = cameraCommand(text);
+  if (camera != null) return MediaCaptureCommand('camera', {'action': camera ? 'open' : 'close'});
+  final screen = screenShareCommand(text);
+  if (screen != null) return MediaCaptureCommand('screen_share', {'action': screen ? 'start' : 'stop'});
+  final t = _captureCommandText(text);
+  if (RegExp(r'^(?:(?:check (?:the |my )?)?camera status|is (?:the |my )?camera (?:on|open|active|running))$')
+      .hasMatch(t)) {
+    return const MediaCaptureCommand('camera', {'action': 'status'});
+  }
+  if (RegExp(
+    r'^(?:(?:check (?:the |my )?)?screen shar(?:e|ing) status|is (?:the |my )?screen shar(?:e|ing) (?:on|active|running))$',
+  ).hasMatch(t)) {
+    return const MediaCaptureCommand('screen_share', {'action': 'status'});
+  }
+  final facing = RegExp(
+    r'^(open|start|activate|use|switch to) (?:the |my )?(front|back|rear|selfie)(?:-facing)? camera$',
+  ).firstMatch(t);
+  if (facing != null) {
+    return MediaCaptureCommand('camera', {
+      'action': facing.group(1) == 'switch to' ? 'switch' : 'open',
+      'facing': const {'front', 'selfie'}.contains(facing.group(2)) ? 'front' : 'back',
+    });
+  }
+  final switchTo = RegExp(r'^switch (?:the |my )?camera to (?:the )?(front|back|rear|selfie)(?: camera)?$')
+      .firstMatch(t);
+  if (switchTo != null) {
+    return MediaCaptureCommand('camera', {
+      'action': 'switch',
+      'facing': const {'front', 'selfie'}.contains(switchTo.group(1)) ? 'front' : 'back',
+    });
+  }
+  return null;
+}
+
 /// What [MediaContextService.grab] found: an image for images and videos
 /// (the current frame), text for audio (description/transcript) and text.
 class MediaContext {

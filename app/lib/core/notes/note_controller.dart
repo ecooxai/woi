@@ -68,6 +68,27 @@ class NoteController extends ChangeNotifier {
   /// style actions read it.
   int cursor = -1;
 
+  /// Kept when the editor unmounts for another tab; clipboard paste replaces
+  /// this range rather than silently appending to the note.
+  int selectionStart = -1;
+  int selectionEnd = -1;
+
+  void rememberSelection(int start, int end) {
+    selectionStart = start;
+    selectionEnd = end;
+    cursor = end;
+  }
+
+  void replaceSelection(String insertion) {
+    final a = (selectionStart < 0 ? cursorOrEnd : selectionStart).clamp(0, text.length);
+    final b = (selectionEnd < 0 ? a : selectionEnd).clamp(0, text.length);
+    final start = math.min(a, b), end = math.max(a, b);
+    breakUndoGroup();
+    setText(text.replaceRange(start, end, insertion));
+    rememberSelection(start + insertion.length, start + insertion.length);
+    breakUndoGroup();
+  }
+
   /// [cursor] clamped to the text; the end when unknown.
   int get cursorOrEnd => cursor < 0 || cursor > text.length ? text.length : cursor;
 
@@ -91,6 +112,7 @@ class NoteController extends ChangeNotifier {
     await flush();
     final n = await store.load(conversationId);
     _note = n;
+    cursor = selectionStart = selectionEnd = -1;
     _undo.clear();
     _redo.clear();
     _lastAi = null;

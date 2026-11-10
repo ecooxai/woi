@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import 'media_capture.dart';
+
 /// One camera frame as a JPEG (at most 1280 px wide).
 class CameraFrame {
   const CameraFrame({required this.jpeg, required this.width, required this.height, required this.capturedAt});
@@ -9,7 +11,7 @@ class CameraFrame {
   final DateTime capturedAt;
 }
 
-/// Camera access (Linux: v4l2 through ffmpeg; Android later: CameraX).
+/// Camera access (Linux: v4l2 through ffmpeg; Android: Camera2).
 ///
 /// While [active], [frames] carries the latest frame at a low rate (5–10 fps)
 /// for the preview tile and for attaching to user turns. Nothing runs and the
@@ -24,7 +26,21 @@ abstract class CameraService {
   /// Last open failure, for the UI and the tool result.
   String? get lastError;
 
-  /// Starts streaming. Throws [CameraException] when the device cannot be
+  /// Native permission state can outlive the initiating tool call.
+  MediaCaptureState get captureState => MediaCaptureState(
+    state: active.value ? 'active' : (lastError == null ? 'inactive' : 'error'),
+    error: active.value ? null : lastError,
+  );
+  Listenable get changes => active;
+  bool get supportsBackgroundCapture => false;
+  bool get supportsFacingSelection => false;
+  Future<MediaCaptureState> refreshCaptureState() async => captureState;
+  Future<void> selectFacing(String facing) async =>
+      throw CameraException('Camera facing selection is unavailable on this platform.');
+  Future<void> dispose() => close();
+
+  /// Starts streaming, or returns with [captureState] pending native consent.
+  /// Throws [CameraException] when the device cannot be
   /// opened. Opening an open camera does nothing.
   Future<void> open();
 

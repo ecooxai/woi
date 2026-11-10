@@ -15,16 +15,35 @@ import io.flutter.plugin.common.MethodChannel
 import java.lang.ref.WeakReference
 import java.util.UUID
 
-/** Explicit clipboard operations only. No listener, history, logging, or
- * background polling. Android 10+ reads use a visibly focused Activity when
+/** Explicit clipboard operations. Passive history reads only proceed while
+ * a Woi window has focus; they never launch a focus window. Android 10+ reads use a visibly focused Activity when
  * Woi is behind another app; the OS clipboard privacy boundary stays intact. */
 internal object WoiClipboard {
-    private data class Pending(val id: String, val result: MethodChannel.Result)
+    private data class Pending(val id: String, val result: MethodChannel.Result, val rich: Boolean)
     private var pending: Pending? = null
     private var reader: WeakReference<WoiClipboardActivity>? = null
     private var closing = false
     private var closingCancelled = false
     private const val maxTextLength = 100000
+    private var observedManager: ClipboardManager? = null
+    private var clipboardRevision = 1L
+    private var passiveReadRevision = 0L
+    private val clipboardChanged = ClipboardManager.OnPrimaryClipChangedListener { invalidatePassiveRead() }
+
+    /** Android may suppress clipboard notifications while Woi is unfocused.
+     * Invalidate on every focus/foreground transition, then read once again.
+     * Explicit Paste never consults this passive-history optimization. */
+    fun invalidatePassiveRead() {
+        clipboardRevision++
+        passiveReadRevision = 0L
+    }
+
+    private fun observeClipboard() {
+        if (observedManager != null) return
+        val source = manager(WoiBridge.appContext)
+        source.addPrimaryClipChangedListener(clipboardChanged)
+        observedManager = source
+    }
 
     fun handle(call: MethodCall, result: MethodChannel.Result) {
         try {
@@ -35,11 +54,43 @@ internal object WoiClipboard {
                     manager(WoiBridge.appContext).setPrimaryClip(ClipData.newPlainText("Woi", text))
                     result.success(true)
                 }
-                "readClipboard" -> {
+                "writeClipboardContent" -> {
+                    val arguments = call.arguments as? Map<*, *> ?: return result.error("invalid_clipboard", "image is required", null)
+                    WoiBridge.io.execute {
+                        try {
+                            val clip = WoiClipboardContent.createClip(WoiBridge.appContext, arguments)
+                            WoiBridge.main.post {
+                                try { manager(WoiBridge.appContext).setPrimaryClip(clip); result.success(true) }
+                                catch (error: Throwable) { result.error("clipboard_unavailable", error.message ?: "Image copy failed", null) }
+                            }
+                        } catch (error: Throwable) {
+                            WoiBridge.main.post { result.error("clipboard_unavailable", error.message ?: "Image copy failed", null) }
+                        }
+                    }
+                }
+                "readClipboard", "readClipboardContent" -> {
+                    val rich = call.method == "readClipboardContent"
                     if (pending != null || closing) return result.error("clipboard_busy", "A clipboard read is already in progress", null)
                     val activity = WoiBridge.activity
-                    if (Build.VERSION.SDK_INT < 29 || activity?.hasWindowFocus() == true) {
-                        result.success(read(activity ?: WoiBridge.appContext))
+                    val passive = rich && call.argument<Boolean>("allowFocus") == false
+                    if (rich) observeClipboard()
+                    if (Build.VERSION.SDK_INT < 29 || activity?.hasWindowFocus() == true || WoiOverlay.hasWindowFocus) {
+                        if (passive && passiveReadRevision == clipboardRevision) {
+                            result.success(null)
+                            return
+                        }
+                        val revision = clipboardRevision
+                        readInto(activity ?: WoiBridge.appContext, rich) { value, error ->
+                            if (error == null) {
+                                if (passive && revision == clipboardRevision) passiveReadRevision = revision
+                                result.success(value)
+                            } else result.error("clipboard_unavailable", error, null)
+                        }
+                        return
+                    }
+                    if (passive) {
+                        invalidatePassiveRead()
+                        result.success(null)
                         return
                     }
                     val panelShowing = WoiOverlay.showing
@@ -49,7 +100,7 @@ internal object WoiClipboard {
                         reply.error("clipboard_unavailable", error.message ?: "Could not release assistant focus", null)
                         return
                     }
-                    val request = Pending(UUID.randomUUID().toString(), reply)
+                    val request = Pending(UUID.randomUUID().toString(), reply, rich)
                     pending = request
                     val context = WoiAccessibilityService.instance ?: WoiBridge.appContext
                     try {
@@ -63,7 +114,7 @@ internal object WoiClipboard {
                     }
                     WoiBridge.main.postDelayed({
                         if (pending?.id == request.id) finish(request.id, error = "Android did not give Woi clipboard focus. Open Woi and retry the clipboard read")
-                    }, 2500)
+                    }, if (rich) 10000 else 2500)
                 }
                 else -> result.notImplemented()
             }
@@ -99,6 +150,24 @@ internal object WoiClipboard {
         return mapOf("available" to (text != null), "text" to text)
     }
 
+    private fun readInto(context: Context, rich: Boolean, complete: (Any?, String?) -> Unit) {
+        if (!rich) {
+            try { complete(read(context), null) }
+            catch (error: Throwable) { complete(null, error.message ?: "Clipboard read failed") }
+            return
+        }
+        val clip = try { manager(context).primaryClip }
+            catch (error: Throwable) { complete(null, error.message ?: "Clipboard read failed"); return }
+        WoiBridge.io.execute {
+            try {
+                val content = WoiClipboardContent.read(context, clip)
+                WoiBridge.main.post { complete(content, null) }
+            } catch (error: Throwable) {
+                WoiBridge.main.post { complete(null, error.message ?: "Clipboard image read failed") }
+            }
+        }
+    }
+
     fun attach(activity: WoiClipboardActivity, id: String?): Boolean {
         if (id == null || pending?.id != id) return false
         reader = WeakReference(activity)
@@ -107,8 +176,8 @@ internal object WoiClipboard {
 
     fun readFocused(activity: WoiClipboardActivity, id: String) {
         if (pending?.id != id || !activity.hasWindowFocus()) return
-        try { finish(id, value = read(activity)) }
-        catch (error: Throwable) { finish(id, error = error.message ?: "Android refused clipboard access") }
+        val request = pending ?: return
+        readInto(activity, request.rich) { value, error -> finish(id, value = value, error = error) }
     }
 
     fun abandoned(id: String) {

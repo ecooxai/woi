@@ -100,6 +100,7 @@ const kHomeTabs = <HomeView, (IconData, String)>{
   HomeView.note: (Icons.description_outlined, 'Note'),
   HomeView.chat: (Icons.chat_bubble_outline_rounded, 'Chat'),
   HomeView.terminal: (Icons.terminal_rounded, 'Terminal'),
+  HomeView.clipboard: (Icons.content_paste_rounded, 'Clipboard'),
   HomeView.settings: (Icons.tune_rounded, 'Settings'),
 };
 
@@ -117,9 +118,11 @@ class HomeTabs extends StatelessWidget {
     this.compact = false,
     this.height = 44,
     this.hideChat = false,
+    this.selectedTabKey,
   });
 
   final HomeView view;
+  final GlobalKey? selectedTabKey;
 
   /// Wide two-pane layout: the chat is always on the right, so no Chat tab.
   final bool hideChat;
@@ -164,11 +167,17 @@ class HomeTabs extends StatelessWidget {
         for (final v in HomeView.values)
           if (!(hideChat && v == HomeView.chat))
             WoiTab(
+              key: _selected(v) ? selectedTabKey : null,
               inkKey: ValueKey('view-${v.name}'),
               primary: true,
               icon: kHomeTabs[v]!.$1,
               label: kHomeTabs[v]!.$2,
-              tooltip: '${kHomeTabs[v]!.$2} (Ctrl+${v.index + 1})',
+              tooltip:
+                  '${kHomeTabs[v]!.$2} (Ctrl+${v == HomeView.settings
+                      ? 4
+                      : v == HomeView.clipboard
+                      ? 5
+                      : v.index + 1})',
               selected: _selected(v),
               showLabel: !compact || v == view,
               badge: badgeFor(v),

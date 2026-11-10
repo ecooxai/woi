@@ -14,7 +14,7 @@ import android.util.Log
 
 /**
  * One foreground service for everything that must keep running while Woi is
- * not in front: the microphone (voice session), screen share
+ * not in front: the microphone (voice session), camera, screen share
  * (mediaProjection) and the sign-in callback server (dataSync, so the cached
  * app freezer does not stop the loopback server while the browser is open).
  */
@@ -40,6 +40,8 @@ class WoiForegroundService : Service() {
         heldAudioForegroundReady = false
         if (heldAudio) WoiHeldAudio.cancel("Recording service stopped")
         if (instance === this) instance = null
+        camera = false; share = false
+        WoiMediaCapture.serviceStopped()
         super.onDestroy()
     }
 
@@ -47,28 +49,30 @@ class WoiForegroundService : Service() {
         when (intent?.action) {
             ACTION_VOICE -> { voice = true; voiceWarm = false }
             ACTION_LOGIN -> login = true
-            ACTION_SHARE -> share = true
+            ACTION_SHARE -> { if (WoiMediaCapture.isStarting(WoiMediaCapture.SCREEN, intent.getLongExtra("request", 0))) share = true }
+            ACTION_CAMERA -> { if (WoiMediaCapture.isStarting(WoiMediaCapture.CAMERA, intent.getLongExtra("request", 0))) camera = true }
             ACTION_HELD_AUDIO -> heldAudio = WoiHeldAudio.isRequested()
             ACTION_STOP_ALL -> {
                 voice = false; voiceWarm = false; login = false; heldAudio = false
                 WoiHeldAudio.cancel("Recording stopped")
-                WoiScreen.stop(this)
-                share = false
+                WoiMediaCapture.stopAll()
+                share = false; camera = false
                 WoiBridge.emit(mapOf("type" to "stopAll"))
             }
         }
         // startForegroundService() needs a startForeground() call even when
         // this request turned everything off.
         if (!refresh(force = true)) return START_NOT_STICKY
-        if (intent?.action == ACTION_SHARE) {
+        if (intent?.action == ACTION_SHARE && share) {
             val code = intent.getIntExtra("code", 0)
+            val request = intent.getLongExtra("request", 0)
             @Suppress("DEPRECATION")
             val data: Intent? = intent.getParcelableExtra("data")
-            if (data == null || !WoiScreen.start(this, code, data)) {
-                share = false
-                refresh()
-                WoiBridge.emit(mapOf("type" to "share", "on" to false, "error" to "projection refused"))
-            }
+            if (data == null) WoiMediaCapture.failed(WoiMediaCapture.SCREEN, request, "Screen sharing consent was missing.")
+            else WoiMediaCapture.openProjection(this, request, code, data)
+        }
+        if (intent?.action == ACTION_CAMERA && camera) {
+            WoiMediaCapture.openCamera(this, intent.getLongExtra("request", 0), intent.getBooleanExtra("front", false))
         }
         return START_NOT_STICKY
     }
@@ -81,8 +85,9 @@ class WoiForegroundService : Service() {
         // being frozen until the keep-alive ends.
         if (micOn() && hasMic()) type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
         if (share) type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+        if (camera) type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
         if (login) type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-        val any = voice || login || share || heldAudio
+        val any = voice || login || share || camera || heldAudio
         if (type == 0 && (any || force)) type = ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
         if (type != 0) {
             try {
@@ -98,11 +103,15 @@ class WoiForegroundService : Service() {
                 }
                 if (share) {
                     share = false
-                    WoiBridge.emit(mapOf("type" to "share", "on" to false, "error" to (e.message ?: "$e")))
+                    WoiMediaCapture.foregroundFailed(WoiMediaCapture.SCREEN, "Android refused the screen capture foreground service: ${e.message}")
+                }
+                if (camera) {
+                    camera = false
+                    WoiMediaCapture.foregroundFailed(WoiMediaCapture.CAMERA, "Android refused the camera foreground service: ${e.message}")
                 }
             }
         }
-        if (!(voice || login || share || heldAudio)) {
+        if (!(voice || login || share || camera || heldAudio)) {
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return false
@@ -113,7 +122,7 @@ class WoiForegroundService : Service() {
     private fun micOn() = heldAudio || (voice && !voiceWarm)
 
     /** Only the warm voice session runs: the quiet (minimised) notification. */
-    private fun quiet() = voice && voiceWarm && !login && !share && !heldAudio
+    private fun quiet() = voice && voiceWarm && !login && !share && !camera && !heldAudio
 
     private fun hasMic() = WoiBridge.hasPermission(this, android.Manifest.permission.RECORD_AUDIO)
 
@@ -139,6 +148,7 @@ class WoiForegroundService : Service() {
         )
         val what = listOfNotNull(
             if (share) "sharing the screen" else null,
+            if (camera) "camera on" else null,
             if (heldAudio) "recording microphone" else null,
             if (micOn()) "voice on" else if (voice) "standby · mic off" else null,
             if (login) "waiting for sign-in" else null,
@@ -149,7 +159,7 @@ class WoiForegroundService : Service() {
             .setContentText(what)
             .setContentIntent(open)
             .setOngoing(true)
-            .addAction(Notification.Action.Builder(null, if (share) "Stop sharing" else "Stop", stop).build())
+            .addAction(Notification.Action.Builder(null, if (share || camera) "Stop capture" else "Stop", stop).build())
             .build()
     }
 
@@ -161,6 +171,7 @@ class WoiForegroundService : Service() {
         const val ACTION_VOICE = "woi.voice"
         const val ACTION_LOGIN = "woi.login"
         const val ACTION_SHARE = "woi.share"
+        const val ACTION_CAMERA = "woi.camera"
         const val ACTION_HELD_AUDIO = "woi.held_audio"
         const val ACTION_STOP_ALL = "woi.stop_all"
 
@@ -170,6 +181,7 @@ class WoiForegroundService : Service() {
         @Volatile var voiceWarm = false
         @Volatile var login = false
         @Volatile var share = false
+        @Volatile var camera = false
         @Volatile var heldAudio = false
         @Volatile var heldAudioForegroundReady = false
         @Volatile var heldAudioForegroundError: String? = null
@@ -181,6 +193,10 @@ class WoiForegroundService : Service() {
                 ctx.startForegroundService(i)
             } catch (e: Exception) {
                 Log.w(WoiBridge.TAG, "foreground service $action refused", e)
+                if (action == ACTION_CAMERA) WoiMediaCapture.failed(WoiMediaCapture.CAMERA,
+                    i.getLongExtra("request", 0), "Android could not start the camera foreground service: ${e.message}")
+                if (action == ACTION_SHARE) WoiMediaCapture.failed(WoiMediaCapture.SCREEN,
+                    i.getLongExtra("request", 0), "Android could not start the screen capture foreground service: ${e.message}")
                 if (action == ACTION_HELD_AUDIO) {
                     heldAudioForegroundError = e.message ?: e.javaClass.simpleName
                     heldAudioForegroundReady = false
@@ -228,15 +244,21 @@ class WoiForegroundService : Service() {
 
         fun startLogin(ctx: Context) = send(ctx, ACTION_LOGIN)
         fun stopLogin(@Suppress("UNUSED_PARAMETER") ctx: Context) = off { login = false }
-        fun startShare(ctx: Context, code: Int, data: Intent) = send(ctx, ACTION_SHARE) {
+        fun startShare(ctx: Context, code: Int, data: Intent, request: Long) = send(ctx, ACTION_SHARE) {
             it.putExtra("code", code)
             it.putExtra("data", data)
+            it.putExtra("request", request)
         }
+        fun startCamera(ctx: Context, request: Long, front: Boolean) = send(ctx, ACTION_CAMERA) {
+            it.putExtra("request", request)
+            it.putExtra("front", front)
+        }
+        fun cameraStopped() = off { camera = WoiMediaCapture.ownsForeground(WoiMediaCapture.CAMERA) }
 
         fun shareStopped(@Suppress("UNUSED_PARAMETER") ctx: Context) = off {
             // A previous projection may finish stopping after its replacement
             // starts. Derive the service type from the current owner.
-            share = WoiScreen.isSharing()
+            share = WoiScreen.hasProjection() || WoiMediaCapture.ownsForeground(WoiMediaCapture.SCREEN)
         }
     }
 }

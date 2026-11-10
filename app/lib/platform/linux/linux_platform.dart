@@ -9,6 +9,7 @@ import '../platform_services.dart';
 import 'atspi_elements.dart';
 import 'linux_audio_io.dart';
 import 'linux_camera.dart';
+import 'linux_clipboard_access.dart';
 import 'linux_files.dart';
 import 'linux_input_control.dart';
 import 'linux_media_grab.dart';
@@ -30,6 +31,7 @@ PlatformServices createLinuxPlatform({bool secondaryWindows = true}) {
   return PlatformServices(
     paths: paths,
     audio: LinuxAudioIO(),
+    clipboard: const LinuxClipboardAccess(),
     screen: LinuxScreenCapture(),
     input: LinuxInputControl(control: ControlGuard(ControlFeedback.linux())),
     shell: LinuxShell(defaultWorkingDirectory: paths.homeDir),

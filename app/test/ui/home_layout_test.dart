@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:woi/core/app_controller.dart';
 import 'package:woi/platform/android/android_bridge.dart';
+import 'package:woi/platform/media_capture.dart';
 import 'package:woi/core/auth/auth.dart';
 import 'package:woi/core/context/compressor.dart';
 import 'package:woi/core/models/message.dart';
@@ -154,20 +155,19 @@ ConversationSummary _sum(String id, int minutesAgo) => ConversationSummary(
 String? _err(Object? e) => e == null ? null : (e is FlutterError ? e.toStringDeep() : '$e');
 
 void main() {
-  testWidgets('Android screen share sits immediately before camera and keeps native start-stop behavior', (t) async {
+  testWidgets('Android screen share and attachment controls precede camera and keep native behavior', (t) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
     addTearDown(() => debugDefaultTargetPlatformOverride = null);
     final calls = <String>[];
     final bridge = AndroidBridge.instance;
     bridge.sharing.value = false;
+    bridge.screenCapture.value = const MediaCaptureState();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(AndroidBridge.method, (
       call,
     ) async {
       calls.add(call.method);
-      if (call.method == 'shareStart') {
-        bridge.sharing.value = true;
-        return true;
-      }
+      if (call.method == 'shareStart') return {'state': 'active', 'revision': 1, 'frames': 1};
+      if (call.method == 'shareStop') return {'state': 'inactive', 'revision': 2};
       return null;
     });
     addTearDown(() {
@@ -176,6 +176,7 @@ void main() {
         null,
       );
       bridge.sharing.value = false;
+      bridge.screenCapture.value = const MediaCaptureState();
     });
     final env = _Env();
     await env.start(t, savedSettings: const AppSettings(micMode: MicMode.muted));
@@ -183,9 +184,11 @@ void main() {
       await _pumpHome(t, env.c, Size(width, 850));
       final share = find.byKey(const ValueKey('screen-share'));
       final camera = find.byKey(const ValueKey('camera-toggle'));
+      final attach = find.byKey(const ValueKey('attach-files'));
       expect(share, findsOneWidget);
       expect(find.ancestor(of: share, matching: find.byKey(const ValueKey('input-bar'))), findsOneWidget);
-      expect(t.getRect(share).right, closeTo(t.getRect(camera).left, 0.1));
+      expect(t.getRect(share).right, closeTo(t.getRect(attach).left, 0.1));
+      expect(t.getRect(attach).right, closeTo(t.getRect(camera).left, 0.1));
       expect(t.getCenter(share).dy, closeTo(t.getCenter(camera).dy, 0.1));
       expect(t.getSize(share).width, greaterThanOrEqualTo(48));
       expect(find.byKey(const ValueKey('contextual-find-button')), findsOneWidget);
@@ -510,14 +513,14 @@ void main() {
         final strip = find.byType(HomeTabs);
         expect(t.getTopLeft(strip).dx, lessThan(8));
         expect(t.getTopRight(strip).dx, lessThanOrEqualTo(size.width - kTouchTarget));
-        // Icons share one bottom row, with send at the far right.
+        // Actions stay together; status may wrap above on the narrowest phones.
         final status = find.byKey(const ValueKey('voice-status-button'));
         final mic = find.byKey(const ValueKey('mic-button'));
         final send = find.byKey(const ValueKey('send'));
         final field = find.byKey(const ValueKey('composer-field'));
         expect(find.byKey(const ValueKey('voice-label')), findsNothing);
         expect(find.byKey(const ValueKey('connection-status')), findsNothing);
-        expect(t.getCenter(status).dy, closeTo(t.getCenter(send).dy, 1));
+        expect(t.getCenter(status).dy, lessThanOrEqualTo(t.getCenter(send).dy));
         expect(t.getCenter(mic).dy, closeTo(t.getCenter(send).dy, 1));
         expect(t.getTopLeft(send).dx, greaterThan(t.getTopLeft(mic).dx));
         expect(t.getBottomLeft(field).dy, lessThanOrEqualTo(t.getTopLeft(send).dy));
@@ -533,10 +536,12 @@ void main() {
         }
         for (final (v, panel) in [
           (HomeView.chat, 'chat-panel'),
+          (HomeView.clipboard, 'clipboard-view'),
           (HomeView.settings, 'settings-view'),
           (HomeView.terminal, 'terminal-view'),
           (HomeView.note, 'note-panel'),
         ]) {
+          await t.ensureVisible(find.byKey(ValueKey('view-${v.name}')));
           await _tapIo(t, find.byKey(ValueKey('view-${v.name}')));
           expect(env.c.actions.view.value, v);
           expect(find.byKey(ValueKey(panel)), findsOneWidget, reason: panel);

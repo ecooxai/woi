@@ -2,7 +2,6 @@ package dev.woi.woi
 
 import android.content.Context
 import android.content.Intent
-import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Build
 import android.provider.OpenableColumns
@@ -14,7 +13,6 @@ import java.io.File
 
 class MainActivity : FlutterActivity() {
     private var permCallback: ((Boolean) -> Unit)? = null
-    private var projectionCallback: ((Boolean) -> Unit)? = null
 
     /** Started (visible or about to be); the overlay hands the engine back. */
     var started = false
@@ -29,6 +27,11 @@ class MainActivity : FlutterActivity() {
     override fun provideFlutterEngine(context: Context): FlutterEngine = WoiEngine.obtain(context)
 
     override fun shouldDestroyEngineWithHost(): Boolean = false
+
+    // The visible assistant view owns the shared engine's lifecycle. A late
+    // onStop from this detached Activity must not pause that view (and make
+    // its tabs/selection appear frozen) or stop ongoing capture as a side effect.
+    override fun shouldDispatchAppLifecycleState(): Boolean = !WoiOverlay.showing
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         // Plugins are registered by the engine itself (host-provided engine).
@@ -47,18 +50,28 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onResume() {
+        WoiClipboard.invalidatePassiveRead()
         super.onResume()
         resumed = true
     }
 
     override fun onPause() {
+        WoiClipboard.invalidatePassiveRead()
         resumed = false
         super.onPause()
+        WoiOverlay.synchronizeLifecycle()
     }
 
     override fun onStop() {
         started = false
         super.onStop()
+        WoiOverlay.synchronizeLifecycle()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        WoiClipboard.invalidatePassiveRead()
+        super.onWindowFocusChanged(hasFocus)
+        WoiOverlay.synchronizeLifecycle()
     }
 
     private fun flutterView(): FlutterView? = findViewById(FLUTTER_VIEW_ID)
@@ -83,11 +96,8 @@ class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         if (WoiBridge.activity === this) WoiBridge.activity = null
-        val pendingProjection = projectionCallback
         val pendingPermission = permCallback
-        projectionCallback = null
         permCallback = null
-        pendingProjection?.invoke(false)
         pendingPermission?.invoke(false)
         super.onDestroy()
     }
@@ -108,32 +118,6 @@ class MainActivity : FlutterActivity() {
             val cb = permCallback
             permCallback = null
             cb?.invoke(grantResults.isNotEmpty() && grantResults.all { it == android.content.pm.PackageManager.PERMISSION_GRANTED })
-        }
-    }
-
-    // --- screen share consent ---
-
-    fun requestProjection(cb: (Boolean) -> Unit) {
-        if (WoiScreen.isSharing()) return cb(true)
-        if (projectionCallback != null) return cb(false)
-        val mpm = getSystemService(MediaProjectionManager::class.java)
-        projectionCallback = cb
-        @Suppress("DEPRECATION")
-        startActivityForResult(mpm.createScreenCaptureIntent(), REQ_PROJECTION)
-    }
-
-    @Deprecated("Deprecated in Java")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        @Suppress("DEPRECATION")
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != REQ_PROJECTION) return
-        val cb = projectionCallback
-        projectionCallback = null
-        if (resultCode == RESULT_OK && data != null) {
-            WoiForegroundService.startShare(this, resultCode, data)
-            cb?.invoke(true)
-        } else {
-            cb?.invoke(false)
         }
     }
 
@@ -213,7 +197,6 @@ class MainActivity : FlutterActivity() {
 
     companion object {
         const val REQ_PERMS = 7101
-        const val REQ_PROJECTION = 7102
         const val EXTRA_HANDLED = "woi_handled"
     }
 }

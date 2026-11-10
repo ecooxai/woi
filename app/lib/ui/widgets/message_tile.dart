@@ -4,7 +4,6 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../../core/context/image_tiers.dart';
 import '../../core/models/message.dart';
@@ -16,6 +15,7 @@ import '../../platform/downloads.dart';
 import '../../platform/media_viewer.dart';
 import '../theme.dart';
 import 'audio_button.dart';
+import 'clipboard_selection_area.dart';
 import 'code_highlight.dart';
 import 'context_meter.dart' show formatTokens;
 import 'glass.dart';
@@ -446,8 +446,12 @@ class _MessageActions extends StatelessWidget {
           ?.showSnackBar(SnackBar(content: Text(text)));
 
   Future<void> _copy(BuildContext context) async {
-    await Clipboard.setData(ClipboardData(text: _copyText));
-    if (context.mounted) _snack(context, 'Copied');
+    try {
+      await ClipboardSelectionArea.clipboardOf(context).writeText(_copyText);
+      if (context.mounted) _snack(context, 'Copied');
+    } catch (error) {
+      if (context.mounted) _snack(context, 'Copy failed: $error');
+    }
   }
 
   Future<void> _download(BuildContext context) async {

@@ -493,9 +493,49 @@ class KeyboardDeviceCheck(private val host: Instrumentation) {
                     secondary.refresh()
                     check(secondary.isAccessibilityFocused && !secondary.isFocused) { "Secondary accessibility selection was not retained" }
                     check(required("woi-keyboard-input").isFocused) { "Ordinary editor input focus was lost" }
-                    check(ok("typeText", mapOf("text" to " primary")) == "set_text")
-                    waitFor("ordinary input focus priority") { text() == "selected OLD text primary" }
-                    check(secondaryText() == "secondary fixturetarget") { "An accessibility-selected node overrode ordinary input focus" }
+                    val priorityReceipt = ok("typeText", mapOf("text" to " primary"))
+                    log.append("DETAIL ordinary target receipt=$priorityReceipt\n")
+                    check(priorityReceipt == "set_text")
+                    try {
+                        waitFor("ordinary input focus priority") { text() == "selected OLD text primary" }
+                        check(secondaryText() == "secondary fixturetarget") { "An accessibility-selected node overrode ordinary input focus" }
+                    } catch (error: Throwable) {
+                        // Failure-only observation: never repair focus/cache before
+                        // dispatch or relax the required intended-editor delivery.
+                        fun describe(node: AccessibilityNodeInfo?): String {
+                            if (node == null || node.packageName?.toString() != testPackage) return "no_fixture_node"
+                            val identity = when (node.contentDescription?.toString()) {
+                                "woi-keyboard-input" -> "primary"
+                                "woi-keyboard-secondary-input" -> "secondary"
+                                else -> "fixture_container"
+                            }
+                            val value = node.text?.toString().orEmpty()
+                            val contents = when (value) {
+                                "selected OLD text" -> "primary_before"
+                                "selected OLD text primary" -> "primary_expected"
+                                "secondary fixturetarget" -> "secondary_before"
+                                "secondary fixturetarget primary" -> "secondary_received_primary"
+                                else -> "other_redacted"
+                            }
+                            return "$identity,input=${node.isFocused},a11y=${node.isAccessibilityFocused},visible=${node.isVisibleToUser},editable=${node.isEditable},selection=${node.textSelectionStart}..${node.textSelectionEnd},text=$contents,length=${value.length},insert_at=${value.indexOf(" primary")}"
+                        }
+                        for (description in listOf("woi-keyboard-input", "woi-keyboard-secondary-input")) {
+                            val observed = required(description)
+                            log.append("DETAIL priority ui_cached ${describe(observed)}\n")
+                            val refreshed = observed.refresh()
+                            log.append("DETAIL priority ui_fresh refreshed=$refreshed ${describe(observed)}\n")
+                        }
+                        host.runOnMainSync {
+                            val service = WoiAccessibilityService.instance
+                            val input = service?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+                            log.append("DETAIL priority service_input_cached ${describe(input)}\n")
+                            val refreshed = input?.refresh()
+                            log.append("DETAIL priority service_input_fresh refreshed=$refreshed ${describe(input)}\n")
+                            val selected = service?.findFocus(AccessibilityNodeInfo.FOCUS_ACCESSIBILITY)
+                            log.append("DETAIL priority service_accessibility ${describe(selected)}\n")
+                        }
+                        throw error
+                    }
                     log.append("DETAIL accessibility target and ordinary input focus both preserved the other editor.\n")
                 } finally {
                     ui.serviceInfo = ui.serviceInfo.apply { flags = originalFlags }
@@ -516,7 +556,7 @@ class KeyboardDeviceCheck(private val host: Instrumentation) {
                 waitFor("dialog closed") { node("woi-keyboard-dialog") == null && node("woi-keyboard-input") != null }
                 check(text() == before && secondaryText() == secondaryBefore) { "Typing reached an editor behind the dialog" }
             }
-            verify("keyboard request does not focus a field or claim an unseen keyboard") {
+            verify("touch keyboard is visible without an editor and preserves focus") {
                 required("woi-keyboard-input").performAction(AccessibilityNodeInfo.ACTION_CLEAR_ACCESSIBILITY_FOCUS)
                 required("woi-keyboard-secondary-input").performAction(AccessibilityNodeInfo.ACTION_CLEAR_ACCESSIBILITY_FOCUS)
                 check(required("woi-keyboard-leave-editor").performAction(AccessibilityNodeInfo.ACTION_CLICK))
@@ -527,7 +567,11 @@ class KeyboardDeviceCheck(private val host: Instrumentation) {
                 }
                 val reply = ok("showKeyboard") as Map<*, *>
                 check(reply["focus_changed"] == false)
-                check(reply["visible"] == ui.windows.any { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD })
+                check(reply["visible"] == true && reply["backend"] == "woi_touch_keyboard")
+                check(reply["text_target"] == false && reply["text_input_available"] == false)
+                waitFor("actual Woi touch keyboard window") {
+                    ui.windows.any { it.type == AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY && it.title?.toString() == "Woi touch keyboard" }
+                }
                 check(!required("woi-keyboard-input").isFocused)
             }
             verify("typing with no selected editor fails without changing text") {
@@ -548,7 +592,10 @@ class KeyboardDeviceCheck(private val host: Instrumentation) {
                         check(service.softKeyboardController.setShowMode(mode)) { "Could not restore the pre-test keyboard show policy" }
                     }
                 }
-                if (WoiAccessibilityService.instance != null) ok("controlReset")
+                if (WoiAccessibilityService.instance != null) {
+                    ok("hideKeyboard")
+                    ok("controlReset")
+                }
             } catch (cleanup: Throwable) {
                 if (failure == null) failure = cleanup else failure!!.addSuppressed(cleanup)
             }

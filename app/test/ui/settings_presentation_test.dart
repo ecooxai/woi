@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:woi/core/app_controller.dart';
@@ -31,11 +32,15 @@ class _SettingsFixture {
     addTearDown(() => tester.binding.setSurfaceSize(null));
   }
 
-  Future<void> pump(WidgetTester tester, Size size) async {
+  Future<void> pump(WidgetTester tester, Size size, {double textScale = 1}) async {
     await tester.binding.setSurfaceSize(size);
     await tester.pumpWidget(
       MaterialApp(
         theme: buildWoiTheme(),
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(textScale)),
+          child: child!,
+        ),
         home: Scaffold(
           body: SettingsView(key: ValueKey(size.width), controller: controller),
         ),
@@ -154,7 +159,7 @@ void main() {
       await _show(tester, find.text('Echo cancellation'));
       expect(
         find.descendant(
-          of: find.byKey(const ValueKey('settings-group-model')),
+          of: find.byKey(const ValueKey('settings-group-voice')),
           matching: find.text('Echo cancellation'),
         ),
         findsOneWidget,
@@ -191,6 +196,151 @@ void main() {
       expect(position.extentAfter, closeTo(0, 0.5));
       expect(find.text('Changes save automatically').hitTestable(), findsOneWidget);
     }
+  });
+
+  testWidgets('large text keeps every Settings group and the footer reachable at narrow widths', (tester) async {
+    final fixture = _SettingsFixture();
+    await fixture.start(tester);
+    for (final (size, scale) in [(const Size(320, 740), 1.5), (const Size(360, 740), 2.0)]) {
+      await fixture.pump(tester, size, textScale: scale);
+      final backendLabel = find.text('Backend');
+      final paragraph = tester.renderObject<RenderParagraph>(
+        find.descendant(of: backendLabel, matching: find.byType(RichText)),
+      );
+      expect(
+        paragraph.getBoxesForSelection(const TextSelection(baseOffset: 0, extentOffset: 7)),
+        hasLength(1),
+        reason: 'Backend must not split midword.',
+      );
+      final advanced = find.byKey(const ValueKey('advanced-settings'));
+      await _show(tester, advanced);
+      await tester.tap(advanced);
+      await tester.pump();
+      final position = tester.state<ScrollableState>(_settingsScroll()).position;
+      position.jumpTo(0);
+      await tester.pump();
+      for (var page = 0; page < 70; page++) {
+        expect(tester.takeException(), isNull, reason: 'Settings at ${size.width}px and ${scale}x text, page $page');
+        if (position.pixels >= position.maxScrollExtent) break;
+        position.jumpTo((position.pixels + size.height * 0.65).clamp(0, position.maxScrollExtent));
+        await tester.pump();
+      }
+      for (var settle = 0; settle < 3; settle++) {
+        position.jumpTo(position.maxScrollExtent);
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(find.text('Changes save automatically').hitTestable(), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    }
+  });
+
+  testWidgets('More models keeps its hint compact while large-text menu choices remain keyboard accessible', (
+    tester,
+  ) async {
+    final fixture = _SettingsFixture();
+    await fixture.start(tester);
+    for (final scale in [1.0, 2.0]) {
+      await fixture.pump(tester, const Size(320, 740), textScale: scale);
+      final models = find.byKey(const ValueKey('select-audio-model'));
+      await _show(tester, models);
+      expect(
+        tester.getSize(models).height,
+        lessThanOrEqualTo(80),
+        reason: 'Hidden unavailable-model descriptions must not size the closed hint.',
+      );
+      final before = fixture.controller.settings.audioModel;
+      await tester.tap(models);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      final labels = tester.widget<DropdownButton<(AudioModelFamily, String)>>(models).items!;
+      expect(labels.length, greaterThan(1));
+      final firstEnabled = labels.firstWhere((item) => item.enabled).value!;
+      await tester.sendKeyEvent(LogicalKeyboardKey.home);
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await _settle(tester);
+      expect(fixture.controller.settings.audioModel, firstEnabled.$2);
+      expect(tester.widget<DropdownButton<(AudioModelFamily, String)>>(models).value, firstEnabled);
+      expect(models.hitTestable(), findsOneWidget);
+      await tester.tap(models);
+      await tester.pumpAndSettle();
+      final last = find.text(labels.last.value!.$2).hitTestable();
+      for (var step = 0; step < labels.length + 2 && last.evaluate().isEmpty; step++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      // Disabled choices remain present with their reason even though keyboard
+      // traversal skips selecting them; the open menu can still be scrolled.
+      final menuList = find.byType(ListView).last;
+      await tester.drag(menuList, const Offset(0, -600));
+      await tester.pumpAndSettle();
+      expect(last, findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      await tester.runAsync(
+        () => fixture.controller.updateSettings(fixture.controller.settings.copyWith(realtimeModel: before)),
+      );
+      await _settle(tester);
+    }
+  });
+
+  testWidgets('keyboard traversal reaches model menus and Advanced without activating unrelated settings', (
+    tester,
+  ) async {
+    final fixture = _SettingsFixture();
+    await fixture.start(tester);
+    await fixture.pump(tester, const Size(320, 740), textScale: 1.5);
+
+    bool focusedWithin(Finder finder) {
+      final targets = finder.evaluate().toSet();
+      final context = FocusManager.instance.primaryFocus?.context;
+      if (context == null || targets.isEmpty) return false;
+      var found = targets.contains(context);
+      context.visitAncestorElements((element) {
+        found = found || targets.contains(element);
+        return !found;
+      });
+      return found;
+    }
+
+    Future<void> tabTo(Finder finder) async {
+      for (var step = 0; step < 80 && !focusedWithin(finder); step++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump(const Duration(milliseconds: 250));
+      }
+      expect(focusedWithin(finder), isTrue, reason: 'Normal Tab traversal must reach this settings control.');
+      expect(finder.hitTestable(), findsOneWidget, reason: 'The focused control must scroll into view.');
+    }
+
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pump();
+    final thinking = find.byKey(const ValueKey('select-text-reasoning-effort'));
+    await tabTo(thinking);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(find.text('High').hitTestable(), findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(fixture.controller.settings.textReasoningEffort, 'medium');
+
+    final advanced = find.byKey(const ValueKey('advanced-settings'));
+    await tabTo(advanced);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(find.descendant(of: advanced, matching: find.byIcon(Icons.expand_less_rounded)), findsOneWidget);
+    await tabTo(find.byKey(const ValueKey('select-image-model')));
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    final custom = find.text('Custom model…').hitTestable();
+    for (var step = 0; step < 20 && custom.evaluate().isEmpty; step++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump(const Duration(milliseconds: 250));
+    }
+    expect(custom, findsOneWidget, reason: 'Keyboard navigation must reveal the final menu option.');
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('Thinking level saves and resets to a supported effort when the text model changes', (tester) async {

@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import '../media_capture.dart';
+
 /// Device facts from the Kotlin side (MainActivity / WoiBridge.kt).
 class AndroidInfo {
   const AndroidInfo({
@@ -74,6 +76,8 @@ sealed class AndroidEvent {
           );
         }
         return OpenEvent(files: files, text: m['text'] as String?, mime: m['mime'] as String?);
+      case 'capture':
+        return CaptureStateEvent(m['kind'] as String? ?? '', MediaCaptureState.fromMap(m));
       case 'share':
         return ShareStateEvent(on: m['on'] == true, error: m['error'] as String?);
       case 'micState':
@@ -89,6 +93,7 @@ sealed class AndroidEvent {
           jpeg: jpeg,
           width: (m['width'] as num?)?.toInt() ?? 0,
           height: (m['height'] as num?)?.toInt() ?? 0,
+          requestId: (m['requestId'] as num?)?.toInt() ?? 0,
         );
     }
     return null;
@@ -152,6 +157,12 @@ class OpenEvent extends AndroidEvent {
   final String? mime;
 }
 
+class CaptureStateEvent extends AndroidEvent {
+  const CaptureStateEvent(this.kind, this.state);
+  final String kind;
+  final MediaCaptureState state;
+}
+
 class ShareStateEvent extends AndroidEvent {
   const ShareStateEvent({required this.on, this.error});
   final bool on;
@@ -172,10 +183,11 @@ class ClipDoneEvent extends AndroidEvent {
 
 /// A camera frame (JPEG, upright) while the camera is open.
 class CameraFrameEvent extends AndroidEvent {
-  const CameraFrameEvent({required this.jpeg, required this.width, required this.height});
+  const CameraFrameEvent({required this.jpeg, required this.width, required this.height, this.requestId = 0});
   final Uint8List jpeg;
   final int width;
   final int height;
+  final int requestId;
 }
 
 /// The notification's "Stop" action ended voice and sharing.
@@ -204,6 +216,8 @@ class AndroidBridge {
 
   /// Screen share on/off (also flipped by the system "stop" chip).
   final sharing = ValueNotifier<bool>(false);
+  final cameraCapture = ValueNotifier(const MediaCaptureState());
+  final screenCapture = ValueNotifier(const MediaCaptureState());
 
   /// Woi's accessibility service is connected.
   final accessibility = ValueNotifier<bool>(false);
@@ -240,10 +254,14 @@ class AndroidBridge {
   @visibleForTesting
   void onEvent(AndroidEvent e) {
     switch (e) {
+      case CaptureStateEvent():
+        _captureChanged(e.kind, e.state);
       case ShareStateEvent():
-        sharing.value = e.on;
+        if (screenCapture.value.revision == 0) sharing.value = e.on;
       case StopAllEvent():
-        sharing.value = false;
+        // New native builds publish revisioned capture states before stopAll.
+        // Do not let this legacy event overwrite a subsequent start response.
+        if (screenCapture.value.revision == 0) sharing.value = false;
       case OverlayEvent():
         if (e.fraction != null) overlayFraction = e.fraction!;
         overlayVisible.value = e.on;
@@ -259,12 +277,40 @@ class AndroidBridge {
       final m = await method.invokeMapMethod<String, Object?>('status') ?? const {};
       final s = {for (final e in m.entries) e.key: e.value == true};
       accessibility.value = s['accessibility'] ?? false;
-      sharing.value = s['sharing'] ?? false;
+      if (screenCapture.value.revision == 0) sharing.value = s['sharing'] ?? false;
+      await Future.wait([refreshCapture('camera'), refreshCapture('screen')]);
       return s;
     } catch (e) {
       debugPrint('android status: $e');
       return const {};
     }
+  }
+
+  ValueNotifier<MediaCaptureState> captureState(String kind) => kind == 'camera' ? cameraCapture : screenCapture;
+
+  void _captureChanged(String kind, MediaCaptureState state) {
+    if (kind != 'camera' && kind != 'screen') return;
+    final target = captureState(kind);
+    // A queued event or an older status reply must not revive a stopped capture.
+    if (state.revision < target.value.revision) return;
+    target.value = state;
+    if (kind == 'screen') sharing.value = state.active;
+  }
+
+  Future<MediaCaptureState> refreshCapture(String kind) async {
+    final value = await call<Map<Object?, Object?>>('mediaCaptureStatus', {'kind': kind});
+    if (value != null) _captureChanged(kind, MediaCaptureState.fromMap(value));
+    return captureState(kind).value;
+  }
+
+  Future<MediaCaptureState> controlCapture(String kind, bool on, {bool? front}) async {
+    final method = kind == 'camera' ? (on ? 'cameraOpen' : 'cameraClose') : (on ? 'shareStart' : 'shareStop');
+    final value = await call<Map<Object?, Object?>>(method, {'front': ?front});
+    if (value == null) {
+      throw PlatformException(code: 'capture_unavailable', message: 'Android returned no capture state.');
+    }
+    _captureChanged(kind, MediaCaptureState.fromMap(value));
+    return captureState(kind).value;
   }
 
   Future<bool> requestPermissions(List<String> permissions) async =>

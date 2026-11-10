@@ -163,11 +163,13 @@ class CameraToggle extends StatelessWidget {
     required this.on,
     required this.busy,
     required this.onPressed,
+    this.pending = false,
     this.size = 28,
     this.visualSize,
   });
   final bool on;
   final bool busy;
+  final bool pending;
   final VoidCallback onPressed;
   final double size;
   final double? visualSize;
@@ -180,17 +182,25 @@ class CameraToggle extends StatelessWidget {
     return Semantics(
       button: true,
       toggled: on,
-      enabled: !busy,
-      label: on ? 'Close camera' : 'Open camera',
+      enabled: !busy || pending,
+      label: pending
+          ? 'Cancel camera request'
+          : on
+          ? 'Close camera'
+          : 'Open camera',
       child: Tooltip(
-        message: on ? 'Close camera' : 'Open camera (frames go with every turn)',
+        message: pending
+            ? 'Cancel camera request'
+            : on
+            ? 'Close camera'
+            : 'Open camera (frames go with every turn)',
         child: Material(
           color: Colors.transparent,
           shape: const CircleBorder(),
           clipBehavior: Clip.antiAlias,
           child: InkResponse(
             key: const ValueKey('camera-toggle'),
-            onTap: busy ? null : onPressed,
+            onTap: busy && !pending ? null : onPressed,
             radius: size / 2,
             containedInkWell: true,
             customBorder: const CircleBorder(),

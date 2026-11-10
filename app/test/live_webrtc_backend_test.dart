@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:woi/core/app_controller.dart' show kAssistantInstructions, kLiveInstructions;
@@ -27,8 +28,24 @@ const _tools = [
   ToolSpec(name: 'run_bash', description: 'bash', parameters: {'type': 'object'}),
 ];
 
+class _FirstReleaseFails extends FakeLiveTransport {
+  int releaseAttempts = 0;
+  @override
+  Future<void> setCaptureSuspended(bool suspended) async {
+    if (suspended && ++releaseAttempts == 1) {
+      throw StateError('fixture native release cleared its references before failing');
+    }
+    await super.setCaptureSuspended(suspended);
+  }
+}
+
 class _Rig {
-  _Rig({List<DelegationModelTurn> turns = const []}) : model = FakeDelegationModel(List.of(turns)) {
+  _Rig({
+    List<DelegationModelTurn> turns = const [],
+    Duration latency = Duration.zero,
+    FakeLiveTransport? firstTransport,
+  }) : model = FakeDelegationModel(List.of(turns), latency: latency),
+       rtcs = [firstTransport ?? FakeLiveTransport()] {
     backend = LiveWebRtcBackend(
       transportFactory: () {
         if (_made++ > 0) rtcs.add(FakeLiveTransport());
@@ -44,10 +61,10 @@ class _Rig {
   }
 
   /// One transport per call (a compaction swap creates a second one).
-  final rtcs = [FakeLiveTransport()];
+  final List<FakeLiveTransport> rtcs;
   int _made = 0;
   FakeLiveTransport get rtc => rtcs.last;
-  final server = FakeLiveServer();
+  final server = FakeLiveServer()..autoAcknowledgeContext = true;
   final FakeDelegationModel model;
   late final LiveWebRtcBackend backend;
   final events = <BackendEvent>[];
@@ -69,6 +86,425 @@ class _Rig {
 Future<void> _tick([int ms = 0]) => Future<void>.delayed(Duration(milliseconds: ms));
 
 void main() {
+  group('written attachment completion', () {
+    void attach(LiveWebRtcBackend backend) => backend.setContextImage(
+      'attachment:fixture',
+      DelegationImage(png: Uint8List.fromList([137, 80, 78, 71, 3]), capturedAt: DateTime(2026, 11, 9)),
+    );
+
+    test('explicit image writing requests require a complete inline final answer', () async {
+      final answer = '${'Detailed image observation. ' * 220}Final label VIOLET PIER.';
+      final r = _Rig(
+        turns: [DelegationModelTurn(text: answer, calls: [])],
+      );
+      addTearDown(r.dispose);
+      await r.connect();
+      attach(r.backend);
+      WrittenResponse? written;
+      r.backend.sendTextWithWrittenResult(
+        'Write a detailed description of this image in at least 850 words.',
+        onResult: (result) {
+          written = result;
+          return true;
+        },
+      );
+      await waitFor(() => r.backend.pendingDelegations == 0);
+      expect(r.model.receivedInstructions.single, contains('Return the complete answer as final response text'));
+      expect(r.model.receivedInstructions.single, contains('The word "write" alone does not request a file'));
+      expect(
+        r.model.receivedInstructions.single,
+        isNot(contains('For complex work (writing code, analysis, long text) call delegate_task')),
+      );
+      expect(written!.text, answer);
+      expect(written!.failed, isFalse);
+      expect(written!.text.length, greaterThan(4000));
+    });
+
+    test('short failed attachment cue never claims a complete answer exists', () {
+      final cue = buildLiveAttachmentReplyCue(
+        const WrittenResponse(text: 'I could not finish the analysis.', model: 'gpt-6-luna', failed: true),
+      );
+      expect(
+        cue,
+        'The attachment analysis failed. The written reply explains the problem. '
+        'Tell the user to try sending the attachment again. Do not claim success or start another action.',
+      );
+      expect(cue, isNot(contains('complete answer')));
+      expect(cue, isNot(contains('full answer')));
+      expect(utf8.encode(cue).length, lessThanOrEqualTo(500));
+    });
+
+    test('short answer is published once before one bounded live cue', () async {
+      final r = _Rig(
+        turns: [const DelegationModelTurn(text: 'A green rectangle.', calls: [])],
+      );
+      addTearDown(r.dispose);
+      await r.connect();
+      attach(r.backend);
+      final written = <WrittenResponse>[];
+      r.backend.sendTextWithWrittenResult(
+        'Describe this attached image.',
+        onResult: (result) {
+          expect(
+            r.ws.ofType('session.context.append'),
+            isEmpty,
+            reason: 'Written outcome precedes optional narration.',
+          );
+          written.add(result);
+          return true;
+        },
+      );
+      await waitFor(() => r.backend.pendingDelegations == 0);
+      expect(written, hasLength(1));
+      expect(written.single.text, 'A green rectangle.');
+      expect(written.single.failed, isFalse);
+      expect(written.single.model, 'gpt-6-luna');
+      final event = r.ws.ofType('session.context.append').single;
+      expect(event.containsKey('channel'), isFalse);
+      final text = ((event['content'] as List).single as Map)['text'] as String;
+      expect(text, contains(written.single.text));
+      expect(utf8.encode(text).length, lessThanOrEqualTo(500));
+      expect(text, isNot(contains('Source text for')));
+      r.ws.push({
+        'type': 'error',
+        'error': {'code': 'append_rejected', 'message': 'Synthetic narration rejection'},
+      });
+      await _tick();
+      expect(written, hasLength(1));
+      expect(
+        written.single.text,
+        'A green rectangle.',
+        reason: 'A later live failure cannot undo the written outcome.',
+      );
+      expect(r.of<BackendError>(), isNotEmpty);
+    });
+
+    test('long Unicode analysis remains complete in writing while Live gets an honest acknowledgement', () async {
+      final answer = '完整分析🙂é ' * 160;
+      final r = _Rig(
+        turns: [DelegationModelTurn(text: answer, calls: [])],
+      );
+      addTearDown(r.dispose);
+      await r.connect();
+      attach(r.backend);
+      WrittenResponse? written;
+      r.backend.sendTextWithWrittenResult(
+        'Explain this attachment in detail.',
+        onResult: (result) {
+          written = result;
+          return true;
+        },
+      );
+      await waitFor(() => r.backend.pendingDelegations == 0);
+      expect(written!.text, answer.trim());
+      final event = r.ws.ofType('session.context.append').single;
+      expect(event.containsKey('channel'), isFalse);
+      final text = ((event['content'] as List).single as Map)['text'] as String;
+      expect(utf8.encode(text).length, lessThanOrEqualTo(500));
+      expect(text, contains('details are not included in this live context'));
+      expect(text, contains('written reply'));
+      expect(text, isNot(contains('完整分析')));
+    });
+
+    for (final callbackThrows in [false, true]) {
+      test('rejected or failed result ownership does not claim a saved answer: $callbackThrows', () async {
+        final r = _Rig(
+          turns: [const DelegationModelTurn(text: 'A green rectangle.', calls: [])],
+        );
+        addTearDown(r.dispose);
+        await r.connect();
+        attach(r.backend);
+        var calls = 0;
+        r.backend.sendTextWithWrittenResult(
+          'Describe the attachment.',
+          onResult: (_) {
+            calls++;
+            if (callbackThrows) throw StateError('fixture persistence failure');
+            return false;
+          },
+        );
+        await waitFor(() => r.backend.pendingDelegations == 0);
+        expect(calls, 1);
+        expect(r.ws.ofType('session.context.append'), isEmpty);
+        expect(r.of<BackendError>(), hasLength(callbackThrows ? 1 : 0));
+        if (callbackThrows) expect(r.of<BackendError>().single.message, isNot(contains('fixture persistence')));
+      });
+    }
+
+    test('missing terminal answer produces a readable retry failure', () async {
+      final r = _Rig(
+        turns: [const DelegationModelTurn(text: '   ', calls: [])],
+      );
+      addTearDown(r.dispose);
+      await r.connect();
+      attach(r.backend);
+      WrittenResponse? written;
+      r.backend.sendTextWithWrittenResult(
+        'Read the attachment.',
+        onResult: (result) {
+          written = result;
+          return true;
+        },
+      );
+      await waitFor(() => r.backend.pendingDelegations == 0);
+      expect(written!.failed, isTrue);
+      expect(written!.text, contains('try sending it again'));
+      expect(r.ws.ofType('session.context.append'), hasLength(1));
+      expect(jsonEncode(r.ws.ofType('session.context.append')), isNot(contains('completed the')));
+    });
+
+    test('analysis provider error is safe in the written and live result', () async {
+      final server = FakeLiveServer()..autoAcknowledgeContext = true;
+      final backend = LiveWebRtcBackend(
+        transportFactory: () => FakeLiveTransport(),
+        sideband: server.connect,
+        createCall: server.createCall,
+        delegationModelFactory: (_) => _WrittenFailureModel(),
+      );
+      addTearDown(backend.close);
+      await backend.connect(
+        const SessionConfig(
+          model: 'gpt-live-1.1',
+          voice: 'cove',
+          instructions: 'Be brief.',
+          tools: [],
+          credentials: _creds,
+        ),
+      );
+      attach(backend);
+      WrittenResponse? written;
+      backend.sendTextWithWrittenResult(
+        'Describe the attachment.',
+        onResult: (result) {
+          written = result;
+          return true;
+        },
+      );
+      await waitFor(() => backend.pendingDelegations == 0);
+      expect(written!.failed, isTrue);
+      expect(written!.text, contains('try sending it again'));
+      expect(written!.text, isNot(contains('PRIVATE_PROVIDER_DETAIL')));
+      expect(jsonEncode(server.socket.ofType('session.context.append')), isNot(contains('PRIVATE_PROVIDER_DETAIL')));
+    });
+  });
+  group('read-only written reference answers', () {
+    final reference = 'Complete saved analysis: ORCHID HARBOR. ${'full observation 🙂 ' * 300} Batch739.';
+    const question = 'What exact inspection label did the completed analysis contain? Answer with the label only.';
+
+    test('exact full reference and question produce one guarded written answer before one cue', () async {
+      final r = _Rig(
+        turns: [const DelegationModelTurn(text: 'ORCHID HARBOR', calls: [])],
+      );
+      addTearDown(r.dispose);
+      await r.connect();
+      r.backend.setPinnedNote('Pinned project nickname: River.');
+      expect(r.backend.usesWrittenReferenceAnswer(question, referenceText: reference), isTrue);
+      final written = <WrittenResponse>[];
+      r.backend.sendTextWithWrittenResult(
+        question,
+        referenceText: reference,
+        isReferenceCurrent: () => true,
+        onResult: (result) {
+          expect(r.ws.ofType('session.context.append'), isEmpty);
+          written.add(result);
+          return true;
+        },
+      );
+      await waitFor(() => r.backend.pendingDelegations == 0);
+      expect(written.single.text, 'ORCHID HARBOR');
+      expect(written.single.model, 'gpt-6-luna');
+      expect(written.single.failed, isFalse);
+      expect(r.model.requests.single.tools, isEmpty);
+      expect(r.model.requests.single.input.toString(), contains(reference));
+      expect(r.model.requests.single.input.toString(), contains('Pinned project nickname: River.'));
+      expect(r.model.requests.single.input.toString(), contains(question));
+      expect(r.of<ToolCall>(), isEmpty);
+      final cue = r.ws.ofType('session.context.append').single;
+      final text = ((cue['content'] as List).single as Map)['text'] as String;
+      expect(text, contains('ORCHID HARBOR'));
+      expect(utf8.encode(text).length, lessThanOrEqualTo(500));
+    });
+
+    test('long reference answer is saved completely and receives one honest bounded cue', () async {
+      final answer = '${'Detailed follow-up explanation. ' * 200}Final617.';
+      final r = _Rig(
+        turns: [DelegationModelTurn(text: answer, calls: [])],
+      );
+      addTearDown(r.dispose);
+      await r.connect();
+      WrittenResponse? written;
+      r.backend.sendTextWithWrittenResult(
+        question,
+        referenceText: reference,
+        isReferenceCurrent: () => true,
+        onResult: (result) {
+          written = result;
+          return true;
+        },
+      );
+      await waitFor(() => r.backend.pendingDelegations == 0);
+      expect(written!.text, answer);
+      final cue = r.ws.ofType('session.context.append').single;
+      final text = ((cue['content'] as List).single as Map)['text'] as String;
+      expect(text, contains('details are not included'));
+      expect(text, isNot(contains('Detailed follow-up')));
+      expect(utf8.encode(text).length, lessThanOrEqualTo(500));
+    });
+
+    for (final initiallyCurrent in [false, true]) {
+      test('changed reference yields a readable failure and no stale fact: $initiallyCurrent', () async {
+        final r = _Rig(
+          turns: [const DelegationModelTurn(text: 'STALE FACT', calls: [])],
+          latency: const Duration(milliseconds: 40),
+        );
+        addTearDown(r.dispose);
+        await r.connect();
+        var current = initiallyCurrent;
+        WrittenResponse? written;
+        r.backend.sendTextWithWrittenResult(
+          question,
+          referenceText: reference,
+          isReferenceCurrent: () => current,
+          onResult: (result) {
+            written = result;
+            return true;
+          },
+        );
+        current = false;
+        await waitFor(() => r.backend.pendingDelegations == 0);
+        expect(written!.failed, isTrue);
+        expect(written!.text, contains('saved analysis changed'));
+        expect(written!.text, isNot(contains('STALE FACT')));
+        expect(r.model.requests.length, initiallyCurrent ? 1 : 0);
+        final cue = jsonEncode(r.ws.ofType('session.context.append').single);
+        expect(cue, contains('could not be answered reliably'));
+        expect(cue, isNot(contains('full answer')));
+      });
+    }
+
+    for (final spoken in [false, true]) {
+      test('a newer user turn keeps the old written result but suppresses its live cue: $spoken', () async {
+        final r = _Rig(
+          turns: [const DelegationModelTurn(text: 'ORCHID HARBOR', calls: [])],
+          latency: const Duration(milliseconds: 40),
+        );
+        addTearDown(r.dispose);
+        await r.connect();
+        final written = <WrittenResponse>[];
+        r.backend.sendTextWithWrittenResult(
+          question,
+          referenceText: reference,
+          isReferenceCurrent: () => true,
+          onResult: (result) {
+            written.add(result);
+            return true;
+          },
+        );
+        if (spoken) {
+          r.ws.inputWords('A newer spoken question.', 100);
+          await _tick();
+        } else {
+          r.backend.sendText('Hello again.');
+        }
+        final appends = r.ws.ofType('session.context.append').length;
+        await waitFor(() => r.backend.pendingDelegations == 0);
+        expect(written.single.text, 'ORCHID HARBOR');
+        expect(r.ws.ofType('session.context.append'), hasLength(appends));
+      });
+    }
+
+    for (final close in [false, true]) {
+      test('Stop or disposal cancels a reference wait without a callback or cue: $close', () async {
+        final r = _Rig(
+          turns: [const DelegationModelTurn(text: 'Late answer.', calls: [])],
+          latency: const Duration(milliseconds: 150),
+        );
+        addTearDown(r.dispose);
+        await r.connect();
+        var callbacks = 0;
+        r.backend.sendTextWithWrittenResult(
+          question,
+          referenceText: reference,
+          isReferenceCurrent: () => true,
+          onResult: (_) {
+            callbacks++;
+            return true;
+          },
+        );
+        if (close) {
+          await r.backend.close();
+        } else {
+          r.backend.cancelPendingTools();
+        }
+        await waitFor(() => r.backend.pendingDelegations == 0);
+        expect(callbacks, 0);
+        expect(r.ws.ofType('session.context.append'), isEmpty);
+        await _tick(170);
+        expect(callbacks, 0);
+        expect(r.ws.ofType('session.context.append'), isEmpty);
+      });
+    }
+
+    test('existing action media web and new-image routes stay authoritative; arithmetic can answer normally', () async {
+      final r = _Rig(
+        turns: [const DelegationModelTurn(text: '4', calls: [])],
+      );
+      addTearDown(r.dispose);
+      await r.backend.connect(
+        const SessionConfig(
+          model: 'gpt-live-1.1',
+          voice: 'cove',
+          instructions: 'Be brief.',
+          tools: [
+            ..._tools,
+            ToolSpec(name: 'web_search', description: 'lookup', parameters: {}),
+          ],
+          credentials: _creds,
+        ),
+      );
+      for (final request in ['Run echo hi.', 'Search the web for Rosetta launch.', 'Take a screenshot.']) {
+        expect(r.backend.usesWrittenReferenceAnswer(request, referenceText: reference), isFalse, reason: request);
+      }
+      expect(r.backend.usesWrittenReferenceAnswer('What is 2 + 2?', referenceText: reference), isTrue);
+      WrittenResponse? written;
+      r.backend.sendTextWithWrittenResult(
+        'What is 2 + 2?',
+        referenceText: reference,
+        isReferenceCurrent: () => true,
+        onResult: (result) {
+          written = result;
+          return true;
+        },
+      );
+      await waitFor(() => r.backend.pendingDelegations == 0);
+      expect(written!.text, '4');
+      expect(r.model.requests.single.tools, isEmpty);
+      r.backend.setContextImage('attachment:new', DelegationImage(png: Uint8List(4), capturedAt: DateTime.now()));
+      expect(r.backend.usesWrittenReferenceAnswer(question, referenceText: reference), isFalse);
+    });
+
+    test('a rejected written reference outcome cannot produce a live claim', () async {
+      final r = _Rig(
+        turns: [const DelegationModelTurn(text: 'ORCHID HARBOR', calls: [])],
+      );
+      addTearDown(r.dispose);
+      await r.connect();
+      var callbacks = 0;
+      r.backend.sendTextWithWrittenResult(
+        question,
+        referenceText: reference,
+        isReferenceCurrent: () => true,
+        onResult: (_) {
+          callbacks++;
+          return false;
+        },
+      );
+      await waitFor(() => r.backend.pendingDelegations == 0);
+      expect(callbacks, 1);
+      expect(r.ws.ofType('session.context.append'), isEmpty);
+    });
+  });
+
   group('connect', () {
     test('creates the call with a valid session and opens the sideband', () async {
       final r = _Rig();
@@ -380,12 +816,19 @@ void main() {
         await waitFor(() => r.of<ToolCall>().length > 1 || r.ws.ofType('delegation.context.append').isNotEmpty);
         expect(r.of<ToolCall>(), hasLength(2), reason: 'the existing task keeps its queued continuation');
         r.backend.sendToolResult(r.of<ToolCall>().last.callId, '{"ok":true}');
-        await waitFor(() => r.ws.ofType('delegation.context.append').isNotEmpty);
-        expect(jsonEncode(r.ws.ofType('delegation.context.append').single), isNot(contains('cancelled')));
-        expect(r.model.requests, hasLength(1), reason: 'no model retry or replacement task');
         if (suppression == 'barge-in') {
+          await waitFor(() => r.backend.pendingDelegations == 0);
+          expect(
+            r.ws.ofType('delegation.context.append'),
+            isEmpty,
+            reason: 'The completed old task is reported without stale narration after newer input.',
+          );
           expect(jsonEncode(r.ws.ofType('session.context.append')), contains('Thanks for the update'));
+        } else {
+          await waitFor(() => r.ws.ofType('delegation.context.append').isNotEmpty);
+          expect(jsonEncode(r.ws.ofType('delegation.context.append').single), isNot(contains('cancelled')));
         }
+        expect(r.model.requests, hasLength(1), reason: 'no model retry or replacement task');
       });
     }
 
@@ -411,9 +854,13 @@ void main() {
       r.backend.cancelPendingTools();
       r.backend.stopAndDrop();
       r.backend.sendToolResult(r.of<ToolCall>().single.callId, '{"ok":true}');
-      await waitFor(() => r.ws.ofType('delegation.context.append').isNotEmpty);
+      await waitFor(() => r.backend.pendingDelegations == 0);
       expect(r.of<ToolCall>(), hasLength(1));
-      expect(jsonEncode(r.ws.ofType('delegation.context.append').single), contains('cancelled'));
+      expect(
+        r.ws.ofType('delegation.context.append'),
+        isEmpty,
+        reason: 'Explicit Stop retires the old result instead of requesting later narration.',
+      );
       expect(r.rtc.speakerEnabled, isFalse);
     });
 
@@ -461,7 +908,8 @@ void main() {
       expect(ev.containsKey('channel'), isFalse);
       final text = jsonEncode(ev['content']);
       expect(text, contains('Run ls in my home folder'));
-      expect(text, contains('already carried it out'));
+      expect(text, contains('processed the request'));
+      expect(text, isNot(contains('already carried it out')));
       expect(text, contains('failed'));
       expect(r.model.requests.first.input.toString(), contains('Run ls in my home folder'));
       await r.dispose();
@@ -563,6 +1011,334 @@ void main() {
     await r.dispose();
   });
 
+  test('failed direct capture suspension cannot become a successful typed replacement', () async {
+    final transport = _FirstReleaseFails();
+    final r = _Rig(firstTransport: transport);
+    addTearDown(r.dispose);
+    await r.connect();
+    // A held recording interrupts the current call before requesting release.
+    r.backend.cancelPendingTools();
+    await expectLater(r.backend.setCaptureSuspended(true), throwsStateError);
+    await r.backend.setCaptureSuspended(false);
+    final accepted = await r.backend.prepareTypedInputContext(
+      writtenContext: '',
+      recentContext: '',
+      isCurrent: () => true,
+    );
+    expect(
+      {
+        'accepted': accepted,
+        'releaseAttempts': transport.releaseAttempts,
+        'transports': r.rtcs.length,
+        'calls': r.server.calls.length,
+      },
+      {'accepted': false, 'releaseAttempts': 1, 'transports': 1, 'calls': 1},
+      reason: 'Cleared native references after failed release cannot prove a later replacement is safe.',
+    );
+    expect(r.backend.voiceInputNeedsReconnect, isTrue);
+    expect(transport.micEnabled, isFalse);
+    expect((await r.backend.applySummary('Later compaction.')).method, ContextApplyMethod.skipped);
+    await _tick();
+    final failures = r.of<BackendError>().where((e) => e.code == 'live_capture_release_failed');
+    expect(failures, hasLength(1));
+    expect(failures.single.fatal, isTrue);
+    expect(failures.single.message, contains('Reconnect'));
+    expect(r.ws.ofType('session.context.append'), isEmpty);
+  });
+
+  test('failed direct capture suspension remains latched for another hold', () async {
+    final transport = _FirstReleaseFails();
+    final r = _Rig(firstTransport: transport);
+    addTearDown(r.dispose);
+    await r.connect();
+    r.backend.cancelPendingTools();
+    await expectLater(r.backend.setCaptureSuspended(true), throwsStateError);
+    await r.backend.setCaptureSuspended(false);
+    await expectLater(
+      r.backend.setCaptureSuspended(true),
+      throwsStateError,
+      reason: 'A new held capture must not open on an unconfirmed release.',
+    );
+    expect(transport.releaseAttempts, 1);
+    expect(r.rtcs, hasLength(1));
+    expect(transport.micEnabled, isFalse);
+    final nativeRequests = List<bool>.of(transport.captureSuspensions);
+    await expectLater(r.backend.openManagedMic(), throwsStateError);
+    await r.backend.setCaptureSuspended(false);
+    expect(
+      transport.captureSuspensions,
+      nativeRequests,
+      reason: 'Neither a managed mic open nor cleanup may touch poisoned capture.',
+    );
+  });
+
+  group('owned written context preparation', () {
+    final full = 'Beginning label ORCHID HARBOR.\n${'完整 source 🙂 ' * 600}\nEnding batch 739.';
+    String instructions(_Rig r) => (r.server.calls.last.$3['session']! as Map)['instructions'] as String;
+
+    test('full saved answer exceeds recent budget and is present before the next append', () async {
+      final r = _Rig();
+      addTearDown(r.dispose);
+      await r.connect();
+      expect(full.length, greaterThan(4000));
+      expect(
+        await r.backend.prepareTypedInputContext(
+          writtenContext: full,
+          recentContext: 'Recent short cue.',
+          isCurrent: () => true,
+        ),
+        isTrue,
+      );
+      expect(instructions(r), contains(full));
+      expect(r.ws.ofType('session.context.append'), isEmpty);
+      expect(
+        await r.backend.prepareTypedInputContext(
+          writtenContext: full,
+          recentContext: 'Later question.',
+          isCurrent: () => true,
+        ),
+        isTrue,
+      );
+      expect(r.server.calls, hasLength(2), reason: 'Already loaded full context does not reconnect again.');
+      r.backend.sendText('What is the inspection label?');
+      expect(r.ws.ofType('session.context.append'), hasLength(1));
+      await _tick(10);
+      r.ws.turn('created', 'assistant', 0, 0, '');
+      r.ws.audio(0, pcm(200));
+      r.ws.outputWords('ORCHID HARBOR', 0);
+      r.ws.turn('done', 'assistant', 0, 200, 'ORCHID HARBOR');
+      await _tick();
+      await r.backend.applySummary('New summary.', recentTurns: 'A bounded recent window.');
+      expect(instructions(r), contains(full), reason: 'Later compaction cannot discard the complete saved answer.');
+    });
+
+    test('mandatory full context waits for acknowledged native release before replacement', () async {
+      final r = _Rig();
+      addTearDown(r.dispose);
+      await r.connect();
+      final old = r.rtc;
+      final release = old.captureSuspendGate = Completer<void>();
+      addTearDown(() {
+        if (!release.isCompleted) release.complete();
+      });
+      final prepared = Future<bool>.value(
+        r.backend.prepareTypedInputContext(
+          writtenContext: 'Full saved answer.',
+          recentContext: '',
+          isCurrent: () => true,
+        ),
+      );
+      await waitFor(() => old.captureSuspended);
+      expect(r.server.calls, hasLength(1));
+      expect(old.micEnabled, isFalse);
+      expect(r.backend.voiceInputNeedsReconnect, isTrue);
+      release.complete();
+      expect(await prepared, isTrue);
+      expect(old.closed, isTrue);
+      expect(r.server.calls, hasLength(2));
+      expect(r.backend.voiceInputNeedsReconnect, isFalse);
+    });
+
+    test('failed native release preserves paused recovery and never opens another capture', () async {
+      final r = _Rig();
+      addTearDown(r.dispose);
+      await r.connect();
+      r.rtc.captureSuspendError = StateError('fixture release failure');
+      expect(
+        await r.backend.prepareTypedInputContext(
+          writtenContext: 'Full saved answer.',
+          recentContext: '',
+          isCurrent: () => true,
+        ),
+        isFalse,
+      );
+      expect(r.server.calls, hasLength(1));
+      expect(r.rtc.micEnabled, isFalse);
+      expect(r.backend.voiceInputNeedsReconnect, isTrue);
+      await _tick();
+      expect(r.of<BackendError>().single.message, contains('Reconnect'));
+      expect(r.of<BackendError>().single.fatal, isTrue);
+    });
+
+    test('an unconfirmed first native release is never retried into apparent success', () async {
+      final transport = _FirstReleaseFails();
+      final r = _Rig(firstTransport: transport);
+      addTearDown(r.dispose);
+      await r.connect();
+      expect(
+        await r.backend.prepareTypedInputContext(
+          writtenContext: 'Full saved answer.',
+          recentContext: '',
+          isCurrent: () => true,
+        ),
+        isFalse,
+      );
+      expect(transport.releaseAttempts, 1);
+      expect(r.server.calls, hasLength(1));
+      expect(r.rtcs, hasLength(1), reason: 'No replacement capture is constructed after unconfirmed release.');
+      expect(r.backend.voiceInputNeedsReconnect, isTrue);
+      await _tick();
+      expect(r.of<BackendError>().single.code, 'live_capture_release_failed');
+      expect(r.of<BackendError>().single.fatal, isTrue);
+      expect(
+        await r.backend.prepareTypedInputContext(
+          writtenContext: 'Retried full saved answer.',
+          recentContext: '',
+          isCurrent: () => true,
+        ),
+        isFalse,
+      );
+      expect((await r.backend.applySummary('Later compaction.')).method, ContextApplyMethod.skipped);
+      expect(transport.releaseAttempts, 1, reason: 'A later Send cannot repeat the unsafe handoff.');
+      expect(r.rtcs, hasLength(1));
+      await _tick();
+      expect(r.of<BackendError>(), hasLength(1));
+    });
+
+    test('Stop during native release rejects promptly and cannot open a late replacement', () async {
+      final r = _Rig();
+      addTearDown(r.dispose);
+      await r.connect();
+      final old = r.rtc;
+      final release = old.captureSuspendGate = Completer<void>();
+      addTearDown(() {
+        if (!release.isCompleted) release.complete();
+      });
+      final prepared = Future<bool>.value(
+        r.backend.prepareTypedInputContext(
+          writtenContext: 'Full saved answer.',
+          recentContext: '',
+          isCurrent: () => true,
+        ),
+      );
+      await waitFor(() => old.captureSuspended);
+      r.backend.cancelPendingTools();
+      expect(await prepared.timeout(const Duration(milliseconds: 100)), isFalse);
+      release.complete();
+      await _tick(100);
+      expect(r.server.calls, hasLength(1));
+      expect(old.closed, isTrue);
+      expect(r.backend.voiceInputNeedsReconnect, isTrue);
+    });
+
+    test('competing compaction keeps the mandatory payload and ownership', () async {
+      final r = _Rig();
+      addTearDown(r.dispose);
+      await r.connect();
+      r.server.autoStart = false;
+      final prepare = Future<bool>.value(
+        r.backend.prepareTypedInputContext(
+          writtenContext: full,
+          recentContext: 'Original request.',
+          isCurrent: () => true,
+        ),
+      );
+      await waitFor(() => r.server.sockets.length == 2);
+      final stale = r.server.sockets[1];
+      final compact = r.backend.applySummary('Newer summary.', recentTurns: 'Replacement bounded recent.');
+      r.server.autoStart = true;
+      stale.push({'type': 'session.started', 'session': <String, Object?>{}});
+      expect(await prepare.timeout(const Duration(seconds: 2)), isTrue);
+      expect((await compact).method, ContextApplyMethod.reconnected);
+      expect(stale.closed, isTrue);
+      expect(instructions(r), contains('Newer summary.'));
+      expect(instructions(r), contains(full));
+    });
+
+    test('Stop resolves promptly and a retired open cannot clear the next preparation', () async {
+      final r = _Rig();
+      addTearDown(r.dispose);
+      await r.connect();
+      r.server.autoStart = false;
+      final old = Future<bool>.value(
+        r.backend.prepareTypedInputContext(writtenContext: full, recentContext: '', isCurrent: () => true),
+      );
+      await waitFor(() => r.server.sockets.length == 2);
+      final retired = r.server.sockets[1];
+      r.backend.cancelPendingTools();
+      expect(await old.timeout(const Duration(milliseconds: 100)), isFalse);
+      final next = Future<bool>.value(
+        r.backend.prepareTypedInputContext(
+          writtenContext: 'Current saved answer.',
+          recentContext: '',
+          isCurrent: () => true,
+        ),
+      );
+      r.server.autoStart = true;
+      retired.push({'type': 'session.started', 'session': <String, Object?>{}});
+      expect(await next.timeout(const Duration(seconds: 2)), isTrue);
+      expect(retired.closed, isTrue);
+      expect(r.backend.callId, 'rtc_test3');
+      expect(instructions(r), contains('Current saved answer.'));
+      expect(instructions(r), isNot(contains('ORCHID HARBOR')));
+      expect(r.ws.ofType('session.context.append'), isEmpty);
+    });
+
+    test('preparation cannot activate after deleted origin', () async {
+      final r = _Rig();
+      addTearDown(r.dispose);
+      await r.connect();
+      var current = true;
+      r.server.autoStart = false;
+      final pending = Future<bool>.value(
+        r.backend.prepareTypedInputContext(writtenContext: full, recentContext: '', isCurrent: () => current),
+      );
+      await waitFor(() => r.server.sockets.length == 2);
+      final prepared = r.server.sockets[1];
+      current = false;
+      prepared.push({'type': 'session.started', 'session': <String, Object?>{}});
+      expect(await pending.timeout(const Duration(seconds: 2)), isFalse);
+      expect(prepared.closed, isTrue);
+      expect(r.backend.callId, 'rtc_test1');
+    });
+
+    test('intervening live input before retirement invalidates the pending snapshot', () async {
+      final r = _Rig();
+      addTearDown(r.dispose);
+      await r.connect();
+      final active = r.ws;
+      final pending = Future<bool>.value(
+        r.backend.prepareTypedInputContext(writtenContext: full, recentContext: '', isCurrent: () => true),
+      );
+      active.turn('created', 'user', 100, 0, '');
+      expect(await pending.timeout(const Duration(seconds: 2)), isFalse);
+      expect(r.server.calls, hasLength(1));
+      expect(active.closed, isFalse, reason: 'Real input arrived before mandatory capture retirement.');
+      expect(r.of<SpeechStarted>(), hasLength(1));
+    });
+
+    test('timeout preserves paused recovery and rejects a late prepared call', () async {
+      final r = _Rig();
+      addTearDown(r.dispose);
+      await r.connect();
+      r.backend.typedContextPrepareTimeout = const Duration(milliseconds: 180);
+      r.server.autoStart = false;
+      final pending = Future<bool>.value(
+        r.backend.prepareTypedInputContext(writtenContext: full, recentContext: '', isCurrent: () => true),
+      );
+      await waitFor(() => r.server.sockets.length == 2);
+      final prepared = r.server.sockets[1];
+      expect(await pending.timeout(const Duration(seconds: 1)), isFalse);
+      prepared.push({'type': 'session.started', 'session': <String, Object?>{}});
+      await waitFor(() => prepared.closed);
+      expect(r.backend.callId, 'rtc_test1');
+      expect(r.backend.voiceInputNeedsReconnect, isTrue);
+      expect(r.server.sockets.first.closed, isTrue);
+      expect(r.server.sockets.first.ofType('session.context.append'), isEmpty);
+    });
+
+    test('closed backend rejects pending preparation', () async {
+      final r = _Rig();
+      await r.connect();
+      r.ws.outputWords('Current reply', 0);
+      final pending = Future<bool>.value(
+        r.backend.prepareTypedInputContext(writtenContext: full, recentContext: '', isCurrent: () => true),
+      );
+      await r.dispose();
+      expect(await pending, isFalse);
+    });
+  });
+
   group('compaction swap (applySummary)', () {
     String instructionsOf(_Rig r, int call) => (r.server.calls[call].$3['session']! as Map)['instructions'] as String;
 
@@ -659,26 +1435,279 @@ void main() {
     });
   });
 
-  group('iter6: settle and drops', () {
-    test(
-      'a result the model never voices settles the turn (ResponseDone); a voiced one does not double-settle',
-      () async {
+  group('accepted reply ownership', () {
+    void answer(FakeSideband ws, String text) {
+      ws.turn('created', 'assistant', 0, 0, '');
+      ws.audio(0, pcm(200));
+      ws.outputWords(text, 0);
+      ws.turn('done', 'assistant', 0, 200, text);
+    }
+
+    test('automatic compaction waits beyond local settlement for the real reply', () async {
+      final r = _Rig();
+      addTearDown(r.dispose);
+      r.backend.settleAfterResult = const Duration(milliseconds: 20);
+      await r.connect();
+      r.backend.sendText('Describe this retained binary file honestly.');
+      await _tick(10);
+      final old = r.ws;
+      final compact = r.backend.applySummary('New summary.', recentTurns: 'User: retained file.');
+      await _tick(150);
+      expect(r.server.calls, hasLength(1));
+      expect(r.backend.busy, isTrue);
+      expect(r.of<ResponseDone>(), isEmpty, reason: 'Local silence is not a completed outcome.');
+      answer(old, 'I cannot read that binary format directly.');
+      expect((await compact.timeout(const Duration(seconds: 2))).method, ContextApplyMethod.reconnected);
+      expect(r.of<AssistantTranscriptDone>().single.text, contains('cannot read'));
+      expect(r.of<BackendError>(), isEmpty);
+    });
+
+    test('no confirmed response has a bounded explicit recoverable failure', () async {
+      final r = _Rig();
+      addTearDown(r.dispose);
+      r.backend.settleAfterResult = const Duration(milliseconds: 15);
+      r.backend.responseWaitTimeout = const Duration(milliseconds: 120);
+      await r.connect();
+      r.backend.sendText('Saved unanswered request.');
+      await _tick(50);
+      expect(r.of<ResponseDone>(), isEmpty);
+      expect(r.backend.busy, isTrue);
+      await waitFor(() => r.of<BackendError>().isNotEmpty);
+      final error = r.of<BackendError>().single;
+      expect(error.code, 'live_response_timeout');
+      expect(error.fatal, isTrue);
+      expect(error.message, contains('saved'));
+      expect(error.message, contains('Reconnect'));
+      expect(r.ws.ofType('session.context.append'), hasLength(1), reason: 'Failure never replays the request.');
+      expect(r.backend.busy, isFalse);
+    });
+
+    for (final stop in [true, false]) {
+      test('new owned input replaces an unresolved call without stale reply: Stop=$stop', () async {
         final r = _Rig();
-        r.backend.settleAfterResult = const Duration(milliseconds: 80);
+        addTearDown(r.dispose);
         await r.connect();
-        r.backend.sendText('thanks');
-        expect(r.backend.busy, isTrue, reason: 'waiting for the model to answer');
-        await waitFor(() => r.of<ResponseDone>().isNotEmpty, timeout: const Duration(seconds: 1));
-        expect(r.backend.busy, isFalse);
-        // Voiced: the assistant turn opens in time, so the timer does nothing extra.
-        final before = r.of<ResponseDone>().length;
-        r.backend.sendText('and again');
-        r.ws.outputWords('Sure.', 0);
-        await _tick(200);
-        expect(r.of<ResponseDone>().length, lessThanOrEqualTo(before + 1));
-        await r.dispose();
-      },
-    );
+        r.backend.sendText('Old unanswered request.');
+        await _tick(10);
+        final old = r.ws;
+        if (stop) r.backend.cancelPendingTools();
+        final prepare = Future<bool>.value(
+          r.backend.prepareTypedInputContext(
+            writtenContext: '',
+            recentContext: 'Old request was stopped.',
+            isCurrent: () => true,
+          ),
+        );
+        old.outputWords('Late old narration that must remain hidden.', 100);
+        old.turn('created', 'assistant', 100, 0, '');
+        // The retired turn deliberately never sends done; it cannot block a fresh call.
+        expect(await prepare.timeout(const Duration(seconds: 2)), isTrue);
+        expect(r.backend.callId, 'rtc_test2');
+        expect(r.of<AssistantTranscriptDelta>(), isEmpty);
+        r.backend.sendText('What is 47 plus 26?');
+        await _tick(10);
+        answer(r.ws, '73');
+        await _tick();
+        expect(r.of<AssistantTranscriptDone>().map((e) => e.text), ['73']);
+        expect(r.ws.ofType('session.context.append'), hasLength(1));
+      });
+    }
+
+    test('a late delegated result after newer typed input cleans up without old narration', () async {
+      final r = _Rig(
+        turns: [const DelegationModelTurn(text: 'Old completed result.', calls: [])],
+        latency: const Duration(milliseconds: 100),
+      );
+      addTearDown(r.dispose);
+      await r.connect();
+      r.ws.delegation('old_delegation', 'Inspect the old request.');
+      await _tick(15);
+      r.backend.sendText('New ordinary question.');
+      await waitFor(() => r.backend.pendingDelegations == 0);
+      expect(r.ws.ofType('delegation.context.append'), isEmpty);
+      expect(r.ws.ofType('session.context.append'), hasLength(1));
+      expect(
+        await r.backend.prepareTypedInputContext(
+          writtenContext: '',
+          recentContext: 'New ordinary question.',
+          isCurrent: () => true,
+        ),
+        isTrue,
+      );
+    });
+
+    test('typed request transfers its reply wait to running delegation and back to its result', () async {
+      final r = _Rig(
+        turns: [const DelegationModelTurn(text: 'The verified search result.', calls: [])],
+        latency: const Duration(milliseconds: 220),
+      );
+      addTearDown(r.dispose);
+      r.backend.responseWaitTimeout = const Duration(milliseconds: 100);
+      await r.connect();
+      r.backend.sendText('What date did the mission launch?');
+      await _tick(15);
+      final old = r.ws;
+      old.delegation('typed-search', 'Use web search for the mission launch date.');
+      final compact = r.backend.applySummary('Updated mission memory.');
+      await _tick(160);
+      expect(r.of<BackendError>(), isEmpty, reason: 'The answer timer must not expire during actual delegated work.');
+      expect(r.server.calls, hasLength(1));
+      await waitFor(() => old.ofType('delegation.context.append').isNotEmpty);
+      await _tick(10);
+      answer(old, 'The verified search result.');
+      expect((await compact.timeout(const Duration(seconds: 2))).method, ContextApplyMethod.reconnected);
+      await _tick(160);
+      expect(r.of<BackendError>(), isEmpty);
+      expect(r.of<AssistantTranscriptDone>().single.text, 'The verified search result.');
+    });
+
+    test('Stop retires automatic compaction until a later owned input refresh', () async {
+      final r = _Rig();
+      addTearDown(r.dispose);
+      await r.connect();
+      r.server.autoStart = false;
+      final compact = r.backend.applySummary('Saved summary before Stop.');
+      await waitFor(() => r.server.sockets.length == 2);
+      final prepared = r.server.sockets[1];
+      r.backend.cancelPendingTools();
+      expect((await compact.timeout(const Duration(milliseconds: 100))).method, ContextApplyMethod.skipped);
+      prepared.push({'type': 'session.started', 'session': <String, Object?>{}});
+      await waitFor(() => prepared.closed);
+      expect(r.backend.voiceInputNeedsReconnect, isTrue);
+      expect(r.backend.callId, 'rtc_test1');
+      expect((await r.backend.applySummary('New saved summary while paused.')).method, ContextApplyMethod.skipped);
+      expect(r.server.calls, hasLength(2));
+      r.server.autoStart = true;
+      expect(
+        await r.backend.prepareTypedInputContext(
+          writtenContext: '',
+          recentContext: 'Next user question.',
+          isCurrent: () => true,
+        ),
+        isTrue,
+      );
+      expect(r.backend.callId, 'rtc_test3');
+      expect(r.backend.voiceInputNeedsReconnect, isFalse);
+      expect(jsonEncode(r.server.calls.last.$3), contains('New saved summary while paused.'));
+    });
+
+    test('an answering delegated append also blocks automatic compaction', () async {
+      final r = _Rig(
+        turns: [const DelegationModelTurn(text: 'Completed delegated result.', calls: [])],
+      );
+      addTearDown(r.dispose);
+      r.backend.settleAfterResult = const Duration(milliseconds: 20);
+      await r.connect();
+      r.ws.delegation('active_delegation', 'Do the requested operation.');
+      await waitFor(() => r.ws.ofType('delegation.context.append').isNotEmpty);
+      await _tick(10);
+      final old = r.ws;
+      final compact = r.backend.applySummary('Updated memory.');
+      await _tick(120);
+      expect(r.server.calls, hasLength(1));
+      answer(old, 'Completed delegated result.');
+      expect((await compact.timeout(const Duration(seconds: 2))).method, ContextApplyMethod.reconnected);
+    });
+
+    test('Stop before any reply lease pauses voice and declines a delegation after four seconds', () async {
+      final r = _Rig();
+      addTearDown(r.dispose);
+      await r.connect();
+      r.backend.cancelPendingTools();
+      r.backend.stopAndDrop();
+      await _tick();
+      expect(r.backend.voiceInputNeedsReconnect, isTrue);
+      expect(r.rtc.micEnabled, isFalse);
+      expect(r.of<BackendError>().single.message, contains('Reconnect before speaking'));
+      r.backend.setInputEnabled(true);
+      expect(r.rtc.micEnabled, isFalse, reason: 'PTT cannot silently reactivate a retired call.');
+      await _tick(4100);
+      r.ws.delegation('late_after_stop', 'Run a stale action.');
+      r.ws.inputWords('A question on the retired call.', 100);
+      r.ws.turn('created', 'user', 100, 0, '');
+      r.ws.turn('done', 'user', 100, 500, 'A question on the retired call.');
+      await _tick(20);
+      expect(r.model.requests, isEmpty);
+      expect(r.backend.pendingDelegations, 0);
+      expect(r.of<UserTranscriptDone>(), isEmpty);
+      expect(r.of<SpeechStarted>(), isEmpty);
+      expect(r.of<BackendError>(), hasLength(1), reason: 'The paused state is visible without repeated errors.');
+      expect(
+        await r.backend.prepareTypedInputContext(writtenContext: '', recentContext: '', isCurrent: () => true),
+        isTrue,
+      );
+      expect(r.backend.voiceInputNeedsReconnect, isFalse);
+      expect(r.rtc.micEnabled, isTrue, reason: 'The fresh call restores the desired microphone state.');
+    });
+
+    test('an early assistant turn cannot gain ownership by replay after ACK', () async {
+      final r = _Rig();
+      addTearDown(r.dispose);
+      r.server.autoAcknowledgeContext = false;
+      r.backend.responseWaitTimeout = const Duration(milliseconds: 160);
+      await r.connect();
+      r.backend.sendText('Current request.');
+      r.ws.turn('created', 'assistant', 0, 0, '');
+      r.ws.push({'type': 'session.context.appended'});
+      await _tick(10);
+      r.ws.turn('created', 'assistant', 0, 0, '');
+      r.ws.turn('done', 'assistant', 0, 0, 'Earlier turn.');
+      await waitFor(() => r.of<BackendError>().any((e) => e.code == 'live_response_timeout'));
+      expect(r.server.calls, hasLength(1));
+    });
+
+    test('empty repeated output cannot extend the unanswered deadline', () async {
+      final r = _Rig();
+      addTearDown(r.dispose);
+      r.backend.responseWaitTimeout = const Duration(milliseconds: 100);
+      await r.connect();
+      r.backend.sendText('Current request.');
+      await _tick(10);
+      r.ws.turn('created', 'assistant', 0, 0, '');
+      for (var i = 0; i < 5; i++) {
+        r.ws.outputWords('   ', 0);
+        r.ws.audio(0, Uint8List(480));
+        await _tick(40);
+      }
+      expect(r.of<BackendError>().where((e) => e.code == 'live_response_timeout'), hasLength(1));
+    });
+
+    test('active response may exceed the first wait but has a bounded completion ceiling', () async {
+      final r = _Rig();
+      addTearDown(r.dispose);
+      r.backend.responseWaitTimeout = const Duration(milliseconds: 120);
+      r.backend.responseCompletionTimeout = const Duration(milliseconds: 220);
+      await r.connect();
+      r.backend.sendText('Current request.');
+      await _tick(10);
+      r.ws.turn('created', 'assistant', 0, 0, '');
+      for (var i = 0; i < 5; i++) {
+        r.ws.outputWords('Still answering ', 0);
+        await _tick(40);
+      }
+      expect(r.of<BackendError>(), isEmpty, reason: 'Useful progress extended the first-answer wait.');
+      await waitFor(() => r.of<BackendError>().any((e) => e.code == 'live_response_timeout'));
+      expect(r.of<BackendError>().single.message, contains('complete'));
+    });
+  });
+
+  group('iter6: settle and drops', () {
+    test('a confirmed answer finishes once and later local settlement cannot duplicate it', () async {
+      final r = _Rig();
+      addTearDown(r.dispose);
+      r.backend.settleAfterResult = const Duration(milliseconds: 80);
+      await r.connect();
+      r.backend.sendText('thanks');
+      await _tick(10);
+      r.ws.turn('created', 'assistant', 0, 0, '');
+      r.ws.audio(0, pcm(100));
+      r.ws.outputWords('Sure.', 0);
+      r.ws.turn('done', 'assistant', 0, 100, 'Sure.');
+      await _tick(200);
+      expect(r.of<ResponseDone>(), hasLength(1));
+      expect(r.backend.busy, isFalse);
+      expect(r.of<BackendError>(), isEmpty);
+    });
 
     test('an unexpected sideband close (1006) is a reconnectable connection_lost', () async {
       final r = _Rig();
@@ -832,14 +1861,24 @@ void main() {
       expect(pipeline.conversation.messages.where((m) => m.kind == MessageKind.assistant), isEmpty);
       expect(fp.audio.player.written, isEmpty);
       pipeline.interrupt();
+      expect(pipeline.voiceInputNeedsReconnect, isTrue);
+      expect(pipeline.phase, AssistantPhase.idle, reason: 'A retired microphone must not still display Listening.');
+      expect(rig.rtc.micEnabled, isFalse);
       releaseFirst.complete();
-      await waitFor(() => rig.ws.ofType('delegation.context.append').isNotEmpty);
+      await waitFor(() => rig.backend.pendingDelegations == 0);
       expect(executions, ['ctrl+c']);
-      expect(jsonEncode(rig.ws.ofType('delegation.context.append').single), contains('cancelled'));
+      expect(
+        rig.ws.ofType('delegation.context.append'),
+        isEmpty,
+        reason: 'The retired keyboard task must not narrate after Stop.',
+      );
       pipeline.sendText('Ctrl+A');
       await waitFor(() => executions.length == 2);
       expect(executions, ['ctrl+c', 'Ctrl+A']);
       expect(rig.model.requests, hasLength(1), reason: 'the new explicit shortcut uses the direct path');
+      await waitFor(() => rig.ws.ofType('session.context.append').any((event) => event['channel'] == null));
+      expect(jsonEncode(rig.ws.ofType('session.context.append')), contains('Ctrl+A'));
+      expect(jsonEncode(rig.ws.sent), isNot(contains('cancelled')));
     });
 
     test('pipeline uses the managed mic and routes delegated tools through the registry', () async {
@@ -929,4 +1968,16 @@ void main() {
       await fp.dispose();
     });
   });
+}
+
+class _WrittenFailureModel extends DelegationModel {
+  @override
+  Future<DelegationModelTurn> respond({
+    required String model,
+    required String instructions,
+    required List<Map<String, Object?>> input,
+    List<Map<String, Object?>> tools = const [],
+    String? reasoningEffort,
+    void Function(DelegationToolCall call)? onToolCall,
+  }) async => throw DelegationModelException('PRIVATE_PROVIDER_DETAIL', status: 503);
 }

@@ -97,6 +97,8 @@ class WoiControlOverlay(private val service: WoiAccessibilityService) {
     fun gestureFinished() { injecting = false; injectionSerial++ }
     fun check() { if (cancelled) throw IllegalStateException("User took control; stop input until a new user request") }
     fun cancel() { if (active) { cancelled = true; visual?.invalidate() } }
+    /** A deliberate touch-key action also cancels automation between leases. */
+    fun takeover() { cancelled = true; visual?.invalidate() }
     fun reset() { end(); cancelled = false }
     fun end() {
         active = false

@@ -119,6 +119,49 @@ class Harness {
   }
 }
 
+class _WrittenResultBackend extends ScriptedBackend {
+  _WrittenResultBackend({this.immediate});
+  final WrittenResponse? immediate;
+  final writtenResults = <bool Function(WrittenResponse)>[];
+  final referenceTexts = <String?>[];
+  final referenceGuards = <bool Function()?>[];
+
+  @override
+  bool usesWrittenReferenceAnswer(String text, {required String referenceText}) => referenceText.isNotEmpty;
+
+  @override
+  void sendTextWithWrittenResult(
+    String text, {
+    required bool Function(WrittenResponse) onResult,
+    String? referenceText,
+    bool Function()? isReferenceCurrent,
+  }) {
+    super.sendText(text);
+    writtenResults.add(onResult);
+    referenceTexts.add(referenceText);
+    referenceGuards.add(isReferenceCurrent);
+    if (immediate != null) onResult(immediate!);
+  }
+}
+
+class _ContextPreparingBackend extends _WrittenResultBackend {
+  final prepared = <String>[];
+  final guards = <bool Function()>[];
+  FutureOr<bool> Function()? prepare;
+
+  @override
+  FutureOr<bool> prepareTypedInputContext({
+    required String writtenContext,
+    required String recentContext,
+    required bool Function() isCurrent,
+  }) {
+    if (writtenContext.isEmpty) return true;
+    prepared.add(writtenContext);
+    guards.add(isCurrent);
+    return prepare?.call() ?? true;
+  }
+}
+
 /// Records what the pipeline feeds it; [hit] plays a spotter hit.
 class FakeStopWordSpotter implements StopWordSpotter {
   final _hits = StreamController<KwsHit>.broadcast();
@@ -2074,6 +2117,602 @@ void main() {
       expect(h.scripted.images, hasLength(1));
       expect(h.scripted.images.single.$2, startsWith('Long note with visible text'));
       await h.dispose();
+    });
+  });
+
+  group('written attachment result ownership', () {
+    const answer = WrittenResponse(text: 'A green rectangle is above a purple circle.', model: 'vision-fixture');
+    ContextImage selected(int marker) => ContextImage(
+      bytes: Uint8List.fromList([137, 80, 78, 71, marker]),
+      width: 2,
+      height: 3,
+      kind: 'attachment:selected-$marker',
+      note: 'Explicit selected image',
+    );
+
+    test('ordinary followup retains a separate origin-linked written answer and full original analysis', () async {
+      final backend = _WrittenResultBackend();
+      final h = await Harness.create(backend: () => backend, options: const PipelineOptions(autoScreenshot: false));
+      addTearDown(h.dispose);
+      await h.pipeline.sendText('Describe this image.', attachedImages: [selected(1)]);
+      final full = WrittenResponse(
+        text: 'ORCHID HARBOR. ${'Full original observation. ' * 200}',
+        model: 'vision-fixture',
+      );
+      backend.writtenResults.single(full);
+      final original = ofKind(h.conv, MessageKind.assistant).single;
+      expect(await h.pipeline.sendText('What exact inspection label did that analysis contain?'), isTrue);
+      expect(backend.writtenResults, hasLength(2), reason: 'A reference answer must use the guarded written route.');
+      final currentOrigin = ofKind(h.conv, MessageKind.user).last;
+      const result = WrittenResponse(text: 'ORCHID HARBOR', model: 'reference-fixture');
+      expect(backend.writtenResults.last(result), isTrue);
+      expect(backend.writtenResults.last(result), isFalse);
+      final written = ofKind(h.conv, MessageKind.assistant).last;
+      expect(written.text, result.text);
+      expect(written.meta['type'], 'attachment_reference_answer');
+      expect(written.meta['sourceMessageId'], currentOrigin.id);
+      expect(written.meta['referenceMessageIds'], [original.id]);
+      expect(original.text, full.text);
+      expect(h.conv.messages.where((m) => m.meta['type'] == 'attachment_analysis').single, same(original));
+      await h.store.flush(h.conv);
+      final loaded = (await h.store.load(h.conv.id))!;
+      expect(loaded.messages.singleWhere((m) => m.id == written.id).meta['referenceMessageIds'], [original.id]);
+    });
+
+    test('reference input preserves full source plus recent conversation and skips device context hooks', () async {
+      final backend = _WrittenResultBackend();
+      final h = await Harness.create(backend: () => backend, options: const PipelineOptions(autoScreenshot: false));
+      addTearDown(h.dispose);
+      await h.pipeline.sendText('Describe this image.', attachedImages: [selected(1)]);
+      final full = WrittenResponse(
+        text: 'Full analysis ${'retained original detail ' * 240} label739.',
+        model: 'fixture',
+      );
+      backend.writtenResults.single(full);
+      final original = ofKind(h.conv, MessageKind.assistant).single;
+      h.conv.summary = 'Earlier topic: River is the project nickname.';
+      await h.pipeline.sendText('My chosen name is Rowan.');
+      backend.writtenResults.last(const WrittenResponse(text: 'Your chosen name is Rowan.', model: 'fixture'));
+      original.compacted = true;
+      var deviceHooks = 0;
+      h.pipeline.cameraImage = () {
+        deviceHooks++;
+        return selected(9);
+      };
+      h.pipeline.beforeTypedTurn = (text) async {
+        deviceHooks++;
+        return text;
+      };
+      await h.pipeline.sendText('What name did I just give you?');
+      final reference = backend.referenceTexts.last!;
+      expect(reference, contains(full.text));
+      expect(reference, contains('Earlier topic: River'));
+      expect(reference, contains('My chosen name is Rowan.'));
+      expect(reference, contains('Your chosen name is Rowan.'));
+      expect(backend.referenceGuards.last!(), isTrue);
+      expect(deviceHooks, 0);
+      expect(h.conv.messages.where((m) => m.meta['type'] == 'attachment_analysis').single, same(original));
+    });
+
+    test('removing a source invalidates the current reference and rejects a stale successful callback', () async {
+      final backend = _WrittenResultBackend();
+      final h = await Harness.create(backend: () => backend, options: const PipelineOptions(autoScreenshot: false));
+      addTearDown(h.dispose);
+      await h.pipeline.sendText('Describe this image.', attachedImages: [selected(1)]);
+      backend.writtenResults.single(answer);
+      final source = ofKind(h.conv, MessageKind.assistant).single;
+      await h.pipeline.sendText('What label did it show?');
+      final guard = backend.referenceGuards.last!;
+      expect(guard(), isTrue);
+      h.conv.messages.remove(source);
+      expect(guard(), isFalse);
+      expect(backend.writtenResults.last(const WrittenResponse(text: 'STALE ANSWER', model: 'fixture')), isFalse);
+      expect(h.conv.messages.any((m) => m.text == 'STALE ANSWER'), isFalse);
+      expect(h.conv.messages.any((m) => m.text.contains('saved analysis changed')), isTrue);
+    });
+
+    test('a late reference answer stays with its own question before a newer ordinary request', () async {
+      final backend = _WrittenResultBackend();
+      final h = await Harness.create(backend: () => backend, options: const PipelineOptions(autoScreenshot: false));
+      addTearDown(h.dispose);
+      await h.pipeline.sendText('Describe this image.', attachedImages: [selected(1)]);
+      backend.writtenResults.single(answer);
+      await h.pipeline.sendText('First reference question.');
+      final origin = ofKind(h.conv, MessageKind.user).last;
+      final callback = backend.writtenResults.last;
+      await h.pipeline.sendText('A newer ordinary question.');
+      final later = ofKind(h.conv, MessageKind.user).last;
+      expect(callback(const WrittenResponse(text: 'Answer to the first question.', model: 'fixture')), isTrue);
+      final written = h.conv.messages.singleWhere((m) => m.text == 'Answer to the first question.');
+      expect(written.meta['sourceMessageId'], origin.id);
+      expect(h.conv.messages.indexOf(written), h.conv.messages.indexOf(origin) + 1);
+      expect(h.conv.messages.indexOf(written), lessThan(h.conv.messages.indexOf(later)));
+    });
+
+    for (final invalidation in ['Stop', 'reconnect', 'conversation', 'deleted reference question']) {
+      test('late reference callback is rejected after $invalidation', () async {
+        final backends = <_WrittenResultBackend>[];
+        final h = await Harness.create(
+          backend: () {
+            final backend = _WrittenResultBackend();
+            backends.add(backend);
+            return backend;
+          },
+          options: const PipelineOptions(autoScreenshot: false),
+        );
+        addTearDown(h.dispose);
+        final original = h.conv;
+        await h.pipeline.sendText('Describe this image.', attachedImages: [selected(1)]);
+        backends.single.writtenResults.single(answer);
+        await h.pipeline.sendText('What label did the saved analysis contain?');
+        final question = ofKind(original, MessageKind.user).last;
+        final callback = backends.single.writtenResults.last;
+        switch (invalidation) {
+          case 'Stop':
+            h.pipeline.interrupt();
+          case 'reconnect':
+            await h.pipeline.connect();
+          case 'conversation':
+            await h.pipeline.switchConversation(Conversation());
+          case 'deleted reference question':
+            original.messages.remove(question);
+        }
+        expect(callback(const WrittenResponse(text: 'RETIRED REFERENCE ANSWER', model: 'fixture')), isFalse);
+        expect(original.messages.any((m) => m.text == 'RETIRED REFERENCE ANSWER'), isFalse);
+        expect(h.conv.messages.any((m) => m.text == 'RETIRED REFERENCE ANSWER'), isFalse);
+      });
+    }
+
+    test('synchronous completion is retained before acceptance and survives reload', () async {
+      final backend = _WrittenResultBackend(immediate: answer);
+      final h = await Harness.create(backend: () => backend);
+      addTearDown(h.dispose);
+      final accepted = h.pipeline.sendText('Describe this image.', attachedImages: [selected(1)]);
+      final written = ofKind(h.conv, MessageKind.assistant).single;
+      expect(written.text, answer.text, reason: 'Origin registration precedes a synchronous result callback.');
+      expect(await accepted, isTrue);
+      final origin = ofKind(h.conv, MessageKind.user).single;
+      expect(written.meta['sourceMessageId'], origin.id);
+      expect(written.meta['model'], answer.model);
+      expect(written.audio, isNull);
+      await waitFor(() => origin.image != null);
+      await h.store.flush(h.conv);
+      final saved = (await h.store.load(h.conv.id))!;
+      expect(ofKind(saved, MessageKind.assistant).single.text, answer.text);
+      expect(ofKind(saved, MessageKind.assistant).single.meta['sourceMessageId'], origin.id);
+      expect(ofKind(saved, MessageKind.user).single.image, isNotNull);
+    });
+
+    test('late result stays after its attachment group and before a newer ordinary turn', () async {
+      final backend = _WrittenResultBackend();
+      final h = await Harness.create(backend: () => backend);
+      addTearDown(h.dispose);
+      expect(await h.pipeline.sendText('Compare these.', attachedImages: [selected(1), selected(2)]), isTrue);
+      final origins = ofKind(h.conv, MessageKind.user).toList();
+      expect(origins, hasLength(2));
+      expect(await h.pipeline.sendText('What is the next item?'), isTrue);
+      final later = ofKind(h.conv, MessageKind.user).last;
+      backend.writtenResults.single(answer);
+      backend.writtenResults.single(const WrittenResponse(text: 'Duplicate replay', model: 'wrong'));
+      final written = ofKind(h.conv, MessageKind.assistant).single;
+      expect(written.text, answer.text);
+      expect(written.meta['sourceMessageId'], origins.first.id);
+      expect(h.conv.messages.indexOf(written), h.conv.messages.indexOf(origins.last) + 1);
+      expect(h.conv.messages.indexOf(written), lessThan(h.conv.messages.indexOf(later)));
+      backend.emit(const AssistantTranscriptDelta('A separate live response.'));
+      final replies = ofKind(h.conv, MessageKind.assistant).toList();
+      expect(replies.map((m) => m.text), [answer.text, 'A separate live response.']);
+      expect(replies.first.meta['model'], 'vision-fixture');
+      expect(replies.last.meta['model'], 'gpt-live-1.1');
+    });
+
+    for (final invalidation in ['Stop', 'reconnect', 'conversation', 'deleted origin', 'deleted attachment']) {
+      test('drops late result after $invalidation', () async {
+        final backends = <_WrittenResultBackend>[];
+        final h = await Harness.create(
+          backend: () {
+            final b = _WrittenResultBackend();
+            backends.add(b);
+            return b;
+          },
+        );
+        addTearDown(h.dispose);
+        final original = h.conv;
+        expect(await h.pipeline.sendText('Compare these.', attachedImages: [selected(1), selected(2)]), isTrue);
+        final callback = backends.single.writtenResults.single;
+        switch (invalidation) {
+          case 'Stop':
+            h.pipeline.interrupt();
+            await h.pipeline.sendText('A new ordinary question.');
+          case 'reconnect':
+            await h.pipeline.connect();
+          case 'conversation':
+            await h.pipeline.switchConversation(Conversation());
+          case 'deleted origin':
+            original.messages.removeWhere((m) => m.kind == MessageKind.user && m.text.isNotEmpty);
+          case 'deleted attachment':
+            original.messages.removeWhere((m) => m.meta['type'] == 'attachment');
+        }
+        callback(answer);
+        expect(ofKind(original, MessageKind.assistant), isEmpty);
+        expect(ofKind(h.conv, MessageKind.assistant), isEmpty);
+      });
+    }
+
+    test('a failed analysis stays beside its retained image and remains readable', () async {
+      final backend = _WrittenResultBackend();
+      final h = await Harness.create(backend: () => backend);
+      addTearDown(h.dispose);
+      expect(await h.pipeline.sendText('Read this image.', attachedImages: [selected(3)]), isTrue);
+      backend.writtenResults.single(
+        const WrittenResponse(
+          text: 'I couldn’t analyze this attachment. Please try sending it again.',
+          model: 'vision-fixture',
+          failed: true,
+        ),
+      );
+      await waitFor(() => ofKind(h.conv, MessageKind.user).single.image != null);
+      expect(ofKind(h.conv, MessageKind.user).single.image, isNotNull);
+      final failure = ofKind(h.conv, MessageKind.assistant).single;
+      expect(failure.meta['failed'], isTrue);
+      expect(failure.text, contains('sending it again'));
+    });
+  });
+
+  group('written context before typed acceptance', () {
+    final answer = WrittenResponse(
+      text: 'ORCHID HARBOR ${'complete analysis 🙂 ' * 500} batch 739.',
+      model: 'vision-fixture',
+    );
+    ContextImage image(int marker) => ContextImage(
+      bytes: Uint8List.fromList([137, 80, 78, 71, marker]),
+      width: 2,
+      height: 3,
+      kind: 'attachment:$marker',
+      note: 'Synthetic selected attachment',
+    );
+    Future<void> seed(Harness h, _ContextPreparingBackend b) async {
+      expect(await h.pipeline.sendText('Original attachment request.', attachedImages: [image(1)]), isTrue);
+      b.writtenResults.single(answer);
+    }
+
+    test('no follow-up origin or images are appended before full context is accepted', () async {
+      final b = _ContextPreparingBackend();
+      final h = await Harness.create(backend: () => b, options: const PipelineOptions(autoScreenshot: false));
+      addTearDown(h.dispose);
+      await seed(h, b);
+      final gate = Completer<bool>();
+      b.prepare = () => gate.future;
+      final pending = h.pipeline.sendText(
+        'Follow-up question.',
+        displayText: 'Visible question',
+        attachedImages: [image(9)],
+      );
+      expect(b.prepared.single, contains(answer.text));
+      expect(
+        h.context.recentTurns(),
+        isNot(contains(answer.text)),
+        reason: 'The ordinary recent budget omits this >4k answer.',
+      );
+      expect(ofKind(h.conv, MessageKind.user), hasLength(1));
+      expect(b.texts, ['Original attachment request.']);
+      gate.complete(true);
+      expect(await pending, isTrue);
+      expect(b.texts, ['Original attachment request.', 'Follow-up question.']);
+      expect(ofKind(h.conv, MessageKind.user).last.text, 'Visible question');
+      expect(b.images.last.$1.last, 9);
+    });
+
+    for (final failure in ['false', 'throw', 'future error']) {
+      test('preparation $failure leaves exact request unsent for explicit retry', () async {
+        final b = _ContextPreparingBackend();
+        final h = await Harness.create(backend: () => b, options: const PipelineOptions(autoScreenshot: false));
+        addTearDown(h.dispose);
+        await seed(h, b);
+        b.prepare = () {
+          if (failure == 'throw') throw StateError('private provider details');
+          if (failure == 'future error') return Future<bool>.error(StateError('private provider details'));
+          return false;
+        };
+        final attachment = image(7);
+        expect(
+          await h.pipeline.sendText(
+            'Retry exact question.',
+            displayText: 'Retry visible',
+            attachedImages: [attachment],
+          ),
+          isFalse,
+        );
+        expect(b.texts, ['Original attachment request.']);
+        expect(ofKind(h.conv, MessageKind.user), hasLength(1));
+        expect(h.conv.messages.any((m) => m.text.contains('private provider details')), isFalse);
+        b.prepare = () => true;
+        expect(
+          await h.pipeline.sendText(
+            'Retry exact question.',
+            displayText: 'Retry visible',
+            attachedImages: [attachment],
+          ),
+          isTrue,
+        );
+        expect(b.texts.last, 'Retry exact question.');
+        expect(b.images.last.$1, attachment.bytes);
+        expect(ofKind(h.conv, MessageKind.user).last.text, 'Retry visible');
+      });
+    }
+
+    for (final invalidation in ['Stop', 'reconnect', 'conversation', 'deleted origin', 'deleted answer']) {
+      test('preparing follow-up retires on $invalidation without a late send', () async {
+        final backends = <_ContextPreparingBackend>[];
+        final h = await Harness.create(
+          backend: () {
+            final b = _ContextPreparingBackend();
+            backends.add(b);
+            return b;
+          },
+          options: const PipelineOptions(autoScreenshot: false),
+        );
+        addTearDown(h.dispose);
+        final b = backends.single;
+        await seed(h, b);
+        final gate = Completer<bool>();
+        b.prepare = () => gate.future;
+        final pending = h.pipeline.sendText('Retired follow-up.');
+        switch (invalidation) {
+          case 'Stop':
+            h.pipeline.interrupt();
+          case 'reconnect':
+            await h.pipeline.connect();
+          case 'conversation':
+            await h.pipeline.switchConversation(Conversation());
+          case 'deleted origin':
+            h.conv.messages.removeWhere((m) => m.kind == MessageKind.user);
+          case 'deleted answer':
+            h.conv.messages.removeWhere((m) => m.meta['type'] == 'attachment_analysis');
+        }
+        expect(b.guards.single(), isFalse);
+        gate.complete(true);
+        expect(await pending, isFalse);
+        expect(b.texts, ['Original attachment request.']);
+        expect(h.conv.messages.any((m) => m.text == 'Retired follow-up.'), isFalse);
+      });
+    }
+
+    test('Stop permits a newer owned request while the old preparation finishes late', () async {
+      final b = _ContextPreparingBackend();
+      final h = await Harness.create(backend: () => b, options: const PipelineOptions(autoScreenshot: false));
+      addTearDown(h.dispose);
+      await seed(h, b);
+      final oldGate = Completer<bool>();
+      b.prepare = () => oldGate.future;
+      final old = h.pipeline.sendText('Old question.');
+      h.pipeline.interrupt();
+      expect(await old.timeout(const Duration(milliseconds: 100)), isFalse);
+      final nextGate = Completer<bool>();
+      b.prepare = () => nextGate.future;
+      final next = h.pipeline.sendText('New question.');
+      oldGate.complete(true);
+      await Future<void>.delayed(Duration.zero);
+      expect(b.texts, ['Original attachment request.']);
+      nextGate.complete(true);
+      expect(await next, isTrue);
+      expect(b.texts, ['Original attachment request.', 'New question.']);
+    });
+
+    test('latest complete analysis survives compaction while older compacted answers use the summary', () async {
+      final b = _ContextPreparingBackend();
+      final h = await Harness.create(backend: () => b);
+      addTearDown(h.dispose);
+      await seed(h, b);
+      final old = ofKind(h.conv, MessageKind.assistant).single;
+      old.compacted = true;
+      expect(await h.pipeline.sendText('Another attachment.', attachedImages: [image(8)]), isTrue);
+      b.writtenResults.last(
+        const WrittenResponse(text: 'LATEST FULL ANSWER with omitted label.', model: 'vision-fixture'),
+      );
+      final latest = ofKind(h.conv, MessageKind.assistant).last;
+      latest.compacted = true;
+      b.prepared.clear();
+      expect(await h.pipeline.sendText('Question about the latest analysis.'), isTrue);
+      expect(b.prepared.single, contains(latest.text));
+      expect(b.prepared.single, isNot(contains(old.text)));
+    });
+
+    test('a newly completed analysis retires the prepared snapshot instead of sending incomplete context', () async {
+      final b = _ContextPreparingBackend();
+      final h = await Harness.create(backend: () => b);
+      addTearDown(h.dispose);
+      await seed(h, b);
+      final gate = Completer<bool>();
+      b.prepare = () => gate.future;
+      final pending = h.pipeline.sendText('Follow up on all analyses.');
+      final origin = ofKind(h.conv, MessageKind.user).single;
+      h.conv.messages.add(
+        Message(
+          kind: MessageKind.assistant,
+          text: 'New completed analysis.',
+          meta: {'type': 'attachment_analysis', 'sourceMessageId': origin.id},
+        ),
+      );
+      expect(b.guards.single(), isFalse);
+      gate.complete(true);
+      expect(await pending, isFalse);
+      expect(b.texts, ['Original attachment request.']);
+    });
+
+    test('local commands stay immediate without preparing provider context', () async {
+      final b = _ContextPreparingBackend();
+      final h = await Harness.create(backend: () => b);
+      addTearDown(h.dispose);
+      await seed(h, b);
+      h.pipeline.localCommand = (text, {required typed}) => typed && text == 'undo that';
+      b.prepare = () => throw StateError('Local commands must not wait for a provider.');
+      expect(await h.pipeline.sendText('undo that'), isTrue);
+      expect(b.prepared, isEmpty);
+      expect(b.texts, ['Original attachment request.']);
+      expect(ofKind(h.conv, MessageKind.user).last.text, 'undo that');
+    });
+
+    test('saved analysis is re-derived after reconnect instead of relying on the retired backend', () async {
+      final backends = <_ContextPreparingBackend>[];
+      final h = await Harness.create(
+        backend: () {
+          final b = _ContextPreparingBackend();
+          backends.add(b);
+          return b;
+        },
+      );
+      addTearDown(h.dispose);
+      await seed(h, backends.single);
+      await h.pipeline.connect();
+      expect(await h.pipeline.sendText('Follow-up after reconnect.'), isTrue);
+      expect(backends.last.prepared.single, contains(answer.text));
+      expect(backends.last.texts, ['Follow-up after reconnect.']);
+    });
+  });
+
+  group('typed send acceptance', () {
+    test('connected image send accepts at dispatch and excludes viewer and camera substitution', () async {
+      final h = await Harness.create();
+      addTearDown(h.dispose);
+      var mediaCalls = 0;
+      final image = ContextImage(
+        bytes: Uint8List.fromList([137, 80, 78, 71, 5]),
+        width: 2,
+        height: 3,
+        note: 'Explicit selected file',
+        kind: 'attachment:selected',
+      );
+      h.pipeline.beforeTypedTurn = (_) {
+        mediaCalls++;
+        return Completer<String?>().future;
+      };
+      h.pipeline.cameraImage = () => ContextImage(
+        bytes: Uint8List.fromList([137, 80, 78, 71, 99]),
+        width: 2,
+        height: 3,
+        note: 'Unrelated camera',
+        kind: 'camera',
+      );
+      expect(
+        await h.pipeline.sendText('Describe this image.', displayText: 'Image question', attachedImages: [image]),
+        isTrue,
+      );
+      expect(h.scripted.texts, ['Describe this image.']);
+      expect(h.scripted.images, hasLength(1));
+      expect(h.scripted.images.single.$1, image.bytes);
+      expect(h.scripted.images.single.$2, 'Explicit selected file');
+      expect(mediaCalls, 0);
+      expect(ofKind(h.conv, MessageKind.user).single.text, 'Image question');
+      expect(h.pipeline.phase, AssistantPhase.thinking, reason: 'Acceptance does not wait for the answer.');
+    });
+
+    test('two image sends queued behind connection retain separate bytes and display order', () async {
+      final gate = Completer<void>();
+      var connects = 0;
+      final h = await Harness.create(backend: () => ScriptedBackend()..connectGate = connects++ == 0 ? null : gate);
+      addTearDown(h.dispose);
+      addTearDown(() {
+        if (!gate.isCompleted) gate.complete();
+      });
+      final connecting = h.pipeline.connect();
+      await waitFor(() => h.scripted.connectStarted && h.pipeline.status == SessionStatus.connecting);
+      ContextImage image(int marker) => ContextImage(
+        bytes: Uint8List.fromList([137, 80, 78, 71, marker]),
+        width: 2,
+        height: 3,
+        note: 'Explicit file $marker',
+        kind: 'attachment:$marker',
+      );
+      final firstImage = image(3);
+      final secondImage = image(7);
+      final first = h.pipeline.sendText(
+        'First provider prompt',
+        displayText: 'First file',
+        attachedImages: [firstImage],
+      );
+      final second = h.pipeline.sendText(
+        'Second provider prompt',
+        displayText: 'Second file',
+        attachedImages: [secondImage],
+      );
+      firstImage.bytes.last = 31;
+      secondImage.bytes.last = 71;
+      expect(h.scripted.texts, isEmpty);
+      gate.complete();
+      await connecting;
+      expect(await first, isTrue);
+      expect(await second, isTrue);
+      expect(h.scripted.texts, ['First provider prompt', 'Second provider prompt']);
+      expect(h.scripted.images.map((image) => image.$1.last), [3, 7]);
+      expect(ofKind(h.conv, MessageKind.user).map((message) => message.text), ['First file', 'Second file']);
+    });
+
+    test('accepted attachment stays visible and durable after a later provider error', () async {
+      final h = await Harness.create();
+      addTearDown(h.dispose);
+      h.pipeline.maxAutoReconnects = 0;
+      final bytes = Uint8List.fromList([137, 80, 78, 71, 19, 23]);
+      expect(
+        await h.pipeline.sendText(
+          'Describe the attached image.',
+          displayText: '[selected.png](file:///synthetic/selected.png)',
+          attachedImages: [
+            ContextImage(bytes: bytes, width: 2, height: 3, note: 'Explicit file', kind: 'attachment:late-error'),
+          ],
+        ),
+        isTrue,
+      );
+      await waitFor(() => ofKind(h.conv, MessageKind.user).single.image != null);
+      final user = ofKind(h.conv, MessageKind.user).single;
+      h.scripted.emit(const BackendError('Synthetic provider answer failed', fatal: false));
+      expect(user.text, contains('selected.png'));
+      expect(await File(user.image!.path).readAsBytes(), bytes);
+      expect(ofKind(h.conv, MessageKind.user), [user]);
+      expect(h.scripted.texts, ['Describe the attached image.']);
+    });
+
+    test('queued payloads retain order while media preparation is asynchronous', () async {
+      final h = await Harness.create();
+      addTearDown(h.dispose);
+      final gate = Completer<String?>();
+      h.pipeline.beforeTypedTurn = (text) => text == 'first image question' ? gate.future : null;
+      final first = h.pipeline.sendText('first image question', displayText: 'First display');
+      final second = h.pipeline.sendText('second ordinary question', displayText: 'Second display');
+      expect(h.scripted.texts, isEmpty);
+      gate.complete('first image question with context');
+      expect(await first, isTrue);
+      expect(await second, isTrue);
+      expect(h.scripted.texts, ['first image question with context', 'second ordinary question']);
+      expect(ofKind(h.conv, MessageKind.user).map((message) => message.text), ['First display', 'Second display']);
+    });
+
+    test('Stop rejects a media preflight and prevents its late text after the next turn', () async {
+      final h = await Harness.create();
+      addTearDown(h.dispose);
+      final gate = Completer<String?>();
+      h.pipeline.beforeTypedTurn = (text) => text == 'old image question' ? gate.future : null;
+      final old = h.pipeline.sendText('old image question');
+      h.pipeline.interrupt();
+      expect(await old, isFalse);
+      expect(await h.pipeline.sendText('new ordinary question'), isTrue);
+      gate.complete('old image question with late context');
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(h.scripted.texts, ['new ordinary question']);
+    });
+
+    test('a typed Stop cancels queued work immediately while media preflight is pending', () async {
+      final h = await Harness.create();
+      addTearDown(h.dispose);
+      final gate = Completer<String?>();
+      h.pipeline.beforeTypedTurn = (_) => gate.future;
+      final old = h.pipeline.sendText('old image question');
+      expect(await h.pipeline.sendText('stop'), isTrue);
+      expect(await old, isFalse);
+      gate.complete('late cancelled input');
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(h.scripted.texts, isEmpty);
+      expect(h.pipeline.stopsHandled, 1);
     });
   });
 

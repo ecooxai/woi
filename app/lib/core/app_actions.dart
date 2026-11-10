@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 
 import '../platform/media_viewer.dart';
 import '../tools/note_tools.dart';
@@ -16,8 +15,8 @@ import 'settings/settings.dart';
 import 'storage/history_store.dart';
 import 'terminal/terminal_hub.dart';
 
-/// The top-level tabs, in tab order (Ctrl+1..4).
-enum HomeView { note, chat, terminal, settings }
+/// The top-level tabs. Existing Ctrl+1..4 shortcuts are kept; Clipboard uses Ctrl+5.
+enum HomeView { note, chat, terminal, clipboard, settings }
 
 /// Failure of an app action, with a message for the user / model.
 class AppActionError implements Exception {
@@ -84,13 +83,15 @@ class AppActions {
       split.value = false;
       return 'single view';
     }
-    final v = n.contains('term') || n.contains('shell') || n.contains('console')
+    final v = n.contains('clipboard')
+        ? HomeView.clipboard
+        : n.contains('term') || n.contains('shell') || n.contains('console')
         ? HomeView.terminal
         : n.contains('chat') || n.contains('conversation') || n.contains('message')
         ? HomeView.chat
         : n.contains('note')
         ? HomeView.note
-        : throw AppActionError('unknown view "$name" (note, chat, terminal, settings, split)');
+        : throw AppActionError('unknown view "$name" (note, chat, terminal, clipboard, settings, split)');
     showView(v);
     return v.name;
   }
@@ -257,13 +258,13 @@ class AppActions {
 
   /// A fresh voice session (after the confirmation), e.g. when it glitches.
   String reconnect() {
-    unawaited(afterReply(() => c.pipeline.connect()));
+    unawaited(afterReply(() => c.pipeline.reconnect()));
     return 'reconnecting after this reply';
   }
 
-  /// Writes the system clipboard (tests swap it out).
-  @visibleForTesting
-  Future<void> Function(String text) writeClipboard = (t) => Clipboard.setData(ClipboardData(text: t));
+  /// Uses the platform clipboard in both the full app and assistant panel.
+  /// Tests may replace this callback without changing the action semantics.
+  late Future<void> Function(String text) writeClipboard = c.platform.clipboard.writeText;
 
   /// Last copy (label for the "Copied" confirmation); the editor listens.
   final copied = ValueNotifier<({String label, int seq})?>(null);
@@ -352,7 +353,8 @@ class AppActions {
     var reconnects = false;
     switch (k) {
       case 'theme' || 'color_theme' || 'appearance':
-        final t = AppTheme.values.where((t) => lv.contains(t.name)).firstOrNull ??
+        final t =
+            AppTheme.values.where((t) => lv.contains(t.name)).firstOrNull ??
             (lv.contains('night') ? AppTheme.dark : (lv.contains('day') ? AppTheme.light : null));
         if (t == null) throw AppActionError('theme must be light, dark or system');
         next = s.copyWith(theme: t);
@@ -368,8 +370,8 @@ class AppActions {
         next = s.copyWith(micMode: m);
         done = 'mic ${m.label}';
       case 'voice':
-        final choice = s.voiceChoices.where((x) => x == lv).firstOrNull ??
-            s.voiceChoices.where((x) => lv.contains(x)).firstOrNull;
+        final choice =
+            s.voiceChoices.where((x) => x == lv).firstOrNull ?? s.voiceChoices.where((x) => lv.contains(x)).firstOrNull;
         if (choice == null) throw AppActionError('unknown voice "$v"; choices: ${s.voiceChoices.join(', ')}');
         next = s.backendMode == BackendMode.gptLive ? s.copyWith(liveVoice: choice) : s.copyWith(voice: choice);
         done = 'voice $choice';
@@ -382,7 +384,9 @@ class AppActions {
         } else if (rt != null) {
           next = s.copyWith(realtimeModel: rt);
         } else {
-          throw AppActionError('unknown voice model "$v"; choices: ${[...kVoiceModels, ...kRealtimeModels].join(', ')}');
+          throw AppActionError(
+            'unknown voice model "$v"; choices: ${[...kVoiceModels, ...kRealtimeModels].join(', ')}',
+          );
         }
         done = 'voice model ${live ?? rt}';
       case 'compaction_threshold' || 'compression_threshold' || 'compaction':

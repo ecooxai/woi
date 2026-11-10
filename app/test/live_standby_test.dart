@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:woi/core/auth/auth.dart';
 import 'package:woi/core/context/compressor.dart';
 import 'package:woi/core/context/context_manager.dart';
+import 'package:woi/core/media/media_context.dart';
 import 'package:woi/core/models/message.dart';
 import 'package:woi/core/pipeline/turn_pipeline.dart';
 import 'package:woi/core/settings/settings.dart';
@@ -64,6 +67,7 @@ class _Harness {
   final violations = <String>[];
   final server = FakeLiveServer();
   final tools = ToolRegistry();
+  final models = <FakeDelegationModel>[];
   final toolGate = Completer<void>();
   late final TurnPipeline pipeline;
   Duration idle = const Duration(milliseconds: 300);
@@ -73,8 +77,17 @@ class _Harness {
   Completer<void>? configGate;
   ScriptedBackend? realtime;
 
-  static Future<_Harness> create({bool withTool = false, Duration? idle, MicMode micMode = MicMode.handsFree}) async {
+  static Future<_Harness> create({
+    bool withTool = false,
+    Duration? idle,
+    MicMode micMode = MicMode.handsFree,
+    bool acknowledgeContext = true,
+    String delegatedText = 'Finished.',
+  }) async {
     final h = _Harness(await FakePlatform.create());
+    // Normal provider sessions acknowledge each accepted append. Missing-receipt
+    // behavior is exercised explicitly below, not by every standby fixture.
+    h.server.autoAcknowledgeContext = acknowledgeContext;
     if (idle != null) h.idle = idle;
     h.audio.beforeOpen = () {
       if (h.transports.any((t) => !t.closed)) h.violations.add('Local capture opened before live close');
@@ -112,10 +125,14 @@ class _Harness {
             if (h.failConnect) throw StateError('fixture connect failed');
             return h.server.createCall(uri, headers, body);
           },
-          delegationModelFactory: (_) => FakeDelegationModel([
-            if (withTool) DelegationModelTurn(text: '', calls: [call('slow_task', {})]),
-            const DelegationModelTurn(text: 'Finished.', calls: []),
-          ]),
+          delegationModelFactory: (_) {
+            final model = FakeDelegationModel([
+              if (withTool) DelegationModelTurn(text: '', calls: [call('slow_task', {})]),
+              DelegationModelTurn(text: delegatedText, calls: const []),
+            ]);
+            h.models.add(model);
+            return model;
+          },
         )..settleAfterResult = const Duration(milliseconds: 40);
       },
       audio: h.audio,
@@ -193,6 +210,25 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 500));
     expect(h.server.calls, hasLength(1));
     expect(h.pipeline.standby, isTrue);
+  });
+
+  test('an accepted context request prevents standby until its real answer arrives', () async {
+    final h = await _Harness.create(micMode: MicMode.pushToTalk, acknowledgeContext: false);
+    addTearDown(h.close);
+    h.pipeline.sendText('A synthetic ordinary question?');
+    await waitFor(() => h.server.socket.ofType('session.context.append').isNotEmpty);
+    await Future<void>.delayed(const Duration(milliseconds: 600));
+    expect(h.pipeline.standby, isFalse);
+    expect(h.transports.single.closed, isFalse);
+    expect(h.server.socket.ofType('session.context.append'), hasLength(1));
+    h.server.socket.push({'type': 'session.context.appended'});
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    expect(h.pipeline.standby, isFalse, reason: 'An ACK without an answer is still pending.');
+    h.server.socket.turn('created', 'assistant', 100, 0, '');
+    h.server.socket.turn('done', 'assistant', 100, 100, 'A synthetic answer.');
+    await h.asleep();
+    expect(h.transports.single.closed, isTrue);
+    expect(h.server.calls, hasLength(1));
   });
 
   test('live push-to-talk press wakes and a held button prevents idle standby', () async {
@@ -275,6 +311,194 @@ void main() {
     expect(h.pipeline.conversation.messages.where((m) => m.kind == MessageKind.user && m.text == text), hasLength(1));
     expect(h.transports.last.micToggles, everyElement(isFalse));
     expect(h.audio.micOpens, isEmpty);
+  });
+
+  ContextImage imageFixture([int marker = 7]) => ContextImage(
+    bytes: Uint8List.fromList([137, 80, 78, 71, marker, 11, 13]),
+    width: 3,
+    height: 2,
+    kind: 'attachment:fixture-$marker',
+    note: 'Explicit attachment fixture',
+    capturedAt: DateTime(2026, 11, 9),
+  );
+
+  test('accepted attachment analysis stays readable without live narration', () async {
+    const answer = 'A teal triangle sits to the left of an orange circle.';
+    final h = await _Harness.create(micMode: MicMode.pushToTalk, idle: Duration.zero, delegatedText: answer);
+    addTearDown(h.close);
+    expect(await h.pipeline.sendText('Describe this image.', attachedImages: [imageFixture()]), isTrue);
+    await waitFor(() => h.server.socket.ofType('session.context.append').isNotEmpty);
+    final messages = h.pipeline.conversation.messages;
+    final user = messages.singleWhere((m) => m.kind == MessageKind.user);
+    final written = messages.where((m) => m.kind == MessageKind.assistant).toList();
+    expect(
+      written,
+      hasLength(1),
+      reason: 'A completed vision result must remain useful when live narration never arrives.',
+    );
+    expect(written.single.text, answer);
+    expect(written.single.meta['type'], 'attachment_analysis');
+    expect(written.single.meta['sourceMessageId'], user.id);
+    expect(written.single.meta['model'], 'gpt-6-luna');
+    expect(written.single.audio, isNull, reason: 'Written analysis is not a fabricated spoken transcript.');
+    expect(h.models.single.requests, hasLength(1));
+  });
+
+  test('standby attachment wake preserves immutable pixels, display, audio, and user intent', () async {
+    final h = await _Harness.create(micMode: MicMode.pushToTalk);
+    addTearDown(h.close);
+    await h.asleep();
+    final gate = h.configGate = Completer<void>();
+    addTearDown(() {
+      if (!gate.isCompleted) gate.complete();
+    });
+    final image = imageFixture();
+    final expected = Uint8List.fromList(image.bytes);
+    final images = [image];
+    const prompt = 'Describe the attached picture, then explain its spatial arrangement.';
+    const display = 'My image question\n\n[selected.png](file:///synthetic/selected.png)';
+    const audio = AudioClip(path: 'synthetic.wav', durationMs: 1250);
+    var completed = false;
+    final accepted = h.pipeline.sendText(
+      prompt,
+      displayText: display,
+      attachedImages: images,
+      audioClip: audio,
+      includesSystemAudio: true,
+    )..then((_) => completed = true);
+    await waitFor(() => h.pipeline.status == SessionStatus.connecting);
+    expect(completed, isFalse, reason: 'Request is not accepted until dispatch.');
+    expect(h.pipeline.conversation.messages.where((m) => m.kind == MessageKind.user), isEmpty);
+    image.bytes[4] = 99;
+    images.clear();
+    gate.complete();
+    expect(await accepted, isTrue);
+    await waitFor(() => h.models.any((model) => model.requests.isNotEmpty));
+    final request = h.models.expand((model) => model.requests).single;
+    final content = request.input.single['content'] as List;
+    final pixels = content.whereType<Map>().where((item) => item['type'] == 'input_image').toList();
+    expect(pixels, hasLength(1));
+    expect(pixels.single['image_url'], 'data:image/png;base64,${base64Encode(expected)}');
+    expect(jsonEncode(content), contains(prompt));
+    final user = h.pipeline.conversation.messages.singleWhere((m) => m.kind == MessageKind.user);
+    expect(user.text, display);
+    expect(user.audio, same(audio));
+    expect(user.meta['captureSources'], ['microphone', 'system']);
+    expect(user.meta['imageKind'], image.kind);
+    expect(h.server.calls, hasLength(2));
+    expect(h.audio.micOpens, isEmpty);
+  });
+
+  test('explicit image request preserves web-search intent after typed wake', () async {
+    final h = await _Harness.create(micMode: MicMode.pushToTalk);
+    addTearDown(h.close);
+    h.tools.register(
+      ToolDefinition(
+        spec: const ToolSpec(name: 'web_search', description: 'search', parameters: {'type': 'object'}),
+        handler: (_, _) async => {'answer': 'fixture'},
+      ),
+    );
+    await h.asleep();
+    const prompt = 'Use web search to find an official explanation of the symbol in this attached image.';
+    expect(await h.pipeline.sendText(prompt, displayText: prompt, attachedImages: [imageFixture()]), isTrue);
+    await waitFor(() => h.models.any((model) => model.requests.isNotEmpty));
+    final request = h.models.expand((model) => model.requests).single;
+    expect(jsonEncode(request.input), contains(prompt));
+    expect(request.tools.any((tool) => tool['name'] == 'web_search'), isTrue);
+    expect(h.pipeline.conversation.messages.singleWhere((m) => m.kind == MessageKind.user).text, prompt);
+  });
+
+  test('attachment preparation target remains valid when normal standby starts during file I/O', () async {
+    final h = await _Harness.create(micMode: MicMode.pushToTalk);
+    addTearDown(h.close);
+    final target = h.pipeline.captureTypedSendTarget();
+    await h.asleep();
+    expect(await h.pipeline.sendText('Describe this image.', attachedImages: [imageFixture()], target: target), isTrue);
+    await waitFor(() => h.models.any((model) => model.requests.isNotEmpty));
+    expect(h.models.expand((model) => model.requests), hasLength(1));
+  });
+
+  test('failed attachment wake rejects once and never replays on explicit reconnect', () async {
+    final h = await _Harness.create(micMode: MicMode.pushToTalk);
+    addTearDown(h.close);
+    await h.asleep();
+    h.failConnect = true;
+    h.pipeline.maxAutoReconnects = 0;
+    expect(await h.pipeline.sendText('Describe this image.', attachedImages: [imageFixture()]), isFalse);
+    await waitFor(() => h.pipeline.status == SessionStatus.error);
+    expect(h.pipeline.conversation.messages.where((m) => m.kind == MessageKind.user), isEmpty);
+    expect(h.models.expand((model) => model.requests), isEmpty);
+    h.failConnect = false;
+    await h.pipeline.connect();
+    expect(h.models.expand((model) => model.requests), isEmpty);
+    expect(h.server.socket.ofType('session.context.append'), isEmpty);
+    expect(await h.pipeline.sendText('Hello after retry'), isTrue);
+    expect(h.server.socket.ofType('session.context.append').single['content'], [
+      {'type': 'input_text', 'text': 'The user typed (instead of speaking): Hello after retry'},
+    ]);
+  });
+
+  test('Stop rejects a queued image and permits only the subsequent ordinary turn', () async {
+    final h = await _Harness.create(micMode: MicMode.pushToTalk);
+    addTearDown(h.close);
+    await h.asleep();
+    final gate = h.configGate = Completer<void>();
+    addTearDown(() {
+      if (!gate.isCompleted) gate.complete();
+    });
+    final old = h.pipeline.sendText('Describe this image.', attachedImages: [imageFixture()]);
+    await waitFor(() => h.pipeline.status == SessionStatus.connecting);
+    h.pipeline.interrupt();
+    expect(await old, isFalse);
+    final fresh = h.pipeline.sendText('What is two plus two?');
+    gate.complete();
+    expect(await fresh, isTrue);
+    expect(h.models.expand((model) => model.requests), isEmpty);
+    expect(h.pipeline.conversation.messages.where((m) => m.kind == MessageKind.user).map((m) => m.text), [
+      'What is two plus two?',
+    ]);
+    expect(h.server.socket.ofType('session.context.append').single['content'], [
+      {'type': 'input_text', 'text': 'The user typed (instead of speaking): What is two plus two?'},
+    ]);
+  });
+
+  for (final replacement in ['conversation', 'reconnect', 'suspend']) {
+    test('$replacement rejects queued attachments before a new session can dispatch them', () async {
+      final h = await _Harness.create(micMode: MicMode.pushToTalk);
+      addTearDown(h.close);
+      await h.asleep();
+      final gate = h.configGate = Completer<void>();
+      addTearDown(() {
+        if (!gate.isCompleted) gate.complete();
+      });
+      final old = h.pipeline.sendText('Describe the old image.', attachedImages: [imageFixture()]);
+      await waitFor(() => h.pipeline.status == SessionStatus.connecting);
+      h.configGate = null;
+      if (replacement == 'conversation') {
+        await h.pipeline.switchConversation(Conversation());
+      } else if (replacement == 'reconnect') {
+        await h.pipeline.connect();
+      } else {
+        await h.pipeline.suspend();
+        await h.pipeline.resume();
+      }
+      expect(await old, isFalse);
+      gate.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(h.models.expand((model) => model.requests), isEmpty);
+      expect(h.pipeline.conversation.messages.where((m) => m.kind == MessageKind.user), isEmpty);
+      expect(h.server.socket.ofType('session.context.append'), isEmpty);
+    });
+  }
+
+  test('a target captured before Stop cannot send after asynchronous attachment preparation', () async {
+    final h = await _Harness.create(micMode: MicMode.pushToTalk);
+    addTearDown(h.close);
+    final old = h.pipeline.captureTypedSendTarget();
+    h.pipeline.interrupt();
+    expect(await h.pipeline.sendText('Describe this image.', attachedImages: [imageFixture()], target: old), isFalse);
+    expect(h.models.expand((model) => model.requests), isEmpty);
+    expect(h.pipeline.conversation.messages.where((m) => m.kind == MessageKind.user), isEmpty);
   });
 
   test('a live push-to-talk wake during close never reenables the retiring capture', () async {
@@ -377,8 +601,11 @@ void main() {
     h.pipeline.sendText('A second message');
     expect(h.server.calls, hasLength(1));
     gate.complete();
-    await waitFor(() => h.server.calls.length == 2 && h.pipeline.status == SessionStatus.connected);
-    await waitFor(() => h.server.socket.ofType('session.context.append').length == 2);
+    await waitFor(() => h.server.calls.length == 3 && h.pipeline.status == SessionStatus.connected);
+    await waitFor(() => h.server.sockets.expand((socket) => socket.ofType('session.context.append')).length == 2);
+    expect(h.server.sockets[1].ofType('session.context.append'), hasLength(1));
+    expect(h.server.sockets[2].ofType('session.context.append'), hasLength(1));
+    expect(h.transports[1].closed, isTrue, reason: 'New input replaces the unanswered call without replay.');
     expect(h.pipeline.conversation.messages.where((m) => m.kind == MessageKind.user), hasLength(2));
     expect(h.audio.micOpens, isEmpty, reason: 'a cancelled handoff never opens a redundant wake mic');
     expect(h.violations, isEmpty);
@@ -445,6 +672,11 @@ void main() {
       expect(h.pipeline.standby, isFalse);
       expect(h.transports.single.closed, isFalse);
       h.toolGate.complete();
+      await waitFor(() => h.server.socket.ofType('delegation.context.append').isNotEmpty);
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(h.pipeline.standby, isFalse, reason: 'Completed work still awaits its live outcome.');
+      h.server.socket.turn('created', 'assistant', 100, 0, '');
+      h.server.socket.turn('done', 'assistant', 100, 100, 'Finished.');
       await h.asleep();
     });
   }

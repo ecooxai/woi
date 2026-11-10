@@ -36,6 +36,78 @@ void main() {
     await expectLater(AndroidInputControl().showKeyboard(), throwsStateError);
   });
 
+  test('scroll sends bounded direction, amount and physical pane anchor', () async {
+    messenger.setMockMethodCallHandler(AndroidBridge.method, (call) async {
+      calls.add(call);
+      return {
+        'direction': 'up',
+        'completed_amount': 0.5,
+        'delivery': 'dispatched',
+        'backend': 'android_accessibility_gesture',
+        'scroll_event_observed': false,
+        'viewport': [0, 80, 1080, 1600],
+        'gestures': [
+          [420, 400, 420, 900],
+        ],
+      };
+    });
+    final receipt = await AndroidInputControl().scroll(
+      direction: ScrollDirection.up,
+      amount: 0.5,
+      at: const Point(420, 700),
+      strategy: 'gesture',
+    );
+    expect(calls.single.method, 'scroll');
+    expect(calls.single.arguments, {'direction': 'up', 'amount': 0.5, 'x': 420, 'y': 700, 'strategy': 'gesture'});
+    expect(receipt['scroll_event_observed'], false);
+    expect(receipt['delivery'], 'dispatched');
+  });
+
+  test('invalid scrolls emit no native input and partial receipts are errors', () async {
+    final input = AndroidInputControl();
+    for (final amount in [0.0, 5.1, double.nan, double.infinity]) {
+      await expectLater(input.scroll(direction: ScrollDirection.down, amount: amount), throwsArgumentError);
+    }
+    expect(calls, isEmpty);
+    messenger.setMockMethodCallHandler(
+      AndroidBridge.method,
+      (_) async => {
+        'direction': 'down',
+        'completed_amount': 1,
+        'delivery': 'dispatched',
+        'backend': 'android_accessibility_gesture',
+        'scroll_event_observed': false,
+      },
+    );
+    await expectLater(input.scroll(direction: ScrollDirection.down, amount: 2), throwsStateError);
+  });
+
+  test('keyboard visibility retains truthful receiving capabilities and dismissal', () async {
+    messenger.setMockMethodCallHandler(AndroidBridge.method, (call) async {
+      calls.add(call);
+      return call.method == 'showKeyboard'
+          ? {
+              'requested': true,
+              'visible': true,
+              'focus_changed': false,
+              'backend': 'woi_touch_keyboard',
+              'input_connection': false,
+              'text_target': false,
+              'text_input_available': false,
+              'exact_keys_available': false,
+              'navigation_without_editor': ['back', 'pageup', 'pagedown'],
+            }
+          : {'hidden': true, 'visible': false};
+    });
+    final input = AndroidInputControl();
+    final shown = await input.showKeyboard();
+    expect(shown['visible'], true);
+    expect(shown['input_connection'], false);
+    expect(shown['text_input_available'], false);
+    expect((await input.hideKeyboard())['visible'], false);
+    expect(calls.map((call) => call.method), ['showKeyboard', 'hideKeyboard']);
+  });
+
   test('left tap and right long press retain their actual native button', () async {
     final input = AndroidInputControl();
     await input.click(120, 230);

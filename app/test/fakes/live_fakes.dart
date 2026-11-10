@@ -65,7 +65,8 @@ class FakeLiveTransport implements LiveRtcTransport {
 
 /// Sideband WebSocket; the test plays the server.
 class FakeSideband implements RealtimeSocket {
-  FakeSideband(this.uri, this.headers);
+  FakeSideband(this.uri, this.headers, {this.autoAcknowledgeContext = false});
+  final bool autoAcknowledgeContext;
   final Uri uri;
   final Map<String, String> headers;
   final _in = StreamController<String>.broadcast(sync: true);
@@ -84,7 +85,21 @@ class FakeSideband implements RealtimeSocket {
   }
 
   @override
-  void send(String text) => sent.add((jsonDecode(text) as Map).cast<String, Object?>());
+  void send(String text) {
+    final event = (jsonDecode(text) as Map).cast<String, Object?>();
+    sent.add(event);
+    if (autoAcknowledgeContext &&
+        (event['type'] == 'session.context.append' || event['type'] == 'delegation.context.append')) {
+      Timer.run(
+        () => push({
+          'type': event['type'] == 'session.context.append'
+              ? 'session.context.appended'
+              : 'delegation.context.appended',
+          if (event['delegation_item_id'] != null) 'delegation_item_id': event['delegation_item_id'],
+        }),
+      );
+    }
+  }
 
   @override
   Future<void> close([int? code, String? reason]) async {
@@ -140,6 +155,7 @@ class FakeLiveServer {
   final calls = <(Uri, Map<String, String>, Map<String, Object?>)>[];
   final sockets = <FakeSideband>[];
   bool autoStart = true;
+  bool autoAcknowledgeContext = false;
 
   FakeSideband get socket => sockets.last;
 
@@ -149,7 +165,7 @@ class FakeLiveServer {
   }
 
   Future<RealtimeSocket> connect(Uri uri, Map<String, String> headers) async {
-    final s = FakeSideband(uri, headers);
+    final s = FakeSideband(uri, headers, autoAcknowledgeContext: autoAcknowledgeContext);
     sockets.add(s);
     if (autoStart) {
       Timer.run(() => s.push({'type': 'session.started', 'session': <String, Object?>{}}));
@@ -160,6 +176,7 @@ class FakeLiveServer {
 
 /// Scripted Responses model: each [respond] pops the next turn.
 class FakeDelegationModel extends DelegationModel {
+  final receivedInstructions = <String>[];
   FakeDelegationModel(this.turns, {this.latency = Duration.zero});
   final List<DelegationModelTurn> turns;
   final Duration latency;
@@ -177,6 +194,7 @@ class FakeDelegationModel extends DelegationModel {
     void Function(DelegationToolCall call)? onToolCall,
   }) async {
     requests.add((model: model, input: List.of(input), tools: tools));
+    receivedInstructions.add(instructions);
     reasoningEfforts.add(reasoningEffort);
     await Future<void>.delayed(latency);
     final t = turns.isEmpty ? const DelegationModelTurn(text: 'Nothing to do.', calls: []) : turns.removeAt(0);

@@ -151,3 +151,28 @@ voice also uses (`note_control` `copy` + `what`, fast path "copy this paragraph"
   - live compaction tests
   - real compressor and delegate calls
   - prints latencies; set `WOI_REALTIME_MODEL` to try another model
+
+
+### Android AI camera and screen sharing
+
+The `camera` tool supports `open`, `close`, `status`, and `switch` (`facing: front|back` on Android).
+The Android `screen_share` tool supports `start`, `stop`, and `status`. Explicit typed requests such as
+"open the camera", "switch to the front camera", "share my screen", and "stop sharing my screen" use
+that same tool registry locally. Voice backends with native tools receive these schemas; gpt-live uses
+its existing delegation route. Questions, quoted instructions, and conditional speech do not take the
+local capture shortcut.
+
+Android owns the real camera permission and screen sharing consent dialogs. Capture reports
+`permission_pending`, then `starting`, and only reports `active` after its first frame. `denied` and
+`error` remain inactive. Stop also cancels a pending request. A visible camera/mediaProjection foreground
+service keeps explicitly requested capture running while the assistant is over another app; its Stop
+capture notification releases both sources. Front/back switching waits for the new camera's first frame.
+The manual buttons and tools share these states, including pending/cancel controls.
+
+Focused regressions: `test/platform/android_media_control_test.dart`, `test/media_capture_controller_test.dart`,
+`test/camera_media_test.dart`, and `test/live_webrtc_backend_test.dart`. The test APK's `PythonInstrumentation`
+accepts `-e group media_capture` for native dispatch, first frames, foreground camera ownership, switching,
+cancellation and failure states. `-e group media_capture_screen` additionally waits for the operator to
+complete the genuine Android screen sharing consent. Neither group grants permissions, clicks consent,
+saves frames, starts Flutter, or calls a model; both release capture in cleanup. Also verify the normal
+installed assistant/background path, since instrumentation can affect Android activity-start eligibility.

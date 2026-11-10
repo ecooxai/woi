@@ -1,5 +1,11 @@
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image/image.dart' as img;
 import 'package:woi/core/app_controller.dart';
 import 'package:woi/core/auth/auth.dart';
 import 'package:woi/core/models/message.dart';
@@ -13,6 +19,7 @@ import 'package:woi/ui/screens/history_drawer.dart';
 import 'package:woi/ui/screens/home_screen.dart';
 import 'package:woi/ui/theme.dart';
 import 'package:woi/ui/widgets/input_bar.dart';
+import 'package:woi/ui/widgets/controls.dart';
 
 import '../fakes/fakes.dart';
 
@@ -24,6 +31,7 @@ class _Env {
   final dismissed = <int>[];
   final opened = <int>[];
   final fractions = <double>[];
+  Completer<void>? reconnectGate;
 
   Future<void> start(WidgetTester t, {bool mobile = false}) async {
     await t.runAsync(() async {
@@ -43,7 +51,7 @@ class _Env {
               )
             : s,
         confirmations: FakeConfirmations(),
-        backendFactory: ScriptedBackend.new,
+        backendFactory: () => ScriptedBackend()..connectGate = reconnectGate,
         authManager: CodexAuthManager(path: '${fp.root.path}/no-auth.json'),
       );
       await c.init();
@@ -115,7 +123,7 @@ void main() {
     await env.stop(t);
   });
 
-  testWidgets('hosts the four main tabs; Note and Terminal open in the panel, the app tab is untouched', (t) async {
+  testWidgets('hosts all five main tabs with stable shortcuts; the app tab is untouched', (t) async {
     final env = _Env();
     await env.start(t);
     final appView = env.c.actions.view.value;
@@ -132,8 +140,8 @@ void main() {
       ),
     );
     await t.pump();
-    for (final label in ['Note', 'Chat', 'Terminal', 'Settings']) {
-      expect(find.byTooltip('$label (Ctrl+${HomeView.values.byName(label.toLowerCase()).index + 1})'), findsOneWidget);
+    for (final (label, shortcut) in [('Note', 1), ('Chat', 2), ('Terminal', 3), ('Clipboard', 5), ('Settings', 4)]) {
+      expect(find.byTooltip('$label (Ctrl+$shortcut)'), findsOneWidget);
     }
     final tabs = find.byKey(const ValueKey('assist-tabs'));
     await t.tap(find.descendant(of: tabs, matching: find.byTooltip('Note (Ctrl+1)')));
@@ -149,13 +157,30 @@ void main() {
     await t.pump();
     expect(find.byKey(const ValueKey('terminal-view')), findsOneWidget);
 
+    final clipboardTab = find.descendant(of: tabs, matching: find.byKey(const ValueKey('view-clipboard')));
+    await t.ensureVisible(clipboardTab);
+    await t.pump();
+    await t.tap(clipboardTab);
+    await t.pump();
+    expect(find.byKey(const ValueKey('clipboard-view')), findsOneWidget);
+    expect(find.textContaining('Keeps the latest 50 items').hitTestable(), findsOneWidget);
+    expect(find.byKey(const ValueKey('clipboard-capture')).hitTestable(), findsOneWidget);
+    await t.tap(find.byKey(const ValueKey('contextual-find-button')));
+    await t.pump();
+    expect(find.byKey(const ValueKey('contextual-find-input')).hitTestable(), findsOneWidget);
+    await t.enterText(find.byKey(const ValueKey('contextual-find-input')), 'missing clipboard item');
+    await t.pump();
+    await t.sendKeyEvent(LogicalKeyboardKey.escape);
+    await t.pump();
+    expect(t.takeException(), isNull);
+
     final settingsTab = find.descendant(of: tabs, matching: find.byKey(const ValueKey('view-settings')));
     await t.ensureVisible(settingsTab);
     await t.pump();
     await t.tap(settingsTab);
     await t.pump();
     expect(find.byKey(const ValueKey('settings-view')), findsOneWidget);
-    expect(seen, [HomeView.note, HomeView.terminal, HomeView.settings]);
+    expect(seen, [HomeView.note, HomeView.terminal, HomeView.clipboard, HomeView.settings]);
     // The full app's selected tab is kept apart.
     expect(env.c.actions.view.value, appView);
 
@@ -222,6 +247,261 @@ void main() {
     expect(t.takeException(), isNull);
     await env.stop(t);
   });
+
+  for (final (size, keyboard) in [(const Size(400, 800), 300.0), (const Size(393, 572), 260.0)]) {
+    testWidgets('keyboard with three attachments keeps assistant actions reachable at ${size.width}x${size.height}', (
+      t,
+    ) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      final image = Uint8List.fromList(img.encodePng(img.Image(width: 3, height: 3)));
+      var picks = 0;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('woi/files'),
+        (call) async {
+          expect(call.method, 'pickFiles');
+          picks++;
+          return [
+            {'bytes': image, 'name': 'selected.png', 'mimeType': 'image/png'},
+            {'bytes': Uint8List.fromList(utf8.encode('Synthetic note')), 'name': 'notes.txt', 'mimeType': 'text/plain'},
+            {'bytes': Uint8List.fromList(utf8.encode('{}')), 'name': 'data.json', 'mimeType': 'application/json'},
+          ];
+        },
+      );
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+          const MethodChannel('woi/files'),
+          null,
+        ),
+      );
+      final insets = ValueNotifier<double>(keyboard);
+      addTearDown(insets.dispose);
+      final env = _Env();
+      await env.start(t, mobile: true);
+      Future<void>? connecting;
+      try {
+        await t.binding.setSurfaceSize(size);
+        addTearDown(() => t.binding.setSurfaceSize(null));
+        await t.pumpWidget(
+          MaterialApp(
+            theme: buildWoiTheme(),
+            home: ValueListenableBuilder<double>(
+              valueListenable: insets,
+              builder: (context, inset, _) => MediaQuery(
+                data: MediaQuery.of(context).copyWith(viewInsets: EdgeInsets.only(bottom: inset)),
+                child: Scaffold(
+                  resizeToAvoidBottomInset: false,
+                  backgroundColor: Colors.transparent,
+                  body: AssistPanel(controller: env.c, initialView: HomeView.note, onDismiss: () {}, onOpenApp: () {}),
+                ),
+              ),
+            ),
+          ),
+        );
+        await _settle(t);
+        final draft = t.widget<InputBar>(find.byType(InputBar)).draft!;
+        draft.insertText('Review these three files');
+        await t.pump();
+        await t.tap(find.byKey(const ValueKey('attach-files')));
+        await _settle(t);
+        expect(picks, 1);
+        expect(draft.attachments, hasLength(3));
+        expect(t.takeException(), isNull, reason: 'The populated composer must fit above the keyboard.');
+        final composerState = t.state(find.byType(Composer));
+        final focus = t.widget<InputBar>(find.byType(InputBar)).focusNode!;
+        final selected = draft.text.selection;
+
+        Future<void> choose(String view, {TextSelection? keepSelection}) async {
+          final tab = find.byKey(ValueKey('view-$view'));
+          await t.ensureVisible(tab);
+          await t.tap(tab);
+          await t.pumpAndSettle();
+          expect(t.takeException(), isNull, reason: 'The $view pane must remain usable with keyboard and attachments.');
+          expect(draft.text.selection, keepSelection ?? selected);
+          if (view == 'clipboard') {
+            expect(find.byKey(const ValueKey('clipboard-capture')).hitTestable(), findsOneWidget);
+          } else {
+            expect(find.byKey(const ValueKey('note-editor-field')).hitTestable(), findsOneWidget);
+          }
+        }
+
+        void expectActions({bool pending = false}) {
+          final panel = t.getRect(find.byKey(const ValueKey('assist-panel')));
+          for (final key in ['attach-files', 'camera-toggle', pending ? 'stop' : 'send']) {
+            final button = find.byKey(ValueKey(key));
+            expect(button.hitTestable(), findsOneWidget, reason: '$key is reachable above the keyboard.');
+            final rect = t.getRect(button);
+            expect(rect.width, greaterThanOrEqualTo(48));
+            expect(rect.top, greaterThanOrEqualTo(panel.top));
+            expect(rect.bottom, lessThanOrEqualTo(panel.bottom + 0.5));
+          }
+        }
+
+        await choose('clipboard');
+        final scrollbar = find.byKey(const ValueKey('narrow-content-scrollbar'));
+        final bar = t.widget<Scrollbar>(scrollbar);
+        expect(bar.thumbVisibility, isTrue);
+        expect(bar.interactive, isTrue);
+        final scroll = bar.controller!;
+        expect(
+          scroll.position.pixels,
+          closeTo(0, 0.5),
+          reason: 'A selected pane must stay in view after focus settles.',
+        );
+        final headerTop = t.getRect(find.byKey(const ValueKey('view-clipboard'))).top;
+        final scrollRect = t.getRect(scrollbar);
+        await t.dragFrom(Offset(scrollRect.right - 3, scrollRect.top + 10), Offset(0, scrollRect.height - 20));
+        await t.pumpAndSettle();
+        expect(scroll.position.pixels, greaterThan(0), reason: 'The visible thumb accepts a real touch drag.');
+        expectActions();
+        expect(t.getRect(find.byKey(const ValueKey('view-clipboard'))).top, headerTop);
+
+        await choose('note');
+        await choose('clipboard');
+        final beforeSwipe = scroll.position.pixels;
+        expect(find.text('3 attachments').hitTestable(), findsOneWidget);
+        await t.drag(find.text('3 attachments'), const Offset(0, -320));
+        await t.pumpAndSettle();
+        expect(
+          scroll.position.pixels,
+          greaterThan(beforeSwipe),
+          reason: 'An ordinary visible region scrolls the outer content.',
+        );
+        expectActions();
+
+        final tray = find.byKey(const ValueKey('chat-attachments-scroll'));
+        await t.ensureVisible(tray);
+        await t.pumpAndSettle();
+        await t.drag(tray, const Offset(-500, 0));
+        await t.pumpAndSettle();
+        final remove = find.byKey(const ValueKey('remove-chat-attachment-2'));
+        expect(remove.hitTestable(), findsOneWidget);
+        expect(t.getSize(remove).width, greaterThanOrEqualTo(48));
+        await t.tap(remove);
+        await t.pumpAndSettle();
+        await t.ensureVisible(find.text('2 attachments'));
+        await t.pumpAndSettle();
+        expect(find.text('2 attachments').hitTestable(), findsOneWidget);
+        expect(draft.attachments, hasLength(2));
+
+        await choose('note');
+        await choose('clipboard');
+        await t.tap(find.byKey(const ValueKey('contextual-find-button')));
+        await t.pump();
+        await t.enterText(find.byKey(const ValueKey('contextual-find-input')), 'missing clipboard item');
+        await t.pumpAndSettle();
+        expect(t.takeException(), isNull, reason: 'Search chrome must leave the Clipboard pane its usable height.');
+        expect(find.byKey(const ValueKey('clipboard-capture')).hitTestable(), findsOneWidget);
+        await t.enterText(find.byKey(const ValueKey('contextual-find-input')), '');
+        await t.sendKeyEvent(LogicalKeyboardKey.escape);
+        await t.pumpAndSettle();
+        await choose('note');
+
+        final field = find.byKey(const ValueKey('composer-field'));
+        await t.ensureVisible(field);
+        await t.tap(field);
+        draft.text.selection = const TextSelection(baseOffset: 7, extentOffset: 12);
+        await t.pumpAndSettle();
+        final selection = draft.text.selection;
+        expect(focus.hasFocus, isTrue);
+        expect(field.hitTestable(), findsOneWidget);
+
+        Future<void> resize(bool large) async {
+          await t.binding.setSurfaceSize(large ? Size(size.width, 1100) : size);
+          insets.value = large ? 0 : keyboard;
+          await _settle(t);
+          expect(t.takeException(), isNull);
+          expect(identical(t.state(find.byType(Composer)), composerState), isTrue);
+          expect(identical(t.widget<InputBar>(find.byType(InputBar)).draft, draft), isTrue);
+          expect(draft.text.text, 'Review these three files');
+          expect(draft.text.selection, selection);
+          expect(draft.attachments, hasLength(2));
+          expect(find.byKey(const PageStorageKey('narrow-content-scroll')), large ? findsNothing : findsOneWidget);
+        }
+
+        // Reset the outer offset while focus stays held, so the return from
+        // the large viewport cannot pass merely by restoring an old offset.
+        scroll.jumpTo(0);
+        await t.pumpAndSettle();
+        expect(scroll.offset, closeTo(0, 0.5));
+        await resize(true);
+        expect(focus.hasFocus, isTrue);
+        expect(field.hitTestable(), findsOneWidget);
+        await resize(false);
+        expect(focus.hasFocus, isTrue);
+        expect(field.hitTestable(), findsOneWidget, reason: 'Focused input reveals itself after the inset round-trip.');
+        final revealed = t.getRect(field);
+        final usable = t.getRect(scrollbar);
+        expect(revealed.top, greaterThanOrEqualTo(usable.top - 0.5));
+        expect(revealed.bottom, lessThanOrEqualTo(usable.bottom + 0.5));
+
+        env.reconnectGate = Completer<void>();
+        connecting = env.c.pipeline.connect();
+        await _settle(t);
+        await t.ensureVisible(find.byKey(const ValueKey('send')));
+        await t.tap(find.byKey(const ValueKey('send')));
+        await _settle(t);
+        expect(draft.sending, isTrue);
+        expectActions(pending: true);
+        final pendingFocus = focus.hasFocus;
+        await resize(true);
+        expect(draft.sending, isTrue);
+        expect(focus.hasFocus, pendingFocus);
+        expectActions(pending: true);
+        await resize(false);
+        expect(draft.sending, isTrue);
+        expect(focus.hasFocus, pendingFocus);
+        expectActions(pending: true);
+        await t.tap(find.byKey(const ValueKey('stop')));
+        await _settle(t);
+        expect(draft.sending, isFalse);
+        expect(draft.text.selection, selection);
+        expect(draft.attachments, hasLength(2));
+        final backend = env.c.pipeline.backend! as ScriptedBackend;
+        expect(backend.texts, isEmpty);
+        expect(backend.images, isEmpty);
+        env.reconnectGate!.complete();
+        await _settle(t);
+        await t.runAsync(() => connecting!);
+        expect(backend.texts, isEmpty, reason: 'A cancelled pending send must not replay after resize.');
+        expect(backend.images, isEmpty);
+
+        focus.requestFocus();
+        await t.pumpAndSettle();
+        draft.text.selection = selection;
+        for (var remaining = 2; remaining > 0; remaining--) {
+          final removeFirst = find.byKey(const ValueKey('remove-chat-attachment-0'));
+          await t.ensureVisible(removeFirst);
+          await t.pumpAndSettle();
+          await t.tap(removeFirst);
+          await t.pumpAndSettle();
+          expect(draft.attachments, hasLength(remaining - 1));
+        }
+        expect(identical(t.state(find.byType(Composer)), composerState), isTrue);
+        expect(draft.text.text, 'Review these three files');
+        expect(draft.text.selection, selection);
+        expect(focus.hasFocus, isTrue);
+        expect(find.byKey(const PageStorageKey('narrow-content-scroll')), findsNothing);
+        expectActions();
+        await choose('clipboard', keepSelection: selection);
+        final finalBar = find.byKey(const ValueKey('narrow-content-scrollbar'));
+        if (finalBar.evaluate().isNotEmpty) {
+          final rect = t.getRect(finalBar);
+          await t.dragFrom(Offset(rect.right - 3, rect.top + 10), Offset(0, rect.height - 20));
+          await t.pumpAndSettle();
+        }
+        expectActions();
+      } finally {
+        if (env.reconnectGate case final gate? when !gate.isCompleted) gate.complete();
+        if (connecting != null) {
+          await _settle(t);
+          await t.runAsync(() => connecting!);
+        }
+        await env.stop(t);
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+  }
 
   testWidgets('drag handle resizes up to 95% and down to 35%, and reports the size', (t) async {
     final env = _Env();

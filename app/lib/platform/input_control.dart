@@ -24,6 +24,26 @@ abstract interface class AcknowledgedTextInput {
   Future<TextInputReceipt> typeTextWithReceipt(String text);
 }
 
+enum ScrollDirection { up, down, left, right }
+
+/// Optional viewport scrolling capability. Direction names where to read
+/// next (down reveals later content); the platform owns the opposite gesture.
+abstract interface class ScreenScrollInput {
+  Future<Map<String, Object?>> scroll({
+    required ScrollDirection direction,
+    double amount = 1,
+    Point<int>? at,
+    String strategy = 'auto',
+  });
+}
+
+/// A real touch keyboard can be visible without a receiving text editor.
+/// Its receipt reports those two capabilities independently.
+abstract interface class TouchKeyboardInput {
+  Future<Map<String, Object?>> showKeyboard();
+  Future<Map<String, Object?>> hideKeyboard();
+}
+
 /// Synthetic mouse/keyboard input, in real screen coordinates.
 abstract class InputControl {
   Future<void> moveMouse(int x, int y);

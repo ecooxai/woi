@@ -13,6 +13,8 @@ import '../platform/platform_services.dart';
 import '../platform/screen_capture.dart';
 import '../platform/shell.dart';
 import 'confirmation.dart';
+import 'clipboard_tool.dart';
+import 'pointer_tools.dart';
 import 'python_tool.dart';
 import 'tool_registry.dart';
 
@@ -84,35 +86,22 @@ Future<ClickPlan> planClick({
   Screenshot? shot,
   ClickLocator? locator,
 }) async {
-  final guess = x == null || y == null
-      ? null
-      : (shot?.toScreen(x, y) ?? Point(x, y));
+  final guess = x == null || y == null ? null : (shot?.toScreen(x, y) ?? Point(x, y));
   final t = target.trim();
   if (shot != null) {
     // "the center of the screen": no element to find, skip the ~2 s grounding.
-    final pos = position.trim().isNotEmpty && _mayBeScreenSpot(t)
-        ? screenPositionPoint(position, shot)
-        : null;
+    final pos = position.trim().isNotEmpty && _mayBeScreenSpot(t) ? screenPositionPoint(position, shot) : null;
     if (pos != null) {
-      return (
-        point: pos,
-        info: const <String, Object?>{'located_by': 'position'},
-      );
+      return (point: pos, info: const <String, Object?>{'located_by': 'position'});
     }
     final abs = absoluteScreenPoint(t, shot);
     if (abs != null) {
-      return (
-        point: abs,
-        info: const <String, Object?>{'located_by': 'absolute'},
-      );
+      return (point: abs, info: const <String, Object?>{'located_by': 'absolute'});
     }
     final said = _mayBeScreenSpot(t) ? userScreenPosition(userText) : null;
     final heard = said == null ? null : screenPositionPoint(said, shot);
     if (heard != null) {
-      return (
-        point: heard,
-        info: const <String, Object?>{'located_by': 'utterance'},
-      );
+      return (point: heard, info: const <String, Object?>{'located_by': 'utterance'});
     }
   }
   if (t.isNotEmpty && locator != null) {
@@ -121,32 +110,19 @@ Future<ClickPlan> planClick({
       return (point: found.point, info: found.toJson());
     } on LocateFailure catch (e) {
       if (guess == null) {
-        throw ToolFailure(
-          'could not find "$t" on screen (${e.reason}); give x/y or describe it differently',
-        );
+        throw ToolFailure('could not find "$t" on screen (${e.reason}); give x/y or describe it differently');
       }
-      return (
-        point: guess,
-        info: {'located_by': 'model_xy', 'locate_error': e.reason},
-      );
+      return (point: guess, info: {'located_by': 'model_xy', 'locate_error': e.reason});
     }
   }
   if (guess == null) {
-    throw ToolFailure(
-      t.isEmpty ? 'give target (what to click), position or x/y' : 'give x/y',
-    );
+    throw ToolFailure(t.isEmpty ? 'give target (what to click), position or x/y' : 'give x/y');
   }
   return (point: guess, info: const <String, Object?>{});
 }
 
 /// click_screen `position` values.
-const screenPositions = [
-  'center',
-  'top_left',
-  'top_right',
-  'bottom_left',
-  'bottom_right',
-];
+const screenPositions = ['center', 'top_left', 'top_right', 'bottom_left', 'bottom_right'];
 
 /// The screen point of a [screenPositions] value on the screen [shot] covers;
 /// null for an unknown value or an empty capture.
@@ -159,10 +135,7 @@ Point<int>? screenPositionPoint(String position, Screenshot shot) {
   // Corners: a few pixels in, so the click lands on the screen (not a hot edge).
   const inset = 5;
   final top = p.startsWith('top'), left = p.endsWith('left');
-  return Point(
-    shot.originX + (left ? inset : w - 1 - inset),
-    shot.originY + (top ? inset : h - 1 - inset),
-  );
+  return Point(shot.originX + (left ? inset : w - 1 - inset), shot.originY + (top ? inset : h - 1 - inset));
 }
 
 final _absTarget = RegExp(
@@ -193,9 +166,8 @@ final _cornerWords = RegExp(r'\b(top|upper|bottom|lower)[\s-]*(left|right)\b');
 final _screenWord = RegExp(r'\b(?:screen|desktop|display|monitor)s?\b');
 
 /// The [screenPositions] value of a centre/corner phrase match.
-String _positionOf(String? vertical, String? horizontal) => vertical == null
-    ? 'center'
-    : '${vertical == 'top' || vertical == 'upper' ? 'top' : 'bottom'}_$horizontal';
+String _positionOf(String? vertical, String? horizontal) =>
+    vertical == null ? 'center' : '${vertical == 'top' || vertical == 'upper' ? 'top' : 'bottom'}_$horizontal';
 
 /// A click_screen target that names a position on the screen itself
 /// ("center of the screen", "top left corner"), not an element: its point
@@ -204,10 +176,7 @@ Point<int>? absoluteScreenPoint(String target, Screenshot shot) {
   var t = target.trim().toLowerCase();
   // The model often adds a note: "center of the screen (empty background area
   // in the main workspace)". Drop it unless it names an element.
-  t = t.replaceAllMapped(
-    RegExp(r'\s*\(([^)]*)\)'),
-    (m) => namesElement(m[1]!) ? m[0]! : '',
-  );
+  t = t.replaceAllMapped(RegExp(r'\s*\(([^)]*)\)'), (m) => namesElement(m[1]!) ? m[0]! : '');
   t = t.replaceAll(RegExp('["\']'), '').replaceAll(_emptyAreaTail, '');
   final m = _absTarget.firstMatch(t.trim());
   if (m != null) {
@@ -217,10 +186,7 @@ Point<int>? absoluteScreenPoint(String target, Screenshot shot) {
   // location in the middle of the screen": a centre or corner word plus a
   // screen word, and no element anywhere.
   if (namesElement(target) || !_screenWord.hasMatch(t)) return null;
-  final corners = _cornerWords
-      .allMatches(t)
-      .map((c) => _positionOf(c[1], c[2]))
-      .toSet();
+  final corners = _cornerWords.allMatches(t).map((c) => _positionOf(c[1], c[2])).toSet();
   final center = _centerWord.hasMatch(t);
   if (corners.length + (center ? 1 : 0) != 1) return null; // none, or ambiguous
   return screenPositionPoint(center ? 'center' : corners.single, shot);
@@ -231,17 +197,14 @@ final _saidPosition = RegExp(
   r'\s+(?:of|on)\s+(?:the\s+|my\s+|this\s+)?(?:whole\s+|entire\s+)?(?:screen|display|desktop|monitor)\b',
 );
 
-final _spotWord = RegExp(
-  r'\b(?:center|centre|middle|corner|empty|blank|background|wallpaper|desktop|screen)\b',
-);
+final _spotWord = RegExp(r'\b(?:center|centre|middle|corner|empty|blank|background|wallpaper|desktop|screen)\b');
 
 /// Whether a target may describe a screen spot rather than an element: no
 /// quoted label, and any element word comes with a spot word ("empty area
 /// beside the Woi window", not "'OK' button" or "gear icon").
 bool _mayBeScreenSpot(String target) {
   final t = target.toLowerCase();
-  if (t.contains(RegExp('["\u2018\u201c\u201d]')) ||
-      RegExp(r"(^|\s)'").hasMatch(t)) {
+  if (t.contains(RegExp('["\u2018\u201c\u201d]')) || RegExp(r"(^|\s)'").hasMatch(t)) {
     return false;
   }
   return !_elementWord.hasMatch(t) || _spotWord.hasMatch(t);
@@ -256,30 +219,18 @@ String? userScreenPosition(String utterance) {
   if (u.trim().isEmpty || _elementWord.hasMatch(u)) {
     return null; // apostrophes are fine here
   }
-  final found = _saidPosition
-      .allMatches(u)
-      .map((m) => _positionOf(m[2], m[3]))
-      .toSet();
+  final found = _saidPosition.allMatches(u).map((m) => _positionOf(m[2], m[3])).toSet();
   return found.length == 1 ? found.single : null;
 }
 
 const _maxDirEntries = 300;
 
-ToolSpec _spec(
-  String name,
-  String description,
-  Map<String, Object?> props, [
-  List<String> required = const [],
-]) => ToolSpec(
-  name: name,
-  description: description,
-  parameters: {
-    'type': 'object',
-    'properties': props,
-    'required': required,
-    'additionalProperties': false,
-  },
-);
+ToolSpec _spec(String name, String description, Map<String, Object?> props, [List<String> required = const []]) =>
+    ToolSpec(
+      name: name,
+      description: description,
+      parameters: {'type': 'object', 'properties': props, 'required': required, 'additionalProperties': false},
+    );
 
 List<ToolDefinition> builtinTools(ToolEnvironment env) {
   final p = env.platform;
@@ -294,22 +245,11 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
   Map<String, Object?> writeResult(WriteOutcome o) {
     if (!o.approved) throw ToolDenied('user rejected the change to ${o.path}');
     if (!o.written) throw ToolFailure('write failed: ${o.error}');
-    return {
-      'ok': true,
-      'path': o.path,
-      'bytes': o.bytes,
-      '+': o.added,
-      '-': o.removed,
-    };
+    return {'ok': true, 'path': o.path, 'bytes': o.bytes, '+': o.added, '-': o.removed};
   }
 
   return [
-    pythonTool(
-      runner: p.python,
-      files: p.files,
-      confirmations: env.confirmations,
-      settings: env.settings,
-    ),
+    pythonTool(runner: p.python, files: p.files, confirmations: env.confirmations, settings: env.settings),
     ToolDefinition(
       spec: _spec(
         'take_screenshot',
@@ -319,10 +259,7 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
       ),
       handler: (args, call) async {
         final s = env.settings();
-        final shot = await p.screen.capture(
-          scale: s.screenshotScale,
-          jpegQuality: s.screenshotJpegQuality,
-        );
+        final shot = await p.screen.capture(scale: s.screenshotScale, jpegQuality: s.screenshotJpegQuality);
         env.lastScreenshot = shot;
         await env.onScreenshot(shot, 'Screenshot requested by tool');
         return {
@@ -332,6 +269,9 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
         };
       },
     ),
+    if (p.input is ScreenScrollInput)
+      scrollScreenTool(p.input as ScreenScrollInput, reference: () => env.lastScreenshot),
+    if (p.input is TouchKeyboardInput) hideKeyboardTool((p.input as TouchKeyboardInput).hideKeyboard),
     ToolDefinition(
       spec: _spec(
         'click_screen',
@@ -342,24 +282,10 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
             'For a spot on the screen itself rather than an element (e.g. "the center of the screen"), '
             'set position and leave target empty.',
         {
-          'target': {
-            'type': 'string',
-            'description':
-                'What to click: quoted visible label + kind + location',
-          },
-          'position': {
-            'type': 'string',
-            'enum': screenPositions,
-            'description': 'A screen spot, not an element',
-          },
-          'x': {
-            'type': 'integer',
-            'description': 'X in screenshot pixels (estimate)',
-          },
-          'y': {
-            'type': 'integer',
-            'description': 'Y in screenshot pixels (estimate)',
-          },
+          'target': {'type': 'string', 'description': 'What to click: quoted visible label + kind + location'},
+          'position': {'type': 'string', 'enum': screenPositions, 'description': 'A screen spot, not an element'},
+          'x': {'type': 'integer', 'description': 'X in screenshot pixels (estimate)'},
+          'y': {'type': 'integer', 'description': 'Y in screenshot pixels (estimate)'},
           'button': {
             'type': 'string',
             'enum': ['left', 'right', 'middle'],
@@ -388,9 +314,7 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
           locator: env.locator,
         );
         final sx = plan.point.x, sy = plan.point.y;
-        final button =
-            MouseButton.values.asNameMap()[args.str('button', 'left')] ??
-            MouseButton.left;
+        final button = MouseButton.values.asNameMap()[args.str('button', 'left')] ?? MouseButton.left;
         if (args.boolean('double')) {
           await p.input.doubleClick(sx, sy, button: button);
         } else {
@@ -412,14 +336,8 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
             'indicator appears for one second before control; user movement cancels it. '
             'Never retry input after the user takes control until a new user request.',
         {
-          'x': {
-            'type': 'integer',
-            'description': 'X in latest screenshot pixels',
-          },
-          'y': {
-            'type': 'integer',
-            'description': 'Y in latest screenshot pixels',
-          },
+          'x': {'type': 'integer', 'description': 'X in latest screenshot pixels'},
+          'y': {'type': 'integer', 'description': 'Y in latest screenshot pixels'},
           'position': {'type': 'string', 'enum': screenPositions},
         },
       ),
@@ -434,8 +352,7 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
             reference: env.lastScreenshot,
           );
         }
-        if (args.str('position').isEmpty &&
-            (args['x'] is! num || args['y'] is! num)) {
+        if (args.str('position').isEmpty && (args['x'] is! num || args['y'] is! num)) {
           throw ToolFailure('Give both x and y, or a screen position.');
         }
         final plan = await planClick(
@@ -500,10 +417,7 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
             'and exit code (output is truncated).',
         {
           'command': {'type': 'string'},
-          'timeout_s': {
-            'type': 'integer',
-            'description': 'Default 30, max 300',
-          },
+          'timeout_s': {'type': 'integer', 'description': 'Default 30, max 300'},
           'cwd': {
             'type': 'string',
             'description': 'Working directory (default: the workspace dir). ~ and \$HOME expand.',
@@ -521,9 +435,7 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
           call.onStatus?.call(ToolStatus.running);
         }
         final cwdArg = args.strOrNull('cwd');
-        final cwd = (cwdArg == null || cwdArg.trim().isEmpty)
-            ? p.files.workspaceDir
-            : p.files.resolveExisting(cwdArg);
+        final cwd = (cwdArg == null || cwdArg.trim().isEmpty) ? p.files.workspaceDir : p.files.resolveExisting(cwdArg);
         if (!await Directory(cwd).exists()) {
           throw ToolFailure(
             'working directory does not exist: $cwd'
@@ -531,14 +443,10 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
           );
         }
         final term = env.terminalShell;
-        final shell = term != null && env.settings().runBashInTerminal
-            ? term
-            : p.shell;
+        final shell = term != null && env.settings().runBashInTerminal ? term : p.shell;
         final r = await shell.run(
           cmd,
-          timeout: Duration(
-            seconds: args.integer('timeout_s', 30).clamp(1, 300),
-          ),
+          timeout: Duration(seconds: args.integer('timeout_s', 30).clamp(1, 300)),
           workingDirectory: cwd,
         );
         return {'ok': r.exitCode == 0 && !r.timedOut, ...r.toJson()};
@@ -568,12 +476,7 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
           limitLines: args.intOrNull('limit'),
         );
         if (r.isBinary) {
-          return {
-            'ok': false,
-            'path': r.path,
-            'binary': true,
-            'bytes': r.totalBytes,
-          };
+          return {'ok': false, 'path': r.path, 'binary': true, 'bytes': r.totalBytes};
         }
         return {
           'ok': true,
@@ -601,16 +504,12 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
         if (!await Directory(full).exists()) {
           throw ToolFailure('no such directory: $full');
         }
-        final entries = await p.files.list(
-          path,
-          showHidden: args.boolean('hidden'),
-        );
+        final entries = await p.files.list(path, showHidden: args.boolean('hidden'));
         return {
           'ok': true,
           'path': full,
           'entries': [for (final e in entries.take(_maxDirEntries)) e.toJson()],
-          if (entries.length > _maxDirEntries)
-            'more': entries.length - _maxDirEntries,
+          if (entries.length > _maxDirEntries) 'more': entries.length - _maxDirEntries,
         };
       },
     ),
@@ -625,11 +524,7 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
         ['path', 'content'],
       ),
       handler: (args, call) async {
-        final o = await p.files.write(
-          args.str('path'),
-          args.str('content'),
-          approve: (r) => approveWrite(r, call),
-        );
+        final o = await p.files.write(args.str('path'), args.str('content'), approve: (r) => approveWrite(r, call));
         return writeResult(o);
       },
     ),
@@ -659,18 +554,10 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
         if (count == 0) throw ToolFailure('old_string not found in $full');
         final all = args.boolean('replace_all');
         if (count > 1 && !all) {
-          throw ToolFailure(
-            'old_string matches $count times; add context or set replace_all',
-          );
+          throw ToolFailure('old_string matches $count times; add context or set replace_all');
         }
-        final updated = all
-            ? current.replaceAll(oldS, newS)
-            : current.replaceFirst(oldS, newS);
-        final o = await p.files.write(
-          path,
-          updated,
-          approve: (r) => approveWrite(r, call),
-        );
+        final updated = all ? current.replaceAll(oldS, newS) : current.replaceFirst(oldS, newS);
+        final o = await p.files.write(path, updated, approve: (r) => approveWrite(r, call));
         return {...writeResult(o), 'replacements': all ? count : 1};
       },
     ),
@@ -692,9 +579,7 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
         if (!await File(full).exists()) {
           throw ToolFailure('no such file: $full');
         }
-        final kind =
-            MediaKind.values.asNameMap()[args.strOrNull('kind')] ??
-            MediaItem.kindForPath(full);
+        final kind = MediaKind.values.asNameMap()[args.strOrNull('kind')] ?? MediaItem.kindForPath(full);
         final surface = await p.viewer.show(MediaItem(kind: kind, path: full));
         return {'ok': true, 'shown_in': surface.name, 'kind': kind.name};
       },
@@ -710,13 +595,10 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
         {
           'task': {
             'type': 'string',
-            'description': 'What the user asked for, e.g. "Write a Python script that finds duplicate files and save it"',
-          },
-          'context': {
-            'type': 'string',
             'description':
-                'Relevant details (paths, preferences); no answer text',
+                'What the user asked for, e.g. "Write a Python script that finds duplicate files and save it"',
           },
+          'context': {'type': 'string', 'description': 'Relevant details (paths, preferences); no answer text'},
         },
         ['task'],
       ),

@@ -7,16 +7,20 @@ import 'package:flutter/services.dart';
 import '../../core/app_actions.dart';
 import '../../core/app_controller.dart';
 import '../../core/context/context_manager.dart';
+import '../../core/clipboard/clipboard_history.dart';
 import '../../core/models/message.dart';
 import '../../core/pipeline/turn_pipeline.dart';
 import '../../core/settings/settings.dart';
 import '../../platform/media_viewer.dart';
 import '../notes/note_editor.dart';
+import '../clipboard/clipboard_panel.dart';
 import '../notes/note_tabs.dart';
 import '../terminal/terminal_panel.dart';
 import '../theme.dart';
 import '../widgets/banner.dart';
 import '../widgets/chat_transcript.dart';
+import '../widgets/chat_draft.dart';
+import '../widgets/clipboard_selection_area.dart';
 import '../widgets/context_meter.dart';
 import '../widgets/edit_review_card.dart';
 import '../widgets/empty_state.dart';
@@ -161,6 +165,11 @@ class WoiTabs extends StatefulWidget {
 
 class WoiTabsState extends State<WoiTabs> {
   final _composerFocus = FocusNode(debugLabel: 'composer');
+  final _narrowScroll = ScrollController();
+  ({Size size, double scale, bool scrolling, HomeView view})? _composerViewport;
+  bool _composerRevealQueued = false;
+  final _chatDraft = ChatDraftController();
+  HomeView _pasteTarget = HomeView.note;
   final _banners = BannerController();
   final _find = {for (final view in HomeView.values) view: ContextualFindController()};
   final _findButtonKey = GlobalKey<ContextualFindButtonState>();
@@ -172,6 +181,7 @@ class WoiTabsState extends State<WoiTabs> {
     HomeView.chat => 'messages',
     HomeView.terminal => 'terminal',
     HomeView.settings => 'settings',
+    HomeView.clipboard => 'clipboard history',
   };
   StreamSubscription<ContextCompacted>? _compactSub;
 
@@ -194,6 +204,8 @@ class WoiTabsState extends State<WoiTabs> {
   final _composerKey = GlobalKey(debugLabel: 'composer');
   final _settingsKey = GlobalKey(debugLabel: 'settings-view');
   final _terminalKey = GlobalKey(debugLabel: 'terminal-view');
+  final _clipboardKey = GlobalKey(debugLabel: 'clipboard-view');
+  final _selectedTabKey = GlobalKey(debugLabel: 'selected-home-tab');
 
   /// The last non-chat tab: what the left pane shows in the wide layout.
   HomeView _leftView = HomeView.note;
@@ -231,6 +243,7 @@ class WoiTabsState extends State<WoiTabs> {
       _view = pipeline.conversation.messages.isEmpty ? HomeView.note : HomeView.chat;
     }
     _findView = _view;
+    _pasteTarget = _view == HomeView.chat ? HomeView.chat : HomeView.note;
     _viewN.addListener(_onViewChanged);
     _compactSub = pipeline.compactionEvents.listen(_onCompacted);
     pipeline.addListener(_onPipeline);
@@ -240,6 +253,7 @@ class WoiTabsState extends State<WoiTabs> {
     _seenAiSeq = c.notes.lastAiEdit?.seq ?? -1;
     c.notes.addListener(_onNotes);
     HardwareKeyboard.instance.addHandler(_onKey);
+    _composerFocus.addListener(_onComposerFocus);
   }
 
   @override
@@ -253,7 +267,10 @@ class WoiTabsState extends State<WoiTabs> {
     c.notes.removeListener(_onNotes);
     pipeline.removeListener(_onPipeline);
     _compactSub?.cancel();
+    _composerFocus.removeListener(_onComposerFocus);
     _composerFocus.dispose();
+    _narrowScroll.dispose();
+    _chatDraft.dispose();
     _banners.dispose();
     for (final find in _find.values) {
       find.dispose();
@@ -264,6 +281,7 @@ class WoiTabsState extends State<WoiTabs> {
   /// Selects a top-level tab (Ctrl+1..4). In the wide layout the chat is
   /// always shown, so "Chat" just focuses the composer.
   void setView(HomeView v) {
+    if (v == HomeView.note || v == HomeView.chat || v == HomeView.terminal) _pasteTarget = v;
     _setFindView(v);
     widget.embedded ? _view = v : c.actions.showView(v);
   }
@@ -280,11 +298,13 @@ class WoiTabsState extends State<WoiTabs> {
     canRequestFocus: false,
     skipTraversal: true,
     onFocusChange: (focused) {
+      if (focused && (view == HomeView.note || view == HomeView.chat || view == HomeView.terminal)) _pasteTarget = view;
       if (_wide && focused) _setFindView(view);
     },
     child: Listener(
       behavior: HitTestBehavior.translucent,
       onPointerDown: (_) {
+        if (view == HomeView.note || view == HomeView.chat || view == HomeView.terminal) _pasteTarget = view;
         if (_wide) _setFindView(view);
       },
       child: child,
@@ -311,6 +331,12 @@ class WoiTabsState extends State<WoiTabs> {
       if (_chatVisible) _seenMessages = pipeline.conversation.messages.length;
     });
     if (_wide && _view == HomeView.chat) _focusComposer();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _narrowScroll.hasClients) _narrowScroll.jumpTo(0);
+      if (_view == HomeView.chat) _revealFocusedComposer();
+      final tab = _selectedTabKey.currentContext;
+      if (mounted && tab != null) unawaited(Scrollable.ensureVisible(tab, alignment: .5));
+    });
   }
 
   void _onNotes() {
@@ -336,6 +362,7 @@ class WoiTabsState extends State<WoiTabs> {
     final conv = pipeline.conversation;
     if (conv.id != _convId) {
       _convId = conv.id;
+      _chatDraft.retirePendingPastes();
       for (final find in _find.values) {
         find.clear();
       }
@@ -363,7 +390,7 @@ class WoiTabsState extends State<WoiTabs> {
           title: 'Voice session failed',
           message: pipeline.statusDetail ?? 'The realtime connection could not be established.',
           actionLabel: 'Retry',
-          onAction: pipeline.connect,
+          onAction: pipeline.reconnect,
           autoDismiss: null,
         ),
       );
@@ -464,6 +491,8 @@ class WoiTabsState extends State<WoiTabs> {
     LogicalKeyboardKey.numpad3: HomeView.terminal,
     LogicalKeyboardKey.digit4: HomeView.settings,
     LogicalKeyboardKey.numpad4: HomeView.settings,
+    LogicalKeyboardKey.digit5: HomeView.clipboard,
+    LogicalKeyboardKey.numpad5: HomeView.clipboard,
   };
 
   /// Enter decides an edit preview unless it would type into something:
@@ -477,7 +506,83 @@ class WoiTabsState extends State<WoiTabs> {
     return field != null && field.controller.text.trim().isEmpty;
   }
 
-  void _focusComposer() => _composerFocus.requestFocus();
+  void _focusComposer() {
+    _composerFocus.requestFocus();
+    // Ctrl+K also reveals a field which is already focused but was deliberately
+    // scrolled away while reading the pane.
+    _queueComposerReveal();
+  }
+
+  void _onComposerFocus() {
+    if (_composerFocus.hasFocus) _queueComposerReveal();
+  }
+
+  void _trackComposerViewport(BoxConstraints box, double scale, bool scrolling) {
+    final next = (size: Size(box.maxWidth, box.maxHeight), scale: scale, scrolling: scrolling, view: _view);
+    if (_composerViewport == next) return;
+    final previousView = _composerViewport?.view;
+    _composerViewport = next;
+    // A non-chat tab intentionally reveals its pane, including when that tab
+    // itself introduces the short-layout scroll view after final file removal.
+    if (previousView != _view && _view != HomeView.chat) return;
+    _queueComposerReveal();
+  }
+
+  void _queueComposerReveal() {
+    if (_composerRevealQueued) return;
+    _composerRevealQueued = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _composerRevealQueued = false;
+      _revealFocusedComposer();
+    });
+    // An explicit shortcut can target an already-focused field without any
+    // widget state change to request the frame for this callback.
+    WidgetsBinding.instance.scheduleFrame();
+  }
+
+  /// Reveal only after focus or viewport transitions. Listening to scrolling,
+  /// text changes or pipeline rebuilds would pull the user away from a pane
+  /// they deliberately scrolled to while keeping their draft focused.
+  void _revealFocusedComposer() {
+    if (!mounted || !_composerFocus.hasFocus || !_narrowScroll.hasClients) return;
+    final focusContext = _composerFocus.context;
+    if (focusContext == null) return;
+    RenderBox? field;
+    focusContext.visitAncestorElements((element) {
+      if (element.widget is! TextField) return true;
+      final render = element.findRenderObject();
+      if (render is RenderBox) field = render;
+      return false;
+    });
+    final position = _narrowScroll.position;
+    final viewport = position.context.storageContext.findRenderObject();
+    if (field == null || !field!.attached || viewport is! RenderBox || !viewport.attached) return;
+    Rect relativeRect(RenderBox box) => box.localToGlobal(Offset.zero, ancestor: viewport) & box.size;
+    var target = relativeRect(field!);
+    if (target.top >= 0 && target.bottom <= viewport.size.height) return;
+    final composer = _composerKey.currentContext?.findRenderObject();
+    if (composer is RenderBox && composer.size.height <= viewport.size.height) {
+      // Keep the attachment controls and Send/Stop in view too when they fit.
+      target = relativeRect(composer);
+    } else if (target.height > viewport.size.height) {
+      final editable = focusContext.findAncestorStateOfType<EditableTextState>();
+      final selection = _chatDraft.text.selection;
+      if (editable != null && selection.isValid) {
+        final render = editable.renderEditable;
+        target = render
+            .getLocalRectForCaret(selection.extent)
+            .shift(render.localToGlobal(Offset.zero, ancestor: viewport));
+      }
+    }
+    final delta = target.top < 0
+        ? target.top
+        : target.bottom > viewport.size.height
+        ? target.bottom - viewport.size.height
+        : 0.0;
+    if (delta.abs() > 0.5) {
+      position.jumpTo((position.pixels + delta).clamp(position.minScrollExtent, position.maxScrollExtent));
+    }
+  }
 
   void _onCompacted(ContextCompacted e) {
     if (!mounted) return;
@@ -549,6 +654,7 @@ class WoiTabsState extends State<WoiTabs> {
   Widget _narrowLayout(BoxConstraints box) {
     final phone = _phone;
     final pad = phone ? 8.0 : 12.0;
+    final textScale = math.max(1.0, MediaQuery.textScalerOf(context).scale(14) / 14);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -561,32 +667,67 @@ class WoiTabsState extends State<WoiTabs> {
         const Divider(height: 1),
         Expanded(
           child: ListenableBuilder(
-            listenable: _activeFind,
-            child: switch (_view) {
-              HomeView.note => _notePanel(),
-              HomeView.chat => _chatPanel(maxBubble: phone ? box.maxWidth * 0.86 : 720),
-              HomeView.settings => _settingsPanel(),
-              HomeView.terminal => _terminalPanel(),
+            listenable: Listenable.merge([_chatDraft, _activeFind]),
+            builder: (context, _) {
+              final pane = ListenableBuilder(
+                listenable: _activeFind,
+                child: switch (_view) {
+                  HomeView.note => _notePanel(),
+                  HomeView.chat => _chatPanel(maxBubble: phone ? box.maxWidth * 0.86 : 720),
+                  HomeView.settings => _settingsPanel(),
+                  HomeView.terminal => _terminalPanel(),
+                  HomeView.clipboard => _clipboardPanel(),
+                },
+                builder: (context, child) => Padding(
+                  // Keep the reveal viewport below the floating search input.
+                  padding: EdgeInsets.only(top: _activeFind.query.trim().isEmpty ? 0 : 112 * textScale),
+                  child: child,
+                ),
+              );
+              final composer = Padding(
+                padding: EdgeInsets.fromLTRB(pad, phone ? 4 : 8, pad, pad),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 980),
+                    child: _composer(phone: phone),
+                  ),
+                ),
+              );
+              // A keyboard in a small assistant/freeform window can leave less
+              // room than a populated composer alone needs. Keep tabs fixed and
+              // let the complete pane and composer scroll, retaining their
+              // GlobalKeys, full touch targets, previews and editing state.
+              final shortDraft = _chatDraft.hasAttachments && box.maxHeight < 560 * textScale;
+              final shortClipboard = _view == HomeView.clipboard && box.maxHeight < 420 * textScale;
+              _trackComposerViewport(box, textScale, shortDraft || shortClipboard);
+              if (shortDraft || shortClipboard) {
+                return Scrollbar(
+                  key: const ValueKey('narrow-content-scrollbar'),
+                  controller: _narrowScroll,
+                  thumbVisibility: true,
+                  interactive: true,
+                  thickness: 6,
+                  child: SingleChildScrollView(
+                    key: const PageStorageKey('narrow-content-scroll'),
+                    controller: _narrowScroll,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        SizedBox(height: (220 + (_activeFind.query.trim().isEmpty ? 0 : 112)) * textScale, child: pane),
+                        composer,
+                      ],
+                    ),
+                  ),
+                );
+              }
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(child: pane),
+                  composer,
+                ],
+              );
             },
-            builder: (context, child) => Padding(
-              // Keep every tab's reveal viewport below the floating input and
-              // navigation row while a narrow-window search has results.
-              padding: EdgeInsets.only(
-                top: _activeFind.query.trim().isEmpty
-                    ? 0
-                    : 112 * math.max(1.0, MediaQuery.textScalerOf(context).scale(14) / 14),
-              ),
-              child: child,
-            ),
-          ),
-        ),
-        Padding(
-          padding: EdgeInsets.fromLTRB(pad, phone ? 4 : 8, pad, pad),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 980),
-              child: _composer(phone: phone),
-            ),
           ),
         ),
       ],
@@ -597,6 +738,7 @@ class WoiTabsState extends State<WoiTabs> {
   /// history and the composer, whatever tab is selected. A draggable
   /// divider between them (double-click resets it).
   Widget _wideLayout(BoxConstraints box) {
+    _composerViewport = null;
     final chatW = (box.maxWidth * _chatFraction(box.maxWidth)).roundToDouble();
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -611,6 +753,7 @@ class WoiTabsState extends State<WoiTabs> {
                 child: switch (_leftView) {
                   HomeView.settings => _settingsPanel(),
                   HomeView.terminal => _terminalPanel(),
+                  HomeView.clipboard => _clipboardPanel(),
                   _ => _notePanel(),
                 },
               ),
@@ -656,11 +799,68 @@ class WoiTabsState extends State<WoiTabs> {
         EditReviewCard(review: c.review, maxDiffHeight: phone ? 160 : 220),
         _findPane(
           HomeView.chat,
-          InputBar(controller: c, focusNode: _composerFocus, phone: phone, allowScreenShare: !widget.embedded),
+          InputBar(
+            controller: c,
+            draft: _chatDraft,
+            focusNode: _composerFocus,
+            phone: phone,
+            allowScreenShare: !widget.embedded,
+          ),
         ),
       ],
     ),
   );
+
+  Widget _clipboardPanel() {
+    // Focus may return to the composer as the previous pane or popup closes.
+    // The callback must keep the destination advertised by this panel.
+    final pasteTarget = _pasteTarget;
+    return KeyedSubtree(
+      key: _clipboardKey,
+      child: _findPane(
+        HomeView.clipboard,
+        ClipboardPanel(
+          key: const ValueKey('clipboard-view'),
+          history: c.clipboardHistory,
+          find: _find[HomeView.clipboard],
+          pasteLabel: switch (pasteTarget) {
+            HomeView.chat => 'Paste into chat',
+            HomeView.terminal => 'Paste into terminal',
+            _ => 'Paste into note',
+          },
+          onPaste: (entry) => _pasteClipboardEntry(entry, pasteTarget),
+          onSendToAi: _stageClipboardForAi,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pasteClipboardEntry(ClipboardHistoryEntry entry, HomeView pasteTarget) async {
+    switch (pasteTarget) {
+      case HomeView.chat:
+        _chatDraft.stageClipboard(entry.content);
+        setView(HomeView.chat);
+        _focusComposer();
+      case HomeView.terminal:
+        if (entry.content.image != null) {
+          throw StateError('Images cannot be pasted into the terminal. Use Copy or Send to AI.');
+        }
+        c.terminals.ensureTab();
+        c.terminals.active?.terminal.paste(entry.content.text ?? '');
+        setView(HomeView.terminal);
+      default:
+        await c.pasteClipboardContentToNote(entry.content);
+        if (mounted) setView(HomeView.note);
+    }
+  }
+
+  Future<void> _stageClipboardForAi(ClipboardHistoryEntry entry) async {
+    _chatDraft.stageClipboard(entry.content, append: true);
+    setView(HomeView.chat);
+    _focusComposer();
+    ScaffoldMessenger.maybeOf(context)
+        ?.showSnackBar(const SnackBar(content: Text('Added to your message. Review it and press Send when ready.')));
+  }
 
   Widget _settingsPanel() => KeyedSubtree(
     key: _settingsKey,
@@ -726,6 +926,8 @@ class WoiTabsState extends State<WoiTabs> {
                   child: NoteEditor(
                     key: const ValueKey('note-editor'),
                     notes: c.notes,
+                    clipboard: c.platform.clipboard,
+                    onPasteImage: c.saveClipboardImageForNote,
                     find: _find[HomeView.note],
                     compact: phone,
                     onOpenLink: _openLink,
@@ -765,15 +967,22 @@ class WoiTabsState extends State<WoiTabs> {
 
   /// Links in the note preview: files open in Woi's viewer, web links are
   /// copied (Woi never launches other apps on its own).
-  void _openLink(String target) {
-    if (target.startsWith('/') || target.startsWith('~') || target.startsWith('file://')) {
-      var path = target.replaceFirst('file://', '');
-      if (path.startsWith('~')) path = path.replaceFirst('~', c.platform.paths.homeDir);
-      c.platform.viewer.show(MediaItem(kind: MediaItem.kindForPath(path), path: path));
-      return;
+  Future<void> _openLink(String target) async {
+    try {
+      if (target.startsWith('/') || target.startsWith('~') || target.startsWith('file://')) {
+        var path = target.startsWith('file://') ? Uri.parse(target).toFilePath() : target;
+        if (path.startsWith('~')) path = path.replaceFirst('~', c.platform.paths.homeDir);
+        await c.platform.viewer.show(MediaItem(kind: MediaItem.kindForPath(path), path: path));
+        return;
+      }
+      await c.platform.clipboard.writeText(target);
+      if (mounted) ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text('Link copied: $target')));
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.maybeOf(context)
+            ?.showSnackBar(SnackBar(content: Text('Could not open or copy link: $error')));
+      }
     }
-    Clipboard.setData(ClipboardData(text: target));
-    ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text('Link copied: $target')));
   }
 
   // ------------------------------------------------------------------ parts
@@ -805,6 +1014,7 @@ class WoiTabsState extends State<WoiTabs> {
                   chatBadge: _chatBadge,
                   compact: phone,
                   height: h,
+                  selectedTabKey: _selectedTabKey,
                 ),
               ),
             ),
@@ -924,7 +1134,8 @@ class WoiTabsState extends State<WoiTabs> {
     // One SelectionArea for the transcript: message text is plain Text.
     // Only the newest messages are rendered (older ones load on scrolling
     // up, then live in History); the conversation itself is untouched.
-    return SelectionArea(
+    return ClipboardSelectionArea(
+      clipboard: c.platform.clipboard,
       child: ChatTranscript(
         find: _find[HomeView.chat],
         textChanges: pipeline,

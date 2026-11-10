@@ -6,6 +6,7 @@ its build owner releases the binary. Synthetic state lives under qa/out.
 No HOME/CODEX_HOME changes, real login, host audio, or network are used.
 """
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -51,6 +52,7 @@ def environment():
         XDG_CONFIG_HOME=str(OUT / 'config'),
         XDG_CACHE_HOME=str(OUT / 'cache'),
         XDG_RUNTIME_DIR=str(OUT / 'runtime'),
+        TMPDIR=str(OUT / 'tmp'),
         PIPEWIRE_RUNTIME_DIR=str(OUT / 'runtime'),
         PULSE_SERVER='unix:' + str(OUT / 'runtime/no-pulse'),
         WOI_MIC_MODE='muted',
@@ -64,7 +66,7 @@ def prepare():
         previous = json.loads(STATE.read_text())
         if any(pid_stamp(p['pid']) == p['stamp'] for p in previous.get('processes', [])):
             raise SystemExit('Stop the existing private QA session before preparing again.')
-    for name in ('data/woi/conversations', 'config', 'cache', 'runtime', 'shots'):
+    for name in ('data/woi/conversations', 'config', 'cache', 'runtime', 'tmp', 'shots'):
         (OUT / name).mkdir(parents=True, exist_ok=True)
     (OUT / 'runtime').chmod(0o700)
     (OUT / 'empty-xauth').write_text('')
@@ -105,7 +107,7 @@ def prepare():
     print('Prepared synthetic offline state at', OUT.relative_to(REPO))
 
 
-def start(binary):
+def start(binary, clipboard_image=None, text_scale=1.0):
     if Path('/tmp/.X11-unix/X74').exists():
         raise SystemExit('Display :74 already exists; refusing to share or replace it.')
     binary = Path(binary).resolve()
@@ -114,7 +116,14 @@ def start(binary):
     if not (OUT / 'data/woi/settings.json').exists():
         prepare()
     env = environment()
-    state = {'display': DISPLAY, 'binary': str(binary), 'processes': []}
+    if not 0.5 <= text_scale <= 3:
+        raise SystemExit('Choose a text scale between 0.5 and 3.')
+    # A keyfile backend writes only to this fixture's XDG_CONFIG_HOME. Never
+    # modify the user's dconf session or desktop-wide accessibility settings.
+    env['GSETTINGS_BACKEND'] = 'keyfile'
+    run(['gsettings', 'set', 'org.gnome.desktop.interface', 'text-scaling-factor', str(text_scale)], env=env)
+    observed_scale = run(['gsettings', 'get', 'org.gnome.desktop.interface', 'text-scaling-factor'], env=env)
+    state = {'display': DISPLAY, 'binary': str(binary), 'text_scale': float(observed_scale), 'processes': []}
 
     def spawn(label, argv):
         with (OUT / f'{label}.log').open('wb') as log:
@@ -135,8 +144,24 @@ def start(binary):
         else:
             raise RuntimeError('Private display did not become ready.')
         spawn('openbox', ['openbox'])
+        if clipboard_image is not None:
+            seed = Path(clipboard_image).resolve()
+            seed_hash = hashlib.sha256(seed.read_bytes()).hexdigest()
+            owner = spawn('clipboard', ['xclip', '-quiet', '-selection', 'clipboard', '-t', 'image/png', '-i', str(seed)])
+            for _ in range(40):
+                if owner.poll() is not None:
+                    raise RuntimeError('Private clipboard owner exited; inspect clipboard.log.')
+                captured = subprocess.run(['xclip', '-selection', 'clipboard', '-out', '-t', 'image/png'],
+                                          env=env, capture_output=True, timeout=3)
+                if captured.returncode == 0 and hashlib.sha256(captured.stdout).hexdigest() == seed_hash:
+                    break
+                time.sleep(0.05)
+            else:
+                raise RuntimeError('Private clipboard image did not become readable.')
+            state['clipboard_seed_sha256'] = seed_hash
+            STATE.write_text(json.dumps(state, indent=2))
         auth_dir = Path(os.environ.get('CODEX_HOME') or (Path.home() / '.codex')).resolve()
-        app = spawn('app', ['bwrap', '--unshare-net', '--ro-bind', '/', '/', '--dev', '/dev',
+        app = spawn('app', ['bwrap', '--unshare-net', '--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc',
                             '--tmpfs', str(auth_dir), '--bind', str(OUT), str(OUT),
                             '--chdir', str(OUT), '--', str(binary)])
         for _ in range(100):
@@ -187,6 +212,9 @@ def stop():
                 os.killpg(process['pid'], signal.SIGTERM)
             except ProcessLookupError:
                 pass
+    deadline = time.monotonic() + 3
+    while Path('/tmp/.X11-unix/X74').exists() and time.monotonic() < deadline:
+        time.sleep(0.05)
     STATE.unlink(missing_ok=True)
     print('Stopped only the recorded private UI QA processes.')
 
@@ -194,6 +222,8 @@ def stop():
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('action', choices=('prepare', 'start', 'resize', 'shot', 'stop'), nargs='?', default='prepare')
 parser.add_argument('--binary', default=str(REPO / 'app/build/linux/x64/release/bundle/woi'))
+parser.add_argument('--clipboard-image', help='Synthetic PNG to own the private clipboard before app startup')
+parser.add_argument('--text-scale', type=float, default=1.0, help='Private GSettings text scale; never changes the desktop session')
 parser.add_argument('--width', type=int, default=400)
 parser.add_argument('--height', type=int, default=860)
 parser.add_argument('--name', default='current')
@@ -201,7 +231,7 @@ args = parser.parse_args()
 if args.action == 'prepare':
     prepare()
 elif args.action == 'start':
-    start(args.binary)
+    start(args.binary, args.clipboard_image, args.text_scale)
 elif args.action == 'resize':
     resize(args.width, args.height)
 elif args.action == 'shot':

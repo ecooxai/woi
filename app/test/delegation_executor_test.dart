@@ -320,6 +320,113 @@ void main() {
     expect(rep.resultText, contains('the user declined'));
   });
 
+  test('written answer uses only the terminal model turn after tool output', () async {
+    final r = _Runner()..result = (_, _) => '{"ok":true,"stdout":"PRIVATE_TOOL_PAYLOAD"}';
+    final model = FakeDelegationModel([
+      DelegationModelTurn(
+        text: 'I will inspect the details.',
+        calls: [
+          call('list_dir', {'path': '.'}),
+        ],
+      ),
+      const DelegationModelTurn(text: '  The requested item is green.  ', calls: []),
+    ]);
+    final report = await DelegationExecutor(
+      model: model,
+      tools: _tools,
+      runTool: r.call,
+    ).execute('Inspect the details.');
+    expect(report.steps, 2);
+    expect(report.answerText, 'The requested item is green.');
+    expect(report.answerText, isNot(contains('PRIVATE_TOOL_PAYLOAD')));
+    expect(report.answerText, isNot(contains('I will')));
+  });
+
+  test('written image mode preserves requested file tools without fabricating a final analysis', () async {
+    final runner = _Runner()..result = (_, _) => '{"ok":true,"output":"Saved requested description.txt"}';
+    final model = FakeDelegationModel([
+      DelegationModelTurn(
+        text: '',
+        calls: [
+          call('delegate_task', {'task': 'Save the requested description.txt'}),
+        ],
+      ),
+    ]);
+    final image = DelegationImage(png: Uint8List.fromList([137, 80, 78, 71]), capturedAt: DateTime(2026));
+    final report = await DelegationExecutor(model: model, tools: _tools, runTool: runner.call).execute(
+      'Save a description of this image to description.txt.',
+      attachedImages: [image],
+      writtenImageAnswer: true,
+    );
+    expect(model.requests.single.tools.map((t) => t['name']), contains('delegate_task'));
+    expect(model.receivedInstructions.single, contains('Clearly requested file or tool actions remain available'));
+    expect(runner.runs.map((run) => run.$2), ['delegate_task']);
+    expect(report.tools.single.ok, isTrue);
+    expect(report.answerText, isEmpty, reason: 'A saved-path confirmation is not the complete analysis.');
+    expect(report.resultText, contains('Saved requested description.txt'));
+  });
+
+  test('written image mode keeps the complete terminal answer after observation results', () async {
+    final answer = '${'Complete observation with Unicode 🙂. ' * 180}Final number 913.';
+    final model = FakeDelegationModel([
+      DelegationModelTurn(
+        text: 'Interim narration.',
+        calls: [
+          call('list_dir', {'path': '.'}),
+        ],
+      ),
+      DelegationModelTurn(text: answer, calls: []),
+    ]);
+    final report =
+        await DelegationExecutor(
+          model: model,
+          tools: _tools,
+          runTool: (id, name, args) async => '{"ok":true,"entries":["PRIVATE_TOOL_DATA"]}',
+        ).execute(
+          'Write a detailed image analysis and check the requested directory.',
+          attachedImages: [DelegationImage(png: Uint8List(4), capturedAt: DateTime(2026))],
+          writtenImageAnswer: true,
+        );
+    expect(report.answerText, answer);
+    expect(report.answerText.length, greaterThan(4000));
+    expect(report.answerText, isNot(contains('Interim narration')));
+    expect(report.answerText, isNot(contains('PRIVATE_TOOL_DATA')));
+    expect(
+      model.receivedInstructions.every((s) => s.contains('Return the complete answer as final response text')),
+      isTrue,
+    );
+  });
+
+  test('written image instructions require both the explicit mode and an image', () async {
+    for (final withImage in [false, true]) {
+      final model = FakeDelegationModel([const DelegationModelTurn(text: 'Ordinary answer.', calls: [])]);
+      await DelegationExecutor(model: model, tools: [], runTool: _Runner().call).execute(
+        'Write a long description.',
+        attachedImages: withImage ? [DelegationImage(png: Uint8List(4), capturedAt: DateTime(2026))] : [],
+        writtenImageAnswer: !withImage,
+      );
+      expect(model.receivedInstructions.single, DelegationExecutor.instructions);
+    }
+  });
+
+  test('a tool-only turn does not become a fabricated written final answer', () async {
+    final model = FakeDelegationModel([
+      DelegationModelTurn(
+        text: 'I will type it.',
+        calls: [
+          call('type_text', {'text': 'fixture'}),
+        ],
+      ),
+    ]);
+    final report = await DelegationExecutor(
+      model: model,
+      tools: _tools.where((tool) => tool.name != 'take_screenshot').toList(),
+      runTool: _Runner().call,
+    ).execute('Type the supplied literal text.');
+    expect(report.tools, hasLength(1));
+    expect(report.answerText, isEmpty);
+  });
+
   test('model errors become a short failure result', () async {
     final ex = DelegationExecutor(
       model: _Throwing(),
@@ -330,6 +437,7 @@ void main() {
     final rep = await ex.execute('anything');
     expect(rep.ok, isFalse);
     expect(rep.resultText, startsWith('Failed:'));
+    expect(rep.answerText, isEmpty);
     expect(rep.total, isNotNull);
   });
 

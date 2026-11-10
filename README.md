@@ -167,14 +167,27 @@ Password and opaque editors retain the input-connection path. An explicitly
 accessibility-selected editor can receive text without choosing a new field.
 The target app, window and editor stay pinned for the request.
 
-Arbitrary key chords still require an input connection. If no editor exists,
-Woi requests the keyboard once without clicking or focusing a field and reports
-whether Android actually showed it. The `show_keyboard` tool exposes that same
-request. It never claims a keyboard is visible just because its policy request
-was accepted. Semantic copy, paste, cut and select-all prefer supported
-accessibility actions when the entire requested batch can use them. Plain Home/Back and established phone navigation aliases
-keep their Android meanings. System navigation and editor shortcuts must be
-separate requests.
+The `show_keyboard` tool displays Woi's real, non-focusable touch keyboard,
+including over a browser page with no text field. Its half-transparent backing
+keeps the app visible; key labels stay opaque. **Move** docks it at the other
+edge and **Hide** dismisses it (`hide_keyboard` also dismisses Woi's keyboard).
+Ctrl, Alt, Shift and Meta apply to the next key; Fn exposes F1–F12 and Delete.
+The tool reports actual overlay visibility separately from a text receiver and
+an active input connection. Showing it does not select a field, change the
+selected Android IME, or grant permissions.
+
+Letters use the existing acknowledged text path. Ordinary touch caret/delete
+keys can edit readable selected fields without an IME connection. Exact
+modifier chords still require an Android 13+ input connection; without one,
+Woi explains the limit instead of claiming to type. Page and arrow keys scroll
+the visible app when no editor is active, and **Back**, **Phone** (Home) and
+**Apps** work through Android navigation. Keyboard display alone cannot make a
+non-editable page receive arbitrary text or shortcuts. Semantic copy, paste,
+cut and select-all prefer supported accessibility actions when the entire
+requested batch can use them. Plain Home/Back and established phone navigation
+aliases keep their Android meanings. System navigation and editor shortcuts
+must be separate requests. Temporary keyboard-policy requests are restored
+when the request finishes or the accessibility service disconnects.
 
 The `clipboard` tool reads, writes or pastes text. `action: read` returns clipboard
 text; `action: write` stores exact text without typing; `action: paste` pastes the
@@ -191,6 +204,19 @@ selection or permission grant is needed when Woi's existing accessibility servic
 is already enabled.
 
 ## Computer input and Python
+
+On Android, `scroll_screen` scrolls the current app **up/down/left/right** by
+0.1–5 viewports (default one). Down reveals later content, so its finger gesture
+travels upward. An optional x/y pane anchor uses the latest screenshot's pixel
+coordinates and is mapped once to the physical display. The native path stays
+inside the actual app window and avoids the touch/system keyboard. Whole pages
+try an advertised accessibility scroll action, then fall back to a bounded swipe
+if unsupported or refused. `strategy: gesture` requests that swipe directly.
+Accepted scroll actions are never blindly replayed as gestures. Results report
+the backend, completed amount, viewport, gesture coordinates, and whether a
+scroll event was observed; a completed gesture alone cannot prove page movement
+at a content boundary. Plain requests such as “scroll down two pages” dispatch
+this tool directly, with the Luna click/move setting unchanged.
 
 Computer input displays a half-transparent light-blue mouse pointer for 120 ms
 before an action and keeps the indicator visible for three seconds afterward.

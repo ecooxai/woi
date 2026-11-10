@@ -22,18 +22,20 @@ import android.view.WindowManager
  * turn starts.
  */
 object WoiScreen {
-    private var projection: MediaProjection? = null
+    @Volatile private var projection: MediaProjection? = null
     private var projectionCallback: MediaProjection.Callback? = null
     private var display: VirtualDisplay? = null
     private var reader: ImageReader? = null
     private var thread: HandlerThread? = null
     private val lock = Object()
     private var latest: Image? = null
-    private var frames = 0L
+    @Volatile private var frames = 0L
+    val frameCount get() = frames
     private var realW = 0
     private var realH = 0
 
-    fun isSharing() = projection != null
+    fun isSharing() = projection != null && frames > 0
+    fun hasProjection() = projection != null
 
     /** Reuse the user-approved projection for explicit playback-audio capture. */
     fun projectionForAudio(): MediaProjection? = projection
@@ -45,7 +47,7 @@ object WoiScreen {
     }
 
     /** Called by the foreground service after startForeground(mediaProjection). */
-    fun start(ctx: Context, resultCode: Int, data: Intent): Boolean {
+    fun start(ctx: Context, resultCode: Int, data: Intent, requestId: Long): Boolean {
         stop(ctx, notify = false)
         return try {
             val mpm = ctx.getSystemService(MediaProjectionManager::class.java)
@@ -66,14 +68,18 @@ object WoiScreen {
             r.setOnImageAvailableListener({ rd ->
                 val img = try { rd.acquireLatestImage() } catch (e: Exception) { null } ?: return@setOnImageAvailableListener
                 synchronized(lock) {
+                    if (projection !== mp) { img.close(); return@setOnImageAvailableListener }
                     latest?.close()
                     latest = img
                     frames++
+                    if (frames == 1L) WoiBridge.main.post {
+                        if (projection === mp) WoiMediaCapture.ready(WoiMediaCapture.SCREEN, requestId)
+                    }
                 }
             }, handler)
             val callback = object : MediaProjection.Callback() {
                 override fun onStop() {
-                    WoiBridge.main.post { if (projection === mp) stop(ctx) }
+                    WoiBridge.main.post { if (projection === mp) WoiMediaCapture.projectionStopped(requestId) }
                 }
             }
             projectionCallback = callback
@@ -83,7 +89,6 @@ object WoiScreen {
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, r.surface, null, handler
             )
             Log.i(WoiBridge.TAG, "screen share ${vw}x$vh of ${w}x$h")
-            WoiBridge.emit(mapOf("type" to "share", "on" to true))
             true
         } catch (error: Exception) {
             Log.w(WoiBridge.TAG, "screen share setup failed", error)
@@ -93,19 +98,19 @@ object WoiScreen {
     }
 
     fun stop(ctx: Context, notify: Boolean = true) {
-        val mp = projection ?: return
+        val mp = projection
         projection = null
         projectionCallback?.let { callback ->
-            try { mp.unregisterCallback(callback) } catch (_: Exception) {}
+            try { mp?.unregisterCallback(callback) } catch (_: Exception) {}
         }
         projectionCallback = null
         try { display?.release() } catch (_: Exception) {}
         display = null
-        synchronized(lock) { latest?.close(); latest = null }
+        synchronized(lock) { latest?.close(); latest = null; frames = 0 }
         try { reader?.close() } catch (_: Exception) {}
         reader = null
         thread?.quitSafely(); thread = null
-        try { mp.stop() } catch (_: Exception) {}
+        try { mp?.stop() } catch (_: Exception) {}
         WoiForegroundService.shareStopped(ctx)
         if (notify) WoiBridge.emit(mapOf("type" to "share", "on" to false))
     }

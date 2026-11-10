@@ -7,6 +7,7 @@ import 'audio_io.dart';
 import 'camera.dart';
 import 'clipboard_access.dart';
 import 'files.dart';
+import 'file_picker.dart';
 import 'input_control.dart';
 import 'linux/linux_platform.dart';
 import 'media_grab.dart';
@@ -26,6 +27,7 @@ class PlatformServices {
     required this.screen,
     required this.input,
     this.clipboard = const SystemClipboardAccess(),
+    this.filePicker = const NativeFilePicker(),
     this.showKeyboard,
     required this.shell,
     this.pythonRunner,
@@ -46,6 +48,7 @@ class PlatformServices {
   final ScreenCapture screen;
   final InputControl input;
   final ClipboardAccess clipboard;
+  final FilePicker filePicker;
 
   /// Requests a software keyboard without selecting a text field, when supported.
   final Future<Map<String, Object?>> Function()? showKeyboard;

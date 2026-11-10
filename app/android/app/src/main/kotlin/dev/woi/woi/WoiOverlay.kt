@@ -65,6 +65,7 @@ object WoiOverlay {
     private val restore = Runnable { applyAside(false, false) }
 
     val showing: Boolean get() = view != null
+    val hasWindowFocus: Boolean get() = view?.hasWindowFocus() == true
 
     fun fraction(ctx: Context): Double =
         ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -96,7 +97,13 @@ object WoiOverlay {
         val engine = WoiEngine.obtain(ctx)
         WoiBridge.activity?.releaseFlutterView()
         val texture = FlutterTextureView(ctx).apply { isOpaque = false }
-        val v = FlutterView(ctx, texture)
+        val v = object : FlutterView(ctx, texture) {
+            override fun onWindowFocusChanged(hasFocus: Boolean) {
+                WoiClipboard.invalidatePassiveRead()
+                super.onWindowFocusChanged(hasFocus)
+                if (view === this) synchronizeLifecycle()
+            }
+        }
         // Invisible until Dart has pushed the panel route (overlayReady), so
         // the first frame never flashes the full app.
         v.alpha = 0f
@@ -107,11 +114,22 @@ object WoiOverlay {
         asideCount = 0
         asideVisual = false
         shownAt = System.currentTimeMillis()
-        engine.lifecycleChannel.appIsResumed()
-        engine.lifecycleChannel.aWindowIsFocused()
+        synchronizeLifecycle()
+        // Focus may be registered just after the VoiceInteractionSession adds
+        // its window. The view's focus callback handles subsequent transitions.
+        v.post { if (view === v) synchronizeLifecycle() }
         WoiBridge.emit(mapOf("type" to "overlay", "on" to true, "fraction" to fraction(ctx)))
         WoiBridge.main.postDelayed(reveal, 1500)
         Log.i(WoiBridge.TAG, "overlay shown")
+    }
+
+    /** Reconcile the engine with the visible view, independent of MainActivity. */
+    fun synchronizeLifecycle() {
+        val current = view ?: return
+        val engine = WoiEngine.peek() ?: return
+        engine.lifecycleChannel.appIsResumed()
+        if (asideCount == 0 && current.hasWindowFocus()) engine.lifecycleChannel.aWindowIsFocused()
+        else engine.lifecycleChannel.noWindowsAreFocused()
     }
 
     /** Dart drew the panel. */
@@ -182,11 +200,15 @@ object WoiOverlay {
     }
 
     /** Wraps [r] so the panel comes back ~0.6 s after the last action ends. */
-    fun releasing(r: MethodChannel.Result): MethodChannel.Result = object : MethodChannel.Result {
+    fun releasing(r: MethodChannel.Result, samePanelOnly: Boolean = false): MethodChannel.Result = object : MethodChannel.Result {
         private var done = false
+        private val owner = java.lang.ref.WeakReference(view)
         private fun release() {
             if (done) return
             done = true
+            // A file picker may outlive an explicit assistant dismissal. Its
+            // completion must not refocus a later, unrelated assistant panel.
+            if (samePanelOnly && (view == null || view !== owner.get())) return
             asideCount = (asideCount - 1).coerceAtLeast(0)
             if (asideCount == 0) {
                 WoiBridge.main.removeCallbacks(restore)
@@ -207,6 +229,7 @@ object WoiOverlay {
         lp.flags = if (aside) lp.flags or flags else lp.flags and flags.inv()
         lp.alpha = if (aside && visual) 0f else 1f
         w.attributes = lp
+        synchronizeLifecycle()
         Log.i(WoiBridge.TAG, "overlay aside=$aside visual=$visual")
     }
 }

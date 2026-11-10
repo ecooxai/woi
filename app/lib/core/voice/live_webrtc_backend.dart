@@ -10,7 +10,7 @@ import '../audio/playback_clock.dart';
 import '../audio/wav.dart';
 import '../auth/auth.dart';
 import '../context/context_manager.dart';
-import '../media/media_context.dart' show isMediaQuestion, isScreenQuestion, cameraCommand;
+import '../media/media_context.dart' show isMediaQuestion, isScreenQuestion, mediaCaptureCommand;
 import '../net/realtime_socket.dart';
 import '../notes/pinned_note.dart';
 import '../pipeline/vad.dart';
@@ -18,11 +18,44 @@ import '../settings/settings.dart' show kLiveVoices, kRealtimeModels, kVoiceMode
 import 'context_images.dart';
 import 'context_sync.dart';
 import 'delegation_executor.dart';
+import 'live_context_delivery.dart';
 import 'live_rtc_transport.dart';
 import 'pinned_context.dart';
 import 'voice_backend.dart';
 
 const kLiveModels = kVoiceModels;
+
+/// Full attachment analysis is retained in chat; Live gets one bounded cue.
+/// Long analysis is not copied or silently truncated into the spoken context.
+@visibleForTesting
+String buildLiveAttachmentReplyCue(WrittenResponse result) {
+  if (result.failed) {
+    return 'The attachment analysis failed. The written reply explains the problem. '
+        'Tell the user to try sending the attachment again. Do not claim success or start another action.';
+  }
+  final complete =
+      'The attachment request produced this actual result: ${result.text}\n'
+      'Say this result briefly, once. The complete answer is visible in the written reply. Do not start another action.';
+  if (utf8.encode(complete).length <= kLiveContextMaxUtf8Bytes) return complete;
+  return 'The app completed the attachment analysis. The full answer is in the written reply. '
+      'The analysis details are not included in this live context. '
+      'Tell the user once: “The attachment analysis is ready in the written reply.” '
+      'Do not invent or summarize unseen details. Do not start another action.';
+}
+
+@visibleForTesting
+String buildLiveReferenceReplyCue(WrittenResponse result) {
+  if (result.failed) {
+    return 'The saved-analysis question could not be answered reliably. The written reply explains the problem. '
+        'Ask the user to try the question again. Do not claim success or start another action.';
+  }
+  final complete =
+      'The current question produced this written answer: ${result.text}\n'
+      'Say this answer briefly, once. The full answer is visible in the written reply. Do not start another action.';
+  if (utf8.encode(complete).length <= kLiveContextMaxUtf8Bytes) return complete;
+  return 'The answer to the current question is ready in the written reply. Its details are not included in '
+      'this live context. Tell the user once that the answer is ready. Do not invent details or start another action.';
+}
 
 // ------------------------------------------------------------- call creation
 
@@ -152,7 +185,6 @@ class LiveWebRtcBackend extends VoiceBackend
   // Includes prepared and retiring calls until their native capture closes.
   final _sessions = <_LiveSession>{};
   LiveRtcTransport? get _rtc => _session?.rtc;
-  RealtimeSocket? get _ws => _session?.ws;
   SessionConfig? _config;
   String? _summary;
   String? _pinnedNote;
@@ -207,9 +239,21 @@ class LiveWebRtcBackend extends VoiceBackend
   /// Camera frame / media image per slot, for delegations.
   final Map<String, DelegationImage> _contextImages = {};
 
+  // Explicit composer attachments belong to the next typed dispatch. Keep
+  // their identity separate from camera/media/screen context and consume once.
+  final Map<String, DelegationImage> _pendingAttachmentImages = {};
+
   @override
-  void setContextImage(String slot, DelegationImage? image) =>
-      image == null ? _contextImages.remove(slot) : _contextImages[slot] = image;
+  void setContextImage(String slot, DelegationImage? image) {
+    if (image == null) {
+      _contextImages.remove(slot);
+      _pendingAttachmentImages.remove(slot);
+    } else {
+      _contextImages[slot] = image;
+      if (slot.startsWith('attachment:')) _pendingAttachmentImages[slot] = image;
+    }
+  }
+
   final Map<String, Completer<String>> _pendingTools = {};
   int _toolSeq = 0;
 
@@ -219,7 +263,13 @@ class LiveWebRtcBackend extends VoiceBackend
   late final _ManagedPlayer _player = _ManagedPlayer(this);
 
   // ---- compaction swap (applySummary)
-  ({String summary, String? recent})? _pendingApply;
+  _LiveContextApply? _pendingApply;
+  String _appliedWrittenContext = '';
+  bool Function()? _appliedWrittenCurrent;
+  Object? _appliedContextOwner;
+
+  @visibleForTesting
+  Duration typedContextPrepareTimeout = const Duration(seconds: 20);
   Completer<ContextApplyResult>? _applyDone;
   _LiveSession? _preparing;
   bool _swapping = false;
@@ -243,14 +293,43 @@ class LiveWebRtcBackend extends VoiceBackend
   /// An assistant turn is open, a tool or delegation (or typed action) runs,
   /// or the model was just handed a result it has not voiced yet.
   @override
-  bool get busy => _assistantOpen || _pendingTools.isNotEmpty || _runningActions > 0 || _settleTimers > 0;
+  bool get busy =>
+      _assistantOpen ||
+      _pendingTools.isNotEmpty ||
+      _runningActions > 0 ||
+      _settleTimers > 0 ||
+      _pendingReply != null ||
+      _pendingApply?.owner != null ||
+      !(_session?.contextDelivery?.isIdle ?? true);
 
   /// Delegations / typed actions still executing (not yet appended).
   int _runningActions = 0;
+  // Stop retires results still waiting on a tool/model, even when the live
+  // session is kept for a subsequent question. Session identity alone is not
+  // sufficient: a cancelled executor returns a failure report asynchronously.
+  int _actionGeneration = 0;
 
   /// Results handed to the model whose spoken answer has not started yet.
   int _settleTimers = 0;
   int _assistantTurns = 0;
+  _LivePendingReply? _pendingReply;
+  bool _requiresFreshReplyContext = false;
+  bool _discardRetiredReplies = false;
+  bool _voiceRecoveryNoticeSent = false;
+  bool _nativeCaptureReleaseFailed = false;
+  bool _nativeCaptureFailureReported = false;
+
+  @override
+  bool get voiceInputNeedsReconnect => _discardRetiredReplies;
+  int _typedInputGeneration = 0;
+
+  /// Maximum silence before an accepted outcome is confirmed. Real response
+  /// output extends the deadline, allowing long useful answers to finish.
+  @visibleForTesting
+  Duration responseWaitTimeout = const Duration(seconds: 60);
+
+  @visibleForTesting
+  Duration responseCompletionTimeout = const Duration(minutes: 5);
 
   /// How long after a delegation / typed-action result was appended the
   /// model may stay silent before the turn counts as finished
@@ -260,10 +339,24 @@ class LiveWebRtcBackend extends VoiceBackend
 
   void _settleLater() {
     final turns = _assistantTurns;
+    final session = _session;
+    final generation = _actionGeneration;
+    final typedGeneration = _typedInputGeneration;
     _settleTimers++;
     Timer(settleAfterResult, () {
       _settleTimers--;
-      if (_closed || _assistantOpen || _assistantTurns != turns) return;
+      if (_closed ||
+          !identical(_session, session) ||
+          generation != _actionGeneration ||
+          typedGeneration != _typedInputGeneration ||
+          _assistantOpen ||
+          _assistantTurns != turns) {
+        return;
+      }
+      if (_pendingReply != null) {
+        debugPrint('gpt-live: accepted request is still awaiting a confirmed reply');
+        return;
+      }
       debugPrint('gpt-live: result not voiced within ${settleAfterResult.inSeconds}s; turn settled');
       _emit(const ResponseDone());
     });
@@ -417,6 +510,19 @@ class LiveWebRtcBackend extends VoiceBackend
       }
       if (timed) timings.sideband = sw.elapsed;
       s.ws = ws;
+      s.contextDelivery = LiveContextDeliveryQueue(
+        send: (event) => ws.send(jsonEncode(event)),
+        onDiagnostic: Platform.environment['WOI_LIVE_CONTEXT_TRACE'] == '1'
+            ? (metadata) => debugPrint(
+                'gpt-live context ${jsonEncode({'call_id': s.callId, 'time_ms': DateTime.now().millisecondsSinceEpoch, ...metadata})}',
+              )
+            : null,
+        onError: (message, code, fatal) {
+          if (!_closed && identical(_session, s)) {
+            _emit(BackendError(redactSecrets(message), code: code, fatal: fatal));
+          }
+        },
+      );
       if (s.closed) throw LiveCallException('closed while connecting');
       s.sub = ws.messages.listen(
         (raw) {
@@ -466,6 +572,8 @@ class LiveWebRtcBackend extends VoiceBackend
   /// backoff and restores the context (summary + recent turns).
   void _onConnectionLost(int? code, String? reason) {
     debugPrint('gpt-live sideband closed (${code ?? '-'} ${reason ?? ''})');
+    _session?.contextDelivery?.close();
+    _executor?.cancelPending();
     if (_userSpeaking) _userStopped();
     if (_assistantOpen) {
       _interrupted = true;
@@ -496,14 +604,105 @@ class LiveWebRtcBackend extends VoiceBackend
   /// it is discarded and prepared again), so no response is interrupted.
   @override
   Future<ContextApplyResult> applySummary(String summary, {String? recentTurns}) {
-    if (_closed || _config == null) {
-      return Future.value(const ContextApplyResult(ContextApplyMethod.skipped, detail: 'not connected'));
+    if (_closed || _config == null || _nativeCaptureReleaseFailed) {
+      return Future.value(
+        const ContextApplyResult(ContextApplyMethod.skipped, detail: 'not connected or capture release unconfirmed'),
+      );
     }
     _summary = summary.trim();
-    _pendingApply = (summary: summary.trim(), recent: recentTurns);
+    final owned = _pendingApply?.owner == null ? null : _pendingApply;
+    if (_discardRetiredReplies && owned == null) {
+      return Future.value(
+        const ContextApplyResult(ContextApplyMethod.skipped, detail: 'voice input awaits a fresh request'),
+      );
+    }
+    final written = _guardCurrent(_appliedWrittenCurrent) ? _appliedWrittenContext : '';
+    // A normal compaction may update memory while mandatory preparation is
+    // pending, but cannot replace its complete payload, ownership or guards.
+    _pendingApply = _LiveContextApply(
+      summary: _summary!,
+      recent: recentTurns,
+      written: owned?.written ?? written,
+      isCurrent: owned?.isCurrent ?? (written.isEmpty ? null : _appliedWrittenCurrent),
+      canApply: owned?.canApply,
+      owner: owned?.owner,
+    );
     final c = _applyDone ??= Completer<ContextApplyResult>();
     _scheduleApply(Duration.zero);
     return c.future;
+  }
+
+  static bool _guardCurrent(bool Function()? guard) {
+    try {
+      return guard?.call() ?? true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  bool _applyCurrent(_LiveContextApply apply) => _guardCurrent(apply.isCurrent) && _guardCurrent(apply.canApply);
+
+  @override
+  FutureOr<bool> prepareTypedInputContext({
+    required String writtenContext,
+    required String recentContext,
+    required bool Function() isCurrent,
+  }) {
+    if (_closed || _config == null || !_guardCurrent(isCurrent)) return false;
+    if (_nativeCaptureReleaseFailed) {
+      _reportNativeCaptureFailure();
+      return false;
+    }
+    // New input supersedes an unresolved old reply at an owned boundary.
+    if (_pendingReply != null) _retirePendingReply(requireFresh: true);
+    if (writtenContext == _appliedWrittenContext && !_requiresFreshReplyContext) {
+      _appliedWrittenCurrent = isCurrent;
+      return true;
+    }
+    final owner = Object();
+    final generation = _actionGeneration;
+    var retired = false;
+    bool current() => !retired && !_closed && generation == _actionGeneration && _guardCurrent(isCurrent);
+    _noteActivity();
+    final activity = _activity;
+    _pendingApply = _LiveContextApply(
+      summary: _summary ?? '',
+      recent: _requiresFreshReplyContext
+          ? 'Earlier unfinished requests were stopped or superseded. Do not resume them; answer only the next new request.\n$recentContext'
+          : recentContext,
+      written: writtenContext,
+      isCurrent: current,
+      // Any intervening user/assistant activity makes this input snapshot
+      // ambiguous. Keep the draft instead of guessing which turn it follows.
+      canApply: () => _activity == activity,
+      owner: owner,
+    );
+    final c = _applyDone ??= Completer<ContextApplyResult>();
+    _scheduleApply(Duration.zero);
+    return () async {
+      var accepted = false;
+      try {
+        final result = await c.future.timeout(typedContextPrepareTimeout);
+        accepted =
+            result.method == ContextApplyMethod.reconnected && identical(_appliedContextOwner, owner) && current();
+      } catch (_) {
+        // A failed/expired context refresh never turns into a contextless send.
+      }
+      if (!accepted) {
+        retired = true;
+        _retireOwnedApply(owner);
+        if (_discardRetiredReplies && !_nativeCaptureReleaseFailed) {
+          _noticeVoiceRecovery(reason: 'Context preparation did not finish.');
+        }
+      }
+      return accepted;
+    }();
+  }
+
+  void _retireOwnedApply(Object owner) {
+    if (!identical(_pendingApply?.owner, owner)) return;
+    _applyTimer?.cancel();
+    _finishApply(const ContextApplyResult(ContextApplyMethod.skipped, detail: 'input context retired'));
   }
 
   void _noteActivity() {
@@ -518,6 +717,8 @@ class LiveWebRtcBackend extends VoiceBackend
       _keyByTurn.isEmpty &&
       _pendingTools.isEmpty &&
       _pendingDelegations == 0 &&
+      _pendingReply == null &&
+      (_session?.contextDelivery?.isIdle ?? true) &&
       !_player.isPlaying;
 
   bool get _quiet => _idle && DateTime.now().difference(_lastActivity) >= swapQuiet;
@@ -528,9 +729,10 @@ class LiveWebRtcBackend extends VoiceBackend
   }
 
   void _tryApply() {
-    if (_pendingApply == null || _swapping) return;
-    if (_closed) {
-      _finishApply(const ContextApplyResult(ContextApplyMethod.skipped, detail: 'closed'));
+    final want = _pendingApply;
+    if (want == null || _swapping) return;
+    if (_closed || _nativeCaptureReleaseFailed || !_applyCurrent(want)) {
+      _finishApply(const ContextApplyResult(ContextApplyMethod.skipped, detail: 'context no longer current'));
       return;
     }
     if (!_quiet) return _scheduleApply();
@@ -546,47 +748,95 @@ class LiveWebRtcBackend extends VoiceBackend
 
   Future<void> _swap() async {
     _swapping = true;
+    final batch = _applyDone;
     var result = const ContextApplyResult(ContextApplyMethod.skipped, detail: 'conversation kept moving');
     try {
       for (var attempt = 0; attempt < swapAttempts; attempt++) {
-        while (!_closed && !_quiet) {
+        while (!_closed && identical(batch, _applyDone) && !_quiet) {
+          final waiting = _pendingApply;
+          if (waiting == null || !_applyCurrent(waiting)) break;
           await Future<void>.delayed(swapPoll);
         }
+        if (!identical(batch, _applyDone)) break;
         final want = _pendingApply;
         final cfg = _config;
-        if (_closed || want == null || cfg == null) {
-          result = const ContextApplyResult(ContextApplyMethod.skipped, detail: 'closed');
+        if (_closed || want == null || cfg == null || !_applyCurrent(want)) {
+          result = const ContextApplyResult(ContextApplyMethod.skipped, detail: 'context no longer current');
           break;
         }
         final activity = _activity;
         final _LiveSession next;
         try {
+          if (want.owner != null) {
+            // Mandatory typed preparation owns a replacement, not overlapping
+            // native capture. Muting a track alone does not release its device.
+            final old = _session;
+            _retirePendingReply(requireFresh: true);
+            if (old != null) {
+              if (!old.closed) {
+                try {
+                  await old.rtc.setCaptureSuspended(true);
+                } catch (_) {
+                  // Native teardown can clear its references before failing.
+                  // A later retry must not treat that empty state as proof of
+                  // release and open a second capture on this backend.
+                  _nativeCaptureReleaseFailed = true;
+                  if (!_closed && identical(batch, _applyDone) && _applyCurrent(want)) {
+                    _reportNativeCaptureFailure();
+                  }
+                  result = const ContextApplyResult(
+                    ContextApplyMethod.skipped,
+                    detail: 'native capture release unconfirmed',
+                  );
+                  break;
+                }
+              }
+              if (_closed || !identical(batch, _applyDone) || !_applyCurrent(want)) {
+                await old.close();
+                break;
+              }
+              await old.close();
+              if (_closed || !identical(batch, _applyDone) || !_applyCurrent(want)) break;
+            }
+          }
+          final recent = [
+            if (want.recent?.trim().isNotEmpty ?? false) want.recent!,
+            if (want.written.isNotEmpty) want.written,
+          ].join('\n\n');
           next = await _openSession(
             cfg,
-            composeInstructions(cfg.instructions, want.summary, want.recent, note: _pinnedNote),
+            composeInstructions(cfg.instructions, want.summary, recent, note: _pinnedNote),
             activate: false,
           );
         } catch (e) {
           result = ContextApplyResult(ContextApplyMethod.skipped, detail: 'reconnect failed: $e');
+          if (want.owner != null) break;
           continue;
         }
-        if (_closed) {
+        if (_closed || !identical(batch, _applyDone) || !_applyCurrent(want)) {
           await next.close();
           break;
         }
         if (activity != _activity || !_idle || !identical(want, _pendingApply)) {
-          // The user or the assistant spoke meanwhile (the new call would miss
-          // that turn), or a newer summary arrived: prepare again.
           await next.close();
           continue;
         }
+        _appliedWrittenContext = want.written;
+        _appliedWrittenCurrent = want.isCurrent;
+        _appliedContextOwner = want.owner;
         _swapTo(next);
         result = ContextApplyResult(ContextApplyMethod.reconnected, detail: 'call ${next.callId}');
         break;
       }
     } finally {
       _swapping = false;
-      _finishApply(result);
+      // Stop can finish this batch immediately while its socket still opens.
+      // That retired preparation must not finish or clear a newer request.
+      if (identical(batch, _applyDone)) {
+        _finishApply(result);
+      } else if (_pendingApply != null) {
+        _scheduleApply(Duration.zero);
+      }
     }
   }
 
@@ -595,6 +845,9 @@ class LiveWebRtcBackend extends VoiceBackend
   void _swapTo(_LiveSession next) {
     final old = _session;
     _session = next;
+    _requiresFreshReplyContext = false;
+    _discardRetiredReplies = false;
+    _voiceRecoveryNoticeSent = false;
     callId = next.callId;
     _closeTimer?.cancel();
     _out.clear();
@@ -617,10 +870,20 @@ class LiveWebRtcBackend extends VoiceBackend
 
   // -------------------------------------------------------------- sideband
 
-  void _send(Map<String, Object?> ev) => _ws?.send(jsonEncode(ev));
-
   void _onSideband(Map<String, Object?> ev) {
-    switch (ev['type']) {
+    _session?.contextDelivery?.handleEvent(ev);
+    final type = ev['type'];
+    if (_discardRetiredReplies &&
+        (type == 'session.output_audio.delta' ||
+            type == 'session.input_audio.append' ||
+            type == 'output_transcript.added' ||
+            type == 'input_transcript.added' ||
+            type == 'turn.created' ||
+            type == 'turn.delta' ||
+            type == 'turn.done')) {
+      return;
+    }
+    switch (type) {
       case 'session.output_audio.delta':
         _onOutputAudio(ev);
       case 'session.input_audio.append':
@@ -632,6 +895,7 @@ class LiveWebRtcBackend extends VoiceBackend
         final t = _itemText(ev);
         if (t.isNotEmpty) _emit(UserTranscriptDelta(t, itemId: key));
       case 'output_transcript.added':
+        _touchPendingReply(progress: _itemText(ev).trim().isNotEmpty);
         _openAssistant(_int(ev['start_ms']));
         final t = _itemText(ev);
         if (t.isNotEmpty && !_dropTurn) _emit(AssistantTranscriptDelta(t));
@@ -641,6 +905,18 @@ class LiveWebRtcBackend extends VoiceBackend
         if (turn['role'] == 'user') {
           _bindUserTurn('${turn['id'] ?? ''}');
         } else if (turn['role'] == 'assistant') {
+          final reply = _pendingReply;
+          final id = '${turn['id'] ?? ''}';
+          if (reply != null && !reply.accepted) reply.canAssociate = false;
+          if (reply != null && reply.accepted && reply.canAssociate && !_discardRetiredReplies && id.isNotEmpty) {
+            if (reply.turnId == null) {
+              reply.turnId = id;
+              reply.responding = true;
+              reply.completeBy = DateTime.now().add(responseCompletionTimeout);
+            } else if (reply.turnId != id) {
+              reply.canAssociate = false;
+            }
+          }
           _openAssistant(_int(turn['start_ms']));
         }
       case 'turn.done':
@@ -656,6 +932,11 @@ class LiveWebRtcBackend extends VoiceBackend
           if (_openUserKey == key) _openUserKey = null;
           _emit(UserTranscriptDone(text, itemId: key));
         } else if (turn['role'] == 'assistant') {
+          final reply = _pendingReply;
+          if (reply != null && reply.canAssociate && reply.turnId == '${turn['id'] ?? ''}' && text.isNotEmpty) {
+            _retirePendingReply();
+            if (_pendingApply != null) _scheduleApply(Duration.zero);
+          }
           _closeAssistant(_int(turn['end_ms']), text);
         }
       case 'delegation.created':
@@ -663,11 +944,15 @@ class LiveWebRtcBackend extends VoiceBackend
       case 'delegation.context.appended':
         final id = '${ev['delegation_item_id'] ?? ''}';
         final w = _awaitingSpeech[id];
-        if (w != null) w.$1.appended = w.$2.elapsed;
+        if (w != null) w.$1.appended ??= w.$2.elapsed;
       case 'error':
         final err = _map(ev['error']);
         _emit(BackendError('gpt-live: ${err['message'] ?? 'error'}', code: err['code'] as String?));
-      case 'session.usage.updated' || 'session.started' || 'session.updated' || 'turn.delta':
+      case 'session.context.appended' ||
+          'session.usage.updated' ||
+          'session.started' ||
+          'session.updated' ||
+          'turn.delta':
         break;
     }
   }
@@ -682,6 +967,7 @@ class LiveWebRtcBackend extends VoiceBackend
     final d = ev['delta'];
     if (d is! String) return;
     final pcm = base64Decode(d);
+    _touchPendingReply(progress: pcm.any((byte) => byte != 0));
     final start = _int(ev['start_ms']);
     _firstOutMs ??= start;
     _out.add(start, pcm);
@@ -698,7 +984,7 @@ class LiveWebRtcBackend extends VoiceBackend
     _assistantStartMs = startMs;
     _emittedUntilMs = startMs;
     _interrupted = false;
-    _dropTurn = _dropping;
+    _dropTurn = _dropping || _discardRetiredReplies;
     debugPrint(
       'gpt-live turn open (muted=$_speakerMuted held=$_replyHeld drop=$_dropTurn) t=${DateTime.now().millisecondsSinceEpoch}',
     );
@@ -826,23 +1112,39 @@ class LiveWebRtcBackend extends VoiceBackend
         ? content.whereType<Map>().where((c) => c['type'] == 'input_text').map((c) => c['text'] ?? '').join(' ').trim()
         : '';
     final ex = _executor;
-    if (id.isEmpty || ex == null) return;
+    final session = _session;
+    if (id.isEmpty || ex == null || session == null || session.closed) return;
+    // Sideband duplicates must not execute the same tool request twice.
+    if (!session.delegationIds.add(id)) return;
     _noteActivity();
-    if (_dropping) {
+    if (_dropping || _discardRetiredReplies) {
       debugPrint('gpt-live: declined delegation "$text" (user said stop)');
-      _send({
-        'type': 'delegation.context.append',
-        'delegation_item_id': id,
-        'content': [
-          {'type': 'input_text', 'text': 'Not done: the user said stop / cancel. Do nothing and say nothing.'},
-        ],
-      });
-      _settleLater();
+      unawaited(
+        session.contextDelivery!
+            .append(
+              'Not done: the user said stop / cancel. Do nothing and say nothing.',
+              delegationId: id,
+              purpose: LiveTextPurpose.actionResult,
+            )
+            .then((accepted) {
+              if (accepted && !_closed && identical(_session, session)) _settleLater();
+            }),
+      );
       return;
     }
     final sw = Stopwatch()..start();
+    final generation = _actionGeneration;
+    final typedGeneration = _typedInputGeneration;
     _pendingDelegations++;
     _runningActions++;
+    final precedingReply = _pendingReply;
+    final unambiguous =
+        precedingReply == null ||
+        (precedingReply.canAssociate && precedingReply.accepted && precedingReply.turnId == null);
+    // The provider has handed this current request to bounded local work.
+    // Running delegation ownership keeps compaction busy until its result is
+    // appended; a live-answer silence timer must not expire during that work.
+    if (precedingReply != null) _retirePendingReply();
     unawaited(() async {
       final DelegationReport report;
       try {
@@ -850,17 +1152,28 @@ class LiveWebRtcBackend extends VoiceBackend
       } finally {
         _runningActions--;
       }
-      if (_closed) return;
-      _send({
-        'type': 'delegation.context.append',
-        'delegation_item_id': id,
-        'content': [
-          {'type': 'input_text', 'text': delegationResultNote(report)},
-        ],
-      });
-      debugPrint('live delegation "$text": ${report.timingSummary()}');
-      _settleLater();
+      if (_closed || session.closed || !identical(_session, session) || generation != _actionGeneration) {
+        _pendingDelegations--;
+        return;
+      }
       _awaitingSpeech[id] = (report, sw);
+      if (typedGeneration != _typedInputGeneration) {
+        _reportDelegation(id);
+        return;
+      }
+      final pendingReply = _beginPendingReply(session, unambiguous: unambiguous);
+      final accepted = await session.contextDelivery!.append(
+        delegationResultNote(report),
+        delegationId: id,
+        purpose: LiveTextPurpose.actionResult,
+      );
+      _acceptPendingReply(pendingReply, accepted);
+      debugPrint('live delegation "$text": ${report.timingSummary()}');
+      if (!accepted) {
+        _reportDelegation(id);
+        return;
+      }
+      if (!_closed && identical(_session, session)) _settleLater();
       // Report even if the model never speaks.
       Timer(const Duration(seconds: 12), () => _reportDelegation(id));
     }());
@@ -917,7 +1230,38 @@ class LiveWebRtcBackend extends VoiceBackend
   }
 
   @override
-  void sendText(String text) {
+  void sendText(String text) => _sendText(text);
+
+  @override
+  bool usesWrittenReferenceAnswer(String text, {required String referenceText}) {
+    final ex = _executor;
+    return ex != null &&
+        referenceText.trim().isNotEmpty &&
+        !_hasTypedAction(text.trim(), ex, hasAttachments: _pendingAttachmentImages.isNotEmpty);
+  }
+
+  bool _hasTypedAction(String text, DelegationExecutor ex, {required bool hasAttachments}) =>
+      hasAttachments ||
+      looksLikeAction(text) ||
+      (ex.tools.any((tool) => tool.name == 'web_search') && needsWebLookup(text)) ||
+      _asksAboutContextImages(text);
+
+  @override
+  void sendTextWithWrittenResult(
+    String text, {
+    required bool Function(WrittenResponse) onResult,
+    String? referenceText,
+    bool Function()? isReferenceCurrent,
+  }) =>
+      _sendText(text, onWrittenResult: onResult, referenceText: referenceText, isReferenceCurrent: isReferenceCurrent);
+
+  void _sendText(
+    String text, {
+    bool Function(WrittenResponse)? onWrittenResult,
+    String? referenceText,
+    bool Function()? isReferenceCurrent,
+  }) {
+    _typedInputGeneration++;
     _noteActivity();
     final t = text.trim();
     if (t.isEmpty) return;
@@ -926,15 +1270,24 @@ class LiveWebRtcBackend extends VoiceBackend
     final ex = _executor;
     // Typed text never starts a delegation on gpt-live, so action requests
     // are carried out here and the model only voices the real outcome.
-    final webLookup = ex != null && ex.tools.any((tool) => tool.name == 'web_search') && needsWebLookup(t);
-    if (ex != null && (looksLikeAction(t) || webLookup || _asksAboutContextImages(t))) {
-      _runTypedAction(t, ex);
+    final attachments = Map<String, DelegationImage>.of(_pendingAttachmentImages);
+    if (ex != null && _hasTypedAction(t, ex, hasAttachments: attachments.isNotEmpty)) {
+      if (_runTypedAction(t, ex, attachedImages: attachments.values.toList(), onWrittenResult: onWrittenResult)) {
+        for (final entry in attachments.entries) {
+          if (identical(_pendingAttachmentImages[entry.key], entry.value)) {
+            _pendingAttachmentImages.remove(entry.key);
+          }
+        }
+      }
+      return;
+    }
+    if (ex != null && onWrittenResult != null && referenceText != null && referenceText.trim().isNotEmpty) {
+      _runReferenceAnswer(t, ex, referenceText, isReferenceCurrent, onWrittenResult);
       return;
     }
     // No user-text item on this transport. Context without a channel makes
     // the model answer (the 'developer' channel is read silently; §3.2).
     _appendContext('The user typed (instead of speaking): $t');
-    _settleLater();
   }
 
   /// "what do you see?" with the camera on, "what's in this image" with
@@ -944,37 +1297,224 @@ class LiveWebRtcBackend extends VoiceBackend
   bool _asksAboutContextImages(String t) =>
       isMediaQuestion(t) ||
       (_latestImage != null && isScreenQuestion(t)) ||
-      cameraCommand(t) != null ||
+      mediaCaptureCommand(t) != null ||
       (_contextImages.containsKey('camera') && DelegationExecutor.needsScreen(t));
 
-  void _appendContext(String text) => _send({
-    'type': 'session.context.append',
-    'content': [
-      {'type': 'input_text', 'text': text},
-    ],
-  });
+  _LivePendingReply _beginPendingReply(_LiveSession session, {bool unambiguous = true}) {
+    final canAssociate =
+        unambiguous && _pendingReply == null && !_assistantOpen && !_userSpeaking && _openUserKey == null;
+    _retirePendingReply();
+    final reply = _LivePendingReply(session, canAssociate: canAssociate);
+    _pendingReply = reply;
+    return reply;
+  }
 
-  void _runTypedAction(String text, DelegationExecutor ex) {
+  void _acceptPendingReply(_LivePendingReply reply, bool accepted) {
+    if (!identical(_pendingReply, reply)) return;
+    if (!accepted || _closed || reply.session.closed || !identical(_session, reply.session)) {
+      _retirePendingReply(requireFresh: !accepted);
+      return;
+    }
+    reply.accepted = true;
+    reply.deadline = DateTime.now().add(responseWaitTimeout);
+    final poll = responseWaitTimeout < const Duration(milliseconds: 250)
+        ? responseWaitTimeout
+        : const Duration(milliseconds: 250);
+    reply.timer = Timer.periodic(poll, (_) {
+      if (!identical(_pendingReply, reply) || _closed || !identical(_session, reply.session)) {
+        reply.timer?.cancel();
+        return;
+      }
+      final now = DateTime.now();
+      if (now.isBefore(reply.deadline!) && (reply.completeBy == null || now.isBefore(reply.completeBy!))) return;
+      _retirePendingReply(requireFresh: true);
+      _emit(
+        BackendError(
+          reply.responding
+              ? 'The live reply stopped before it could be confirmed complete. Your request and attachments are saved. Reconnect, then resend your request.'
+              : 'A live answer could not be confirmed. Your request and attachments are saved. Reconnect, then resend your request.',
+          code: 'live_response_timeout',
+          fatal: true,
+        ),
+      );
+    });
+  }
+
+  void _touchPendingReply({required bool progress}) {
+    if (!progress) return;
+    final reply = _pendingReply;
+    if (reply != null && !reply.accepted) reply.canAssociate = false;
+    if (reply != null && reply.turnId != null && reply.canAssociate && !_discardRetiredReplies) {
+      reply.deadline = DateTime.now().add(responseWaitTimeout);
+    }
+  }
+
+  void _retirePendingReply({bool requireFresh = false}) {
+    _pendingReply?.timer?.cancel();
+    _pendingReply = null;
+    if (requireFresh) {
+      _requiresFreshReplyContext = true;
+      _discardRetiredReplies = true;
+      _rtc?.setMicEnabled(false);
+      if (_assistantOpen) {
+        _dropTurn = true;
+        _interrupted = true;
+      }
+      _mute();
+      // This call is intentionally disposable. A retired open turn must not
+      // keep the owned fresh-context preparation waiting for its old done event.
+      if (_assistantOpen) _finishAssistant();
+    }
+  }
+
+  void _appendContext(String text, {LiveTextPurpose purpose = LiveTextPurpose.userMessage, String? channel}) {
+    final session = _session;
+    if (_closed || session == null || session.closed) return;
+    final reply = channel == 'developer' ? null : _beginPendingReply(session);
+    unawaited(
+      session.contextDelivery!.append(text, purpose: purpose, channel: channel).then((accepted) {
+        if (reply != null) _acceptPendingReply(reply, accepted);
+        if (accepted && channel != 'developer' && !_closed && identical(_session, session)) _settleLater();
+      }),
+    );
+  }
+
+  void _runReferenceAnswer(
+    String text,
+    DelegationExecutor ex,
+    String referenceText,
+    bool Function()? isReferenceCurrent,
+    bool Function(WrittenResponse) onWrittenResult,
+  ) {
+    final session = _session;
+    if (_closed || session == null || session.closed) return;
+    final generation = _actionGeneration;
+    final typedGeneration = _typedInputGeneration;
+    final userGeneration = _userSeq;
+    final note = _pinnedNote;
+    final savedReference = note == null || note.trim().isEmpty
+        ? referenceText
+        : '$referenceText\n\n${pinnedNoteBlock(note)}';
+    bool referenceCurrent() {
+      try {
+        return isReferenceCurrent?.call() ?? false;
+      } catch (_) {
+        return false;
+      }
+    }
+
     _pendingDelegations++;
     _runningActions++;
     unawaited(() async {
       final DelegationReport report;
       try {
-        report = await ex.execute(text, id: 'typed_${++_toolSeq}');
+        report = referenceCurrent()
+            ? await ex.answerFromReference(text, referenceText: savedReference, id: 'reference_${++_toolSeq}')
+            : (DelegationReport(id: 'reference_${++_toolSeq}', request: text)
+                ..model = ex.fastModel
+                ..error = StateError('Saved reference changed.'));
       } finally {
         _pendingDelegations--;
         _runningActions--;
       }
-      if (_closed) return;
-      debugPrint('live typed action "$text": ${report.timingSummary()}');
-      _appendContext(
-        'The user typed: "$text". The app already carried it out. Result: ${report.resultText}\n'
-        'Tell the user the outcome in one short sentence, exactly as reported; if it failed or was not done, '
-        'say so plainly. Do not start another action for this request.',
+      if (_closed || session.closed || !identical(_session, session) || generation != _actionGeneration) return;
+      final current = referenceCurrent();
+      if (!current) {
+        report
+          ..error = StateError('Saved reference changed.')
+          ..answerText = ''
+          ..resultText = 'The saved analysis changed. Ask the question again.';
+      }
+      final failed = !current || report.error != null || report.answerText.trim().isEmpty;
+      final outcome = WrittenResponse(
+        text: !current
+            ? 'The saved analysis changed before I could verify the answer. Please ask your question again.'
+            : failed
+            ? 'I couldn’t answer from the saved analysis. It is still available in chat. Please try the question again.'
+            : report.answerText.trim(),
+        model: report.model,
+        failed: failed,
       );
-      _settleLater();
+      debugPrint('live reference answer: ${report.timingSummary()}');
+      var accepted = false;
+      try {
+        accepted = onWrittenResult(outcome);
+      } catch (_) {
+        _emit(const BackendError('The answer could not be saved. Please try your question again.'));
+      }
+      if (accepted && typedGeneration == _typedInputGeneration && userGeneration == _userSeq) {
+        _appendContext(buildLiveReferenceReplyCue(outcome), purpose: LiveTextPurpose.actionResult);
+      }
       if (!_delegations.isClosed) _delegations.add(report);
     }());
+  }
+
+  bool _runTypedAction(
+    String text,
+    DelegationExecutor ex, {
+    List<DelegationImage> attachedImages = const [],
+    bool Function(WrittenResponse)? onWrittenResult,
+  }) {
+    final session = _session;
+    if (_closed || session == null || session.closed) return false;
+    final generation = _actionGeneration;
+    final typedGeneration = _typedInputGeneration;
+    _pendingDelegations++;
+    _runningActions++;
+    unawaited(() async {
+      final DelegationReport report;
+      try {
+        report = await ex.execute(
+          text,
+          id: 'typed_${++_toolSeq}',
+          attachedImages: attachedImages,
+          writtenImageAnswer: onWrittenResult != null,
+        );
+      } finally {
+        _pendingDelegations--;
+        _runningActions--;
+      }
+      if (_closed || session.closed || !identical(_session, session) || generation != _actionGeneration) return;
+      debugPrint('live typed action "$text": ${report.timingSummary()}');
+      if (onWrittenResult != null) {
+        final answer = report.answerText.trim();
+        final failed = report.error != null || answer.isEmpty;
+        final written = failed
+            ? report.tools.isEmpty
+                  ? 'I couldn’t analyze this attachment. Please try sending it again.'
+                  : 'I couldn’t finish the attachment analysis. Review the recorded tool results before sending it again.'
+            : answer;
+        // The result must survive a missing/rejected live narration. Preserve
+        // provider diagnostics in the report, never in the user's error text.
+        final outcome = WrittenResponse(text: written, model: report.model, failed: failed);
+        var accepted = false;
+        try {
+          accepted = onWrittenResult(outcome);
+        } catch (_) {
+          _emit(const BackendError('The attachment analysis could not be saved. Please try sending it again.'));
+        }
+        // The full analysis is already visible under its originating request.
+        // A single bounded cue avoids staging a second copy through Live,
+        // where a receipt alone does not guarantee response activation.
+        if (accepted && typedGeneration == _typedInputGeneration) {
+          _appendContext(buildLiveAttachmentReplyCue(outcome), purpose: LiveTextPurpose.actionResult);
+        }
+        if (!_delegations.isClosed) _delegations.add(report);
+        return;
+      }
+      if (typedGeneration != _typedInputGeneration) {
+        if (!_delegations.isClosed) _delegations.add(report);
+        return;
+      }
+      _appendContext(
+        'The user typed: "$text". The app processed the request. Result: ${report.resultText}\n'
+        'Tell the user the outcome in one short sentence, exactly as reported; if it failed or was not done, '
+        'say so plainly. Do not start another action for this request.',
+        purpose: LiveTextPurpose.actionResult,
+      );
+      if (!_delegations.isClosed) _delegations.add(report);
+    }());
+    return true;
   }
 
   @override
@@ -994,6 +1534,7 @@ class LiveWebRtcBackend extends VoiceBackend
     final parts = [
       if (_summary != null && _summary!.trim().isNotEmpty) _summary!.trim(),
       if (_screenMemory.isNotEmpty) 'Earlier screens (described):\n$_screenMemory',
+      if (_appliedWrittenContext.isNotEmpty && _guardCurrent(_appliedWrittenCurrent)) _appliedWrittenContext,
     ];
     return parts.isEmpty ? null : parts.join('\n\n');
   }
@@ -1007,7 +1548,44 @@ class LiveWebRtcBackend extends VoiceBackend
   /// Stop / barge-in: gpt-live is full duplex and yields by itself when the
   /// user talks; locally we silence the remote track until the next turn.
   @override
-  void cancelPendingTools() => _executor?.cancelPending();
+  void cancelPendingTools() {
+    _actionGeneration++;
+    final session = _session;
+    if (session != null && !session.closed) {
+      _retirePendingReply(requireFresh: true);
+      _noticeVoiceRecovery();
+    }
+    if (_pendingApply != null) {
+      _applyTimer?.cancel();
+      _finishApply(const ContextApplyResult(ContextApplyMethod.skipped, detail: 'stopped'));
+    }
+    _pendingAttachmentImages.clear();
+    _executor?.cancelPending();
+    _session?.contextDelivery?.cancelPending();
+  }
+
+  void _reportNativeCaptureFailure() {
+    if (_closed || _nativeCaptureFailureReported) return;
+    _nativeCaptureFailureReported = true;
+    _emit(
+      const BackendError(
+        'Microphone capture could not be released safely. Your message and attachments are kept. Reconnect before trying again.',
+        code: 'live_capture_release_failed',
+        fatal: true,
+      ),
+    );
+  }
+
+  void _noticeVoiceRecovery({String reason = 'Stopped.'}) {
+    if (_voiceRecoveryNoticeSent || _closed) return;
+    _voiceRecoveryNoticeSent = true;
+    _emit(
+      BackendError(
+        '$reason Voice input is paused. Choose Reconnect before speaking again, or send a typed message to prepare a fresh session.',
+        code: 'live_voice_paused',
+      ),
+    );
+  }
 
   @override
   void cancelResponse() {
@@ -1063,6 +1641,9 @@ class LiveWebRtcBackend extends VoiceBackend
 
   @override
   Future<MicStream> openManagedMic() async {
+    if (_nativeCaptureReleaseFailed) {
+      throw StateError('Microphone capture release is unconfirmed. Reconnect before trying again.');
+    }
     final m = _ManagedMic(this);
     _mics.add(m);
     // Opening the observation stream must preserve the current PTT/mute gate,
@@ -1084,15 +1665,37 @@ class LiveWebRtcBackend extends VoiceBackend
   @override
   void setInputEnabled(bool enabled) {
     _inputEnabled = enabled;
-    _rtc?.setMicEnabled(enabled);
+    _rtc?.setMicEnabled(enabled && !_discardRetiredReplies);
+    if (enabled && _discardRetiredReplies) _noticeVoiceRecovery();
   }
 
   @override
   Future<void> setCaptureSuspended(bool suspended) async {
+    if (_nativeCaptureReleaseFailed) {
+      // Cleanup may request resume after a failed hold. Keep capture paused;
+      // another hold cannot turn cleared native references into proof of release.
+      if (suspended) {
+        throw StateError('Microphone capture release is unconfirmed. Reconnect before trying again.');
+      }
+      return;
+    }
     _captureSuspended = suspended;
     // Update the desired state synchronously. Sessions created during the
     // await inherit it before createOffer and cannot reacquire the device.
-    await Future.wait([for (final session in _sessions.toList()) session.rtc.setCaptureSuspended(suspended)]);
+    try {
+      await Future.wait([for (final session in _sessions.toList()) session.rtc.setCaptureSuspended(suspended)]);
+    } catch (_) {
+      if (suspended) {
+        _nativeCaptureReleaseFailed = true;
+        _retirePendingReply(requireFresh: true);
+        _applyTimer?.cancel();
+        _finishApply(
+          const ContextApplyResult(ContextApplyMethod.skipped, detail: 'native capture release unconfirmed'),
+        );
+        _reportNativeCaptureFailure();
+      }
+      rethrow;
+    }
   }
 
   void _micClosed(_ManagedMic m) {
@@ -1106,6 +1709,7 @@ class LiveWebRtcBackend extends VoiceBackend
   Future<void> close() async {
     if (_closed) return;
     _closed = true;
+    _retirePendingReply();
     _executor?.cancelPending();
     _closeTimer?.cancel();
     _applyTimer?.cancel();
@@ -1125,6 +1729,35 @@ class LiveWebRtcBackend extends VoiceBackend
   }
 }
 
+class _LivePendingReply {
+  _LivePendingReply(this.session, {required this.canAssociate});
+  final _LiveSession session;
+  bool canAssociate;
+  bool accepted = false;
+  bool responding = false;
+  String? turnId;
+  DateTime? deadline;
+  DateTime? completeBy;
+  Timer? timer;
+}
+
+class _LiveContextApply {
+  const _LiveContextApply({
+    required this.summary,
+    required this.recent,
+    required this.written,
+    this.isCurrent,
+    this.canApply,
+    this.owner,
+  });
+  final String summary;
+  final String? recent;
+  final String written;
+  final bool Function()? isCurrent;
+  final bool Function()? canApply;
+  final Object? owner;
+}
+
 // ------------------------------------------------------------------ helpers
 
 /// One gpt-live call: WebRTC media plus its sideband socket.
@@ -1134,6 +1767,8 @@ class _LiveSession {
   final String model;
   final String voice;
   RealtimeSocket? ws;
+  LiveContextDeliveryQueue? contextDelivery;
+  final delegationIds = <String>{};
   StreamSubscription<String>? sub;
   String? callId;
   final started = Completer<void>();
@@ -1145,6 +1780,7 @@ class _LiveSession {
 
   Future<void> _close() async {
     closed = true;
+    contextDelivery?.close();
     try {
       ws?.send(jsonEncode({'type': 'session.close'}));
     } catch (_) {}

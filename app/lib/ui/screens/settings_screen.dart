@@ -320,13 +320,7 @@ class _SettingsViewState extends State<SettingsView> {
           keywords: 'credentials access authentication reveal',
         ),
     ]),
-    _Group('model', 'Model', [
-      _Item(
-        'Audio model',
-        '',
-        (w) => _audioModels(),
-        keywords: 'voice speech realtime live ${_s.voiceModel} ${_s.realtimeModel}',
-      ),
+    _Group('model', 'Text & reasoning', [
       _Item(
         'Text model',
         '',
@@ -334,6 +328,14 @@ class _SettingsViewState extends State<SettingsView> {
         full: true,
         keywords:
             'thinking level effort delegated delegation background reasoning usage guard effective ${_s.delegateModel}',
+      ),
+    ]),
+    _Group('voice', 'Voice & audio', [
+      _Item(
+        'Audio model',
+        '',
+        (w) => _audioModels(),
+        keywords: 'voice speech realtime live ${_s.voiceModel} ${_s.realtimeModel}',
       ),
       _Item('Voice', '', (w) => _voices(), keywords: 'speech sound marin echo ${_s.activeVoice}'),
       _Item(
@@ -391,7 +393,7 @@ class _SettingsViewState extends State<SettingsView> {
   ];
 
   List<_Group> _advancedGroups() => [
-    _Group('audio', 'Voice & audio', [
+    _Group('audio', 'Voice timing & behavior', [
       if (_s.backendMode != BackendMode.gptLive)
         _Item(
           'Reply delay',
@@ -920,9 +922,12 @@ class _SettingsViewState extends State<SettingsView> {
   Widget _row(bool wide, String title, String desc, Widget control, {String? detail, bool inline = false}) {
     final isSwitch = control is _SwitchBox;
     final text = _label(title, desc, detail);
+    // The compact 76px label column is suitable at ordinary text sizes only.
+    // Larger text needs the full width to keep a label such as Backend intact.
+    final compactInline = inline && MediaQuery.textScalerOf(context).scale(14) <= 17.5;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
-      child: wide || isSwitch || inline
+      child: wide || isSwitch || compactInline
           ? Row(
               children: [
                 wide || isSwitch ? Expanded(child: text) : SizedBox(width: 76, child: text),
@@ -1085,11 +1090,13 @@ class _SettingsViewState extends State<SettingsView> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Radio<T>(value: v, enabled: unavailable?.call(v) == null, visualDensity: VisualDensity.compact),
-                    Text(
-                      label?.call(v) ?? '$v',
-                      style: (monoText ? mono(13) : body(13.5)).copyWith(
-                        color: unavailable?.call(v) == null ? WoiColors.text : WoiColors.textFaint,
-                        fontWeight: v == value ? FontWeight.w600 : FontWeight.w400,
+                    Flexible(
+                      child: Text(
+                        label?.call(v) ?? '$v',
+                        style: (monoText ? mono(13) : body(13.5)).copyWith(
+                          color: unavailable?.call(v) == null ? WoiColors.text : WoiColors.textFaint,
+                          fontWeight: v == value ? FontWeight.w600 : FontWeight.w400,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 4),
@@ -1117,6 +1124,23 @@ class _SettingsViewState extends State<SettingsView> {
   }) {
     String name(T v) => label?.call(v) ?? '$v';
     final style = monoText ? mono(13) : body(13.5);
+    Widget option(T value) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            name(value),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: style.copyWith(color: unavailable?.call(value) == null ? WoiColors.text : WoiColors.textFaint),
+          ),
+          if (unavailable?.call(value) case final String reason)
+            Text(reason, style: body(11.5, color: WoiColors.textDim)),
+        ],
+      ),
+    );
     return InputDecorator(
       decoration: InputDecoration(
         isDense: true,
@@ -1136,41 +1160,23 @@ class _SettingsViewState extends State<SettingsView> {
             borderRadius: BorderRadius.circular(WoiRadii.md),
             dropdownColor: WoiColors.bg2,
             hint: hint == null ? null : Text(hint, style: style.copyWith(color: WoiColors.textDim)),
+            // DropdownButton measures every hidden IndexedStack child. Only
+            // the selected value should size the closed button; a null value
+            // is sized by its hint. Retain matching selected/menu content so
+            // large-text popup positioning still uses the same item height.
             selectedItemBuilder: (_) => [
               for (final v in options)
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Tooltip(
-                    message: name(v),
-                    child: Text(name(v), maxLines: 1, overflow: TextOverflow.ellipsis, style: style),
-                  ),
-                ),
+                if (v == value)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Tooltip(message: name(v), child: option(v)),
+                  )
+                else
+                  const SizedBox.shrink(),
             ],
             items: [
               for (final v in options)
-                DropdownMenuItem<T>(
-                  value: v,
-                  enabled: unavailable?.call(v) == null,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          name(v),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: style.copyWith(
-                            color: unavailable?.call(v) == null ? WoiColors.text : WoiColors.textFaint,
-                          ),
-                        ),
-                        if (unavailable?.call(v) case final String reason)
-                          Text(reason, style: body(11.5, color: WoiColors.textDim)),
-                      ],
-                    ),
-                  ),
-                ),
+                DropdownMenuItem<T>(value: v, enabled: unavailable?.call(v) == null, child: option(v)),
             ],
             onChanged: enabled
                 ? (v) {

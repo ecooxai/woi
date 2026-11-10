@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import '../../platform/audio_io.dart';
@@ -158,6 +159,15 @@ class ResponseDone extends BackendEvent {
   final bool cancelled;
 }
 
+/// A completed typed analysis, separate from any optional spoken response.
+/// Provider diagnostics stay out of [text]; failures give a safe retry message.
+class WrittenResponse {
+  const WrittenResponse({required this.text, required this.model, this.failed = false});
+  final String text;
+  final String model;
+  final bool failed;
+}
+
 /// A realtime speech-to-speech session (OpenAI-realtime style).
 ///
 /// Implementations: [MockVoiceBackend] today; a WebSocket backend later.
@@ -177,6 +187,10 @@ abstract class VoiceBackend {
   /// generated, a delegation or tool running). While true the pipeline keeps
   /// showing "Thinking…" however long it takes.
   bool get busy => false;
+
+  /// A retired live call cannot safely receive another spoken request.
+  /// Reconnect, or let the next typed input prepare a fresh call.
+  bool get voiceInputNeedsReconnect => false;
 
   Future<void> connect(SessionConfig config);
 
@@ -204,6 +218,34 @@ abstract class VoiceBackend {
   void setIdle(bool idle) {}
 
   void sendText(String text);
+
+  /// Prepare saved written analysis before accepting a new typed request.
+  /// Backends that already share complete chat context need no preparation.
+  /// False leaves the new request unsent and retryable. The owner guard must
+  /// still hold when a prepared context becomes active, not only on return.
+  FutureOr<bool> prepareTypedInputContext({
+    required String writtenContext,
+    required String recentContext,
+    required bool Function() isCurrent,
+  }) => true;
+
+  /// Whether this ordinary typed input should answer from an explicit saved
+  /// analysis. Action/media routes remain the backend's existing decision.
+  bool usesWrittenReferenceAnswer(String text, {required String referenceText}) => false;
+
+  /// Backends with a separate typed analysis may publish its written outcome.
+  /// The caller owns the request/conversation identity and must reject late or
+  /// duplicate callbacks. Returning true confirms a visible written outcome;
+  /// false suppresses any acknowledgement of saving it. Other backends keep
+  /// their ordinary transcript route.
+  void sendTextWithWrittenResult(
+    String text, {
+    required bool Function(WrittenResponse) onResult,
+    String? referenceText,
+    bool Function()? isReferenceCurrent,
+  }) {
+    sendText(text);
+  }
 
   /// Adds a screenshot to the model context. Returns the id of the context
   /// item that holds it when the backend can later [replaceImage] it.
