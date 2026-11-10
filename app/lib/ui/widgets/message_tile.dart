@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/context/image_tiers.dart';
 import '../../core/models/message.dart';
+import '../../core/models/message_file_attachment.dart';
 import '../../core/auth/pkce_login.dart';
 import '../../core/images/media_metadata.dart';
 import '../../core/audio/clip_loudness.dart';
@@ -263,7 +264,8 @@ class _Bubble extends StatelessWidget {
     final imageJob = m.meta['type'] == 'image_generation';
     final imageStatus = imageJob ? m.meta['status'] as String? : null;
     final generatingImage = imageStatus == 'pending';
-    final visibleText = messageDisplayText(m);
+    final attachments = messageFileDisplay(m);
+    final visibleText = attachments?.text ?? messageDisplayText(m);
     final waiting = m.streaming && m.text.isEmpty && !generatingImage;
     const r = Radius.circular(WoiRadii.lg);
     final radius = BorderRadius.only(
@@ -312,12 +314,18 @@ class _Bubble extends StatelessWidget {
           if (visibleText.isNotEmpty) const SizedBox(height: 8),
         ],
         if (isUser && textContent != null) textContent,
+        if (attachments != null) ...[
+          if (textContent != null) const SizedBox(height: 10),
+          _AttachmentLabels(files: attachments.files, palette: _bubblePalette),
+        ],
         if (m.image != null) ...[
-          if (isUser && textContent != null) const SizedBox(height: 10),
+          if (isUser && (textContent != null || attachments != null))
+            const SizedBox(height: 10),
           ScreenshotThumb(
             image: m.image!,
             viewer: viewer,
             tier: imageTierOf(m),
+            sentSize: recordedImageSentSize(m),
             label: m.image!.generated ? 'Generated image' : imageLabel(m),
             palette: _bubblePalette,
           ),
@@ -702,6 +710,65 @@ class _GeneratedImageInfo extends StatelessWidget {
   );
 }
 
+class _AttachmentLabels extends StatelessWidget {
+  const _AttachmentLabels({required this.files, required this.palette});
+  final List<MessageFileAttachment> files;
+  final WoiPalette palette;
+
+  @override
+  Widget build(BuildContext context) => Wrap(
+    spacing: 6,
+    runSpacing: 6,
+    alignment: WrapAlignment.end,
+    children: [
+      for (final file in files)
+        Tooltip(
+          message: file.uri,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            decoration: BoxDecoration(
+              color: palette.glass,
+              border: Border.all(color: palette.strokeStrong),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.attach_file, size: 16, color: palette.textDim),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    file.name.isEmpty ? 'Attachment' : file.name,
+                    style: body(12, color: palette.text),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+    ],
+  );
+}
+
+/// Recorded dimensions, never an inferred ratio. Reduced entries without
+/// complete metadata use a neutral label; described entries have no image size.
+(int, int)? recordedImageSentSize(Message message) {
+  if (imageTierOf(message) == ImageTier.described) return null;
+  final width = message.meta[ImageMeta.sentWidth];
+  final height = message.meta[ImageMeta.sentHeight];
+  if (width is int && width > 0 && height is int && height > 0) {
+    return (width, height);
+  }
+  final image = message.image;
+  if (imageTierOf(message) == ImageTier.full &&
+      image != null &&
+      image.width > 0 &&
+      image.height > 0) {
+    return (image.width, image.height);
+  }
+  return null;
+}
+
 /// Screenshot thumbnail; tap for the zoomable lightbox. [marker] (in
 /// image-pixel coordinates) draws a click target on top.
 class ScreenshotThumb extends StatelessWidget {
@@ -714,15 +781,19 @@ class ScreenshotThumb extends StatelessWidget {
     this.maxHeight = 220,
     this.tier = ImageTier.full,
     this.label = 'Screenshot',
+    this.sentSize,
     this.palette,
   });
   final ImageAttachment image;
 
-  /// "Screenshot", "Camera frame", "Media image" ([imageLabel]).
+  /// Image origin ([imageLabel]).
   final String label;
 
   /// How the model currently has it; the thumbnail is always the original.
   final ImageTier tier;
+
+  /// Actual recorded sent dimensions, if available.
+  final (int, int)? sentSize;
 
   /// Optional local surface palette; defaults to the current app theme.
   final WoiPalette? palette;
@@ -775,6 +846,17 @@ class ScreenshotThumb extends StatelessWidget {
     final file = File(image.path);
     final mk = marker;
     final colors = palette ?? WoiColors.palette;
+    final sent =
+        sentSize ??
+        (tier == ImageTier.full && image.width > 0 && image.height > 0
+            ? (image.width, image.height)
+            : null);
+    final sentLabel = sent == null
+        ? 'reduced image'
+        : 'sent ${sent.$1}×${sent.$2}';
+    final original = image.originalWidth > 0 && image.originalHeight > 0
+        ? ' · original ${image.originalWidth}×${image.originalHeight}'
+        : '';
     return Semantics(
       button: true,
       image: true,
@@ -789,7 +871,14 @@ class ScreenshotThumb extends StatelessWidget {
             image.path,
             caption: image.generated
                 ? 'Generated image'
-                : '$label · sent ${image.width}×${image.height}'
+                : '$label$original'
+                      '${tier == ImageTier.described
+                          ? ' · text description'
+                          : sent != null
+                          ? ' · $sentLabel'
+                          : tier == ImageTier.reduced
+                          ? ' · reduced image'
+                          : ''}'
                       '${mk != null ? ' · click (${mk.dx.round()}, ${mk.dy.round()})' : ''}',
             generationDurationMs: image.generationDurationMs,
             generationModel: image.generationModel,
@@ -846,8 +935,10 @@ class ScreenshotThumb extends StatelessWidget {
                         bottom: 6,
                         child: Tooltip(
                           message: tier == ImageTier.reduced
-                              ? 'Older ${label.toLowerCase()}: the model now has it at ⅕ size'
-                              : 'Old ${label.toLowerCase()}: the model now has a text description',
+                              ? sent == null
+                                    ? 'Reduced ${label.toLowerCase()}; sent dimensions were not recorded'
+                                    : '$label: recorded sent size ${sent.$1}×${sent.$2}'
+                              : '$label: represented by a text description',
                           child: Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 6,
@@ -859,7 +950,7 @@ class ScreenshotThumb extends StatelessWidget {
                             ),
                             child: Text(
                               tier == ImageTier.reduced
-                                  ? 'sent ⅕'
+                                  ? sentLabel
                                   : 'described',
                               style: const TextStyle(
                                 fontSize: 11,
@@ -1870,6 +1961,7 @@ class _SystemNote extends StatelessWidget {
                 image: m.image!,
                 viewer: viewer,
                 tier: imageTierOf(m),
+                sentSize: recordedImageSentSize(m),
                 label: m.image!.generated ? 'Generated image' : imageLabel(m),
                 maxWidth: type == 'camera' ? 200 : 300,
               ),

@@ -13,6 +13,7 @@ import 'package:woi/core/context/image_tiers.dart';
 import 'package:woi/core/delegate/delegate_backend.dart';
 import 'package:woi/core/media/media_context.dart';
 import 'package:woi/core/models/message.dart';
+import 'package:woi/core/models/message_file_attachment.dart';
 import 'package:woi/core/pipeline/echo_guard.dart';
 import 'package:woi/core/pipeline/turn_pipeline.dart';
 import 'package:woi/core/settings/settings.dart';
@@ -2457,7 +2458,12 @@ void main() {
         await seed(h, b);
         final gate = Completer<bool>();
         b.prepare = () => gate.future;
-        final pending = h.pipeline.sendText('Retired follow-up.');
+        const retiredFile = MessageFileAttachment(name: 'retired.txt', uri: 'file:///synthetic/retired.txt');
+        final pending = h.pipeline.sendText(
+          'Retired follow-up.',
+          displayText: 'Retired follow-up.\n\n${retiredFile.markdown}',
+          attachedFiles: [retiredFile],
+        );
         switch (invalidation) {
           case 'Stop':
             h.pipeline.interrupt();
@@ -2474,7 +2480,11 @@ void main() {
         gate.complete(true);
         expect(await pending, isFalse);
         expect(b.texts, ['Original attachment request.']);
-        expect(h.conv.messages.any((m) => m.text == 'Retired follow-up.'), isFalse);
+        expect(h.conv.messages.any((m) => m.text.contains('Retired follow-up.')), isFalse);
+        expect(h.conv.messages.any((m) => m.meta.containsKey(messageFilesMeta)), isFalse);
+        backends.last.prepare = () => true;
+        expect(await h.pipeline.sendText('Fresh ordinary question.'), isTrue);
+        expect(ofKind(h.conv, MessageKind.user).last.meta.containsKey(messageFilesMeta), isFalse);
       });
     }
 
@@ -2626,16 +2636,21 @@ void main() {
       );
       final firstImage = image(3);
       final secondImage = image(7);
+      final firstFiles = [const MessageFileAttachment(name: 'first.png', uri: 'file:///synthetic/first.png')];
+      const secondFile = MessageFileAttachment(name: 'second.png', uri: 'file:///synthetic/second.png');
       final first = h.pipeline.sendText(
         'First provider prompt',
-        displayText: 'First file',
+        displayText: 'First file\n\n${firstFiles.single.markdown}',
+        attachedFiles: firstFiles,
         attachedImages: [firstImage],
       );
       final second = h.pipeline.sendText(
         'Second provider prompt',
-        displayText: 'Second file',
+        displayText: 'Second file\n\n${secondFile.markdown}',
+        attachedFiles: [secondFile],
         attachedImages: [secondImage],
       );
+      firstFiles.clear();
       firstImage.bytes.last = 31;
       secondImage.bytes.last = 71;
       expect(h.scripted.texts, isEmpty);
@@ -2645,7 +2660,14 @@ void main() {
       expect(await second, isTrue);
       expect(h.scripted.texts, ['First provider prompt', 'Second provider prompt']);
       expect(h.scripted.images.map((image) => image.$1.last), [3, 7]);
-      expect(ofKind(h.conv, MessageKind.user).map((message) => message.text), ['First file', 'Second file']);
+      final users = ofKind(h.conv, MessageKind.user).toList();
+      expect(users.map((message) => messageFileDisplay(message)!.text), ['First file', 'Second file']);
+      expect(users.map((message) => messageFileDisplay(message)!.files.single.name), ['first.png', 'second.png']);
+      final reloaded = Conversation.fromJson((jsonDecode(jsonEncode(h.conv.toJson())) as Map).cast<String, Object?>());
+      expect(ofKind(reloaded, MessageKind.user).map((message) => messageFileDisplay(message)!.files.single.name), [
+        'first.png',
+        'second.png',
+      ]);
     });
 
     test('accepted attachment stays visible and durable after a later provider error', () async {

@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 import 'package:woi/core/auth/pkce_login.dart';
 import 'package:woi/core/images/media_metadata.dart';
+import 'package:woi/core/context/image_tiers.dart';
 import 'package:woi/core/models/message.dart';
 import 'package:woi/platform/media_viewer.dart';
 import 'package:woi/ui/theme.dart';
@@ -44,12 +45,95 @@ Future<void> waitForFileMetadata(WidgetTester tester, Finder expected) async {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  Future<File> imageFile() async {
+  Future<File> imageFile({int width = 7, int height = 5}) async {
     final dir = await Directory.systemTemp.createTemp('woi-image-ui-');
     addTearDown(() => dir.delete(recursive: true));
     return File('${dir.path}/picture.png')
-        .writeAsBytes(img.encodePng(img.Image(width: 7, height: 5)));
+        .writeAsBytes(img.encodePng(img.Image(width: width, height: height)));
   }
+
+  test(
+    'sent-size labels use recorded metadata and never infer reduced dimensions',
+    () {
+      final message = Message(
+        kind: MessageKind.user,
+        image: const ImageAttachment(
+          path: '/synthetic/image.png',
+          width: 800,
+          height: 500,
+          originalWidth: 800,
+          originalHeight: 500,
+        ),
+        meta: {'imageKind': 'attachment:fixture'},
+      );
+      expect(imageLabel(message), 'Attached image');
+      expect(recordedImageSentSize(message), (800, 500));
+      message.meta[ImageMeta.tier] = 'reduced';
+      expect(recordedImageSentSize(message), isNull);
+      message.meta[ImageMeta.sentWidth] = 400;
+      message.meta[ImageMeta.sentHeight] = 250;
+      expect(recordedImageSentSize(message), (400, 250));
+      message.meta[ImageMeta.sentHeight] = 0;
+      expect(recordedImageSentSize(message), isNull);
+      message.meta[ImageMeta.sentHeight] = '250';
+      expect(recordedImageSentSize(message), isNull);
+      message.meta[ImageMeta.sentHeight] = 250;
+      message.meta[ImageMeta.tier] = 'described';
+      expect(recordedImageSentSize(message), isNull);
+    },
+  );
+
+  testWidgets(
+    'attachment thumbnail and lightbox distinguish original and recorded sent size',
+    (tester) async {
+      final file = await tester.runAsync(
+        () => imageFile(width: 800, height: 500),
+      );
+      final message = Message(
+        kind: MessageKind.user,
+        createdAt: DateTime(2020),
+        image: ImageAttachment(
+          path: file!.path,
+          width: 800,
+          height: 500,
+          originalWidth: 800,
+          originalHeight: 500,
+        ),
+        meta: {
+          'imageKind': 'attachment:fixture',
+          ImageMeta.tier: 'reduced',
+          ImageMeta.sentWidth: 400,
+          ImageMeta.sentHeight: 250,
+        },
+      );
+      await tester.pumpWidget(
+        app(
+          MessageTile(
+            message: message,
+            audio: FakeAudioIO(),
+            viewer: FakeViewer(),
+          ),
+        ),
+      );
+      expect(find.text('sent 400×250'), findsOneWidget);
+      expect(find.text('sent ⅕'), findsNothing);
+      expect(
+        tester.widget<ScreenshotThumb>(find.byType(ScreenshotThumb)).label,
+        'Attached image',
+      );
+      await tester.tap(find.byType(ScreenshotThumb));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(
+        find.text('Attached image · original 800×500 · sent 400×250'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Screenshot'), findsNothing);
+      expect(message.meta[ImageMeta.sentWidth], 400);
+      expect(message.image!.width, 800);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   test(
     'large-view facts use encoded file bytes and native image dimensions',

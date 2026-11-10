@@ -107,6 +107,7 @@ class _ClipboardPanelState extends State<ClipboardPanel> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Clear clipboard history?'),
+        scrollable: true,
         content: const Text(
           'Remove all saved text and images from Woi’s clipboard history? The current system clipboard stays available.',
         ),

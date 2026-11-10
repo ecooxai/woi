@@ -17,6 +17,7 @@ import '../context/image_tiers.dart';
 import '../images/generated_image_context.dart';
 import '../media/media_context.dart';
 import '../models/message.dart';
+import '../models/message_file_attachment.dart';
 import '../util/usage_limit.dart';
 import '../settings/settings.dart';
 import '../storage/history_store.dart';
@@ -140,7 +141,9 @@ class _TypedSend {
     this.audio,
     required this.includesSystemAudio,
     required List<ContextImage> images,
-  }) : images = List.unmodifiable([
+    required List<MessageFileAttachment> attachedFiles,
+  }) : attachedFiles = List.unmodifiable(attachedFiles),
+       images = List.unmodifiable([
          for (final image in images)
            ContextImage(
              bytes: Uint8List.fromList(image.bytes).asUnmodifiableView(),
@@ -158,6 +161,7 @@ class _TypedSend {
   final AudioClip? audio;
   final bool includesSystemAudio;
   final List<ContextImage> images;
+  final List<MessageFileAttachment> attachedFiles;
   final accepted = Completer<bool>();
 
   void finish(bool sent) {
@@ -2816,6 +2820,7 @@ class TurnPipeline extends ChangeNotifier {
     AudioClip? audioClip,
     bool includesSystemAudio = false,
     String? displayText,
+    List<MessageFileAttachment> attachedFiles = const [],
     List<ContextImage> attachedImages = const [],
     TypedSendTarget? target,
   }) {
@@ -2825,7 +2830,16 @@ class TurnPipeline extends ChangeNotifier {
     // Stop is immediate even while a file/media turn waits for connection.
     if (isStopPhrase(t)) {
       interrupt();
-      final local = _addMessage(Message(kind: MessageKind.user, text: displayText ?? t, audio: audioClip));
+      final local = _addMessage(
+        Message(
+          kind: MessageKind.user,
+          text: displayText ?? t,
+          audio: audioClip,
+          meta: {
+            if (attachedFiles.isNotEmpty) messageFilesMeta: [for (final file in attachedFiles) file.toJson()],
+          },
+        ),
+      );
       _conv.touch();
       _stopHandled.add(local.id);
       stopsHandled++;
@@ -2847,7 +2861,16 @@ class TurnPipeline extends ChangeNotifier {
         _dropUntil = null;
         onTurnStart?.call();
       }
-      final local = _addMessage(Message(kind: MessageKind.user, text: displayText ?? t, audio: audioClip));
+      final local = _addMessage(
+        Message(
+          kind: MessageKind.user,
+          text: displayText ?? t,
+          audio: audioClip,
+          meta: {
+            if (attachedFiles.isNotEmpty) messageFilesMeta: [for (final file in attachedFiles) file.toJson()],
+          },
+        ),
+      );
       _conv.touch();
       _stopHandled.add(local.id);
       _persistSoon();
@@ -2872,6 +2895,7 @@ class TurnPipeline extends ChangeNotifier {
       audio: audioClip,
       includesSystemAudio: includesSystemAudio,
       images: attachedImages,
+      attachedFiles: attachedFiles,
     );
     _queuedTexts.add(request);
     _noteActivity();
@@ -3010,6 +3034,8 @@ class TurnPipeline extends ChangeNotifier {
         audio: request.audio,
         meta: {
           if (request.audio != null) 'captureSources': ['microphone', if (request.includesSystemAudio) 'system'],
+          if (request.attachedFiles.isNotEmpty)
+            messageFilesMeta: [for (final file in request.attachedFiles) file.toJson()],
         },
       ),
     );

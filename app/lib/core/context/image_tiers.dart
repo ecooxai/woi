@@ -269,10 +269,10 @@ Describe responsesDescriber(ResponsesClient client, {String Function()? model}) 
   return r.text;
 };
 
-/// "Screenshot", "Camera frame" or "Media image" (from the message's
-/// `imageKind` meta, see ContextImageMeta).
+/// Image origin from the message's `imageKind` meta, see ContextImageMeta.
 String imageLabel(Message m) => switch (m.meta['imageKind']) {
   'camera' => 'Camera frame',
   'media' => 'Media image',
+  final String kind when kind.startsWith('attachment:') => 'Attached image',
   _ => 'Screenshot',
 };
