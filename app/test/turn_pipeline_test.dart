@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:woi/core/audio/earcon.dart';
 import 'package:woi/core/audio/stop_word_spotter.dart';
+import 'package:woi/core/audio/wav.dart';
 import 'package:woi/core/context/compressor.dart';
 import 'package:woi/core/context/context_manager.dart';
 import 'package:woi/core/context/image_tiers.dart';
@@ -189,6 +190,72 @@ class FakeStopWordSpotter implements StopWordSpotter {
 }
 
 Iterable<Message> ofKind(Conversation c, MessageKind k) => c.messages.where((m) => m.kind == k);
+
+// Only these already-created audio directories skip redundant mkdir I/O. The
+// WAV writes still go to real files, under a deterministic first-write gate.
+class _ReadyAudioDirectory implements Directory {
+  _ReadyAudioDirectory(this.directory);
+  final Directory directory;
+  @override
+  Future<Directory> create({bool recursive = false}) async => directory;
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _HeldAudioFile implements File {
+  _HeldAudioFile(this.file, this.owner);
+  final File file;
+  final _HeldAudioWrites owner;
+  @override
+  Directory get parent => _ReadyAudioDirectory(file.parent);
+  @override
+  Future<File> writeAsBytes(List<int> bytes, {FileMode mode = FileMode.write, bool flush = false}) =>
+      owner.write(file, bytes, mode: mode, flush: flush);
+  @override
+  Future<Uint8List> readAsBytes() => file.readAsBytes();
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+final class _HeldAudioWrites extends IOOverrides {
+  String? audioDirectory;
+  String? heldPath;
+  String? failedPath;
+  final firstEntered = Completer<void>();
+  final releaseFirst = Completer<void>();
+  final firstFinished = Completer<void>();
+  final secondFinished = Completer<void>();
+  int samePathWrites = 0;
+  int failureAttempts = 0;
+  bool overtookFirst = false;
+
+  @override
+  File createFile(String path) {
+    final file = super.createFile(path);
+    return audioDirectory != null && path.startsWith('${audioDirectory!}/') && path.endsWith('.wav')
+        ? _HeldAudioFile(file, this)
+        : file;
+  }
+
+  Future<File> write(File file, List<int> bytes, {required FileMode mode, required bool flush}) async {
+    final number = file.path == heldPath ? ++samePathWrites : 0;
+    if (number == 1) {
+      firstEntered.complete();
+      await releaseFirst.future;
+    } else if (number == 2) {
+      overtookFirst = !releaseFirst.isCompleted;
+    }
+    if (file.path == failedPath && failureAttempts++ == 0) {
+      throw FileSystemException('Controlled first audio write failure', file.path);
+    }
+    try {
+      return await file.writeAsBytes(bytes, mode: mode, flush: flush);
+    } finally {
+      if (number == 1) firstFinished.complete();
+      if (number == 2) secondFinished.complete();
+    }
+  }
+}
 
 void main() {
   group('held recording integration', () {
@@ -555,6 +622,74 @@ void main() {
       expect(h.scripted.images, hasLength(1));
       await waitFor(() => (user.audio?.durationMs ?? 0) >= 400);
       await h.dispose();
+    });
+
+    test('resumed audio saves keep final WAV and message metadata in order', () async {
+      final writes = _HeldAudioWrites();
+      await IOOverrides.runWithIOOverrides(() async {
+        final h = await Harness.create(options: const PipelineOptions(autoScreenshot: false));
+        writes.audioDirectory = h.fp.services.paths.audioDir;
+        try {
+          h.scripted.emit(const SpeechStarted(itemId: 'resumed_audio'));
+          await h.speak(200, amplitude: 2100);
+          final user = ofKind(h.conv, MessageKind.user).single;
+          writes.heldPath = '${h.fp.services.paths.audioDir}/${user.id}.wav';
+          h.scripted.emit(const SpeechStopped(itemId: 'resumed_audio'));
+          await writes.firstEntered.future.timeout(const Duration(seconds: 5));
+          h.scripted.emit(const SpeechStarted(itemId: 'resumed_audio'));
+          await h.speak(200, amplitude: 7400);
+          h.scripted.emit(const SpeechStopped(itemId: 'resumed_audio'));
+          h.scripted.emit(const UserTranscriptDone('one combined audio clip', itemId: 'resumed_audio'));
+
+          // This unrelated message must finish while the first write is held.
+          final independent = await h.store.saveAudio('independent_audio', pcm(80)).timeout(const Duration(seconds: 5));
+          if (writes.overtookFirst) await writes.secondFinished.future;
+          writes.releaseFirst.complete();
+          await Future.wait([writes.firstFinished.future, writes.secondFinished.future])
+              .timeout(const Duration(seconds: 5));
+          await Future<void>.delayed(Duration.zero);
+          final actual = await File(writes.heldPath!).readAsBytes();
+          final expectedPcm = Uint8List.fromList([
+            for (var i = 0; i < 10; i++) ...pcm(20, amplitude: 2100),
+            for (var i = 0; i < 10; i++) ...pcm(20, amplitude: 7400),
+          ]);
+          final observed = {
+            'same_path_overtook_first': writes.overtookFirst,
+            'message_count': ofKind(h.conv, MessageKind.user).length,
+            'message_duration_ms': user.audio?.durationMs,
+            'wav_duration_ms': pcmDurationMs(actual.length - 44),
+            'wav_bytes_match_combined_pcm': listEquals(actual, encodeWav(expectedPcm)),
+            'independent_duration_ms': independent.durationMs,
+          };
+
+          // A rejected older write must not poison the next save for that ID.
+          writes.failedPath = '${h.fp.services.paths.audioDir}/recovered_audio.wav';
+          final failed = h.store.saveAudio('recovered_audio', pcm(40));
+          final rejected = expectLater(failed, throwsA(isA<FileSystemException>()));
+          final recovered = h.store.saveAudio('recovered_audio', pcm(120));
+          await rejected;
+          final recoveredClip = await recovered.timeout(const Duration(seconds: 5));
+          observed['recovered_duration_ms'] = recoveredClip.durationMs;
+          observed['recovered_wav_matches'] = listEquals(
+            await File(recoveredClip.path).readAsBytes(),
+            encodeWav(pcm(120)),
+          );
+          expect(user.text, 'one combined audio clip');
+          expect(observed, {
+            'same_path_overtook_first': false,
+            'message_count': 1,
+            'message_duration_ms': 400,
+            'wav_duration_ms': 400,
+            'wav_bytes_match_combined_pcm': true,
+            'independent_duration_ms': 80,
+            'recovered_duration_ms': 120,
+            'recovered_wav_matches': true,
+          });
+        } finally {
+          if (!writes.releaseFirst.isCompleted) writes.releaseFirst.complete();
+          await h.dispose();
+        }
+      }, writes);
     });
 
     test('noSpeech closes an empty false start without a bubble', () async {

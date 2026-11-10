@@ -33,11 +33,12 @@ class IoRealtimeSocket implements RealtimeSocket {
     Uri uri,
     Map<String, String> headers, {
     Duration timeout = const Duration(seconds: 15),
+    Duration? pingInterval = const Duration(seconds: 20),
   }) async {
     final sw = Stopwatch()..start();
     final ws = await WebSocket.connect(uri.toString(), headers: headers).timeout(timeout);
     debugPrint('[realtime] connect phase: dns+tcp+tls+ws upgrade ${sw.elapsedMilliseconds} ms');
-    ws.pingInterval = const Duration(seconds: 20);
+    ws.pingInterval = pingInterval;
     return IoRealtimeSocket._(ws);
   }
 

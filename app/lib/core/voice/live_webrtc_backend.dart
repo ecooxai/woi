@@ -145,8 +145,13 @@ class LiveWebRtcBackend extends VoiceBackend
     this.swapQuiet = const Duration(milliseconds: 1500),
     this.swapPoll = const Duration(milliseconds: 250),
     this.swapAttempts = 3,
-  }) : _connectSideband = sideband ?? IoRealtimeSocket.connect,
+  }) : _connectSideband = sideband ?? _connectLiveSideband,
        _createCall = createCall ?? createLiveCallHttp;
+
+  // Do not let the generic missed-Pong watchdog retire an otherwise active
+  // live call. Native event-channel loss and reply deadlines still handle loss.
+  static Future<RealtimeSocket> _connectLiveSideband(Uri uri, Map<String, String> headers) =>
+      IoRealtimeSocket.connect(uri, headers, pingInterval: null);
 
   final LiveRtcTransportFactory transportFactory;
   final RealtimeConnector _connectSideband;

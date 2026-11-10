@@ -163,10 +163,28 @@ class HistoryStore {
     if (await tmp.exists()) await tmp.delete();
   }
 
-  Future<AudioClip> saveAudio(String messageId, Uint8List pcm16) async {
+  // Resumed turns replace the same WAV. Order both bytes and returned clips
+  // per message, while unrelated messages keep saving independently.
+  final Map<String, Future<AudioClip>> _audioWrites = {};
+
+  Future<AudioClip> saveAudio(String messageId, Uint8List pcm16) {
     final path = p.join(paths.audioDir, '$messageId.wav');
-    await writeWav(path, pcm16);
-    return AudioClip(path: path, durationMs: pcmDurationMs(pcm16.length));
+    final snapshot = Uint8List.fromList(pcm16);
+    final previous = _audioWrites[messageId];
+    final ready = previous == null
+        ? Future<void>.value()
+        : previous.then<void>((_) {}, onError: (Object _, StackTrace _) {});
+    late final Future<AudioClip> next;
+    next = ready
+        .then((_) async {
+          await writeWav(path, snapshot);
+          return AudioClip(path: path, durationMs: pcmDurationMs(snapshot.length));
+        })
+        .whenComplete(() {
+          if (identical(_audioWrites[messageId], next)) _audioWrites.remove(messageId);
+        });
+    _audioWrites[messageId] = next;
+    return next;
   }
 
   Future<String> saveImage(String messageId, Uint8List png, {String ext = 'png'}) async {

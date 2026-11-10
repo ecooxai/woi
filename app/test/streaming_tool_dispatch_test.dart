@@ -73,6 +73,7 @@ class _HeldModel extends DelegationModel {
     void Function(DelegationToolCall call)? onToolCall,
   }) {
     requests++;
+    if (requests > 1) return Future.value(DelegationModelTurn(text: 'Finished.', calls: const []));
     emit = onToolCall;
     started.complete();
     return finish.future;
@@ -382,6 +383,8 @@ void main() {
     expect(report.ok, isTrue);
     expect(executions, ['first']);
     expect(report.tools, hasLength(1));
+    expect(model.requests, 2);
+    expect(report.answerText, 'Finished.');
   });
 
   test('live cancellation drops queued calls and ignores late results', () async {
