@@ -248,6 +248,7 @@ void main() {
           call('click_screen', {'x': 1, 'y': 2}),
         ],
       ),
+      const DelegationModelTurn(text: 'Clicked Save.', calls: []),
     ]);
     final executor = DelegationExecutor(
       model: model,
@@ -258,8 +259,9 @@ void main() {
     );
     final result = await executor.execute('Click Save');
     expect(result.ok, isTrue);
-    expect(model.requests, hasLength(1));
-    expect(model.requests.single.model, 'selected-model');
+    expect(model.requests, hasLength(2));
+    expect(model.requests.every((request) => request.model == 'selected-model'), isTrue);
+    expect(result.tools.single.name, 'click_screen');
   });
 
   test('mixed requests stay with the planner and do not silently drop later work', () {

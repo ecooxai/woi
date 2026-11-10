@@ -1732,6 +1732,7 @@ void main() {
               call('click_screen', {'x': 640, 'y': 360}),
             ],
           ),
+          const DelegationModelTurn(text: 'Clicked the center.', calls: []),
         ],
       );
       await r.connect();
@@ -1754,7 +1755,8 @@ void main() {
       expect(text, startsWith('Done. click_screen(x=640, y=360)'));
 
       // The model saw the screenshot and the request.
-      final input = jsonEncode(r.model.requests.single.input);
+      expect(r.model.requests, hasLength(2));
+      final input = jsonEncode(r.model.requests.first.input);
       expect(input, contains('input_image'));
       expect(input, contains('Click the center'));
 
@@ -1788,6 +1790,153 @@ void main() {
   });
 
   group('with TurnPipeline', () {
+    for (final action in [true, false]) {
+      test(
+        'fronted location uses the correct route beside a saved analysis: action=$action',
+        () async {
+          final fp = await FakePlatform.create();
+          final store = HistoryStore(fp.services.paths);
+          await store.init();
+          final executions = <(String, Map<String, Object?>)>[];
+          final tools = ToolRegistry();
+          for (final name in ['click_screen', 'send_keys', 'type_text']) {
+            tools.register(
+              ToolDefinition(
+                spec: ToolSpec(
+                  name: name,
+                  description: 'synthetic input',
+                  parameters: {'type': 'object'},
+                ),
+                handler: (args, _) async {
+                  executions.add((name, Map<String, Object?>.from(args)));
+                  return {'ok': true};
+                },
+              ),
+            );
+          }
+          final rig = _Rig(
+            turns: action
+                ? [
+                    DelegationModelTurn(
+                      text: '',
+                      calls: [call('click_screen', {'x': 40, 'y': 50})],
+                    ),
+                    DelegationModelTurn(
+                      text: '',
+                      calls: [
+                        call('send_keys', {'keys': 'ctrl+a'}),
+                        call('type_text', {'text': 'KEYBOARD-714'}),
+                      ],
+                    ),
+                    const DelegationModelTurn(text: 'Entered KEYBOARD-714.', calls: []),
+                  ]
+                : [
+                    const DelegationModelTurn(text: 'The button label is ALDER-472.', calls: []),
+                  ],
+          );
+          final origin = Message(
+            kind: MessageKind.user,
+            text: 'Describe the attached synthetic image.',
+          );
+          final saved = Message(
+            kind: MessageKind.assistant,
+            text: 'The button label is ALDER-472.',
+            meta: {
+              'type': 'attachment_analysis',
+              'sourceMessageId': origin.id,
+              'model': 'fixture',
+            },
+          );
+          final conversation = Conversation()..messages.addAll([origin, saved]);
+          final pipeline = TurnPipeline(
+            backendFactory: () => rig.backend,
+            audio: fp.audio,
+            screen: fp.screen,
+            tools: tools,
+            context: ContextManager(
+              compressor: StubCompressor(latency: Duration.zero),
+              threshold: 100000,
+            ),
+            store: store,
+            conversation: conversation,
+            sessionConfig: (c) async => SessionConfig(
+              model: 'gpt-live-1.1',
+              voice: 'cove',
+              instructions: 'test',
+              tools: tools.specs,
+              credentials: _creds,
+            ),
+            options: () => const PipelineOptions(autoScreenshot: false),
+          );
+          addTearDown(() async {
+            await pipeline.shutdown();
+            await rig.dispose();
+            await fp.dispose();
+          });
+          await pipeline.start();
+          await waitFor(() => pipeline.status == SessionStatus.connected);
+          final request = action
+              ? "In the 'WOI QA Synthetic Controls' window, focus its text field, select all its text, and type exactly KEYBOARD-714. Do not click its verification button."
+              : 'In the saved analysis, what label appeared beside the button? The example says "click Save".';
+          expect(await pipeline.sendText(request), isTrue);
+          await waitFor(
+            () =>
+                rig.model.requests.isNotEmpty &&
+                rig.backend.pendingDelegations == 0,
+          );
+          expect(
+            conversation.messages
+                .where((message) => message.kind == MessageKind.user)
+                .last
+                .text,
+            request,
+          );
+          expect(saved.text, 'The button label is ALDER-472.');
+          expect(
+            conversation.messages
+                .where(
+                  (message) => message.meta['type'] == 'attachment_analysis',
+                )
+                .single,
+            same(saved),
+          );
+          final references = conversation.messages.where(
+            (message) => message.meta['type'] == 'attachment_reference_answer',
+          );
+          if (action) {
+            expect(rig.model.requests, hasLength(3));
+            expect(executions.map((run) => run.$1), [
+              'click_screen',
+              'send_keys',
+              'type_text',
+            ]);
+            expect(executions.last.$2, {'text': 'KEYBOARD-714'});
+            expect(references, isEmpty);
+            expect(
+              rig.model.requests.first.tools.map((tool) => tool['name']),
+              containsAll(['click_screen', 'send_keys', 'type_text']),
+            );
+            expect(
+              rig.model.requests.first.input.toString(),
+              contains(request),
+            );
+          } else {
+            expect(executions, isEmpty);
+            expect(rig.model.requests.single.tools, isEmpty);
+            expect(references.single.text, saved.text);
+            expect(references.single.meta['referenceMessageIds'], [saved.id]);
+            expect(
+              references.single.meta['sourceMessageId'],
+              conversation.messages
+                  .where((message) => message.kind == MessageKind.user)
+                  .last
+                  .id,
+            );
+          }
+        },
+      );
+    }
+
     test('quiet Stop cancels queued keyboard tools and accepts the next explicit request', () async {
       final fp = await FakePlatform.create();
       final store = HistoryStore(fp.services.paths);

@@ -37,7 +37,7 @@ class _Runner {
 }
 
 void main() {
-  test('single step: tools from one reply run in order and are summarized', () async {
+  test('input tools keep their order and receive one result-fed completion', () async {
     final r = _Runner()..shot = DelegationImage(png: Uint8List(4), capturedAt: DateTime.now(), note: '1280x720');
     final m = FakeDelegationModel([
       DelegationModelTurn(
@@ -47,13 +47,16 @@ void main() {
           call('type_text', {'text': 'hello'}),
         ],
       ),
+      const DelegationModelTurn(text: 'Typed hello.', calls: []),
     ]);
     final ex = DelegationExecutor(model: m, tools: _tools, runTool: r.call, latestScreenshot: () => r.shot);
     final rep = await ex.execute('click the center and type hello', id: 'del_1');
 
     expect(r.runs.map((x) => x.$2), ['click_screen', 'type_text']);
     expect(rep.ok, isTrue);
-    expect(rep.steps, 1);
+    expect(rep.steps, 2);
+    expect(m.requests, hasLength(2));
+    expect(rep.answerText, 'Typed hello.');
     expect(rep.freshCapture, isFalse);
     expect(rep.usedScreenshot, isTrue);
     expect(rep.resultText, startsWith('Done. '));
@@ -63,7 +66,7 @@ void main() {
     expect(rep.toolsDone, isNotNull);
 
     // Request: fast model, stream of tool specs, image + text user message.
-    final req = m.requests.single;
+    final req = m.requests.first;
     expect(req.model, 'gpt-6-luna');
     expect(req.tools.map((t) => t['name']), contains('click_screen'));
     final content = (req.input.single['content'] as List).cast<Map>();
@@ -185,7 +188,9 @@ void main() {
       latestScreenshot: () => r2.shot,
     ).execute('Type a short greeting');
     await pumpEventQueue();
-    expect(m2.requests, hasLength(1), reason: 'model request started before the capture finished');
+    expect(m2.requests, isNotEmpty, reason: 'model request started before the capture finished');
+    expect(slow.isCompleted, isFalse);
+    expect(r2.runs.map((run) => run.$2), contains('type_text'));
     slow.complete();
     final rep2 = await done;
     expect(rep2.freshCapture, isTrue);
@@ -417,6 +422,7 @@ void main() {
           call('type_text', {'text': 'fixture'}),
         ],
       ),
+      const DelegationModelTurn(text: '', calls: []),
     ]);
     final report = await DelegationExecutor(
       model: model,
