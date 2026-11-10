@@ -46,13 +46,19 @@ class NoteTabItem {
     tabs[tabs.length - 1] = items.firstWhere((i) => i.current);
   }
   final ids = {for (final t in tabs) t.id};
-  return (tabs, [for (final i in items) if (!ids.contains(i.id)) i]);
+  return (
+    tabs,
+    [
+      for (final i in items)
+        if (!ids.contains(i.id)) i,
+    ],
+  );
 }
 
 /// Title of the active conversation's note tab.
 String currentNoteTitle(AppController c) {
   final conv = c.pipeline.conversation;
-  if (conv.messages.isNotEmpty && conv.title.isNotEmpty) return conv.title;
+  if (!c.usesNoteTitle && conv.title.isNotEmpty) return conv.title;
   final t = noteTitle(c.notes.text, max: 40);
   return t.isEmpty ? 'New note' : t;
 }
@@ -77,15 +83,35 @@ class _NoteTabsBarState extends State<NoteTabsBar> {
   final _moreKey = GlobalKey();
   List<ConversationSummary> _all = const [];
   String? _convId;
+  int _listRevision = -1;
   String _title = '';
   Timer? _titleDebounce;
+  Future<void>? _reloadFuture;
+  bool _reloadPending = false;
 
   AppController get c => widget.controller;
 
   @override
   void initState() {
     super.initState();
+    _listen();
+  }
+
+  @override
+  void didUpdateWidget(covariant NoteTabsBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (identical(oldWidget.controller, c)) return;
+    oldWidget.controller.removeListener(_onController);
+    oldWidget.controller.notes.removeListener(_onNotes);
+    _titleDebounce?.cancel();
+    _titleDebounce = null;
+    _all = const [];
+    _listen();
+  }
+
+  void _listen() {
     _convId = c.pipeline.conversation.id;
+    _listRevision = c.conversationListRevision;
     _title = currentNoteTitle(c);
     c.addListener(_onController);
     c.notes.addListener(_onNotes);
@@ -102,8 +128,10 @@ class _NoteTabsBarState extends State<NoteTabsBar> {
 
   void _onController() {
     final id = c.pipeline.conversation.id;
-    if (id == _convId) return;
+    final revision = c.conversationListRevision;
+    if (id == _convId && revision == _listRevision) return;
     _convId = id;
+    _listRevision = revision;
     _title = currentNoteTitle(c);
     _reload();
   }
@@ -118,13 +146,36 @@ class _NoteTabsBarState extends State<NoteTabsBar> {
     });
   }
 
-  Future<void> _reload() async {
-    final all = await c.actions.listNotes();
-    if (!mounted) return;
-    setState(() {
-      _all = all;
-      _title = currentNoteTitle(c);
-    });
+  Future<void> _reload() {
+    _reloadPending = true;
+    if (_reloadFuture case final pending?) return pending;
+    final done = Completer<void>();
+    _reloadFuture = done.future;
+    unawaited(_drainReloads(done));
+    return done.future;
+  }
+
+  /// One filesystem read at a time. A switch or mutation during the read
+  /// requests one fresh snapshot and prevents the older result being shown.
+  Future<void> _drainReloads(Completer<void> done) async {
+    try {
+      while (mounted && _reloadPending) {
+        _reloadPending = false;
+        final controller = c;
+        final all = await controller.actions.listNotes();
+        if (!mounted) break;
+        if (_reloadPending || !identical(controller, c)) continue;
+        setState(() {
+          _all = all;
+          _title = currentNoteTitle(c);
+        });
+      }
+    } catch (error, stack) {
+      done.completeError(error, stack);
+    } finally {
+      _reloadFuture = null;
+      if (!done.isCompleted) done.complete();
+    }
   }
 
   Future<void> _open(String id) async {
@@ -156,8 +207,7 @@ class _NoteTabsBarState extends State<NoteTabsBar> {
             child: ListView(
               scrollDirection: Axis.horizontal,
               children: [
-                for (final t in tabs)
-                  _Tab(item: t, height: h, compact: widget.compact, onTap: () => _open(t.id)),
+                for (final t in tabs) _Tab(item: t, height: h, compact: widget.compact, onTap: () => _open(t.id)),
               ],
             ),
           ),
@@ -345,12 +395,7 @@ class _NotePickerState extends State<_NotePicker> {
                               Icon(Icons.description_outlined, size: 16, color: WoiColors.textFaint),
                               const SizedBox(width: 10),
                               Expanded(
-                                child: Text(
-                                  it.title,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: body(13.5),
-                                ),
+                                child: Text(it.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(13.5)),
                               ),
                               const SizedBox(width: 8),
                               Text(_when(it.updatedAt), style: body(12, color: WoiColors.textFaint)),

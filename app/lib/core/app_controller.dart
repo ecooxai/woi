@@ -465,6 +465,21 @@ class AppController extends ChangeNotifier {
 
   /// The note of the active conversation (pinned in the model context).
   late final NoteController notes = NoteController(store: NoteStore(platform.paths.dataDir));
+
+  /// Explicit list mutations (rename/delete) that can leave the active ID
+  /// unchanged. Updated only after persistence, never for streaming deltas.
+  int get conversationListRevision => _conversationListRevision;
+  int _conversationListRevision = 0;
+
+  /// Status notices alone do not turn a note into a chat. A custom name,
+  /// non-system message or retained chat summary keeps the conversation title.
+  bool get usesNoteTitle {
+    final conversation = pipeline.conversation;
+    return !conversation.customTitle &&
+        conversation.messages.every((message) => message.kind == MessageKind.system) &&
+        (conversation.summary?.trim().isEmpty ?? true);
+  }
+
   int _pinnedRevision = -1;
   late final ContextManager contextManager;
   late final ToolRegistry tools;
@@ -850,7 +865,7 @@ class AppController extends ChangeNotifier {
     if (!_ready) return;
     final conv = pipeline.conversation;
     if (n.conversationId != conv.id) return;
-    if (conv.messages.isEmpty && !conv.customTitle) conv.title = noteTitle(n.markdown);
+    if (usesNoteTitle) conv.title = noteTitle(n.markdown);
     conv.updatedAt = DateTime.now();
     history.saveSoon(conv);
   }
@@ -958,6 +973,7 @@ class AppController extends ChangeNotifier {
       await pipeline.switchConversation(c);
     }
     await history.delete(id);
+    _conversationListRevision++;
     notifyListeners();
   }
 
@@ -1020,6 +1036,7 @@ class AppController extends ChangeNotifier {
       ..title = t
       ..customTitle = true;
     await history.save(c);
+    _conversationListRevision++;
     notifyListeners();
   }
 
