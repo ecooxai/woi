@@ -6,7 +6,8 @@
 - Frozen application tree: 165b49c7e6182fc60bb000f8f5105dc3db59ec45.
 - Version 0.22.2+25; arm64 Android versionCode 2025.
 - Release coordinates: https://github.com/ecooxai/woi/releases/tag/v0.22.2.
-- Application code is pushed. This handoff/report commit is documentation-only; release archives and uploads follow this checkpoint. Check the release and provenance before repeating distribution work.
+- Publication VERIFIED: public GitHub prerelease v0.22.2, published 2026-11-19T13:49:23+08:00. All five uploaded asset sizes and GitHub-computed SHA256 digests match the local verified manifest. No upload work remains.
+- Final self-assessment: 95/100 for the verified implementation and deliverables, with the two runtime verification limits below retained.
 
 ## Changes completed
 - Android assistant -> main-app handoff is distinct from dismissal, preserves the shared session/context and queued/in-flight work, and guards stale Activity/session events.
