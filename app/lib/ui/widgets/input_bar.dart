@@ -12,6 +12,9 @@ import '../theme.dart';
 import 'camera_preview.dart';
 import 'chat_draft.dart';
 import 'context_meter.dart';
+import 'context_document.dart';
+import '../../core/context/context_manager.dart' show ContextAccounting;
+import '../../core/voice/delegation_executor.dart' show DelegationExecutor;
 import 'screen_share_button.dart';
 import 'controls.dart';
 import 'throttled_builder.dart';
@@ -256,6 +259,16 @@ class _InputBarState extends State<InputBar> {
                 conversation: pipeline.conversation,
                 style: ContextMeterStyle.indicator,
                 onCompact: c.compactNow,
+                audio: c.platform.audio,
+                viewer: c.platform.viewer,
+                documentData: () => ContextDocumentData(
+                  instructions: c.contextInstructions,
+                  pinnedNote: c.notes.text,
+                  tools: c.tools.specs,
+                  delegationInstructions: c.contextManager.accounting == ContextAccounting.textEstimate
+                      ? DelegationExecutor.instructions
+                      : null,
+                ),
               ),
             ],
           ),

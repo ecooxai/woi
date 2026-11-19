@@ -140,7 +140,10 @@ object WoiOverlay {
     }
 
     /** Takes the panel down (session hidden, dismissed, or the full app opens). */
-    fun hide() {
+    fun hide(toApp: Boolean = false, owner: WoiSession? = null) {
+        // A delayed onHide/onDestroy from a replaced service session must
+        // not dismiss the current panel or emit a stale dismissal event.
+        if (owner != null && session !== owner) return
         val v = view ?: return
         WoiAudio.cancelEarly()
         WoiBridge.main.removeCallbacks(reveal)
@@ -151,12 +154,14 @@ object WoiOverlay {
         session = null
         v.detachFromFlutterEngine()
         (v.parent as? ViewGroup)?.removeView(v)
-        WoiBridge.emit(mapOf("type" to "overlay", "on" to false))
+        // Moving the shared engine into MainActivity is a presentation change,
+        // not a dismissal: Dart must keep the live turn and queued input.
+        WoiBridge.emit(mapOf("type" to "overlay", "on" to false, "toApp" to toApp))
         val engine = WoiEngine.peek()
         val act = WoiBridge.activity
         if (act != null && act.started) {
             act.reattachFlutterView()
-        } else if (engine != null) {
+        } else if (engine != null && !toApp) {
             engine.lifecycleChannel.noWindowsAreFocused()
             engine.lifecycleChannel.appIsPaused()
         }
@@ -164,9 +169,10 @@ object WoiOverlay {
     }
 
     /** Back / tap outside / swipe down in the panel. */
-    fun dismiss() {
+    fun dismiss(toApp: Boolean = false, owner: WoiSession? = null) {
+        if (owner != null && session !== owner) return
         val s = session
-        hide()
+        hide(toApp = toApp, owner = owner)
         s?.hide()
     }
 
@@ -174,7 +180,6 @@ object WoiOverlay {
      *  the bottom freeform window when it isn't running yet, WoiLaunch). */
     fun openApp(ctx: Context) {
         val s = session
-        hide()
         val i = Intent(ctx, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         try {
@@ -182,8 +187,16 @@ object WoiOverlay {
             WoiLaunch.start(c, i)
         } catch (e: Exception) {
             Log.w(WoiBridge.TAG, "open app from overlay failed; startAssistantActivity", e)
-            try { s?.startAssistantActivity(i) } catch (e2: Exception) { Log.w(WoiBridge.TAG, "startAssistantActivity failed", e2) }
+            // A failed launch keeps the panel and its session available.
+            if (s == null) return
+            try {
+                s.startAssistantActivity(i)
+            } catch (e2: Exception) {
+                Log.w(WoiBridge.TAG, "startAssistantActivity failed", e2)
+                return
+            }
         }
+        hide(toApp = true, owner = s)
         s?.hide()
     }
 

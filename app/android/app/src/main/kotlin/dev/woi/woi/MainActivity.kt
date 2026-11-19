@@ -31,7 +31,10 @@ class MainActivity : FlutterActivity() {
     // The visible assistant view owns the shared engine's lifecycle. A late
     // onStop from this detached Activity must not pause that view (and make
     // its tabs/selection appear frozen) or stop ongoing capture as a side effect.
-    override fun shouldDispatchAppLifecycleState(): Boolean = !WoiOverlay.showing
+    // configureFlutterEngine/onStart set activity before lifecycle dispatch.
+    // A retiring Activity must not pause a newer owner of the same engine.
+    override fun shouldDispatchAppLifecycleState(): Boolean =
+        !WoiOverlay.showing && WoiBridge.activity === this
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         // Plugins are registered by the engine itself (host-provided engine).
@@ -44,7 +47,7 @@ class MainActivity : FlutterActivity() {
         WoiBridge.activity = this
         WoiA11yKeeper.ensure(this, "app start")
         // The launcher (or "open full app") wins over a floating panel.
-        if (WoiOverlay.showing) WoiOverlay.dismiss()
+        if (WoiOverlay.showing) WoiOverlay.dismiss(toApp = true)
         reattachFlutterView()
         super.onStart()
     }

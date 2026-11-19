@@ -4,8 +4,11 @@ import 'package:flutter/material.dart';
 
 import '../../core/context/context_manager.dart';
 import '../../core/models/message.dart';
+import '../../platform/audio_io.dart';
+import '../../platform/media_viewer.dart';
 import '../theme.dart';
 import 'low_fps.dart';
+import 'context_document.dart';
 
 String formatTokens(int t) => formatTokenCount(t);
 
@@ -120,12 +123,18 @@ class ContextMeter extends StatelessWidget {
     this.style = ContextMeterStyle.panel,
     this.onCompact,
     this.dense = false,
+    this.documentData,
+    this.audio,
+    this.viewer,
   });
 
   final ContextManager manager;
   final Conversation? conversation;
   final ContextMeterStyle style;
   final VoidCallback? onCompact;
+  final ContextDocumentData Function()? documentData;
+  final AudioIO? audio;
+  final MediaViewer? viewer;
 
   /// [ContextMeterStyle.compact] only: percentage instead of token counts.
   final bool dense;
@@ -239,7 +248,15 @@ class ContextMeter extends StatelessWidget {
               cursor: SystemMouseCursors.click,
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onTap: () => showContextDetails(context, manager, conversation, onCompact: onCompact),
+                onTap: () => showContextDetails(
+                  context,
+                  manager,
+                  conversation,
+                  onCompact: onCompact,
+                  documentData: documentData,
+                  audio: audio,
+                  viewer: viewer,
+                ),
                 child: ConstrainedBox(
                   constraints: BoxConstraints(
                     minHeight: switch (style) {
@@ -508,59 +525,32 @@ class BreakdownTable extends StatelessWidget {
   }
 }
 
-/// Bottom sheet (phone) / dialog (desktop) with the full breakdown.
+/// Bottom sheet (phone) / document dialog (desktop), freshly folded on open.
 Future<void> showContextDetails(
   BuildContext context,
   ContextManager manager,
   Conversation? conversation, {
   VoidCallback? onCompact,
+  ContextDocumentData Function()? documentData,
+  AudioIO? audio,
+  MediaViewer? viewer,
 }) {
   Widget content(BuildContext ctx) => ListenableBuilder(
     listenable: manager,
     builder: (ctx, _) {
       final b = ContextBreakdown.of(manager, conversation);
       final color = manager.compressing ? WoiColors.violet : meterColor(b.fill);
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.memory_rounded, color: color),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text('Context window', style: display(19), overflow: TextOverflow.ellipsis),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                '${formatTokens(b.total)} / ${formatTokens(b.threshold)}',
-                style: mono(14, color: color).copyWith(fontFeatures: kTabular),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          MeterBar(fill: b.fill.clamp(0, 1), color: color, busy: manager.compressing, height: 8),
-          const SizedBox(height: 18),
-          BreakdownTable(b: b, compressing: manager.compressing, large: true),
-          const SizedBox(height: 12),
-          Text(
-            'When the context passes the threshold, older turns are summarised in the background '
-            'and the live session continues with the summary.',
-            style: body(12.5, color: WoiColors.textDim, height: 1.45),
-          ),
-          if (onCompact != null) ...[
-            const SizedBox(height: 18),
-            FilledButton.icon(
-              onPressed: manager.compressing
-                  ? null
-                  : () {
-                      onCompact();
-                    },
-              icon: const Icon(Icons.compress_rounded),
-              label: Text(manager.compressing ? 'Compacting…' : 'Compact now'),
-            ),
-          ],
-        ],
+      return ContextDocument(
+        key: ValueKey('context-document-${conversation?.id ?? 'empty'}'),
+        manager: manager,
+        conversation: conversation,
+        data: documentData?.call(),
+        audio: audio,
+        viewer: viewer,
+        accent: color,
+        meter: MeterBar(fill: b.fill.clamp(0, 1), color: color, busy: manager.compressing, height: 6),
+        usageDetails: BreakdownTable(b: b, compressing: manager.compressing, large: true),
+        onCompact: onCompact,
       );
     },
   );
@@ -570,23 +560,18 @@ Future<void> showContextDetails(
     return showModalBottomSheet<void>(
       context: context,
       backgroundColor: WoiColors.bg1,
+      isScrollControlled: true,
+      useSafeArea: true,
       showDragHandle: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(WoiRadii.xl))),
-      builder: (ctx) => SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-          child: content(ctx),
-        ),
-      ),
+      builder: (ctx) => FractionallySizedBox(heightFactor: 0.92, child: SafeArea(top: false, child: content(ctx))),
     );
   }
   return showDialog<void>(
     context: context,
     builder: (ctx) => Dialog(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 440),
-        child: Padding(padding: const EdgeInsets.all(24), child: content(ctx)),
-      ),
+      insetPadding: const EdgeInsets.all(24),
+      child: SizedBox(width: 840, height: min(820, MediaQuery.sizeOf(ctx).height - 48), child: content(ctx)),
     ),
   );
 }

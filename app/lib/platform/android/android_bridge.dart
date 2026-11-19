@@ -61,7 +61,11 @@ sealed class AndroidEvent {
           overlay: m['overlay'] == true,
         );
       case 'overlay':
-        return OverlayEvent(on: m['on'] == true, fraction: (m['fraction'] as num?)?.toDouble());
+        return OverlayEvent(
+          on: m['on'] == true,
+          fraction: (m['fraction'] as num?)?.toDouble(),
+          toApp: m['toApp'] == true,
+        );
       case 'open':
         final files = <SharedFile>[];
         for (final f in (m['files'] as List?) ?? const []) {
@@ -137,9 +141,13 @@ class AssistEvent extends AndroidEvent {
 /// The assistant panel was put up over another app ([on]) or taken down.
 /// [fraction]: the remembered panel height (share of the screen height).
 class OverlayEvent extends AndroidEvent {
-  const OverlayEvent({required this.on, this.fraction});
+  const OverlayEvent({required this.on, this.fraction, this.toApp = false});
   final bool on;
   final double? fraction;
+
+  /// The shared session is moving to MainActivity, not being dismissed.
+  /// Absent on older native builds, which retain their dismissal behavior.
+  final bool toApp;
 }
 
 class SharedFile {

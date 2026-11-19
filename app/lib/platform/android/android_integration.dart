@@ -160,7 +160,11 @@ class AndroidIntegration {
         if (controller.ready) unawaited(controller.assistantShown());
       } else {
         _overlay = false;
-        controller.assistantDismissed();
+        if (e.toApp) {
+          controller.assistantOpenedApp();
+        } else {
+          controller.assistantDismissed();
+        }
         _onController();
       }
       return;
@@ -209,7 +213,7 @@ class AndroidIntegration {
                   'Woi floats as a bottom panel over that app, which is still open: click_screen, type_text and '
                   'send_keys act on it (the panel steps aside). '
             : '$kAssistNotePrefix (long-press home) while in $app; this is that screen. '
-            '${clipped.isEmpty ? '' : 'Visible text: $clipped. '}',
+                  '${clipped.isEmpty ? '' : 'Visible text: $clipped. '}',
         label: e.app == null || e.app!.isEmpty ? 'Assist screenshot' : 'Assist screenshot from ${e.app}',
         activation: true,
       );
@@ -243,6 +247,8 @@ class AndroidIntegration {
     _sub?.cancel();
     controller.removeListener(_onController);
     if (_pipelineHooked) controller.pipeline.removeListener(_syncVoice);
-    if (_voice != VoiceService.off) unawaited(bridge.call<bool>('voiceActive', {'on': false}).catchError((Object e) => false));
+    if (_voice != VoiceService.off) {
+      unawaited(bridge.call<bool>('voiceActive', {'on': false}).catchError((Object e) => false));
+    }
   }
 }

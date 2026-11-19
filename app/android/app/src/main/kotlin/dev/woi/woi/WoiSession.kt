@@ -123,18 +123,18 @@ class WoiSession(ctx: Context) : VoiceInteractionSession(ctx) {
 
     override fun onHide() {
         WoiBridge.main.removeCallbacks(fallback)
-        if (overlay) WoiOverlay.hide()
+        if (overlay) WoiOverlay.hide(owner = this)
         super.onHide()
     }
 
     override fun onDestroy() {
         WoiBridge.main.removeCallbacks(fallback)
-        if (overlay) WoiOverlay.hide()
+        if (overlay) WoiOverlay.hide(owner = this)
         super.onDestroy()
     }
 
     override fun onBackPressed() {
-        if (overlay) WoiOverlay.dismiss() else super.onBackPressed()
+        if (overlay) WoiOverlay.dismiss(owner = this) else super.onBackPressed()
     }
 
     override fun onHandleAssist(state: AssistState) {

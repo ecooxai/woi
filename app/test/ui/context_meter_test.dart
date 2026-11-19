@@ -137,6 +137,15 @@ void main() {
     await tester.tap(find.byType(ContextMeter));
     await tester.pumpAndSettle();
     expect(find.text('Compact now'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('context-section-usage')),
+      200,
+      scrollable: find
+          .descendant(of: find.byKey(const ValueKey('context-document-scroll')), matching: find.byType(Scrollable))
+          .first,
+    );
+    await tester.tap(find.text('Usage details'));
+    await tester.pumpAndSettle();
     expect(find.textContaining('Screenshots'), findsWidgets);
     await tester.tap(find.text('Compact now'));
     await tester.pumpAndSettle();
