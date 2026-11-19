@@ -1,33 +1,32 @@
-# WOI continuation — 2026-11-19
+# WOI continuation — context handoff release
 
-## Requested work
-1. Preserve previous conversation context when switching Android assistant mode to the main application.
-2. Make the context indicator open a document-style viewer with a title; each section starts collapsed and expands on its title. Include image and audio context.
-3. Build Android APK and Linux application, then push source and release outputs to GitHub.
-
-## Repository and baseline
-- Repository: https://github.com/ecooxai/woi (public), default branch main.
-- Worktree: /mnt/p3/project/claude/woi (also /home/a/project/claude/woi).
+## Source and release coordinates
 - Task branch: gpt-6-astra-pro/root-context-handoff-20261119.
-- Starting upstream task branch: gpt-6-astra-pro/woi-android-input-media-20261108, HEAD 4c92bd0 (v0.22.1).
-- Baseline commit d2dd54404432236bc7f270ece51b6a470d56b92f preserves five pre-existing local UI source/test changes. It does not claim these changes were authored for this task.
-- Many existing untracked QA files and .claude configuration remain untouched. Never broad-stage them.
-- No prior AGENTS.md or agent/continue.md existed at task start, so there was nothing to archive.
+- Frozen application/build/tag revision: 50954bdca7d21179df5a1701b069dce9b9267e7d.
+- Frozen application tree: 165b49c7e6182fc60bb000f8f5105dc3db59ec45.
+- Version 0.22.2+25; arm64 Android versionCode 2025.
+- Release coordinates: https://github.com/ecooxai/woi/releases/tag/v0.22.2.
+- Application code is pushed. This handoff/report commit is documentation-only; release archives and uploads follow this checkpoint. Check the release and provenance before repeating distribution work.
 
-## Build setup
-- App version at start: 0.22.1+24; Dart SDK requirement ^3.13.7.
-- Flutter SDK resolves to /home/a/.local/flutter; its executables were absent from default PATH.
-- Android SDK: /home/a/Android/Sdk. Remote GitHub CLI is authenticated as ecooxai.
-- Linux: run flutter build linux --release from app.
-- Android arm64: run flutter build apk --release --flavor arm64 --target-platform android-arm64 from app. armv7 and x64 flavors also exist.
-- Do not run flutter test/analyze concurrently with APK builds.
+## Changes completed
+- Android assistant -> main-app handoff is distinct from dismissal, preserves the shared session/context and queued/in-flight work, and guards stale Activity/session events.
+- The context indicator opens a titled document with every section collapsed on opening. It includes instructions, tool definitions, pinned note, summary, complete active messages, images and playable audio. Error feedback stays visible above the modal.
+- Pre-existing local message/markdown improvements were preserved in baseline commit d2dd544.
 
-## Ownership and current state
-- android_context_fix: native Android lifecycle/bridge, shared controller preservation, regression tests.
-- context_document_ui: context indicator document/accordion and media presentation, UI regression tests; coordinate before touching shared controller.
-- workspace_inspector: initial instructions, baseline, branch, continuation setup.
-- Main coordinates integration, validation, build/release assignment.
-- Implementation and validation are in progress. No finished APK/Linux build or task-source push has yet been verified.
+## Verification
+- 27 assistant/controller tests, 19 document/indicator tests, 69 broader context/lifecycle tests: 115 distinct passes.
+- Analyzer clean. Decoded synthetic image pixels and mobile/desktop layouts reviewed.
+- Linux and signed Android release builds pass; Linux relocated GUI startup verified.
+- APK signer matches published v0.22.1, package dev.woi.woi; update installation retains app data.
+- No physical/emulated Android runtime available. Linux fresh-profile default live-provider call returned HTTP404; live-provider end-to-end remains unverified.
+- Full evidence/timings: agent/validation-20261119-context-handoff.md and release provenance.
 
-## Access note
-The user supplied a working MCP tunnel after the original endpoint denied access. Credentials remain in temporary private transport configuration outside the repository. A UI source read was initially review-rejected on a presumed privacy basis; repository metadata independently confirmed the source repository is public. Main coordinates the authorized reading route. Never bypass access controls.
+## Build operations
+- Flutter SDK: /home/a/.local/flutter, Flutter3.47.9/Dart3.13.7.
+- From app: flutter build linux --release; flutter build apk --release --flavor arm64 --target-platform android-arm64.
+- Do not run Flutter tests/analyzer during APK build. Use normal pub refresh for APK after tests; --no-pub left test plugin registration stale during this task.
+- Monitor CPU/RAM each second and record wall time. Do not broad-stage .claude, previous QA artifacts or output folders.
+- Linux x86_64 requires GLIBC2.38 and GLIBCXX_3.4.32; see release README for core vs optional JNI dependencies.
+
+## Future work
+No requested feature implementation remains. Optional follow-up is a real Android assistant->main lifecycle run and live-provider verification in the user's configured environment. Preserve the existing worktree and review actual release/branch state before continuing.

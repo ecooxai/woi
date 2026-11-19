@@ -20,3 +20,8 @@
 - Requested deliverables are an APK and Linux application, plus source pushed to the existing GitHub repository.
 - Any new/updated site must be public. If the existing demo3d gallery is updated, include final work and source without changing unrelated gallery content.
 - Update agent/continue.md with concrete state and outstanding work. Before replacing an existing continuation, move it to agent/archive with a dated suffix.
+
+## Verified release operation note
+- The 0.22.2 application/build/source revision is 50954bdca7d21179df5a1701b069dce9b9267e7d; later documentation-only commits do not change the built app tree.
+- After Flutter tests, use the normal documented APK build with pub refresh. A --no-pub shortcut left integration_test registration in a release build during this task.
+- Keep native device validation distinct from simulated lifecycle tests, and GUI startup distinct from live-provider end-to-end verification.
