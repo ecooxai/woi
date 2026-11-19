@@ -242,7 +242,22 @@ class WoiBanner extends StatelessWidget {
             return Stack(
               children: [
                 Positioned(top: 0, bottom: 0, left: 0, width: 3, child: ColoredBox(color: data.color)),
-                if (compact)
+                if (compact && data.details == null && (data.actionLabel == null || data.onAction == null))
+                  // Only ✕ to show: keep it beside the text instead of on a
+                  // row of its own, so a narrow banner stays short.
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(15, 8, 0, 8),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Padding(padding: const EdgeInsets.only(top: 4), child: _content()),
+                        ),
+                        ..._actions(context, compact: true),
+                      ],
+                    ),
+                  )
+                else if (compact)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(15, 8, 8, 4),
                     child: Column(

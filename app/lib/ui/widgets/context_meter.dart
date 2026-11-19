@@ -392,7 +392,8 @@ class _RingPainter extends CustomPainter {
     final bg = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 3
-      ..color = WoiColors.glassStrong;
+      // Visible track: without it a partly filled ring reads as a spinner.
+      ..color = WoiColors.strokeStrong;
     canvas.drawArc(rect, 0, 2 * pi, false, bg);
     final fg = Paint()
       ..style = PaintingStyle.stroke

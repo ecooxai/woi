@@ -16,6 +16,7 @@ import '../../platform/downloads.dart';
 import '../../platform/media_viewer.dart';
 import '../theme.dart';
 import 'audio_button.dart';
+import 'bubble_markdown.dart';
 import 'clipboard_selection_area.dart';
 import 'code_highlight.dart';
 import 'context_meter.dart' show formatTokens;
@@ -286,8 +287,8 @@ class _Bubble extends StatelessWidget {
     } else if (visibleText.isNotEmpty) {
       // The transcript's SelectionArea makes plain Text selectable across
       // messages. A live partial transcript stays italic until finalized.
-      textContent = Text(
-        visibleText,
+      textContent = BubbleText(
+        text: visibleText,
         style: isUser && m.streaming
             ? body(
                 15,
