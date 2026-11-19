@@ -1,33 +1,43 @@
-# WOI continuation — context handoff release
+# WOI continuation — automatic Luna agents and retained audio — 2026-11-19
 
-## Source and release coordinates
-- Task branch: gpt-6-astra-pro/root-context-handoff-20261119.
-- Frozen application/build/tag revision: 50954bdca7d21179df5a1701b069dce9b9267e7d.
-- Frozen application tree: 165b49c7e6182fc60bb000f8f5105dc3db59ec45.
-- Version 0.22.2+25; arm64 Android versionCode 2025.
-- Release coordinates: https://github.com/ecooxai/woi/releases/tag/v0.22.2.
-- Publication VERIFIED: public GitHub prerelease v0.22.2, published 2026-11-19T13:49:23+08:00. All five uploaded asset sizes and GitHub-computed SHA256 digests match the local verified manifest. No upload work remains.
-- Final self-assessment: 95/100 for the verified implementation and deliverables, with the two runtime verification limits below retained.
+## User request
+- App tools for searching/editing files or notes and running Python/Bash automatically start a GPT Luna agent without an extra confirmation, and return results to the requesting conversation.
+- Show all Luna agent runs in a top-level Agents tab.
+- Give the add-file button a circular background matching the audio buttons.
+- Compaction preserves the latest five user audio messages and summarizes text only.
+- After verification, merge to main, push source, and publish a NEW APK on GitHub.
 
-## Changes completed
-- Android assistant -> main-app handoff is distinct from dismissal, preserves the shared session/context and queued/in-flight work, and guards stale Activity/session events.
-- The context indicator opens a titled document with every section collapsed on opening. It includes instructions, tool definitions, pinned note, summary, complete active messages, images and playable audio. Error feedback stays visible above the modal.
-- Pre-existing local message/markdown improvements were preserved in baseline commit d2dd544.
+## Repository and baseline
+- Public repository: https://github.com/ecooxai/woi. Worktree: /mnt/p3/project/claude/woi (alias /home/a/project/claude/woi).
+- Task branch: gpt-6-astra-pro/root-luna-agents-audio-context-20261119.
+- Starting revision: 33f7e53bf95338ace020466cbd775802cf8fe820. Prior app/release v0.22.2 code: 50954bdca7d21179df5a1701b069dce9b9267e7d.
+- Fresh origin/main: 23b935da226b4198f69236bf3abd927058ee251c, ancestor of starting HEAD (0 main-only / 23 task-only commits). Recheck before integration; no merge/push yet.
+- Tracked source was clean at task start. Existing untracked .claude, output and QA files remain untouched; never broad-stage them.
+- Previous continuation archived to agent/archive/continue-context-handoff-20261119-before-luna.md.
 
-## Verification
-- 27 assistant/controller tests, 19 document/indicator tests, 69 broader context/lifecycle tests: 115 distinct passes.
-- Analyzer clean. Decoded synthetic image pixels and mobile/desktop layouts reviewed.
-- Linux and signed Android release builds pass; Linux relocated GUI startup verified.
-- APK signer matches published v0.22.1, package dev.woi.woi; update installation retains app data.
-- No physical/emulated Android runtime available. Linux fresh-profile default live-provider call returned HTTP404; live-provider end-to-end remains unverified.
-- Full evidence/timings: agent/validation-20261119-context-handoff.md and release provenance.
+## Ownership
+- android_context_fix: automatic Luna tool delegation, run tracking/results, corresponding controller/runtime tests. Coordinate shared controller interfaces.
+- context_document_ui: Agents navigation/view, circular add-file control and UI tests using agreed run tracking interface.
+- audio_compaction: latest-five-user-audio retention and text-only summarization, context/media tests.
+- workspace_inspector: initial branch, instructions and continuation only.
+- Main coordinates integration, review and subsequent build/release specialist.
 
-## Build operations
-- Flutter SDK: /home/a/.local/flutter, Flutter3.47.9/Dart3.13.7.
-- From app: flutter build linux --release; flutter build apk --release --flavor arm64 --target-platform android-arm64.
-- Do not run Flutter tests/analyzer during APK build. Use normal pub refresh for APK after tests; --no-pub left test plugin registration stale during this task.
-- Monitor CPU/RAM each second and record wall time. Do not broad-stage .claude, previous QA artifacts or output folders.
-- Linux x86_64 requires GLIBC2.38 and GLIBCXX_3.4.32; see release README for core vs optional JNI dependencies.
+## Verified architecture
+- Existing model ID: app/lib/core/usage/model_guard.dart kCheapModel = gpt-6-luna. Do not guess a replacement ID.
+- app/lib/core/delegate/responses_delegate.dart and delegate_backend.dart; GuardedDelegate in model_guard.dart.
+- app/lib/core/app_controller.dart connects application behavior.
+- Context: app/lib/core/context/context_manager.dart, responses_compressor.dart, compressor.dart and image_tiers.dart.
+- Media: app/lib/core/models/message.dart, app/lib/core/media/media_context.dart and app/lib/core/voice/context_sync.dart.
+- UI: app/lib/ui/screens/home_screen.dart and app/lib/ui/widgets/input_bar.dart.
+- Preserve Android assistant handoff and context_document.dart/context_meter.dart from v0.22.2.
 
-## Future work
-No requested feature implementation remains. Optional follow-up is a real Android assistant->main lifecycle run and live-provider verification in the user's configured environment. Preserve the existing worktree and review actual release/branch state before continuing.
+## Build and validation
+- SDK /home/a/.local/flutter, Flutter 3.47.9 / Dart 3.13.7. Android SDK /home/a/Android/Sdk.
+- From app: flutter build apk --release --flavor arm64 --target-platform android-arm64. Existing Linux command: flutter build linux --release.
+- No Flutter tests/analyzer concurrently with APK build. Normal pub refresh is required after tests; --no-pub previously left stale test plugin registration.
+- Sample CPU/RAM every second and record elapsed times. Investigate abnormal tasks exceeding five minutes.
+- Previously verified host: x86_64, 8 CPU threads, 41.96 GB RAM; no Android device attached. Recheck before claiming hardware verification.
+- Credentials/private endpoint remain outside repo in temporary transport configuration. /tmp/woi_mcp.py existed and connection was reverified.
+
+## Current state
+Branch and preparation complete; implementation and validation ongoing. No new APK, merge to main, push, release or live-provider verification is yet complete.
