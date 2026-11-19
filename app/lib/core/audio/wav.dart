@@ -33,6 +33,50 @@ Uint8List encodeWav(Uint8List pcm16, {int sampleRate = kVoiceSampleRate}) {
   return out;
 }
 
+/// Reads the PCM payload of an archived recording without sending the RIFF
+/// header as audio. The Realtime input format is PCM16 mono at 24 kHz.
+/// Walk all RIFF chunks (including padded unknown chunks); reject truncated
+/// or incompatible files instead of playing/sending incorrectly decoded data.
+Uint8List decodePcm16Wav(Uint8List bytes, {int sampleRate = kVoiceSampleRate}) {
+  Never invalid(String detail) => throw FormatException('Unsupported recording: $detail');
+  if (bytes.length < 12) invalid('incomplete WAV header');
+  String tag(int offset) => String.fromCharCodes(bytes.sublist(offset, offset + 4));
+  if (tag(0) != 'RIFF' || tag(8) != 'WAVE') invalid('expected RIFF/WAVE');
+  final data = ByteData.sublistView(bytes);
+  final end = data.getUint32(4, Endian.little) + 8;
+  if (end < 12 || end > bytes.length) invalid('truncated RIFF data');
+  var formatOk = false;
+  int? pcmStart;
+  var pcmLength = 0;
+  var offset = 12;
+  while (offset + 8 <= end) {
+    final chunk = tag(offset);
+    final length = data.getUint32(offset + 4, Endian.little);
+    final body = offset + 8;
+    if (body + length > end) invalid('truncated $chunk chunk');
+    if (chunk == 'fmt ') {
+      if (length < 16 ||
+          data.getUint16(body, Endian.little) != 1 ||
+          data.getUint16(body + 2, Endian.little) != 1 ||
+          data.getUint32(body + 4, Endian.little) != sampleRate ||
+          data.getUint32(body + 8, Endian.little) != sampleRate * 2 ||
+          data.getUint16(body + 12, Endian.little) != 2 ||
+          data.getUint16(body + 14, Endian.little) != 16) {
+        invalid('expected PCM16 mono at $sampleRate Hz');
+      }
+      formatOk = true;
+    } else if (chunk == 'data') {
+      if (pcmStart != null || length == 0 || length.isOdd) invalid('invalid PCM data length');
+      pcmStart = body;
+      pcmLength = length;
+    }
+    offset = body + length + (length & 1);
+    if (offset > end) invalid('missing chunk padding');
+  }
+  if (offset != end || !formatOk || pcmStart == null) invalid('missing or incomplete WAV chunks');
+  return Uint8List.sublistView(bytes, pcmStart, pcmStart + pcmLength);
+}
+
 Future<void> writeWav(String path, Uint8List pcm16, {int sampleRate = kVoiceSampleRate}) async {
   final f = File(path);
   await f.parent.create(recursive: true);

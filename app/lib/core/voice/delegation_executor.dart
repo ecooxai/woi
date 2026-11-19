@@ -142,6 +142,15 @@ class DelegationImage {
 /// compact JSON result.
 typedef DelegationToolRunner = Future<String> Function(String callId, String name, String argsJson);
 
+/// Observes actual tool-planning model work without adding requests or changing
+/// tool authority. Fast paths and saved-reference answers are not planner runs.
+abstract class DelegationObserver {
+  void started(DelegationReport report, void Function() cancel);
+  void toolStarted(DelegationReport report, DelegationToolRun tool);
+  void toolFinished(DelegationReport report, DelegationToolRun tool);
+  void finished(DelegationReport report);
+}
+
 class DelegationToolRun {
   DelegationToolRun(this.name, this.argsJson, this.startedAt, {this.callId = ''});
   final String callId;
@@ -169,6 +178,15 @@ class DelegationReport {
   final String id;
   final String request;
   int _cancellationEpoch = 0;
+  bool _plannerObserved = false;
+  bool _cancelRequested = false;
+  final _cancelSignal = Completer<void>();
+
+  bool get cancelled => _cancelRequested;
+  void _requestCancel() {
+    _cancelRequested = true;
+    if (!_cancelSignal.isCompleted) _cancelSignal.complete();
+  }
 
   /// Wall clock when the delegation started (≈ `delegation.created` receipt).
   final DateTime createdAt;
@@ -212,6 +230,7 @@ class DelegationExecutor {
     required this.model,
     required this.tools,
     required this.runTool,
+    this.observer,
     this.latestScreenshot,
     this.contextImages,
     this.contextNote,
@@ -230,6 +249,7 @@ class DelegationExecutor {
   final DelegationModel model;
   final List<ToolSpec> tools;
   final DelegationToolRunner runTool;
+  final DelegationObserver? observer;
   final DelegationImage? Function()? latestScreenshot;
 
   /// Camera frame and media image (gpt-live keeps them per slot); attached
@@ -303,8 +323,9 @@ class DelegationExecutor {
       'the finished image will appear in the original chat. Queued does not mean completed. '
       '$_complexWorkInstructions'
       'The conversation note is attached: answer questions from it, record decisions, todos, facts and '
-      'paths with update_note or note_control (append/insert/replace/delete_text); edits show a short preview and '
-      'apply themselves. Other notes (new, switch, rename, delete, list) and the note\'s undo/redo: note_control. '
+      'paths with update_note or note_control (append/insert/replace/delete_text). Routine file, note, search, '
+      'clipboard, Python and Bash calls automatically run in a Luna worker without asking again; use the actual '
+      'returned results. Other notes (new, switch, rename, delete, list) and undo/redo: note_control. '
       'Woi itself (switch view note/chat/terminal/split, settings such as theme, voice, mic mode, terminal tabs, the '
       'media viewer, apply/reject the edit preview, "undo that" = your last note or file edit, disconnect, clear the '
       'chat, compact the context): app_control. '
@@ -664,18 +685,35 @@ class DelegationExecutor {
   }
 
   int _seq = 0;
+  final Set<DelegationReport> _activeExecutions = {};
   int _cancellationEpoch = 0;
   Completer<void> _cancelled = Completer<void>();
 
   /// Invalidate queued calls without retrying already dispatched input.
   void cancelPending() {
+    for (final report in _activeExecutions) {
+      report._requestCancel();
+    }
     _cancellationEpoch++;
     _cancelled.complete();
     _cancelled = Completer<void>();
   }
 
   void _checkActive(DelegationReport report) {
-    if (report._cancellationEpoch != _cancellationEpoch) throw StateError('Delegation cancelled.');
+    if (report.cancelled || report._cancellationEpoch != _cancellationEpoch) {
+      report._requestCancel();
+      throw StateError('Delegation cancelled.');
+    }
+  }
+
+  void _observePlanner(DelegationReport report) {
+    if (report._plannerObserved || observer == null) return;
+    report._plannerObserved = true;
+    observer!.started(report, report._requestCancel);
+    for (final tool in report.tools) {
+      observer!.toolStarted(report, tool);
+      if (tool.resultJson != null) observer!.toolFinished(report, tool);
+    }
   }
 
   /// One read-only answer from an immutable saved reference. This deliberately
@@ -747,6 +785,7 @@ class DelegationExecutor {
     final report = DelegationReport(id: id ?? 'dlg_${++_seq}', request: request)
       ..model = fastModel
       .._cancellationEpoch = _cancellationEpoch;
+    _activeExecutions.add(report);
     try {
       await _run(
         request,
@@ -763,6 +802,8 @@ class DelegationExecutor {
       }
     }
     report.total = sw.elapsed;
+    _activeExecutions.remove(report);
+    if (report._plannerObserved) observer?.finished(report);
     return report;
   }
 
@@ -1001,14 +1042,18 @@ class DelegationExecutor {
 
       final DelegationModelTurn turn;
       try {
-        turn = await model.respond(
-          model: fastModel,
-          instructions: _instructionsFor(writtenImageAnswer),
-          input: input,
-          tools: specs,
-          reasoningEffort: reasoningEffortProvider == null ? reasoningEffort : reasoningEffortProvider!(),
-          onToolCall: enqueue,
-        );
+        if (!writtenImageAnswer) _observePlanner(report);
+        turn = await Future.any<DelegationModelTurn>([
+          model.respond(
+            model: fastModel,
+            instructions: _instructionsFor(writtenImageAnswer),
+            input: input,
+            tools: specs,
+            reasoningEffort: reasoningEffortProvider == null ? reasoningEffort : reasoningEffortProvider!(),
+            onToolCall: enqueue,
+          ),
+          report._cancelSignal.future.then<DelegationModelTurn>((_) => throw StateError('Delegation cancelled.')),
+        ]);
         for (final call in turn.calls) {
           enqueue(call);
         }
@@ -1129,6 +1174,7 @@ class DelegationExecutor {
     _checkActive(report);
     final run = DelegationToolRun(name, args, sw.elapsed, callId: callId);
     report.tools.add(run);
+    if (report._plannerObserved) observer?.toolStarted(report, run);
     try {
       if (callId.isEmpty || name.isEmpty) throw const FormatException('tool call ID and name are required');
       if (jsonDecode(args) is! Map) throw const FormatException('tool arguments must be a complete JSON object');
@@ -1137,6 +1183,7 @@ class DelegationExecutor {
       run.resultJson = jsonEncode({'ok': false, 'error': '$e'});
     }
     run.doneAt = sw.elapsed;
+    if (report._plannerObserved) observer?.toolFinished(report, run);
     _checkActive(report);
   }
 
@@ -1278,15 +1325,11 @@ String? _afterActionLocation(String text) {
       if (text.substring(location.end, i).trim().isEmpty) return null;
       return text.substring(i + 1).trimLeft();
     }
-    if ('!?;'.contains(character) ||
-        (character == '.' &&
-            (i + 1 == text.length || text[i + 1].trim().isEmpty))) {
+    if ('!?;'.contains(character) || (character == '.' && (i + 1 == text.length || text[i + 1].trim().isEmpty))) {
       return null;
     }
     // Apostrophes within/after a word are possessives, not opening quotes.
-    if ((character == "'" || character == '’') &&
-        i > location.end &&
-        _actionTargetWord.hasMatch(text[i - 1])) {
+    if ((character == "'" || character == '’') && i > location.end && _actionTargetWord.hasMatch(text[i - 1])) {
       continue;
     }
     closingQuote = switch (character) {

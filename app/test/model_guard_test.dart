@@ -126,8 +126,13 @@ void main() {
       expect(c.compactionChoice.reason, contains('5h usage window has 15% left'));
       expect(c.delegationChoice.model, 'gpt-6-luna');
       final r = await c.tools.dispatch('delegate_task', jsonEncode({'task': 'refactor'}));
-      expect(delegate.models.last, 'gpt-6-luna');
-      expect(jsonDecode(r.json)['model_note'], contains('instead of gpt-6.1-sol'));
+      expect(delegate.models, ['gpt-6-luna']);
+      expect(jsonDecode(r.json)['model'], 'gpt-6-luna');
+      // Automatic work selects Luna directly, independently of the optional
+      // quota downgrade. The direct GuardedDelegate test above covers its reason.
+      expect(jsonDecode(r.json)['model_note'], isNull);
+      expect(c.agents.runs.single.model, 'gpt-6-luna');
+      expect(c.agents.runs.single.result, r.json);
 
       usage.debugSet(_snap(90, 40));
       expect(notices(), hasLength(1), reason: 'one-time');
@@ -138,6 +143,12 @@ void main() {
       // later drop notices again.
       usage.debugSet(_snap(5, 40));
       expect(c.contextManager.compressionModel, 'gpt-6.1-sol');
+      final normal = await c.tools.dispatch('delegate_task', jsonEncode({'task': 'normal quota work'}));
+      expect(jsonDecode(normal.json)['model'], 'gpt-6-luna');
+      expect(delegate.models, [
+        'gpt-6-luna',
+        'gpt-6-luna',
+      ], reason: 'automatic work never requests the selected expensive model, at low or normal usage');
       usage.debugSet(_snap(5, 95));
       expect(notices(), hasLength(2));
       expect(notices().last, contains('week window 5% left'));
@@ -188,7 +199,10 @@ void main() {
     await t.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: SizedBox(width: 340, child: CodexUsageMeter(controller: c, now: () => now)),
+          body: SizedBox(
+            width: 340,
+            child: CodexUsageMeter(controller: c, now: () => now),
+          ),
         ),
       ),
     );

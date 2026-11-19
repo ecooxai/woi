@@ -6,10 +6,36 @@ import 'package:woi/core/app_actions.dart';
 import 'package:woi/core/app_controller.dart';
 import 'package:woi/core/auth/auth.dart';
 import 'package:woi/core/notes/note_copy.dart';
+import 'package:woi/core/responses/responses_client.dart';
 import 'package:woi/core/settings/settings.dart';
 import 'package:woi/core/voice/delegation_executor.dart';
 
 import 'fakes/fakes.dart';
+
+class _ToolPlanner extends ResponsesClient {
+  _ToolPlanner() : super(credentials: () async => null);
+
+  @override
+  Future<ResponsesResult> automaticToolAction({
+    required List<Map<String, Object?>> input,
+    required String instructions,
+    required List<Map<String, Object?>> tools,
+  }) async {
+    final content = input.single['content'] as List;
+    final request = jsonDecode((content.single as Map)['text'] as String) as Map;
+    return ResponsesResult(
+      text: '',
+      status: 'completed',
+      functionCalls: [
+        FunctionCallItem(
+          callId: 'controller-test-worker',
+          name: request['tool'] as String,
+          arguments: jsonEncode(request['arguments']),
+        ),
+      ],
+    );
+  }
+}
 
 void main() {
   late FakePlatform fp;
@@ -22,6 +48,7 @@ void main() {
       platform: fp.services,
       confirmations: FakeConfirmations(),
       backendFactory: () => ScriptedBackend(),
+      toolAgentClientFactory: _ToolPlanner.new,
       authManager: CodexAuthManager(path: '${fp.root.path}/no-auth.json'),
     );
     await c.init();

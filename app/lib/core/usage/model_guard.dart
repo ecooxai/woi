@@ -60,6 +60,7 @@ class GuardedDelegate implements DelegateBackend {
       model: r.model ?? c.model,
       tokensUsed: r.tokensUsed,
       modelNote: c.reason,
+      toolResults: r.toolResults,
     );
   }
 }

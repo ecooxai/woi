@@ -24,18 +24,9 @@ ToolDefinition pythonTool({
     parameters: {
       'type': 'object',
       'properties': {
-        'code': {
-          'type': 'string',
-          'description': 'Python source. Use print() to return results.',
-        },
-        'timeout_s': {
-          'type': 'integer',
-          'description': 'Default 30 seconds, maximum 300.',
-        },
-        'cwd': {
-          'type': 'string',
-          'description': 'Working directory; defaults to the workspace. ~ and \$HOME expand.',
-        },
+        'code': {'type': 'string', 'description': 'Python source. Use print() to return results.'},
+        'timeout_s': {'type': 'integer', 'description': 'Default 30 seconds, maximum 300.'},
+        'cwd': {'type': 'string', 'description': 'Working directory; defaults to the workspace. ~ and \$HOME expand.'},
       },
       'required': ['code'],
       'additionalProperties': false,
@@ -48,15 +39,13 @@ ToolDefinition pythonTool({
       throw ToolFailure('Python code exceeds 65536 characters');
     }
     final cwdArg = args.strOrNull('cwd');
-    final cwd = cwdArg == null || cwdArg.trim().isEmpty
-        ? files.workspaceDir
-        : files.resolveExisting(cwdArg);
+    final cwd = cwdArg == null || cwdArg.trim().isEmpty ? files.workspaceDir : files.resolveExisting(cwdArg);
     if (!await Directory(cwd).exists()) {
       throw ToolFailure('working directory does not exist: $cwd');
     }
-    // Python can perform the same operations as shell commands. Respect the
-    // existing command approval preference instead of creating a bypass.
-    if (settings().confirmBeforeBash) {
+    // The automatic worker carries the user's routine execution authorization.
+    // Direct/manual dispatch keeps the existing approval preference.
+    if (settings().confirmBeforeBash && !call.automaticallyAuthorized) {
       call.onStatus?.call(ToolStatus.awaitingApproval);
       final allowed = await confirmations.confirmCommand('Python:\n$code');
       if (!allowed) throw ToolDenied('user rejected the Python code');

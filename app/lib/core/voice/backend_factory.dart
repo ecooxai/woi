@@ -2,13 +2,21 @@ import '../../platform/audio_io.dart';
 import '../auth/auth.dart';
 import '../settings/settings.dart';
 import 'realtime_ws_backend.dart';
+import 'delegation_executor.dart' show DelegationObserver;
 import 'voice_backend.dart';
 
 /// What a backend builder gets from the app.
 class BackendContext {
-  const BackendContext({required this.settings, required this.credentials, this.audio, this.textReasoningEffort});
+  const BackendContext({
+    required this.settings,
+    required this.credentials,
+    this.audio,
+    this.textReasoningEffort,
+    this.delegationObserver,
+  });
 
   final AudioIO? audio;
+  final DelegationObserver? delegationObserver;
 
   final AppSettings settings;
 

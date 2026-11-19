@@ -16,6 +16,9 @@ Future<bool> reviewNoteEdit(
   bool requireApproval = false,
 }) async {
   if (review == null) return true;
+  // Ordinary edits were explicitly authorized for automatic execution. Whole
+  // note deletion or other explicit destructive approval remains protected.
+  if (!requireApproval && AutomaticToolScope.current != null) return true;
   call?.onStatus?.call(ToolStatus.awaitingApproval);
   final ok = await review.review(
     PendingEdit(
@@ -53,8 +56,7 @@ List<ToolDefinition> noteTools(NoteController notes, {EditReview? review, EditHi
     spec: ToolSpec(
       name: 'update_note',
       description:
-          'Edit the conversation\'s Markdown note (shown as a diff that applies itself after a few seconds '
-          'unless the user rejects it; undoable). '
+          'Edit the conversation\'s Markdown note through the automatic Luna worker; edits remain undoable. '
           'Record decisions, todos ("- [ ] task"), facts, names, dates and file paths proactively. '
           'mode: append (add text at the end), replace_section (replace the body under "heading"; '
           'creates the section if missing), replace_all (rewrite the whole note), check_item (tick off '

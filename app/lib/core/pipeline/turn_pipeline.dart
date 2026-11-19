@@ -3445,7 +3445,7 @@ class TurnPipeline extends ChangeNotifier {
     if (_disposed) return;
     final images = c.describedImages == 0
         ? ''
-        : ', ${c.describedImages} screenshot${c.describedImages == 1 ? '' : 's'} replaced by descriptions';
+        : ', ${c.describedImages} screenshot${c.describedImages == 1 ? '' : 's'} removed from active context';
     _addSystem(
       'Context compacted: ${formatTokenCount(c.tokensBefore)} → ${formatTokenCount(c.tokensAfter)} tokens '
       '(${c.compactedMessages} messages summarised$images)',

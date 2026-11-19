@@ -15,8 +15,8 @@ import 'settings/settings.dart';
 import 'storage/history_store.dart';
 import 'terminal/terminal_hub.dart';
 
-/// The top-level tabs. Existing Ctrl+1..4 shortcuts are kept; Clipboard uses Ctrl+5.
-enum HomeView { note, chat, terminal, clipboard, settings }
+/// The top-level tabs. Existing shortcuts are kept; Clipboard uses Ctrl+5 and Agents Ctrl+6.
+enum HomeView { note, chat, terminal, clipboard, settings, agents }
 
 /// Failure of an app action, with a message for the user / model.
 class AppActionError implements Exception {
@@ -83,7 +83,9 @@ class AppActions {
       split.value = false;
       return 'single view';
     }
-    final v = n.contains('clipboard')
+    final v = n.contains('agent')
+        ? HomeView.agents
+        : n.contains('clipboard')
         ? HomeView.clipboard
         : n.contains('term') || n.contains('shell') || n.contains('console')
         ? HomeView.terminal
@@ -91,7 +93,7 @@ class AppActions {
         ? HomeView.chat
         : n.contains('note')
         ? HomeView.note
-        : throw AppActionError('unknown view "$name" (note, chat, terminal, clipboard, settings, split)');
+        : throw AppActionError('unknown view "$name" (note, chat, terminal, clipboard, agents, settings, split)');
     showView(v);
     return v.name;
   }

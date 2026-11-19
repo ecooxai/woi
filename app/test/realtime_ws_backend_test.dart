@@ -106,6 +106,16 @@ class _Rig {
     }
   }
 
+  void textTurn(String id, String text) => ws.addItem({
+    'id': id,
+    'type': 'message',
+    'role': 'user',
+    'status': 'completed',
+    'content': [
+      {'type': 'input_text', 'text': text},
+    ],
+  });
+
   Future<void> dispose() async {
     await backend.close();
     await sub.cancel();
@@ -514,7 +524,12 @@ void main() {
       r.respond('r1');
       await _pump();
       r.ws.push({'type': 'session.updated', 'session': r.ws.ofType('session.update').last['session']});
-      r.ws.push({'type': 'response.output_audio_transcript.delta', 'response_id': 'r1', 'item_id': 'a1', 'delta': 'Hi'});
+      r.ws.push({
+        'type': 'response.output_audio_transcript.delta',
+        'response_id': 'r1',
+        'item_id': 'a1',
+        'delta': 'Hi',
+      });
       await _pump();
       expect(tds(), hasLength(2));
       expect(tds().last['threshold'], 0.3);
@@ -723,7 +738,11 @@ void main() {
       await _pump();
       r.ws.push({
         'type': 'error',
-        'error': {'type': 'invalid_request_error', 'code': 'session_expired', 'message': 'Your session hit the maximum duration of 60 minutes.'},
+        'error': {
+          'type': 'invalid_request_error',
+          'code': 'session_expired',
+          'message': 'Your session hit the maximum duration of 60 minutes.',
+        },
       });
       await waitUntil(() => r.server.sockets.length == 2 && r.backend.isReady);
       await _pump();
@@ -781,30 +800,33 @@ void main() {
     });
   });
 
-  test('turnAudio: the clip is cut from the sent audio at the server speech start, not when the event arrives', () async {
-    final r = _Rig();
-    await r.connect();
-    // 3 s of audio, sample value = second index + 1.
-    for (var s = 0; s < 3; s++) {
-      for (var c = 0; c < 10; c++) {
-        final b = ByteData(4800);
-        for (var i = 0; i < 2400; i++) {
-          b.setInt16(i * 2, s + 1, Endian.little);
+  test(
+    'turnAudio: the clip is cut from the sent audio at the server speech start, not when the event arrives',
+    () async {
+      final r = _Rig();
+      await r.connect();
+      // 3 s of audio, sample value = second index + 1.
+      for (var s = 0; s < 3; s++) {
+        for (var c = 0; c < 10; c++) {
+          final b = ByteData(4800);
+          for (var i = 0; i < 2400; i++) {
+            b.setInt16(i * 2, s + 1, Endian.little);
+          }
+          r.backend.sendAudio(b.buffer.asUint8List());
         }
-        r.backend.sendAudio(b.buffer.asUint8List());
       }
-    }
-    r.ws.push({'type': 'input_audio_buffer.speech_started', 'item_id': 'u1', 'audio_start_ms': 500});
-    r.ws.push({'type': 'input_audio_buffer.speech_stopped', 'item_id': 'u1', 'audio_end_ms': 2500});
-    await _pump();
-    final clip = r.backend.turnAudio('u1')!;
-    expect(clip.length, (2750 - 500) * 48, reason: 'from 500 ms to the speech end + a 250 ms tail');
-    final bd = ByteData.sublistView(clip);
-    expect(bd.getInt16(0, Endian.little), 1);
-    expect(bd.getInt16(clip.length - 2, Endian.little), 3);
-    expect(r.backend.turnAudio('nope'), isNull);
-    await r.dispose();
-  });
+      r.ws.push({'type': 'input_audio_buffer.speech_started', 'item_id': 'u1', 'audio_start_ms': 500});
+      r.ws.push({'type': 'input_audio_buffer.speech_stopped', 'item_id': 'u1', 'audio_end_ms': 2500});
+      await _pump();
+      final clip = r.backend.turnAudio('u1')!;
+      expect(clip.length, (2750 - 500) * 48, reason: 'from 500 ms to the speech end + a 250 ms tail');
+      final bd = ByteData.sublistView(clip);
+      expect(bd.getInt16(0, Endian.little), 1);
+      expect(bd.getInt16(clip.length - 2, Endian.little), 3);
+      expect(r.backend.turnAudio('nope'), isNull);
+      await r.dispose();
+    },
+  );
 
   test('uplinkLagMs: how far speech_stopped arrives behind the sent audio, beyond the silence', () async {
     final r = _Rig();
@@ -835,7 +857,7 @@ void main() {
       final r = _Rig(keepRecentTurns: keepRecentTurns);
       await r.connect();
       for (var i = 1; i <= 4; i++) {
-        r.userTurn('u$i', 'turn $i');
+        r.textTurn('u$i', 'turn $i');
         r.respond('r$i');
         r.audioItem('r$i', 'a$i', 10);
         r.done('r$i');
@@ -887,14 +909,14 @@ void main() {
     test('keeps a function_call with its output', () async {
       final r = _Rig(keepRecentTurns: 1);
       await r.connect();
-      r.userTurn('u1', 'list files');
+      r.textTurn('u1', 'list files');
       r.respond('r1');
       final fc = {'id': 'fc', 'type': 'function_call', 'call_id': 'c1', 'name': 'run_bash', 'arguments': '{}'};
       r.ws.addItem(fc);
       r.done('r1', output: [fc]);
       await _pump();
       // The user speaks while the tool runs: the output lands after their turn.
-      r.userTurn('u2', 'thanks');
+      r.textTurn('u2', 'thanks');
       r.backend.sendToolResult('c1', '{}');
       await _pump();
       r.respond('r2');
@@ -907,32 +929,35 @@ void main() {
       await r.dispose();
     });
 
-    test('a failed delete never cuts the session: retried in the background, then used on the next reconnect', () async {
-      final r = await conversation();
-      r.server.failDeletes = true;
-      r.backend.applyRetryDelay = const Duration(milliseconds: 20);
-      r.backend.maxApplyRetries = 1;
-      final res = await r.backend.applySummary('Facts: user is Alice.');
-      expect(res.method, ContextApplyMethod.skipped);
-      expect(res.detail, startsWith('deferred'));
-      expect(r.server.sockets, hasLength(1), reason: 'no reconnect for a compaction');
-      // One background retry; it replaces its own summary item, not adds one.
-      await Future<void>.delayed(const Duration(milliseconds: 60));
-      await _pump();
-      expect(r.logs.where((l) => l.contains('in-place compaction failed')), hasLength(2));
-      expect(r.ws.ofType('conversation.item.delete').map((e) => e['item_id']), contains(startsWith('woi_ctx_')));
-      expect(r.server.sockets, hasLength(1));
-      // A dropped connection later restores from the summary.
-      r.server.failDeletes = false;
-      await r.ws.drop();
-      await waitUntil(() => r.server.sockets.length == 2 && r.backend.isReady);
-      await _pump();
-      final ctx = jsonEncode(r.ws.ofType('conversation.item.create').single);
-      expect(ctx, contains('user is Alice'));
-      expect(ctx, contains('turn 4'));
-      expect(ctx, isNot(contains('turn 1')));
-      await r.dispose();
-    });
+    test(
+      'a failed delete never cuts the session: retried in the background, then used on the next reconnect',
+      () async {
+        final r = await conversation();
+        r.server.failDeletes = true;
+        r.backend.applyRetryDelay = const Duration(milliseconds: 20);
+        r.backend.maxApplyRetries = 1;
+        final res = await r.backend.applySummary('Facts: user is Alice.');
+        expect(res.method, ContextApplyMethod.skipped);
+        expect(res.detail, startsWith('deferred'));
+        expect(r.server.sockets, hasLength(1), reason: 'no reconnect for a compaction');
+        // One background retry; it replaces its own summary item, not adds one.
+        await Future<void>.delayed(const Duration(milliseconds: 60));
+        await _pump();
+        expect(r.logs.where((l) => l.contains('in-place compaction failed')), hasLength(2));
+        expect(r.ws.ofType('conversation.item.delete').map((e) => e['item_id']), contains(startsWith('woi_ctx_')));
+        expect(r.server.sockets, hasLength(1));
+        // A dropped connection later restores from the summary.
+        r.server.failDeletes = false;
+        await r.ws.drop();
+        await waitUntil(() => r.server.sockets.length == 2 && r.backend.isReady);
+        await _pump();
+        final ctx = jsonEncode(r.ws.ofType('conversation.item.create').single);
+        expect(ctx, contains('user is Alice'));
+        expect(ctx, contains('turn 4'));
+        expect(ctx, isNot(contains('turn 1')));
+        await r.dispose();
+      },
+    );
   });
 
   test('PlaybackTracker: a pause freezes the played position; resume continues from it', () {

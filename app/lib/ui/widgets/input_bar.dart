@@ -286,6 +286,10 @@ class _InputBarState extends State<InputBar> {
                   fixedSize: const Size.square(kTouchTarget),
                   padding: EdgeInsets.zero,
                   foregroundColor: WoiColors.textDim,
+                  backgroundColor: WoiColors.glass,
+                  disabledBackgroundColor: WoiColors.glass,
+                  shape: const CircleBorder(),
+                  side: BorderSide(color: WoiColors.strokeStrong),
                 ),
                 icon: _picking
                     ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))

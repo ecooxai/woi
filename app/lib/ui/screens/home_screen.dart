@@ -14,6 +14,7 @@ import '../../core/settings/settings.dart';
 import '../../platform/media_viewer.dart';
 import '../notes/note_editor.dart';
 import '../clipboard/clipboard_panel.dart';
+import '../agents/agents_panel.dart';
 import '../notes/note_tabs.dart';
 import '../terminal/terminal_panel.dart';
 import '../theme.dart';
@@ -182,6 +183,7 @@ class WoiTabsState extends State<WoiTabs> {
     HomeView.terminal => 'terminal',
     HomeView.settings => 'settings',
     HomeView.clipboard => 'clipboard history',
+    HomeView.agents => 'agent history',
   };
   StreamSubscription<ContextCompacted>? _compactSub;
 
@@ -205,6 +207,7 @@ class WoiTabsState extends State<WoiTabs> {
   final _settingsKey = GlobalKey(debugLabel: 'settings-view');
   final _terminalKey = GlobalKey(debugLabel: 'terminal-view');
   final _clipboardKey = GlobalKey(debugLabel: 'clipboard-view');
+  final _agentsKey = GlobalKey(debugLabel: 'agents-view');
   final _selectedTabKey = GlobalKey(debugLabel: 'selected-home-tab');
   ({double width, double labelSize, bool compact, bool wide})? _tabViewport;
   bool _tabRevealQueued = false;
@@ -515,6 +518,8 @@ class WoiTabsState extends State<WoiTabs> {
     LogicalKeyboardKey.numpad4: HomeView.settings,
     LogicalKeyboardKey.digit5: HomeView.clipboard,
     LogicalKeyboardKey.numpad5: HomeView.clipboard,
+    LogicalKeyboardKey.digit6: HomeView.agents,
+    LogicalKeyboardKey.numpad6: HomeView.agents,
   };
 
   /// Enter decides an edit preview unless it would type into something:
@@ -699,6 +704,7 @@ class WoiTabsState extends State<WoiTabs> {
                   HomeView.settings => _settingsPanel(),
                   HomeView.terminal => _terminalPanel(),
                   HomeView.clipboard => _clipboardPanel(),
+                  HomeView.agents => _agentsPanel(),
                 },
                 builder: (context, child) => Padding(
                   // Keep the reveal viewport below the floating search input.
@@ -776,6 +782,7 @@ class WoiTabsState extends State<WoiTabs> {
                   HomeView.settings => _settingsPanel(),
                   HomeView.terminal => _terminalPanel(),
                   HomeView.clipboard => _clipboardPanel(),
+                  HomeView.agents => _agentsPanel(),
                   _ => _notePanel(),
                 },
               ),
@@ -883,6 +890,14 @@ class WoiTabsState extends State<WoiTabs> {
     ScaffoldMessenger.maybeOf(context)
         ?.showSnackBar(const SnackBar(content: Text('Added to your message. Review it and press Send when ready.')));
   }
+
+  Widget _agentsPanel() => KeyedSubtree(
+    key: _agentsKey,
+    child: _findPane(
+      HomeView.agents,
+      AgentsPanel(key: const ValueKey('agents-view'), store: c.agents, find: _find[HomeView.agents]),
+    ),
+  );
 
   Widget _settingsPanel() => KeyedSubtree(
     key: _settingsKey,
@@ -1031,15 +1046,19 @@ class WoiTabsState extends State<WoiTabs> {
                   alignment: Alignment.centerLeft,
                   child: SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
-                    child: HomeTabs(
-                      view: wide ? _leftView : _view,
-                      onChanged: setView,
-                      hideChat: wide,
-                      noteBadge: _noteBadge,
-                      chatBadge: _chatBadge,
-                      compact: phone,
-                      height: h,
-                      selectedTabKey: _selectedTabKey,
+                    child: ListenableBuilder(
+                      listenable: c.agents,
+                      builder: (context, _) => HomeTabs(
+                        view: wide ? _leftView : _view,
+                        onChanged: setView,
+                        hideChat: wide,
+                        noteBadge: _noteBadge,
+                        chatBadge: _chatBadge,
+                        agentBadge: c.agents.activeCount,
+                        compact: phone,
+                        height: h,
+                        selectedTabKey: _selectedTabKey,
+                      ),
                     ),
                   ),
                 );

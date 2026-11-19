@@ -351,7 +351,10 @@ void main() {
       server.replies
         ..add(_textReply('Here is the code.'))
         ..add(_textReply('Still only text.'));
-      expect((await delegate.runTask('Create a bash script that backs up ~/docs', model: 'm')).output, 'Still only text.');
+      expect(
+        (await delegate.runTask('Create a bash script that backs up ~/docs', model: 'm')).output,
+        'Still only text.',
+      );
       expect(server.requests, hasLength(2), reason: 'one retry only');
     });
 
@@ -376,7 +379,7 @@ void main() {
       }
     });
 
-    test('ResponsesCompressor sends transcript + latest screenshots and returns the summary', () async {
+    test('ResponsesCompressor sends only text and saved image descriptions and returns the summary', () async {
       final dir = await Directory.systemTemp.createTemp('woi_comp_');
       addTearDown(() => dir.delete(recursive: true));
       final png = File('${dir.path}/s.png')..writeAsBytesSync(Uint8List.fromList([0x89, 0x50, 0x4E, 0x47, 0, 1]));
@@ -388,6 +391,7 @@ void main() {
           Message(
             kind: MessageKind.user,
             image: ImageAttachment(path: png.path, width: 2, height: 2, originalWidth: 2, originalHeight: 2),
+            meta: {'imageDescription': 'Notes editor with the saved project checklist.'},
           ),
           Message(kind: MessageKind.assistant, text: 'Opened it.'),
         ],
@@ -401,7 +405,77 @@ void main() {
       final text = jsonEncode(req['input']);
       expect(text, contains('I am Bob'));
       expect(text, contains('Earlier: hello.'));
-      expect(text, contains('input_image'));
+      expect(text, contains('saved project checklist'));
+      expect(text, isNot(contains('input_image')));
+      expect(text, isNot(contains('input_audio')));
+      final content = ((req['input'] as List).single as Map)['content'] as List;
+      expect(content.every((part) => (part as Map)['type'] == 'input_text'), isTrue);
+    });
+
+    test('text compaction marks unavailable audio and image contents without loading media', () async {
+      server.replies.add(_textReply('Facts: transcript details retained.'));
+      final comp = ResponsesCompressor(client);
+      await comp.compress(
+        [
+          Message(
+            kind: MessageKind.user,
+            text: 'the real transcript',
+            audio: const AudioClip(path: '/missing/voice.wav', durationMs: 4000),
+          ),
+          Message(
+            kind: MessageKind.user,
+            audio: const AudioClip(path: '/missing/untranscribed.wav', durationMs: 4000),
+          ),
+          Message(
+            kind: MessageKind.system,
+            image: const ImageAttachment(
+              path: '/missing/screen.png',
+              width: 2,
+              height: 2,
+              originalWidth: 2,
+              originalHeight: 2,
+            ),
+            meta: {'type': 'screenshot'},
+          ),
+        ],
+        model: 'gpt-6-luna',
+        previousSummary: 'Earlier known facts.',
+      );
+      final request = server.requests.single;
+      final content = ((request['input'] as List).single as Map)['content'] as List;
+      expect(content, hasLength(1));
+      expect((content.single as Map)['type'], 'input_text');
+      final text = (content.single as Map)['text'] as String;
+      expect(text, contains('the real transcript'));
+      expect(text, contains('transcript unavailable'));
+      expect(text, contains('audio contents not summarized'));
+      expect(text, contains('description unavailable'));
+      expect('PREVIOUS SUMMARY:'.allMatches(text), hasLength(1));
+      expect(text, isNot(contains('/missing/')));
+    });
+
+    test('summary input strips inline binary media before clipping tool receipts', () async {
+      server.replies.add(_textReply('Tasks: received media.'));
+      final encoded = base64Encode(Uint8List.fromList(List.generate(384, (i) => i % 255)));
+      await ResponsesCompressor(client).compress([
+        Message(kind: MessageKind.user, text: 'Photo data:image/png;base64,$encoded'),
+        Message(
+          kind: MessageKind.tool,
+          tool: ToolCallInfo(
+            callId: 'media',
+            name: 'read_media',
+            argsJson: jsonEncode({'audio': encoded, 'path': 'voice.wav'}),
+            status: ToolStatus.success,
+            resultJson: jsonEncode({'image_base64': encoded, 'description': 'actual text'}),
+          ),
+        ),
+      ], model: 'gpt-6-luna');
+      final requestText = jsonEncode(server.requests.single['input']);
+      expect(requestText.contains(encoded), isFalse);
+      expect(requestText.contains(encoded.substring(0, 64)), isFalse);
+      expect(requestText, contains('binary media omitted'));
+      expect(requestText, contains('actual text'));
+      expect(requestText, contains('voice.wav'));
     });
 
     test('API key credentials use the API endpoint and only Authorization', () async {

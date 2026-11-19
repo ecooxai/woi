@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 
 import '../models/message.dart';
 import '../util/usage_limit.dart';
+import 'audio_retention.dart';
 import 'compressor.dart';
 import 'image_tiers.dart';
 
@@ -46,7 +48,8 @@ class ContextCompacted {
   final int compactedMessages;
   final String summary;
 
-  /// Screenshots dropped from the context (described in the summary).
+  /// Screenshots removed from active context; saved descriptions and honest
+  /// unavailable-content markers are included in the text-only summary input.
   final int describedImages;
 
   /// Whether the context shrank by at least [ContextManager.minGain] / 2 of
@@ -140,8 +143,10 @@ class _Baseline {
 /// notes are UI only and cost nothing.
 ///
 /// Compaction summarizes every message before the [keepRecentTurns]-th last
-/// user turn, screenshots included (the compressor describes them in words),
-/// and only runs when that frees at least [minGain] of the context.
+/// user turn, except the latest [kRetainedUserAudioMessages] user recordings.
+/// Their audio, transcript and attachments stay active even between older
+/// compacted text turns. Summaries contain text and saved media descriptions.
+/// Compaction only runs when it can free at least [minGain] of the context.
 class ContextManager extends ChangeNotifier {
   ContextManager({
     required this.compressor,
@@ -209,8 +214,21 @@ class ContextManager extends ChangeNotifier {
       final retry = wait == null ? '' : ' Retrying in ${wait.isNegative ? 0 : (wait.inMilliseconds / 1000).ceil()} s.';
       return 'Compaction failed${failures > 1 ? ' ($failures×)' : ''}: $short.$retry';
     }
-    if (_conv != null && estimatedTokens > threshold && _compactable().isEmpty) {
-      return 'Over the limit, but only the last $keepRecentTurns turns are left (kept raw).';
+    final conv = _conv;
+    if (conv != null && estimatedTokens > threshold) {
+      final retainedAudio = retainedUserAudioMessages(conv.messages);
+      final batch = _compactable();
+      if (batch.isEmpty) {
+        final audio = retainedAudio.isEmpty
+            ? ''
+            : ' and ${retainedAudio.length} recent user recording${retainedAudio.length == 1 ? '' : 's'}';
+        return 'Over the limit: the last $keepRecentTurns turns$audio are kept. '
+            'There is no older text left to compact.';
+      }
+      if (retainedAudio.isNotEmpty && _gain(batch) < (estimatedTokens - _overhead - _pinned) * minGain) {
+        return 'Over the limit: retained user audio and recent turns leave too little older text '
+            'for automatic compaction. The recordings have been kept.';
+      }
     }
     return null;
   }
@@ -220,6 +238,8 @@ class ContextManager extends ChangeNotifier {
   Conversation? _conv;
   _Baseline? _baseline;
   bool _compressing = false;
+  bool _disposed = false;
+  int _contextGeneration = 0;
   DateTime? _lastCompaction;
   Object? lastError;
 
@@ -261,6 +281,8 @@ class ContextManager extends ChangeNotifier {
   }
 
   void attach(Conversation c) {
+    _contextGeneration++;
+    _compressing = false;
     _conv = c;
     _baseline = null;
     _lastCompaction = null;
@@ -446,16 +468,23 @@ class ContextManager extends ChangeNotifier {
 
   // ----------------------------------------------------------- compaction
 
-  /// Messages before the [keepRecentTurns]-th last user turn that are still
-  /// in the context and finished.
+  /// Finished older text turns and recordings outside the five-audio window.
+  /// The audio limit also applies when a wider text window is configured.
   List<Message> _compactable() {
     final c = _conv;
     if (c == null) return const [];
     final cut = rawTurnsStart(c.messages, keepRecentTurns);
-    if (cut == 0) return const [];
+    final audioIds = retainedUserAudioMessages(c.messages).map((m) => m.id).toSet();
     return [
-      for (final m in c.messages.take(cut))
-        if (!m.compacted && !m.streaming && !_uiOnly(m) && !_toolInFlight(m)) m,
+      for (var i = 0; i < c.messages.length; i++)
+        if (c.messages[i] case final m
+            when !m.compacted &&
+                !m.streaming &&
+                !audioIds.contains(m.id) &&
+                !_uiOnly(m) &&
+                !_toolInFlight(m) &&
+                (i < cut || (m.kind == MessageKind.user && m.audio != null)))
+          m,
     ];
   }
 
@@ -478,7 +507,7 @@ class ContextManager extends ChangeNotifier {
   /// Starts a background compaction if over threshold. Never blocks.
   /// Returns the running future (useful for tests), or null.
   Future<void>? maybeCompress({bool force = false}) {
-    if (_compressing || _conv == null) return null;
+    if (_disposed || _compressing || _conv == null) return null;
     final before = estimatedTokens;
     if (!force && before <= threshold) return null;
     final last = _lastCompaction;
@@ -498,13 +527,38 @@ class ContextManager extends ChangeNotifier {
     _retryTimer = null;
     _compressing = true;
     notifyListeners();
-    return _run(_conv!, batch);
+    return _run(_conv!, batch, _contextGeneration);
   }
 
-  Future<void> _run(Conversation conv, List<Message> batch) async {
+  Future<void> _run(Conversation conv, List<Message> batch, int generation, {int restart = 0}) async {
+    // A late transcript, saved recording, edit or conversation switch must
+    // never let an outdated summary archive content it did not actually see.
+    final previousSummary = conv.summary;
+    final audioIds = retainedUserAudioMessages(conv.messages).map((m) => m.id).toList();
+    final revisions = {for (final m in batch) m: jsonEncode(m.toJson())};
+    bool current() => !_disposed && generation == _contextGeneration && identical(conv, _conv);
     try {
-      final result = await compressor.compress(batch, model: compressionModel, previousSummary: conv.summary);
-      if (!identical(conv, _conv)) return; // conversation switched meanwhile
+      final result = await compressor.compress(batch, model: compressionModel, previousSummary: previousSummary);
+      if (!current()) return;
+      final eligible = _compactable().toSet();
+      final currentAudioIds = retainedUserAudioMessages(conv.messages).map((m) => m.id).toList();
+      if (conv.summary != previousSummary ||
+          !listEquals(audioIds, currentAudioIds) ||
+          batch.any((m) => !eligible.contains(m) || revisions[m] != jsonEncode(m.toJson()))) {
+        // New audio may move a previously protected recording into this
+        // batch. Re-summarize before committing; do not archive unseen text.
+        // Bound work if history is continuously changing in a busy session.
+        final next = _compactable();
+        if (next.isNotEmpty) {
+          if (restart < 2) {
+            await _run(conv, next, generation, restart: restart + 1);
+          } else {
+            _lastCompaction = DateTime.now();
+            _failed(StateError('conversation kept changing while summarizing; no messages were archived'));
+          }
+        }
+        return;
+      }
       // Re-measure: messages may have been added while compressing.
       final before = estimatedTokens;
       final oldSummary = conv.summary;
@@ -544,6 +598,7 @@ class ContextManager extends ChangeNotifier {
         ),
       );
     } catch (e) {
+      if (!current()) return;
       // Responses API 429 usage_limit_reached: no automatic retry until it
       // resets; other errors are retried after minInterval.
       final limit = UsageLimit.parse(e);
@@ -554,8 +609,10 @@ class ContextManager extends ChangeNotifier {
       _lastCompaction = DateTime.now();
       _failed(e, scheduleRetry: limit == null);
     } finally {
-      _compressing = false;
-      notifyListeners();
+      if (current()) {
+        _compressing = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -582,20 +639,34 @@ class ContextManager extends ChangeNotifier {
     });
   }
 
-  /// Plain-text rendering of the messages still in the context (the turns a
-  /// compaction keeps), newest last, at most [maxChars]. A new gpt-live
-  /// session gets it after the summary so it continues where the last left.
-  String recentTurns({int maxChars = 4000}) {
+  /// Plain text of active history, newest last. The five retained user
+  /// recordings are included across compacted gaps, with their full available
+  /// transcripts. [maxChars] limits ordinary turns, never those recordings;
+  /// the meter therefore reports a genuine over-budget retained context.
+  /// A backend replaying original audio can omit those transcripts here.
+  String recentTurns({int maxChars = 4000, bool includeRetainedAudio = true}) {
     final c = _conv;
     if (c == null) return '';
+    final audioIds = retainedUserAudioMessages(c.messages).map((m) => m.id).toSet();
     final lines = <String>[];
-    var used = 0;
+    var remaining = maxChars;
+    if (includeRetainedAudio) {
+      for (final m in c.messages) {
+        if (!audioIds.contains(m.id)) continue;
+        final line = renderForContext(m);
+        if (line != null) remaining -= line.length + 1;
+      }
+    }
     for (final m in c.messages.reversed) {
-      if (m.compacted) break;
+      if (m.compacted) continue;
+      final retained = audioIds.contains(m.id);
+      if (retained && !includeRetainedAudio) continue;
       final line = renderForContext(m);
       if (line == null) continue;
-      if (used + line.length > maxChars) break;
-      used += line.length + 1;
+      if (!retained) {
+        if (line.length + 1 > remaining) continue;
+        remaining -= line.length + 1;
+      }
       lines.add(line);
     }
     return lines.reversed.join('\n');
@@ -611,7 +682,10 @@ class ContextManager extends ChangeNotifier {
     final screen = desc == null ? '' : ' [screen: ${clip(desc, 300)}]';
     switch (m.kind) {
       case MessageKind.user:
-        return t.isEmpty && screen.isEmpty ? null : 'User: $t$screen'.replaceFirst('User:  [', 'User: [');
+        final audio = t.isEmpty && m.audio != null ? '[Audio recording; transcript unavailable]' : '';
+        return t.isEmpty && screen.isEmpty && audio.isEmpty
+            ? null
+            : 'User: $t$audio$screen'.replaceFirst('User:  [', 'User: [');
       case MessageKind.assistant:
         return t.isEmpty ? null : 'Assistant: $t${m.interrupted ? ' (interrupted)' : ''}';
       case MessageKind.tool:
@@ -626,6 +700,8 @@ class ContextManager extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
+    _contextGeneration++;
     _retryTimer?.cancel();
     _compactions.close();
     _failures.close();

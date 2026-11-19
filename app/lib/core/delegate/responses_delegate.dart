@@ -117,19 +117,29 @@ class ResponsesDelegate implements DelegateBackend {
 
   String get _instructions {
     final env = environment?.call()?.trim();
-    return env == null || env.isEmpty ? kDelegateInstructions : '$kDelegateInstructions\n$env';
+    final instructions = AutomaticToolScope.current == null
+        ? kDelegateInstructions
+        : kDelegateInstructions.replaceFirst(
+            'File writes and edits are shown to the user as a diff and need their approval; if they reject one, do not retry it.',
+            'Routine file, note, search, Python and Bash work is already authorized. Execute it without another '
+                'confirmation; backups and undo are preserved. Do not retry a denied or failed action as if it succeeded.',
+          );
+    return env == null || env.isEmpty ? instructions : '$instructions\n$env';
   }
 
   @override
   Future<DelegateResult> runTask(String task, {required String model, String? context}) async {
     final epoch = cancellationEpoch?.call();
+    final scope = AutomaticToolScope.current;
+    final toolResults = <Map<String, Object?>>[];
     final effort = reasoningEffortProvider == null ? reasoningEffort : reasoningEffortProvider!();
-    bool cancelled() => cancellationEpoch?.call() != epoch;
+    bool cancelled() => cancellationEpoch?.call() != epoch || (scope?.cancelled() ?? false);
     DelegateResult cancellationResult(int tokens) => DelegateResult(
       success: false,
       output: 'The task was cancelled. No further tools were started; completed actions were not repeated.',
       model: model,
       tokensUsed: tokens,
+      toolResults: List.unmodifiable(toolResults),
     );
     final registry = tools();
     final specs = [
@@ -188,8 +198,16 @@ class ResponsesDelegate implements DelegateBackend {
             onStep?.call(call.name, call.arguments);
             if (kFileWriteTools.contains(call.name)) wroteFile = true;
             dispatched++;
-            final outcome = await registry.dispatch(call.name, call.arguments, callId: call.callId);
+            final outcome = scope == null
+                ? await registry.dispatch(call.name, call.arguments, callId: call.callId)
+                : await registry.dispatchFromAgent(call.name, call.arguments, callId: call.callId, scope: scope);
             outputs[call.callId] = outcome.json;
+            toolResults.add({
+              'tool': call.name,
+              'call_id': call.callId,
+              'status': outcome.status.name,
+              'result': jsonDecode(outcome.json),
+            });
             if (call.name == 'take_screenshot' && outcome.ok) {
               final png = latestScreenshot?.call();
               if (png != null) screenshots[call.callId] = png;
@@ -242,6 +260,7 @@ class ResponsesDelegate implements DelegateBackend {
               'Do not repeat those calls. Known results: ${jsonEncode(outputs)}. Error: $streamError',
           model: model,
           tokensUsed: tokens,
+          toolResults: List.unmodifiable(toolResults),
         );
       }
       final r = response!;
@@ -261,6 +280,7 @@ class ResponsesDelegate implements DelegateBackend {
           output: out.isEmpty ? 'The task finished without a summary.' : out,
           model: model,
           tokensUsed: tokens,
+          toolResults: List.unmodifiable(toolResults),
         );
       }
       // Preserve the actual streamed arguments if a provider repeats a call
@@ -284,6 +304,7 @@ class ResponsesDelegate implements DelegateBackend {
       output: 'I stopped after $maxSteps steps without finishing the task.',
       model: model,
       tokensUsed: tokens,
+      toolResults: List.unmodifiable(toolResults),
     );
   }
 }

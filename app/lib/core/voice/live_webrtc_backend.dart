@@ -135,6 +135,7 @@ class LiveWebRtcBackend extends VoiceBackend
     this.delegationModelFactory,
     this.credentialsProvider,
     this.toolRunner,
+    this.delegationObserver,
     this.callsUrl = 'https://chatgpt.com/backend-api/codex/realtime/calls?intent=quicksilver&architecture=avas',
     this.sidebandBase = 'wss://api.openai.com/v1/live',
     this.sessionStartTimeout = const Duration(seconds: 15),
@@ -167,6 +168,7 @@ class LiveWebRtcBackend extends VoiceBackend
   /// Runs tools directly instead of round-tripping through the pipeline
   /// ([ToolCall] → [sendToolResult]). Used by headless tests.
   final DelegationToolRunner? toolRunner;
+  final DelegationObserver? delegationObserver;
   final String callsUrl;
   final String sidebandBase;
   final Duration sessionStartTimeout;
@@ -411,6 +413,7 @@ class LiveWebRtcBackend extends VoiceBackend
       model: dm,
       tools: config.tools,
       runTool: toolRunner ?? _runToolViaPipeline,
+      observer: delegationObserver,
       latestScreenshot: () => _latestImage,
       contextImages: () => _contextImages.values.toList(),
       contextNote: _delegationNote,
@@ -443,11 +446,7 @@ class LiveWebRtcBackend extends VoiceBackend
     return b.toString();
   }
 
-  void _onSessionEvent(
-    _LiveSession session,
-    String raw, {
-    required bool rtcControl,
-  }) {
+  void _onSessionEvent(_LiveSession session, String raw, {required bool rtcControl}) {
     if (_closed || session.closed || session.connectionLost) return;
     final Map<String, Object?> event;
     try {
@@ -462,9 +461,7 @@ class LiveWebRtcBackend extends VoiceBackend
     }
     if (!identical(_session, session)) return;
     if (session.controlSource != null) {
-      final media =
-          event['type'] == 'session.input_audio.append' ||
-          event['type'] == 'session.output_audio.delta';
+      final media = event['type'] == 'session.input_audio.append' || event['type'] == 'session.output_audio.delta';
       // Never merge uncorrelated receipts or duplicate transcripts across
       // transports. This choice is fixed for the whole native session.
       if (rtcControl == media) return;
@@ -504,14 +501,10 @@ class LiveWebRtcBackend extends VoiceBackend
       throw StateError('Choose a nonempty gpt-live audio model in Settings.');
     }
     if (kRealtimeModels.contains(model)) {
-      throw StateError(
-        '"$model" is a realtime audio model. Select its realtime option in Settings.',
-      );
+      throw StateError('"$model" is a realtime audio model. Select its realtime option in Settings.');
     }
     if (!kLiveVoices.contains(voice)) {
-      throw StateError(
-        'gpt-live does not support the voice "$voice". Choose a supported live voice in Settings.',
-      );
+      throw StateError('gpt-live does not support the voice "$voice". Choose a supported live voice in Settings.');
     }
     // Forward explicit custom model IDs. The provider can reject them visibly;
     // silently using another model would misrepresent the user's selection.
@@ -537,10 +530,8 @@ class LiveWebRtcBackend extends VoiceBackend
         // its bootstrap event while the sideband handshake is in flight.
         s.controlSub = rtcEvents.controlEvents.listen(
           (raw) => _onSessionEvent(s, raw, rtcControl: true),
-          onDone: () =>
-              _sessionConnectionLost(s, null, 'live event channel closed', controlFailure: true),
-          onError: (Object _) =>
-              _sessionConnectionLost(s, null, 'live event channel error', controlFailure: true),
+          onDone: () => _sessionConnectionLost(s, null, 'live event channel closed', controlFailure: true),
+          onError: (Object _) => _sessionConnectionLost(s, null, 'live event channel error', controlFailure: true),
         );
       }
       // A held recording can outlive a network reconnect or context swap.
@@ -571,10 +562,7 @@ class LiveWebRtcBackend extends VoiceBackend
       sw = Stopwatch()..start();
       final RealtimeSocket ws;
       try {
-        ws = await _connectSideband(
-          Uri.parse('$sidebandBase/${call.callId}'),
-          headers,
-        );
+        ws = await _connectSideband(Uri.parse('$sidebandBase/${call.callId}'), headers);
       } catch (e) {
         throw LiveCallException(
           'sideband rejected: ${redactSecrets('$e')} (an invalid session config kills the call silently)',
@@ -599,9 +587,7 @@ class LiveWebRtcBackend extends VoiceBackend
             : null,
         onError: (message, code, fatal) {
           if (!_closed && identical(_session, s)) {
-            _emit(
-              BackendError(redactSecrets(message), code: code, fatal: fatal),
-            );
+            _emit(BackendError(redactSecrets(message), code: code, fatal: fatal));
           }
         },
       );
@@ -609,17 +595,12 @@ class LiveWebRtcBackend extends VoiceBackend
       s.sub = ws.messages.listen(
         (raw) => _onSessionEvent(s, raw, rtcControl: false),
         onDone: () => _sessionConnectionLost(s, ws.closeCode, ws.closeReason),
-        onError: (Object _) =>
-            _sessionConnectionLost(s, ws.closeCode, 'sideband stream error'),
+        onError: (Object _) => _sessionConnectionLost(s, ws.closeCode, 'sideband stream error'),
       );
-      await Future.wait<void>([
-        s.started.future,
-        if (rtcEvents != null) rtcEvents.waitForControlReady(),
-      ]).timeout(
+      await Future.wait<void>([s.started.future, if (rtcEvents != null) rtcEvents.waitForControlReady()]).timeout(
         sessionStartTimeout,
-        onTimeout: () => throw LiveCallException(
-          'live session events not ready within ${sessionStartTimeout.inSeconds}s',
-        ),
+        onTimeout: () =>
+            throw LiveCallException('live session events not ready within ${sessionStartTimeout.inSeconds}s'),
       );
       if (_closed || s.closed || s.connectionLost) {
         throw LiveCallException('live session closed while connecting');
@@ -1837,7 +1818,7 @@ class _LiveContextApply {
 /// One gpt-live call: WebRTC media plus its sideband socket.
 class _LiveSession {
   _LiveSession(this.rtc, this.model, this.voice)
-      : controlSource = rtc is LiveRtcEventSource ? rtc as LiveRtcEventSource : null;
+    : controlSource = rtc is LiveRtcEventSource ? rtc as LiveRtcEventSource : null;
   final LiveRtcEventSource? controlSource;
   final LiveRtcTransport rtc;
   final String model;
@@ -1869,13 +1850,20 @@ class _LiveSession {
         await operation();
       } catch (_) {}
     }
+
     final nativeClosed = attempt(rtc.close);
     try {
       ws?.send(jsonEncode({'type': 'session.close'}));
     } catch (_) {}
-    await attempt(() async { await sub?.cancel(); });
-    await attempt(() async { await controlSub?.cancel(); });
-    await attempt(() async { await ws?.close(); });
+    await attempt(() async {
+      await sub?.cancel();
+    });
+    await attempt(() async {
+      await controlSub?.cancel();
+    });
+    await attempt(() async {
+      await ws?.close();
+    });
     await nativeClosed;
     onClosed?.call();
   }

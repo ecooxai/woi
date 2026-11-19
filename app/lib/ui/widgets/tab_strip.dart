@@ -101,6 +101,7 @@ const kHomeTabs = <HomeView, (IconData, String)>{
   HomeView.chat: (Icons.chat_bubble_outline_rounded, 'Chat'),
   HomeView.terminal: (Icons.terminal_rounded, 'Terminal'),
   HomeView.clipboard: (Icons.content_paste_rounded, 'Clipboard'),
+  HomeView.agents: (Icons.account_tree_outlined, 'Agents'),
   HomeView.settings: (Icons.tune_rounded, 'Settings'),
 };
 
@@ -115,6 +116,7 @@ class HomeTabs extends StatelessWidget {
     this.split = false,
     this.noteBadge = false,
     this.chatBadge = 0,
+    this.agentBadge = 0,
     this.compact = false,
     this.height = 44,
     this.hideChat = false,
@@ -132,6 +134,7 @@ class HomeTabs extends StatelessWidget {
   final bool split;
   final bool noteBadge;
   final int chatBadge;
+  final int agentBadge;
 
   /// Phone: only the selected tab shows its label.
   final bool compact;
@@ -159,12 +162,19 @@ class HomeTabs extends StatelessWidget {
           style: body(10.5, weight: FontWeight.w700, color: WoiColors.onAccent),
         ),
       ),
+      HomeView.agents when agentBadge > 0 => Container(
+        key: const ValueKey('agents-badge'),
+        margin: const EdgeInsets.only(left: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+        decoration: BoxDecoration(color: WoiColors.violet, borderRadius: BorderRadius.circular(999)),
+        child: Text('$agentBadge', style: body(10.5, weight: FontWeight.w700, color: WoiColors.onAccent)),
+      ),
       _ => null,
     };
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        for (final v in HomeView.values)
+        for (final v in kHomeTabs.keys)
           if (!(hideChat && v == HomeView.chat))
             WoiTab(
               key: _selected(v) ? selectedTabKey : null,
@@ -177,6 +187,8 @@ class HomeTabs extends StatelessWidget {
                       ? 4
                       : v == HomeView.clipboard
                       ? 5
+                      : v == HomeView.agents
+                      ? 6
                       : v.index + 1})',
               selected: _selected(v),
               showLabel: !compact || v == view,

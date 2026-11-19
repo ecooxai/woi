@@ -20,6 +20,7 @@ void registerGptLive() {
             : null,
       ),
       credentialsProvider: ctx.credentials,
+      delegationObserver: ctx.delegationObserver,
       delegationReasoningEffort: ctx.settings.textReasoningEffort,
       delegationReasoningEffortProvider: ctx.textReasoningEffort,
     ),

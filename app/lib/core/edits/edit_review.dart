@@ -181,7 +181,12 @@ class AppliedFileEdit extends AppliedEdit {
 /// Applied AI edits per conversation, newest last, and file backups under
 /// `<backupRoot>/<conversation id>/`.
 class EditHistory {
-  EditHistory({required this.backupRoot, required this.notes, required this.conversationId, this.maxPerConversation = 50});
+  EditHistory({
+    required this.backupRoot,
+    required this.notes,
+    required this.conversationId,
+    this.maxPerConversation = 50,
+  });
 
   final String backupRoot;
   final NoteController notes;
@@ -256,7 +261,7 @@ class EditHistory {
 /// [ConfirmationService] that routes file writes through [EditReview]
 /// (inline diff card with countdown) and backs files up before they change.
 /// Shell commands keep [inner]'s explicit dialog.
-class ReviewingConfirmations implements ConfirmationService {
+class ReviewingConfirmations implements ConfirmationService, AutomaticFileWriteApproval {
   ReviewingConfirmations({required this.inner, required this.review, required this.history});
 
   final ConfirmationService inner;
@@ -277,6 +282,11 @@ class ReviewingConfirmations implements ConfirmationService {
       ),
     );
     if (!ok) return false;
+    return approveAutomaticFileWrite(r);
+  }
+
+  @override
+  Future<bool> approveAutomaticFileWrite(FileWriteRequest r) async {
     String? backup;
     try {
       backup = await history.backup(r.path);

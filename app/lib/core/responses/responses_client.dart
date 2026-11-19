@@ -237,6 +237,21 @@ class ResponsesClient {
     toolChoice: 'required',
   );
 
+  /// A validated routine tool request always starts the app's Luna worker.
+  /// The executor checks the complete call before any device action starts.
+  Future<ResponsesResult> automaticToolAction({
+    required List<Map<String, Object?>> input,
+    required String instructions,
+    required List<Map<String, Object?>> tools,
+  }) => _create(
+    model: 'gpt-6-luna',
+    input: input,
+    instructions: instructions,
+    tools: tools,
+    reasoning: const {'effort': 'none'},
+    toolChoice: 'required',
+  );
+
   Future<ResponsesResult> _create({
     required String model,
     required List<Map<String, Object?>> input,

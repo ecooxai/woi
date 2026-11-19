@@ -36,10 +36,14 @@ import 'auth/auth.dart';
 import 'auth/pkce_login.dart';
 import 'lab/model_click_lab.dart';
 import 'lab/model_click_lab_backend.dart';
+import 'context/audio_retention.dart';
 import 'context/compressor.dart';
 import 'context/context_manager.dart';
 import 'context/image_tiers.dart';
 import 'context/responses_compressor.dart';
+import 'agents/agent_runs.dart';
+import 'agents/luna_tool_executor.dart';
+import 'agents/planner_runs.dart';
 import 'delegate/delegate_backend.dart';
 import 'delegate/responses_delegate.dart';
 import 'edits/edit_review.dart';
@@ -106,10 +110,11 @@ set_setting (theme, voice, voice_model, mic_mode, compaction_threshold, run_in_t
 echo_cancellation, audio_route, stop_word_detection, stop_words, reply_delay, idle_standby), terminal tabs (terminal_new, terminal_run, terminal_close), the media viewer (viewer_open/close/pause/play/seek),
 apply_edit / reject_edit, undo_edit for "undo that" (reverts your last note or file edit), disconnect /
 reconnect, clear_chat, compact. Almost everything in Woi's UI can be done with these two tools.
-Note and file edits appear as an inline diff that applies itself after a few seconds unless the user rejects it;
-the tool result tells you whether it was applied. Shell commands may need explicit approval.
-Use delegate_task only for genuinely complex multi-step work (writing programs, multi-file changes, research
-or long analysis); simple actions you do yourself. When a delegated result comes back, speak its gist briefly.
+Routine file, note, search, clipboard, Python and Bash tool calls automatically start a gpt-6-luna worker.
+Call the appropriate tool immediately without asking for another confirmation. The worker returns actual results;
+file backups and note undo remain available. Never replace stdout, errors or search sources with a claimed success.
+Use delegate_task for complex multi-step work; it also runs on Luna. Simple requests still use their named tool
+directly: the app handles delegation. When a delegated result comes back, speak its verified gist briefly.
 If the user only says stop, cancel or never mind, stop and say nothing at all; do not acknowledge it.
 Every conversation has a Markdown note that the user sees and edits too; its current text is pinned below.
 Proactively record what matters with update_note, without asking and without announcing it at length:
@@ -168,6 +173,7 @@ class AppController extends ChangeNotifier {
     CodexAuthManager? authManager,
     CodexUsage? usage,
     ResponsesClient? pointerClient,
+    this._toolAgentClientFactory,
   }) : _pointerClientOverride = pointerClient,
        _usageOverride = usage,
        _backendOverride = backendFactory,
@@ -182,6 +188,23 @@ class AppController extends ChangeNotifier {
   final DelegateBackend? _delegateOverride;
   final CodexUsage? _usageOverride;
   final ResponsesClient? _pointerClientOverride;
+  final ResponsesClient Function()? _toolAgentClientFactory;
+
+  /// Durable actual worker runs, shared by the assistant panel and full app.
+  late final AgentRunStore agents = AgentRunStore(path: '${platform.paths.dataDir}/agent_runs');
+  late final AgentPlannerRuns _plannerAgents = AgentPlannerRuns(
+    store: agents,
+    conversationId: () => _ready ? pipeline.conversation.id : '',
+  );
+  late final LunaToolExecutor _toolAgents = LunaToolExecutor(
+    store: agents,
+    clientFactory:
+        _toolAgentClientFactory ??
+        () => ResponsesClient(credentials: credentials, reuseConnections: true, timeout: const Duration(seconds: 60)),
+    conversationId: () => _ready ? pipeline.conversation.id : '',
+    sessionIdentity: () => _ready ? '${identityHashCode(pipeline.backend)}' : '',
+    pointerEnabled: () => _settings.useLunaPointer,
+  );
 
   /// Codex login (~/.codex/auth.json) with refresh-near-expiry.
   final CodexAuthManager authManager;
@@ -201,7 +224,10 @@ class AppController extends ChangeNotifier {
 
   /// Responses API (compression + delegation) with the current credentials.
   late final ResponsesClient responses = ResponsesClient(credentials: credentials);
-  late final WebSearchService webSearch = WebSearchService(client: responses, model: () => delegationChoice.model);
+  late final WebSearchService webSearch = WebSearchService(
+    client: responses,
+    model: () => AutomaticToolScope.current != null ? kCheapModel : delegationChoice.model,
+  );
   late final ImageGenerationClient imageGeneration = ImageGenerationClient(credentials: credentials);
   late final BackgroundChatTasks backgroundTasks = BackgroundChatTasks(
     images: imageGeneration,
@@ -290,6 +316,7 @@ class AppController extends ChangeNotifier {
 
   void _interruptTools() {
     _delegateCancellationEpoch++;
+    agents.cancelAll();
     review.rejectAll();
     _interruptPointerControl();
   }
@@ -403,6 +430,7 @@ class AppController extends ChangeNotifier {
       // gpt-live is out of quota: Direct realtime until the limit resets.
       sel = createVoiceBackend(
         BackendContext(
+          delegationObserver: _plannerAgents,
           settings: _settings.copyWith(backendMode: BackendMode.direct),
           textReasoningEffort: () => _settings.textReasoningEffort,
           credentials: credentials,
@@ -418,6 +446,7 @@ class AppController extends ChangeNotifier {
     } else {
       sel = createVoiceBackend(
         BackendContext(
+          delegationObserver: _plannerAgents,
           settings: _settings,
           credentials: credentials,
           audio: platform.audio,
@@ -554,6 +583,7 @@ class AppController extends ChangeNotifier {
   Future<void> init() async {
     try {
       _settings = await _settingsStore.load();
+      await agents.restore();
       if (platform.audio case final EchoCancellable ec) ec.echoCancellation = _settings.echoCancellation;
       if (platform.audio case final AudioRouted r) r.audioRoute = _settings.androidAudioRoute.name;
       // Woi listens from launch: a mic muted in the last session comes back
@@ -600,7 +630,7 @@ class AppController extends ChangeNotifier {
         userText: () => p.latestUserText,
         pointerDelegate: pointerDelegate.fromTool,
       );
-      tools = ToolRegistry()
+      tools = ToolRegistry(interceptor: _toolAgents.dispatch)
         // send_keys supersedes key_combo (targets the user's app, not Woi).
         ..registerAll(builtinTools(toolEnv).where((t) => t.name != 'key_combo'))
         ..register(sendKeysTool(platform.input, phone: platform.isMobile))
@@ -825,7 +855,8 @@ class AppController extends ChangeNotifier {
       tools: tools.specs,
       credentials: creds,
       priorContext: c.summary,
-      recentContext: contextManager.recentTurns(),
+      recentContext: contextManager.recentTurns(includeRetainedAudio: activeBackendMode != BackendMode.direct),
+      retainedUserAudio: () => retainedUserAudioSnapshot(c),
       environment: environmentNote(),
       phone: platform.isMobile,
       pinnedNote: notes.text,
@@ -1328,6 +1359,7 @@ class AppController extends ChangeNotifier {
 
   Future<void> shutdown() async {
     _interruptTools();
+    await _toolAgents.shutdown();
     await _modelClickLab?.close();
     pointerDelegate.close();
     if (_ready) await backgroundTasks.shutdown();
@@ -1350,5 +1382,7 @@ class AppController extends ChangeNotifier {
     if (_ready) await pipeline.shutdown();
     if (platform.audio case final EchoCancellable ec) await ec.disposeEchoCancellation();
     terminals.dispose();
+    await agents.flush();
+    agents.dispose();
   }
 }

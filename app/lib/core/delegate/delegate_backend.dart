@@ -1,5 +1,12 @@
 class DelegateResult {
-  const DelegateResult({required this.output, this.success = true, this.model, this.tokensUsed, this.modelNote});
+  const DelegateResult({
+    required this.output,
+    this.success = true,
+    this.model,
+    this.tokensUsed,
+    this.modelNote,
+    this.toolResults = const [],
+  });
   final String output;
   final bool success;
   final String? model;
@@ -8,17 +15,21 @@ class DelegateResult {
   /// Why [model] differs from the selected one (the usage guard), if it does.
   final String? modelNote;
 
+  /// Actual execution receipts, kept separately from the model's summary.
+  final List<Map<String, Object?>> toolResults;
+
   Map<String, Object?> toJson() => {
     'ok': success,
     'output': output,
     if (model != null) 'model': model,
     if (tokensUsed != null) 'tokens': tokensUsed,
     'model_note': ?modelNote,
+    if (toolResults.isNotEmpty) 'tool_results': toolResults,
   };
 }
 
-/// Hands complex, multi-step work to a stronger text model
-/// (e.g. gpt-6.1-sol via the Responses API).
+/// Hands complex, multi-step work to a text model through the Responses API.
+/// Automatic app delegation selects GPT Luna.
 abstract class DelegateBackend {
   Future<DelegateResult> runTask(String task, {required String model, String? context});
 }

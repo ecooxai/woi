@@ -236,6 +236,12 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
   final p = env.platform;
 
   Future<bool> approveWrite(FileWriteRequest r, ToolInvocation call) async {
+    if (call.automaticallyAuthorized) {
+      final confirmations = env.confirmations;
+      return confirmations is AutomaticFileWriteApproval
+          ? (confirmations as AutomaticFileWriteApproval).approveAutomaticFileWrite(r)
+          : true;
+    }
     call.onStatus?.call(ToolStatus.awaitingApproval);
     final ok = await env.confirmations.confirmFileWrite(r);
     call.onStatus?.call(ToolStatus.running);
@@ -428,7 +434,7 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
       handler: (args, call) async {
         final cmd = args.str('command');
         if (cmd.trim().isEmpty) throw ToolFailure('empty command');
-        if (env.settings().confirmBeforeBash) {
+        if (env.settings().confirmBeforeBash && !call.automaticallyAuthorized) {
           call.onStatus?.call(ToolStatus.awaitingApproval);
           final ok = await env.confirmations.confirmCommand(cmd);
           if (!ok) throw ToolDenied('user rejected the command');
@@ -588,7 +594,7 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
       spec: _spec(
         'delegate_task',
         'Hand a complex multi-step task (coding, analysis, long writing) to a '
-            'stronger text model that has file and shell tools, and get its spoken summary. '
+            'GPT Luna worker with file and shell tools; get its spoken summary plus actual tool results. '
             'task: the user\'s request in their words, as an instruction (not your answer). '
             'Scripts, programs and documents are always saved as files in the workspace by the '
             'delegate; never tell it to only return or print the text.',
@@ -605,7 +611,7 @@ List<ToolDefinition> builtinTools(ToolEnvironment env) {
       handler: (args, call) async {
         final r = await env.delegate.runTask(
           args.str('task'),
-          model: env.settings().delegateModel,
+          model: call.automaticallyAuthorized ? 'gpt-6-luna' : env.settings().delegateModel,
           context: args.strOrNull('context'),
         );
         return r.toJson();

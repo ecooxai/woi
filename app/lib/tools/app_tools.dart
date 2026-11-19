@@ -123,7 +123,7 @@ ToolDefinition appControlTool(AppActions actions) => ToolDefinition(
   spec: const ToolSpec(
     name: 'app_control',
     description:
-        'Control Woi itself. show_view (view: note, chat, terminal, settings, split, single; selects that tab); '
+        'Control Woi itself. show_view (view: note, chat, terminal, clipboard, agents, settings, split, single; selects that tab); '
         'set_setting (key: theme [light|dark|system], mic_mode [hands_free|push_to_talk|muted], voice, '
         'voice_model, compaction_threshold [tokens], run_in_terminal [on|off], edit_apply_delay [0|3|5|10|approval], '
         'echo_cancellation [on|off], audio_route [phone|media; Android: phone = call path with echo cancellation], stop_word_detection [on|off; offline "stop" cuts Woi], stop_words [comma-separated English words, default stop], usage_guard [percent left below which delegation/compaction use gpt-6-luna; '

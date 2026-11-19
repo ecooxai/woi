@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import '../../platform/audio_io.dart';
 import '../auth/auth.dart';
+import '../context/audio_retention.dart';
 import '../context/context_manager.dart';
 
 /// Audio format used everywhere between the app and the voice backend:
@@ -37,6 +38,7 @@ class SessionConfig {
     this.credentials,
     this.priorContext,
     this.recentContext,
+    this.retainedUserAudio,
     this.environment,
     this.pinnedNote,
     this.phone = false,
@@ -56,6 +58,11 @@ class SessionConfig {
   /// conversation). Backends that cannot replay items (gpt-live) put it in
   /// the startup instructions.
   final String? recentContext;
+
+  /// Snapshot of the five retained user recordings, read lazily on direct
+  /// Realtime (re)connect. Text-only backends use [recentContext] transcripts.
+  /// Files remain owned by chat history and are never deleted during replay.
+  final List<RetainedUserAudio> Function()? retainedUserAudio;
 
   /// Real user name, \$HOME and workspace dir, for prompts of models that
   /// run tools (so they never invent paths like /home/oai).

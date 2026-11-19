@@ -11,7 +11,8 @@ class CompressionResult {
 }
 
 /// Summarises older conversation into a compact form (e.g. with
-/// gpt-6-luna through the Responses API). Must not touch the live session.
+/// gpt-6-luna through the Responses API). Send text/transcripts and saved media
+/// descriptions only, never original audio/image bytes. Must not touch the live session.
 abstract class Compressor {
   Future<CompressionResult> compress(List<Message> messages, {required String model, String? previousSummary});
 }
@@ -32,7 +33,9 @@ class StubCompressor implements Compressor {
       String line;
       switch (m.kind) {
         case MessageKind.user:
-          line = 'User: ${_first(m.text)}';
+          line = m.text.trim().isEmpty && m.audio != null
+              ? 'User: [recording archived; transcript unavailable]'
+              : 'User: ${_first(m.text)}';
         case MessageKind.assistant:
           line = 'Assistant: ${_first(m.text)}';
         case MessageKind.tool:

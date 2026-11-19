@@ -1,12 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 
 import '../audio/playback_tracker.dart';
+import '../audio/wav.dart';
 import '../auth/auth.dart';
+import '../context/audio_retention.dart';
 import '../context/context_manager.dart';
 import '../context/image_tiers.dart' show kAssistNotePrefix, kRawRecentTurns;
 import '../net/realtime_socket.dart';
@@ -51,6 +54,7 @@ const _benignErrors = {
 class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedNoteSync {
   RealtimeWsBackend({
     RealtimeConnector? connector,
+    Future<Uint8List> Function(String path)? readRecordedAudio,
     this.credentialsProvider,
     Uri? endpoint,
     this.transcriptionModel = 'gpt-4o-mini-transcribe',
@@ -70,6 +74,7 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
     PlaybackTracker? playback,
     void Function(String message)? log,
   }) : _connector = connector ?? IoRealtimeSocket.connect,
+       _readRecordedAudio = readRecordedAudio ?? ((path) => File(path).readAsBytes()),
        endpoint = endpoint ?? defaultEndpoint,
        playback = playback ?? PlaybackTracker(),
        _log = log ?? ((m) => debugPrint('[realtime] $m'));
@@ -77,6 +82,7 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
   static final defaultEndpoint = Uri.parse('wss://api.openai.com/v1/realtime');
 
   final RealtimeConnector _connector;
+  final Future<Uint8List> Function(String path) _readRecordedAudio;
 
   /// Fresh credentials for every (re)connect (token refresh). Falls back to
   /// [SessionConfig.credentials].
@@ -158,6 +164,7 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
 
   // Server conversation mirror (ids in order + a text rendering of each)
   final List<_Item> _items = [];
+  final Set<String> _replayedAudioIds = {};
   String? _summary;
   String? _summaryItemId;
   String? _pendingSummary;
@@ -236,7 +243,12 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
     final c = config.credentials;
     final exp = c?.expiresAt;
     final fresh = c != null && (exp == null || exp.difference(DateTime.now()) > const Duration(minutes: 2));
-    await _open(initialContext: _summary == null ? null : _summaryText(_summary!), credentials: fresh ? c : null);
+    final initial = [
+      if (_summary != null) _summaryText(_summary!),
+      if (config.recentContext?.trim().isNotEmpty ?? false)
+        'Recent conversation (continue naturally):\n${config.recentContext!.trim()}',
+    ].join('\n\n');
+    await _open(initialContext: initial.isEmpty ? null : initial, credentials: fresh ? c : null);
   }
 
   Map<String, Object?> sessionUpdate(SessionConfig c) => {
@@ -380,6 +392,7 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
 
   Future<void> _open({String? initialContext, Credentials? credentials}) async {
     final cfg = _config!;
+    final audio = _retainedAudioSnapshot();
     final sw = Stopwatch()..start();
     var mark = 0;
     void phase(String name) {
@@ -436,12 +449,71 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
       throw RealtimeException(redactSecrets('$e'));
     }
     _handshake = null;
-    _ready = true;
-    phase('ready');
     if (initialContext != null && initialContext.isNotEmpty) {
       final id = _newItemId('ctx');
       _summaryItemId = id;
       _send({'type': 'conversation.item.create', 'item': _systemItem(id, initialContext)});
+    }
+    await _replayRetainedAudio(audio, gen);
+    if (gen != _generation || _closed) throw RealtimeException('connect superseded');
+    _ready = true;
+    phase('ready');
+  }
+
+  List<RetainedUserAudio> _retainedAudioSnapshot() {
+    final source = _config?.retainedUserAudio?.call() ?? const <RetainedUserAudio>[];
+    final seen = <String>{};
+    final latest = <RetainedUserAudio>[];
+    for (final audio in source.reversed) {
+      if (!seen.add(audio.messageId)) continue;
+      latest.add(audio);
+      if (latest.length == kRetainedUserAudioMessages) break;
+    }
+    return latest.reversed.toList(growable: false);
+  }
+
+  Future<void> _replayRetainedAudio(List<RetainedUserAudio> recordings, int generation) async {
+    for (final recording in recordings) {
+      if (generation != _generation || _closed) return;
+      final id = _newItemId('kept_audio');
+      Map<String, Object?> content;
+      try {
+        // User input_audio accepts PCM in the session format. WAV container
+        // bytes are not PCM. Load just this clip, then release it next turn.
+        final pcm = decodePcm16Wav(await _readRecordedAudio(recording.path));
+        content = {
+          'type': 'input_audio',
+          'audio': base64Encode(pcm),
+          if (recording.transcript.isNotEmpty) 'transcript': recording.transcript,
+        };
+      } catch (_) {
+        // Keep the actual available words, never pretend a missing clip was
+        // replayed. The original history attachment is left untouched.
+        final transcript = recording.transcript.trim();
+        content = {
+          'type': 'input_text',
+          'text':
+              '[Earlier user recording unavailable for audio replay] '
+              '${transcript.isEmpty ? 'Transcript unavailable; audio contents unknown.' : 'Transcript: $transcript'}',
+        };
+        _emit(
+          const BackendError(
+            'A retained recording could not be replayed. Its available transcript was kept; the original chat file was not changed.',
+            code: 'context_audio_unavailable',
+          ),
+        );
+      }
+      if (generation != _generation || _closed) return;
+      _replayedAudioIds.add(id);
+      _send({
+        'type': 'conversation.item.create',
+        'item': {
+          'id': id,
+          'type': 'message',
+          'role': 'user',
+          'content': [content],
+        },
+      });
     }
   }
 
@@ -479,6 +551,7 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
     _suppressedItems.clear();
     _truncateAfterDone.clear();
     _items.clear();
+    _replayedAudioIds.clear();
     _summaryItemId = null;
     for (final w in _waiters) {
       if (!w.$2.isCompleted) w.$2.completeError(RealtimeException('session closed'));
@@ -1002,13 +1075,19 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
         // response (or its function call) has started; item_id ties it back
         // to the user's turn.
         final d = ev['delta'] as String? ?? '';
-        if (d.isNotEmpty) _emit(UserTranscriptDelta(d, itemId: ev['item_id'] as String?));
+        if (d.isNotEmpty && !_replayedAudioIds.contains(ev['item_id'])) {
+          _emit(UserTranscriptDelta(d, itemId: ev['item_id'] as String?));
+        }
       case 'conversation.item.input_audio_transcription.completed':
         final t = (ev['transcript'] as String? ?? '').trim();
         _itemById(ev['item_id'] as String?)?.text = t;
-        _emit(UserTranscriptDone(t, itemId: ev['item_id'] as String?));
+        if (!_replayedAudioIds.contains(ev['item_id'])) {
+          _emit(UserTranscriptDone(t, itemId: ev['item_id'] as String?));
+        }
       case 'conversation.item.input_audio_transcription.failed':
-        _emit(UserTranscriptDone('', itemId: ev['item_id'] as String?));
+        if (!_replayedAudioIds.contains(ev['item_id'])) {
+          _emit(UserTranscriptDone('', itemId: ev['item_id'] as String?));
+        }
 
       case 'response.created':
         final r = (ev['response'] as Map?)?.cast<String, Object?>();
@@ -1190,15 +1269,27 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
   /// Text rendering of the current server conversation, used to restore
   /// context after a reconnect.
   String? _restoreContext({int fromIndex = 0, int maxChars = 8000}) {
-    final lines = <String>[];
-    for (var i = fromIndex; i < _items.length; i++) {
+    final protected = _retainedAudioItemIds();
+    final replayingAudio = _retainedAudioSnapshot().isNotEmpty;
+    final lines = <(String, bool)>[];
+    for (var i = 0; i < _items.length; i++) {
       final it = _items[i];
-      if (it.id == _summaryItemId) continue;
-      final l = it.render();
-      if (l != null) lines.add(l);
+      final retained = protected.contains(it.id);
+      if (it.id == _summaryItemId || (i < fromIndex && !retained)) continue;
+      if (retained && replayingAudio) continue; // original audio is replayed separately
+      final line = it.render(maxMessageChars: retained ? null : 600);
+      if (line != null) lines.add((line, retained));
     }
-    var recent = lines.join('\n');
-    if (recent.length > maxChars) recent = '…${recent.substring(recent.length - maxChars)}';
+    var remaining = maxChars - lines.where((line) => line.$2).fold<int>(0, (n, line) => n + line.$1.length + 1);
+    final selected = <String>[];
+    for (final (line, retained) in lines.reversed) {
+      if (!retained) {
+        if (line.length + 1 > remaining) continue;
+        remaining -= line.length + 1;
+      }
+      selected.add(line);
+    }
+    final recent = selected.reversed.join('\n');
     final parts = [
       if (_summary != null) _summaryText(_summary!),
       if (recent.isNotEmpty)
@@ -1206,6 +1297,10 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
     ];
     return parts.isEmpty ? null : parts.join('\n\n');
   }
+
+  Set<String> _retainedAudioItemIds() => {
+    for (final item in _items.reversed.where((item) => item.isUserAudio).take(kRetainedUserAudioMessages)) item.id,
+  };
 
   static String _summaryText(String s) => 'Summary of the earlier conversation (older turns were compacted):\n$s';
 
@@ -1253,6 +1348,7 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
   /// [keepRecentTurns]-th last user turn, never splitting a function call
   /// from its output and keeping a turn's screenshot with it.
   int _cutIndex() {
+    if (keepRecentTurns <= 0) return _items.length;
     // Same rule as rawTurnsStart (local compaction): an assist activation
     // screenshot (possibly without speech) starts a turn,
     // unless the next turn boundary is a user turn it belongs to.
@@ -1310,9 +1406,12 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
     _applyErrors.clear();
     try {
       final cut = _cutIndex();
+      final retainedAudio = _retainedAudioItemIds();
       final toDelete = [
-        for (var i = 0; i < cut; i++) _items[i].id,
-        if (_summaryItemId != null && _items.indexWhere((x) => x.id == _summaryItemId) >= cut) _summaryItemId!,
+        for (var i = 0; i < _items.length; i++)
+          if (_items[i].id == _summaryItemId ||
+              (!retainedAudio.contains(_items[i].id) && (i < cut || _items[i].isUserAudio)))
+            _items[i].id,
       ];
       final newId = _newItemId('ctx');
       final added = _waitFor(
@@ -1321,8 +1420,11 @@ class RealtimeWsBackend extends VoiceBackend implements LiveContextSync, PinnedN
             (e['item'] as Map?)?['id'] == newId,
         applyConfirmTimeout,
       );
-      // Insert the summary right before the first kept item.
-      final prevId = cut > 0 ? _items[cut - 1].id : 'root';
+      // Audio can survive before the ordinary text window. Put the summary
+      // before the earliest retained item, preserving original item order.
+      final firstAudio = _items.indexWhere((item) => retainedAudio.contains(item.id));
+      final firstKept = firstAudio < 0 ? cut : min(cut, firstAudio);
+      final prevId = firstKept > 0 ? _items[firstKept - 1].id : 'root';
       _send({
         'type': 'conversation.item.create',
         'previous_item_id': prevId,
@@ -1436,10 +1538,11 @@ class _Item {
     }
   }
 
+  bool get isUserAudio => type == 'message' && role == 'user' && hasAudio;
   bool get isUserTurn => type == 'message' && role == 'user' && (hasAudio || (hasText && !hasImage));
   bool get isImageOnly => type == 'message' && role == 'user' && hasImage && !hasAudio;
 
-  String? render() {
+  String? render({int? maxMessageChars = 600}) {
     String clip(String s, int n) => s.length <= n ? s : '${s.substring(0, n)}…';
     switch (type) {
       case 'function_call':
@@ -1448,13 +1551,13 @@ class _Item {
         return 'Tool result: ${clip(text, 400)}';
       case 'message':
         if (role == 'user' && isImageOnly) return 'User: [screenshot] ${clip(text, 200)}'.trimRight();
-        if (text.isEmpty) return null;
+        if (text.isEmpty) return isUserAudio ? 'User: [Audio recording; transcript unavailable]' : null;
         final who = switch (role) {
           'user' => 'User',
           'assistant' => 'Assistant',
           _ => 'Note',
         };
-        return '$who: ${clip(text, 600)}';
+        return '$who: ${maxMessageChars == null ? text : clip(text, maxMessageChars)}';
     }
     return null;
   }
